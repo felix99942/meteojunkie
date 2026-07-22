@@ -1,0 +1,690 @@
+/* Meteo Workbench — dunkles, informationsdichtes UI (SPEC §8).
+   Bedienelemente kompakt und kontrastarm, maximale Fläche für Daten. */
+
+:root {
+  --bg-page: #101113;
+  --bg-panel: #18191b; /* validierte Chart-Fläche — Serienfarben sind darauf geprüft */
+  --bg-control: #212327;
+  --bg-control-hover: #2a2d33;
+  --ink: #f2f2ef;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+  --gridline: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.08);
+  --accent: #3987e5;
+  --warn: #fab219;
+
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-page);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+  padding: 6px;
+}
+
+.label-muted {
+  color: var(--ink-muted);
+}
+
+/* --- Formularelemente ---------------------------------------------------- */
+
+select,
+input[type='text'],
+button {
+  background: var(--bg-control);
+  color: var(--ink-secondary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
+  padding: 2px 6px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover,
+select:hover {
+  background: var(--bg-control-hover);
+}
+
+input[type='text']:focus,
+select:focus,
+button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* --- TopBar -------------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.topbar-title {
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+/* Mock darf nie mit echten Daten verwechselbar sein — bewusst laut */
+.mock-badge {
+  background: var(--warn);
+  color: #14161a;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: help;
+}
+
+.topbar-domain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.api-usage {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.api-usage-reset {
+  padding: 0 5px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* --- Presets -------------------------------------------------------------- */
+
+.preset-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.preset-bar select {
+  max-width: 180px;
+}
+
+.preset-bar button {
+  min-width: 24px;
+  padding: 2px 4px;
+}
+
+.preset-dirty {
+  color: var(--warn);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.preset-save {
+  position: relative;
+}
+
+.preset-save summary {
+  list-style: none;
+  cursor: pointer;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 7px;
+  color: var(--ink-secondary);
+  user-select: none;
+}
+
+.preset-save summary::-webkit-details-marker {
+  display: none;
+}
+
+.preset-save-form {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 8px;
+}
+
+.preset-save-form label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-secondary);
+}
+
+/* deutlicher Hinweis nach unvollständig geladenem Preset */
+.preset-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px;
+  background: rgba(250, 178, 25, 0.12);
+  border-bottom: 1px solid rgba(250, 178, 25, 0.4);
+  color: var(--warn);
+  font-size: 11px;
+}
+
+.preset-warning button {
+  background: none;
+  border: none;
+  color: var(--warn);
+  padding: 0 2px;
+}
+
+/* --- LocationPicker ------------------------------------------------------ */
+
+.location-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.location-picker input {
+  width: 180px;
+}
+
+.location-current {
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.location-error {
+  color: var(--warn);
+}
+
+.location-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin: 2px 0 0;
+  padding: 2px;
+  list-style: none;
+  min-width: 280px;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.location-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  color: var(--ink);
+}
+
+.location-results button:hover {
+  background: var(--bg-control-hover);
+}
+
+/* --- Panel-Grid ---------------------------------------------------------- */
+
+.panel-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.panel-header select {
+  max-width: 160px;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.panel-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+}
+
+/* --- Modell-Auswahl (Popover) -------------------------------------------- */
+
+.model-picker {
+  position: relative;
+}
+
+.model-picker summary {
+  list-style: none;
+  cursor: pointer;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.model-picker summary::-webkit-details-marker {
+  display: none;
+}
+
+.model-picker[open] summary {
+  background: var(--bg-control-hover);
+}
+
+.model-picker-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 2px;
+  min-width: 250px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+
+.model-picker-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.model-picker-list label:hover {
+  background: var(--bg-control-hover);
+}
+
+.model-chip {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.model-warn {
+  color: var(--warn);
+}
+
+.model-outside {
+  opacity: 0.7;
+}
+
+/* --- Sync-Toggle ---------------------------------------------------------- */
+
+.sync-toggle {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* ParSync sitzt direkt am Parameter-Dropdown, schiebt SYNC an den Rand */
+.sync-toggle.parsync {
+  margin-left: auto;
+}
+
+.sync-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* sichtbar deaktiviert (nicht ausgeblendet), solange parsync woanders aktiv ist */
+.sync-toggle:disabled,
+.panel-variable:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* parsync: Quelle deutlich, Folge-Panels dezent — wer steuert, ist sofort sichtbar */
+.panel.parsync-source {
+  border-color: var(--accent);
+}
+
+.panel.parsync-source .panel-header {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.panel.parsync-follower .panel-header {
+  box-shadow: inset 0 -1px 0 rgba(57, 135, 229, 0.35);
+}
+
+/* --- Meteogramm ----------------------------------------------------------- */
+
+.meteogram {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.meteogram-plot {
+  flex: 1;
+  min-height: 0;
+}
+
+.meteogram-legend {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding: 2px 8px 4px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-chip {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.legend-label {
+  color: var(--ink-secondary);
+}
+
+.legend-value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Kartenpanel ----------------------------------------------------------- */
+
+.map-panel {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Höhere Spezifität als MapLibres eigene `.maplibregl-map { position: relative }`:
+   das Stylesheet des lazy geladenen MapPanels landet NACH index.css im Dokument
+   und würde bei gleicher Spezifität gewinnen — Container kollabiert dann auf 0. */
+.map-panel .map-container {
+  position: absolute;
+  inset: 0;
+}
+
+.map-container .maplibregl-canvas {
+  outline: none;
+}
+
+.map-time {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 5;
+  background: rgba(24, 25, 27, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.map-status {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 5;
+  background: rgba(24, 25, 27, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--ink-muted);
+  pointer-events: none;
+}
+
+.map-error {
+  color: var(--warn);
+  max-width: 70%;
+}
+
+.map-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 12px;
+  background: rgba(16, 17, 19, 0.8);
+  color: var(--warn);
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+/* --- Karten-Legende -------------------------------------------------------- */
+
+.map-legend {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  z-index: 5;
+  background: rgba(24, 25, 27, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px 4px;
+  pointer-events: none;
+  min-width: 150px;
+}
+
+.legend-title {
+  color: var(--ink-secondary);
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.legend-gradient {
+  height: 7px;
+  border-radius: 2px;
+}
+
+.legend-steps {
+  display: flex;
+  height: 7px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.legend-steps span {
+  flex: 1;
+}
+
+.legend-labels,
+.legend-step-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+
+.legend-step-labels span {
+  flex: 1;
+  text-align: left;
+}
+
+/* --- Städte-Marker (DOM, immer über dem Canvas) ---------------------------- */
+
+.city-marker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none; /* Klicks gehen an die Karte (Location-Lock) */
+}
+
+.city-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-secondary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  flex: 0 0 auto;
+}
+
+.city-label {
+  font-size: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+  /* Halo — sonst unlesbar über farbigen Feldern */
+  text-shadow:
+    0 1px 2px #000,
+    0 -1px 2px #000,
+    1px 0 2px #000,
+    -1px 0 2px #000;
+}
+
+.city-label-hidden .city-label {
+  display: none;
+}
+
+/* --- Zeit-Scrubber --------------------------------------------------------- */
+
+.time-scrubber {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.scrubber-controls {
+  display: flex;
+  gap: 3px;
+}
+
+.scrubber-controls button {
+  min-width: 28px;
+}
+
+.play-button {
+  color: var(--accent);
+}
+
+.scrubber-track {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.scrubber-slider {
+  flex: 1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* Bereich jenseits des längsten Modellhorizonts: schraffiert, nicht klickblockierend */
+.scrubber-beyond {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(250, 178, 25, 0.3) 0 4px,
+    transparent 4px 8px
+  );
+  pointer-events: none;
+}
+
+.scrubber-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  min-width: 150px;
+  text-align: right;
+}
+
+/* uPlot-Chrome ans Theme anpassen */
+.u-select {
+  background: rgba(57, 135, 229, 0.15);
+}

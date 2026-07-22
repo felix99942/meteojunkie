@@ -1,0 +1,201 @@
+# Meteo Workbench
+
+Operationelle Wetter-Workbench (6-Panel-Modellvergleich) auf Basis der
+Open-Meteo API. Vollständige Anforderungen: **SPEC.md** — vor größeren
+Änderungen lesen; offene Punkte werden dort in §13 gepflegt, nicht hier
+doppelt. Stand: Phase 1+2 umgesetzt, Phase 3 (Vertikalprofile, Ensembles,
+Layout-Presets, Modelllauf-Auswahl) offen.
+
+Leitidee (SPEC §4): **Karte ist Übersichtsebene, Meteogramm ist das
+Präzisionswerkzeug.** Das 1000-Punkte-Limit deckelt Kartenfelder auf ~19 km
+Zellgröße, obwohl die Lokalmodelle 2,5 km können — bewusst akzeptiert, die
+volle Auflösung gibt es punktgenau im Meteogramm. Höher aufgelöste Felder
+kämen nur über Backend-Proxy/Self-Hosting (SPEC §5), nicht über größere Gitter.
+
+## Befehle
+
+Node ist lokal installiert unter `~/.local/node` (nicht im Standard-PATH):
+
+```bash
+export PATH="$HOME/.local/node/bin:$PATH"
+
+npm run dev       # Vite-Dev-Server (Port 5173)
+npm run build     # tsc -b && vite build — auch der Typecheck
+npm run lint      # oxlint
+npm run preview   # gebautes dist/ servieren
+```
+
+Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
+
+## Architektur
+
+- `src/config/` — statische Registries: `models.ts` (Modell-Metadaten inkl.
+  `forecastHours`/`coverage`, filtert UI-Dropdowns; `modelHorizonEnd()` für
+  Horizont-Logik), `variables.ts` (stündliche Variablen), `domains.ts`
+  (genau zwei Domains: Europa 25×25, Österreich 16×30 — Gitterdims pro Domain,
+  Lat×Lon getrennt für ~quadratische Zellen, plus `recommendedModels`),
+  `colors.ts` (Serienfarben), `colorscales.ts` (Karten-Farbskalen mit festen
+  Wertebereichen), `time.ts` (gemeinsames Zeitraster).
+- `src/state/workbench.ts` — Zustand-Store: globaler Zeit-Cursor, Domain,
+  Location-Lock, Panel-Konfigurationen.
+- `src/api/openmeteo.ts` — Fetch-Layer: Request-Batching für Punktserien
+  (Anfragen desselben Ticks → ein HTTP-Request pro Punkt) und
+  `fetchGridField` für Kartengitter (Multi-Location in 250er-Chunks,
+  clientseitig zusammengesetzt, Payload/Verbrauch per `console.info` geloggt;
+  429-Backoff). `src/api/queue.ts` — Gitter-Requests laufen mit max. 2
+  gleichzeitig. `src/api/gridcache.ts` — persistenter IndexedDB-Cache für
+  Felder (Invalidierung über Modelllauf-Bucket aus `updateIntervalHours`).
+  `src/api/queries.ts` — TanStack-Query-Hooks darüber.
+- `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
+  `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
+  Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
+  dort befüllen (`builtin: true` = nicht löschbar), `schemaVersion` für
+  Migrationen. Zeiten werden bewusst NICHT gespeichert. Beim Laden wird
+  panel-weise validiert: Fehlendes wird nie still ersetzt, sondern als
+  `presetWarning` im Panel angezeigt; ein ungültiges Panel bricht das Laden
+  nicht ab. UI: `PresetBar` in der TopBar (Speichern mit Standort-Haken,
+  Überschreiben/Umbenennen/Löschen mit Rückfrage, „geändert“-Markierung).
+- `src/state/apiUsage.ts` — Session-Zähler für verbrauchte API-Locations
+  (getrennt nach Gitter/Meteogramm, Reset für Einzelmessungen), zentral in
+  `apiGet()` gepflegt; Cache-Treffer und Mock zählen nicht. Anzeige + Tooltip
+  in der TopBar.
+- **Mock-Modus** (`src/api/mock.ts`): Entwicklung ohne API-Verbrauch.
+  `?mock=1` (bzw. `?mock=ratelimit`, `?mock=empty` für Fehlerpfade) oder
+  `VITE_MOCK=1`; im Produktions-Build ohne `VITE_MOCK` hart aus. Eingehängt
+  in `apiGet()` im API-Layer — Antworten haben exakt die echte API-Form
+  (inkl. Key-Suffixing), der reale Parsing-Pfad läuft mit. Felder sind
+  seed-deterministisch, zeitlich stetig, pro Modell unterscheidbar und
+  respektieren `forecastHours`; mehrskaliges fBm-Rauschen liefert echte
+  Feinstruktur statt Weichzeichnung. `?mockres=N` übersteuert die
+  Gitterauflösung (N = Punkte der längeren km-Achse, Seitenverhältnis bleibt,
+  Obergrenze 256 mit Warnung) — nur im Mock, Default bleibt Realauflösung.
+  Mock umgeht den IndexedDB-Cache in beide Richtungen (nie mit echten Daten
+  verwechselbar) und zeigt ein Badge in der TopBar inkl. aktiver Auflösung.
+  Für Debug-Läufe im Headless-Browser immer `?mock=1` verwenden.
+- `src/render/fieldImage.ts` — Gitterfeld → ImageData: Mercator-Vorverzerrung
+  (Zeile → Latitude via inverser Projektion), bilineare Interpolation,
+  Farbskalen-LUT; NaN → transparent.
+- `src/components/` — `Panel`/`PanelHeader` (Grid-Zelle mit Modus/Modell/
+  Parameter/Sync), `Meteogram` (uPlot), `MapPanel` (MapLibre, per React.lazy
+  code-gesplittet), `TimeScrubber`, `TopBar`/`LocationPicker`.
+- **Basemap ist komplett lokal** — bewusst KEIN externer Tile-Dienst (kein
+  API-Key, kein Fremd-Rate-Limit; MapLibres `load`-Event hinge sonst an
+  fremden Tile-Requests, an denen das ganze Panel gegated ist).
+  Layer bottom→top: Hintergrund → Feld → Gradnetz → Bundeslandgrenzen
+  (admin1, nur Österreich-Domain) → Küsten → Staatsgrenzen → Städte/Labels
+  (DOM, immer zuoberst). **Grenzen sind Casing-Paare** (breite dunkle Linie +
+  schmaler heller Kern) — eine einzelne Linienfarbe ist gegen divergierende
+  Farbskalen nie überall lesbar. Hierarchie über Strichart, nicht Helligkeit:
+  Staatsgrenzen/Küsten durchgezogen, Bundesländer gestrichelt. Achtung:
+  `line-dasharray` skaliert mit `line-width` — Casing und Kern brauchen
+  unterschiedliche Werte für deckungsgleiche Strichelung. Daten: Natural
+  Earth (Küsten/Grenzen 1:50m, admin1 1:10m eng zugeschnitten), gebündelt in
+  `src/mapdata/*.basemap.json`; Regeneration mit
+  `node scripts/build-basemap.mjs`. Städte kuratiert in `src/config/cities.ts`
+  (`domains` + `priority`; kleine Panels dünnen Labels aus, Punkte bleiben).
+  Stadt-Labels sind DOM-Marker mit Text-Halo — MapLibre-Symbol-Layer würden
+  eine externe Glyphs-Quelle brauchen.
+
+## Konventionen
+
+- **Sync-Semantik**: Der SYNC-Button eines Panels koppelt Zeit-Cursor,
+  Kartenzoom (`sharedView`) und Modellauswahl (`sharedModels`/`sharedMapModel`).
+  Sync-aktive Panels LESEN die gemeinsamen Werte über `useEffectivePanel()` —
+  Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
+  der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
+  über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
+- **parsync** (Parameter-Sync) ist davon getrennt und hat **Radio-Semantik**:
+  `parSyncSource: number | null` im Store, KEIN Boolean pro Panel. Das
+  Quellpanel spiegelt seinen Parameter live per Push in die übrigen Configs
+  (`mirrorVariable`); beim Abschalten bleiben die Werte stehen. Andere
+  parsync-Buttons und die Parameter-Dropdowns der Folge-Panels sind währenddessen
+  sichtbar deaktiviert; Modell/Modus/SYNC bleiben frei. Ist der Parameter in
+  einem Panel nicht verfügbar, zeigt es eine Meldung — NIE automatisch die
+  Modellauswahl ändern. Verfügbarkeit gatet auch die Fetches (Meteogramm pro
+  Modell, Karte ganz), damit gespiegelte Parameter kein Budget für Modelle
+  verbrennen, die sie gar nicht liefern.
+- **Zeit:** intern immer Epoch-Millisekunden in UTC, Schrittweite 1 h. Das
+  Zeitraster (`TIME_RANGE`, `timeGridMs()` in `config/time.ts`) wird beim Laden
+  fixiert und von Scrubber, Meteogrammen und API-Requests geteilt. uPlot
+  arbeitet in Sekunden — Umrechnung nur an der uPlot-Grenze.
+- **API-Sparsamkeit ist Architektur** (SPEC §1/§6): neue Datenpfade gehen durch
+  den Batcher in `openmeteo.ts` und durch TanStack Query mit langer `staleTime`
+  (30 min) — kein direktes `fetch` in Komponenten.
+- **Serienfarben** (`config/colors.ts`): feste Slot-Reihenfolge, validiert für
+  CVD-Sicherheit und Kontrast auf `#18191b` — nicht umsortieren, nicht ad hoc
+  neue Farben erfinden. Slots werden pro Panel beim Hinzufügen vergeben und
+  bleiben beim Abwählen anderer Modelle stabil (Farbe folgt dem Modell, nicht
+  dem Rang). Max. 8 Modelle pro Panel.
+- **Neue Modelle/Variablen IMMER live gegen die API verifizieren, nie nur aus
+  der Doku übernehmen** (SPEC §6): Open-Meteo antwortet teils mit HTTP 200 und
+  leeren Arrays statt mit einem Fehler. Bereits live verifiziert:
+  `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h) und `icon_eu`
+  (120 h Horizont — nicht die ~78 h, die teils kursieren).
+- **Tarif-Entscheidung** (SPEC §5): Free Tier bleibt. API Standard wäre ein
+  Rückschritt — Ensemble-, Historical- und Single-Runs-API fehlen dort, Phase 3
+  braucht genau diese. Falls je Upgrade, dann Professional.
+- **Modellverfügbarkeit pro Domain wird abgeleitet, nicht gepflegt**:
+  wählbar, wenn `coverage` die Domain-BBox vollständig enthält
+  (`isDomainInCoverage`); globale Modelle immer. `recommendedModels` der
+  Domain ist nur Dropdown-Priorisierung, keine Verfügbarkeitsliste.
+- **Vorhersagehorizont**: `modelHorizonEnd()` (Registry-`forecastHours` ab
+  Forecast-Start) gegen die gültige Panel-Zeit (global bei Sync an, lokal bei
+  Sync aus). Jenseits davon: keine Extrapolation — Karte zeigt Meldung statt
+  Feld, Meteogramm-Serien enden (Maskierung + Endlinien im Chart, Legende „—"),
+  Scrubber schraffiert den Bereich hinter dem längsten aktiven Horizont.
+- **UI-Sprache ist Deutsch**, Code/Bezeichner Englisch. Dunkles Theme,
+  Design-Tokens als CSS-Variablen in `src/index.css`.
+- TypeScript strict; `verbatimModuleSyntax` verlangt `import type` für reine
+  Typ-Importe; `erasableSyntaxOnly` verbietet Enums.
+
+## Stolperfallen
+
+- Multi-Modell-Antworten von Open-Meteo suffixen die Hourly-Keys mit dem
+  Modellnamen (`temperature_2m_icon_seamless`), Ein-Modell-Antworten nicht —
+  das Parsing in `runBatch()` hängt daran.
+- Kartengitter laufen über **Multi-Location an der normalen Forecast-API**
+  (kommaseparierte Koordinatenlisten, Antwort = Array in Request-Reihenfolge),
+  bewusst NICHT über `bounding_box` der Single-Runs-API — jene liefert native,
+  unregelmäßige Modellgitterzellen, verlangt ein fixiertes `run=` und
+  funktioniert nicht mit Seamless-Modellen (SPEC §6).
+  Max. 250 Punkte pro GET, sonst wird die URL zu lang (~15 KB bei 961 Punkten).
+- **Genau zwei Domains ist eine bewusste Entscheidung** (SPEC §3): jede
+  weitere multipliziert die Cache-Kombinatorik und verhindert, dass der Cache
+  je warm wird. Keine Domains ergänzen, ohne dass die SPEC das hergibt.
+- **Zeitraster ist session-fixiert** (Start = heute 00:00 UTC beim Laden).
+  Bleibt der Tab über Mitternacht UTC offen, passt das Fenster nicht mehr zum
+  aktuellen Lauf — bekannte, bisher unbehandelte Einschränkung (SPEC §10).
+- **Rate-Limit**: Open-Meteo gewichtet nach Anzahl Locations (600/min,
+  5.000/h, 10.000/Tag) — ein Gitter zählt ~ Punktzahl, NICHT als 1 Call.
+  Deshalb: `MAP_GRID_SIZE` = 12 (12×12 = 144, pro Domain via `gridSize`
+  übersteuerbar), `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7), genau
+  eine Variable pro Grid-Request, `gridRequestQueue` (max. 2 parallel),
+  429-Backoff exponentiell im Fetch-Layer (deshalb `retry: false` bei
+  Grid-Queries — kein Retry obendrauf), IndexedDB-Cache gegen
+  Reload-Kosten. Die Gittergröße nicht erhöhen, ohne das Budget
+  durchzurechnen; der TopBar-Zähler zeigt den Session-Verbrauch.
+- **Farbskalen haben feste Wertebereiche** (kein Auto-Scaling!) — sonst sind
+  Panels mit unterschiedlichen Modellen nicht vergleichbar. Neue Karten-
+  Variablen brauchen einen Eintrag in `colorscales.ts`, sonst tauchen sie im
+  Karten-Dropdown nicht auf (Windrichtung ist bewusst ausgenommen). Die
+  konkreten Bereiche/Schwellen sind laut SPEC §11 noch nicht final festgelegt —
+  die Werte in `colorscales.ts` sind ein Arbeitsstand.
+- Die MapLibre-image-Source spannt Bilder linear im **Web-Mercator**-Raum auf;
+  `fieldImage.ts` verzerrt das lat/lon-Gitter deshalb beim Rendern vor. Nicht
+  „vereinfachen“, sonst verschiebt sich die Darstellung bei großen Domains.
+- Domain teilweise außerhalb der Modellabdeckung → der Multi-Location-Request
+  schlägt komplett fehl; deshalb gattet `isDomainInCoverage` den Fetch und das
+  Panel zeigt einen Hinweis. Coverage-BBoxen in der Registry sind Näherungen.
+- **CSS-Spezifität gegen MapLibre**: `maplibre-gl.css` wird mit dem lazy
+  geladenen MapPanel NACH `index.css` injiziert; MapLibre stempelt dem
+  Container `.maplibregl-map { position: relative }` auf. Eigene Regeln auf
+  dem Kartencontainer brauchen deshalb ≥ 2 Klassen Spezifität
+  (`.map-panel .map-container`), sonst kollabiert der Container auf Höhe 0 —
+  das war die Ursache der „schwarzen Karten“.
+- **Debug-Läufe im Headless-Browser**: SwiftShader-Flags setzen
+  (`--enable-unsafe-swiftshader`) und `webgl2` prüfen, sonst reproduziert man
+  ein schwarzes Canvas, das nichts mit dem Bug zu tun hat. Persistentes
+  `userDataDir` verwenden (IDB-Cache!) oder Open-Meteo per Request-
+  Interception mocken — Iterationsschleifen mit kaltem Cache reißen sonst
+  das Stunden-Rate-Limit. `[field]`-/`[grid]`-Console-Logs sagen, ob Daten
+  und gemalte Pixel da sind; ein Screenshot allein sagt nur „schwarz“.
