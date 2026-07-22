@@ -165,15 +165,20 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
 - **Zeitraster ist session-fixiert** (Start = heute 00:00 UTC beim Laden).
   Bleibt der Tab über Mitternacht UTC offen, passt das Fenster nicht mehr zum
   aktuellen Lauf — bekannte, bisher unbehandelte Einschränkung (SPEC §10).
-- **Rate-Limit**: Open-Meteo gewichtet nach Anzahl Locations (600/min,
-  5.000/h, 10.000/Tag) — ein Gitter zählt ~ Punktzahl, NICHT als 1 Call.
-  Deshalb: `MAP_GRID_SIZE` = 12 (12×12 = 144, pro Domain via `gridSize`
-  übersteuerbar), `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7), genau
-  eine Variable pro Grid-Request, `gridRequestQueue` (max. 2 parallel),
-  429-Backoff exponentiell im Fetch-Layer (deshalb `retry: false` bei
-  Grid-Queries — kein Retry obendrauf), IndexedDB-Cache gegen
-  Reload-Kosten. Die Gittergröße nicht erhöhen, ohne das Budget
-  durchzurechnen; der TopBar-Zähler zeigt den Session-Verbrauch.
+- **Rate-Limit**: Open-Meteo gewichtet nach Locations, Variablen (in
+  Bruchteilen, Größenordnung „~10 Variablen ≈ 1 Call“), Modellen und
+  Zeitraum (600/min, 5.000/h, 10.000/Tag) — ein Gitter zählt ~ Punktzahl,
+  NICHT als 1 Call. Deshalb: Gitterdims pro Domain klein halten,
+  `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7), `gridRequestQueue`
+  (max. 2 parallel), 429-Backoff im Fetch-Layer (deshalb `retry: false` bei
+  Grid-Queries), IndexedDB-Cache gegen Reload-Kosten. **Gitter-Requests
+  werden gebündelt** (`runGridBatch`): alle im selben Tick angeforderten
+  Variablen desselben (Domain, Modell)-Paars gehen als EIN
+  Multi-Variablen-Request (≤ 10 Vars) raus — NICHT zurück auf
+  Einzelvariablen-Requests refactorn, das war der große Budget-Hebel für die
+  Synoptik-Presets. Cache-Treffer je Variable verkleinern das Bündel vorab.
+  Der TopBar-Zähler zeigt den geschätzten Session-Verbrauch
+  (`estimateWeight`); Gittergröße nie erhöhen, ohne das Budget zu rechnen.
 - **Farbskalen haben feste Wertebereiche** (kein Auto-Scaling!) — sonst sind
   Panels mit unterschiedlichen Modellen nicht vergleichbar. Neue Karten-
   Variablen brauchen einen Eintrag in `colorscales.ts`, sonst tauchen sie im
