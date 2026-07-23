@@ -39,6 +39,30 @@ export function mixingRatio(e: number, p: number): number {
   return (1000 * EPS * e) / (p - e)
 }
 
+/** Mischungsverhältnis (g/kg) aus Taupunkt (°C) und Druck (hPa). */
+export function mixingRatioFromDewpoint(tdC: number, p: number): number {
+  return mixingRatio(saturationVaporPressure(tdC), p)
+}
+
+/** Virtualtemperatur (°C) aus T (°C) und Mischungsverhältnis (g/kg). */
+export function virtualTemperature(tC: number, wGkg: number): number {
+  const w = wGkg / 1000
+  return toC(toK(tC) * (1 + 0.608 * w))
+}
+
+/**
+ * Hebungskondensationsniveau (LCL) eines Pakets (pStart hPa, T/Td °C).
+ * Bolton (1980, Gl. 15) für T_LCL, dann Poisson für p_LCL.
+ */
+export function lcl(pStart: number, tC: number, tdC: number): { pressure: number; temperature: number } {
+  const tk = toK(tC)
+  const tdk = toK(tdC)
+  const tLcl = 1 / (1 / (tdk - 56) + Math.log(tk / tdk) / 800) + 56 // K
+  const theta = potentialTemperature(tC, pStart) // K (bei w konstant erhalten)
+  const pLcl = P0 * (tLcl / theta) ** (1 / KAPPA)
+  return { pressure: pLcl, temperature: toC(tLcl) }
+}
+
 /** Sättigungsmischungsverhältnis (g/kg) bei T (°C), p (hPa). */
 export function saturationMixingRatio(tC: number, p: number): number {
   return mixingRatio(saturationVaporPressure(tC), p)
