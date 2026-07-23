@@ -478,6 +478,56 @@ button:focus-visible {
   font-size: 11px;
 }
 
+.skewt-panel-foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  max-height: 46%;
+  min-height: 0;
+}
+
+.skewt-table-wrap {
+  overflow: auto;
+  min-height: 0;
+}
+
+.skewt-table {
+  border-collapse: collapse;
+  font-size: 10px;
+  width: 100%;
+}
+
+.skewt-table th,
+.skewt-table td {
+  padding: 1px 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.skewt-table thead th {
+  color: var(--ink-secondary);
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+}
+
+.skewt-table thead th .legend-chip {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.skewt-table tbody th {
+  text-align: left;
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.skewt-table td {
+  color: var(--ink);
+}
+
 .meteogram-legend {
   flex: 0 0 auto;
   display: flex;

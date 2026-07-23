@@ -7,6 +7,7 @@
 // im Pixelraum, skew = 1 px/px). Datenkurven (T/Td) nutzen denselben Transform.
 
 import { dryAdiabatTemp, moistAdiabatTemp, tempFromSaturationMixingRatio } from '../lib/thermo'
+import type { ParcelResult } from '../lib/sounding'
 
 export interface SkewTGeometry {
   /** Plotfläche in Pixeln (ohne Achsenränder). */
@@ -171,6 +172,98 @@ export function drawWindBarb(
     ctx.lineTo(ax + bx * BARB * 0.5, ay + by * BARB * 0.5)
     ctx.stroke()
   }
+  ctx.restore()
+}
+
+// Farben für die CAPE/CIN-Flächen (nach Nutzerwunsch: CAPE rot, CIN blau)
+const CAPE_FILL = 'rgba(214, 58, 43, 0.30)'
+const CIN_FILL = 'rgba(74, 147, 232, 0.30)'
+const PARCEL_LINE = 'rgba(232, 228, 220, 0.9)'
+
+/** Fläche zwischen zwei T-Kurven (aT, bT) über den Indexbereich füllen. */
+function fillBetween(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  fineP: number[],
+  aT: number[],
+  bT: number[],
+  iStart: number,
+  iEnd: number,
+  fill: string,
+): void {
+  if (iEnd <= iStart) return
+  ctx.beginPath()
+  for (let i = iStart; i <= iEnd; i++) {
+    const x = xFromTP(g, aT[i], fineP[i])
+    const y = yFromP(g, fineP[i])
+    if (i === iStart) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  for (let i = iEnd; i >= iStart; i--) {
+    ctx.lineTo(xFromTP(g, bT[i], fineP[i]), yFromP(g, fineP[i]))
+  }
+  ctx.closePath()
+  ctx.fillStyle = fill
+  ctx.fill()
+}
+
+function levelMarker(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  p: number,
+  label: string,
+): void {
+  const y = yFromP(g, p)
+  ctx.beginPath()
+  ctx.moveTo(g.left, y)
+  ctx.lineTo(g.left + 16, y)
+  ctx.stroke()
+  ctx.fillText(label, g.left + 19, y)
+}
+
+/**
+ * Gehobenes Paket ins Skew-T zeichnen: CAPE (rot) und CIN (blau) schattiert,
+ * Parzellenweg gepunktet, LCL/LFC/EL markiert. Für EIN Bezugsmodell.
+ */
+export function drawParcel(ctx: CanvasRenderingContext2D, g: SkewTGeometry, r: ParcelResult): void {
+  const lfcIdx = r.lfcP != null ? r.fineP.indexOf(r.lfcP) : -1
+  const elIdx = r.elP != null ? r.fineP.indexOf(r.elP) : -1
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(g.left, g.top, g.width, g.height)
+  ctx.clip()
+
+  // CIN unterhalb LFC (Paket kälter), CAPE zwischen LFC und EL (Paket wärmer)
+  if (lfcIdx > 0) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, 0, lfcIdx, CIN_FILL)
+  if (lfcIdx >= 0 && elIdx > lfcIdx) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, lfcIdx, elIdx, CAPE_FILL)
+
+  // Parzellenweg (gepunktet)
+  ctx.strokeStyle = PARCEL_LINE
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([2, 3])
+  ctx.beginPath()
+  for (let i = 0; i < r.fineP.length; i++) {
+    const x = xFromTP(g, r.parcelT[i], r.fineP[i])
+    const y = yFromP(g, r.fineP[i])
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.restore()
+
+  // Marker (außerhalb des Clips, am linken Rand)
+  ctx.save()
+  ctx.strokeStyle = PARCEL_LINE
+  ctx.fillStyle = '#c8c9cc'
+  ctx.lineWidth = 1
+  ctx.font = '9px system-ui, sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  if (r.lclP != null) levelMarker(ctx, g, r.lclP, 'LCL')
+  if (r.lfcP != null) levelMarker(ctx, g, r.lfcP, 'LFC')
+  if (r.elP != null) levelMarker(ctx, g, r.elP, 'EL')
   ctx.restore()
 }
 

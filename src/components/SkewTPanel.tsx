@@ -1,17 +1,20 @@
 // Vertikalprofil-/Skew-T-Panel (SPEC §13, Phase 3): Drucklevel-Sondierung am
-// Location-Lock-Punkt, mehrere Modelle überlagert. Custom-Canvas (kein uPlot) —
-// Hintergrund aus skewt.ts, darüber Temperatur- und Taupunktkurve pro Modell
-// plus Windbarben. Folgt dem globalen Zeit-Cursor.
+// Location-Lock-Punkt, mehrere Modelle überlagert. Custom-Canvas (kein uPlot):
+// Hintergrund aus skewt.ts, darüber T-/Td-Kurve pro Modell, Windbarben und —
+// fürs Bezugsmodell — der gehobene Parzellenweg mit CAPE (rot) / CIN (blau).
+// Darunter eine Vergleichstabelle der Kennzahlen (Parameter × Modell).
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useProfiles } from '../api/queries'
 import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
 import { formatCursorTime, timeToIndex } from '../config/time'
+import { columnFromProfile, computeSounding, type SoundingParams } from '../lib/sounding'
 import {
   DEFAULT_SKEWT_THEME,
+  drawParcel,
   drawSkewTBackground,
   drawWindBarb,
   makeGeometry,
@@ -22,8 +25,28 @@ import {
 import { useWorkbench, type PanelConfig } from '../state/workbench'
 
 const KMH_TO_KT = 1 / 1.852
-// Level, an denen Windbarben gezeichnet werden (sonst überlappen sie)
+const MS_TO_KT = 1.94384
 const BARB_LEVELS = new Set([1000, 925, 850, 700, 500, 400, 300, 250, 200, 150, 100])
+
+const dash = (v: string | number | null | undefined): string =>
+  v == null ? '–' : typeof v === 'number' ? String(v) : v
+
+// Tabellenzeilen: Parameter × Modell. SB-Paket ist das Bezugspaket im Diagramm.
+const TABLE_ROWS: { label: string; get: (s: SoundingParams) => string }[] = [
+  { label: 'PWAT', get: (s) => `${s.pwat.toFixed(1)} mm` },
+  { label: 'SB-CAPE', get: (s) => `${Math.round(s.sb.cape)}` },
+  { label: 'ML-CAPE', get: (s) => `${Math.round(s.ml.cape)}` },
+  { label: 'MU-CAPE', get: (s) => `${Math.round(s.mu.cape)}` },
+  { label: 'CIN (SB)', get: (s) => `${Math.round(s.sb.cin)}` },
+  { label: 'LCL', get: (s) => dash(s.sb.lclP != null ? `${Math.round(s.sb.lclP)} hPa` : null) },
+  { label: 'LFC', get: (s) => dash(s.sb.lfcP != null ? `${Math.round(s.sb.lfcP)} hPa` : null) },
+  { label: 'EL', get: (s) => dash(s.sb.elP != null ? `${Math.round(s.sb.elP)} hPa` : null) },
+  { label: 'LI', get: (s) => dash(s.li != null ? s.li.toFixed(1) : null) },
+  { label: 'K-Index', get: (s) => dash(s.kIndex != null ? `${Math.round(s.kIndex)}` : null) },
+  { label: 'Total Totals', get: (s) => dash(s.totalTotals != null ? `${Math.round(s.totalTotals)}` : null) },
+  { label: '0 °C', get: (s) => dash(s.freezingLevelP != null ? `${Math.round(s.freezingLevelP)} hPa` : null) },
+  { label: 'Shear 0–6 km', get: (s) => dash(s.shear06 != null ? `${Math.round(s.shear06 * MS_TO_KT)} kt` : null) },
+]
 
 /** T- oder Td-Kurve eines Profils zum Zeitindex zeichnen (Lücken bei null). */
 function strokeProfileLine(
@@ -33,22 +56,18 @@ function strokeProfileLine(
   values: (number | null)[][],
   timeIdx: number,
   color: string,
-  dash: number[],
+  linedash: number[],
 ): void {
   ctx.save()
   ctx.strokeStyle = color
   ctx.lineWidth = 2
-  ctx.setLineDash(dash)
+  ctx.setLineDash(linedash)
   ctx.beginPath()
   let pen = false
   for (let i = 0; i < profile.levels.length; i++) {
     const p = profile.levels[i]
-    if (p < g.pMin || p > g.pMax) {
-      pen = false
-      continue
-    }
     const v = values[i]?.[timeIdx]
-    if (v == null) {
+    if (p < g.pMin || p > g.pMax || v == null) {
       pen = false
       continue
     }
@@ -74,6 +93,32 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   const loadedKey = results.map((r) => (r.data ? '1' : '0')).join('')
+  const modelsKey = panel.models.join()
+
+  // Kennzahlen je Modell zum aktuellen Zeitpunkt (memoisiert; auf geladene Daten
+  // + Zeit keyen, results ist jede Runde ein neues Array).
+  const soundings = useMemo(
+    () =>
+      panel.models.map((_id, i) => {
+        const p = results[i]?.data
+        if (!p) return null
+        const ti = Math.min(timeToIndex(panelTime), p.times.length - 1)
+        const col = columnFromProfile(
+          p.levels,
+          p.temperature,
+          p.dewpoint,
+          p.windSpeed,
+          p.windDirection,
+          p.height,
+          ti,
+        )
+        return col ? computeSounding(col) : null
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loadedKey, panelTime, modelsKey],
+  )
+  const soundingsRef = useRef(soundings)
+  soundingsRef.current = soundings
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -98,21 +143,27 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       drawSkewTBackground(ctx, g, DEFAULT_SKEWT_THEME)
 
       const timeIdx = timeToIndex(panelTime)
-      let barbModel: { profile: Profile; color: string } | null = null
+      const sounds = soundingsRef.current
+      let barb: { profile: Profile; color: string } | null = null
+      let refParcelDrawn = false
 
       panel.models.forEach((id, i) => {
         const profile = results[i]?.data
         if (!profile) return
         const ti = Math.min(timeIdx, profile.times.length - 1)
         const color = SERIES_COLORS[panel.modelSlots[id] ?? 0]
+        // Bezugsmodell = erstes mit Sondierung: Parzelle + CAPE/CIN zuerst (unten)
+        if (!refParcelDrawn && sounds[i]) {
+          drawParcel(ctx, g, sounds[i]!.sb)
+          refParcelDrawn = true
+        }
         strokeProfileLine(ctx, g, profile, profile.temperature, ti, color, [])
         strokeProfileLine(ctx, g, profile, profile.dewpoint, ti, color, [4, 3])
-        if (!barbModel) barbModel = { profile, color }
+        if (!barb) barb = { profile, color }
       })
 
-      // Windbarben für das erste Modell mit Daten, am rechten Rand
-      if (barbModel) {
-        const { profile, color } = barbModel as { profile: Profile; color: string }
+      if (barb) {
+        const { profile, color } = barb as { profile: Profile; color: string }
         const ti = Math.min(timeIdx, profile.times.length - 1)
         const bx = g.left + g.width + 20
         for (let i = 0; i < profile.levels.length; i++) {
@@ -130,10 +181,8 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-    // results ist jede Renderrunde ein neues Array — auf geladene Daten keyen,
-    // sonst baut der ResizeObserver bei jedem Render neu auf
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, panel.models.join(), panel.modelSlots])
+  }, [loadedKey, panelTime, modelsKey, panel.modelSlots])
 
   if (!location) {
     return <div className="panel-placeholder">Kein Standort gewählt — oben Ort suchen oder Karte klicken</div>
@@ -152,27 +201,53 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       <div ref={containerRef} className="skewt-canvas">
         <canvas ref={canvasRef} />
       </div>
-      <div className="skewt-legend">
-        <span className="skewt-time">{formatCursorTime(panelTime)}</span>
-        {panel.models.map((id, i) => {
-          const supported = supportsPressureLevels(id)
-          const r = results[i]
-          return (
-            <span key={id} className="legend-item">
-              <span
-                className="legend-chip"
-                style={{ background: SERIES_COLORS[panel.modelSlots[id] ?? 0] }}
-              />
-              <span className="legend-label">{getModel(id).label}</span>
-              <span className="legend-value">
-                {!supported && 'n. v.'}
-                {supported && r?.isPending && '…'}
-                {supported && r?.isError && '✕'}
-              </span>
-            </span>
-          )
-        })}
-        <span className="skewt-hint">— T · - - Td</span>
+      <div className="skewt-panel-foot">
+        <div className="skewt-legend">
+          <span className="skewt-time">{formatCursorTime(panelTime)}</span>
+          <span className="skewt-hint">— T · - - Td · ⋯ Paket · ▉ CAPE ▉ CIN · J/kg · SB-Paket im Diagramm</span>
+        </div>
+        <div className="skewt-table-wrap">
+          <table className="skewt-table">
+            <thead>
+              <tr>
+                <th />
+                {panel.models.map((id) => (
+                  <th key={id}>
+                    <span
+                      className="legend-chip"
+                      style={{ background: SERIES_COLORS[panel.modelSlots[id] ?? 0] }}
+                    />
+                    {getModel(id).label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {TABLE_ROWS.map((row) => (
+                <tr key={row.label}>
+                  <th>{row.label}</th>
+                  {panel.models.map((id, i) => {
+                    const s = soundings[i]
+                    const r = results[i]
+                    return (
+                      <td key={id}>
+                        {!supportsPressureLevels(id)
+                          ? 'n. v.'
+                          : s
+                            ? row.get(s)
+                            : r?.isPending
+                              ? '…'
+                              : r?.isError
+                                ? '✕'
+                                : '–'}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

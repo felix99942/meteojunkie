@@ -39,6 +39,8 @@ export interface ParcelResult {
   /** Parzellen-Temperaturkurve auf dem feinen Gitter (zum Zeichnen). */
   fineP: number[]
   parcelT: number[] // °C
+  /** Umgebungstemperatur auf demselben Gitter (fürs Schattieren von CAPE/CIN). */
+  envT: number[] // °C
 }
 
 export interface SoundingParams {
@@ -52,6 +54,44 @@ export interface SoundingParams {
   freezingLevelP: number | null // hPa
   freezingLevelZ: number | null // m
   shear06: number | null // m/s (0–6 km Bulk)
+}
+
+/**
+ * Sondierungsspalte aus einem Profil zum Zeitindex bauen: nur Level mit gültiger
+ * T UND Td, Boden (höchster Druck) zuerst. Wind (km/h, Richtung) → u/v (m/s).
+ */
+export function columnFromProfile(
+  levels: number[],
+  temperature: (number | null)[][],
+  dewpoint: (number | null)[][],
+  windSpeed: (number | null)[][],
+  windDirection: (number | null)[][],
+  height: (number | null)[][],
+  timeIdx: number,
+): SoundingColumn | null {
+  const col: SoundingColumn = { p: [], T: [], Td: [], z: [], u: [], v: [] }
+  for (let i = 0; i < levels.length; i++) {
+    const t = temperature[i]?.[timeIdx]
+    const td = dewpoint[i]?.[timeIdx]
+    if (t == null || td == null) continue
+    col.p.push(levels[i])
+    col.T.push(t)
+    col.Td.push(td)
+    col.z.push(height[i]?.[timeIdx] ?? null)
+    const ws = windSpeed[i]?.[timeIdx]
+    const wd = windDirection[i]?.[timeIdx]
+    if (ws != null && wd != null) {
+      const spd = ws / 3.6 // km/h → m/s
+      const rad = (wd * Math.PI) / 180
+      col.u.push(-spd * Math.sin(rad)) // Wind weht AUS wd → Vektor zeigt dorthin entgegengesetzt
+      col.v.push(-spd * Math.cos(rad))
+    } else {
+      col.u.push(null)
+      col.v.push(null)
+    }
+  }
+  // absteigend nach Druck (Boden zuerst) — Profillevel sind bereits so sortiert
+  return col.p.length >= 3 ? col : null
 }
 
 /** Lineare Interpolation von y(x) an xq; x streng monoton fallend (p von unten). */
@@ -103,6 +143,7 @@ function liftParcel(
 
   const fineP: number[] = []
   const parcelT: number[] = []
+  const envT: number[] = []
   const buoy: number[] = [] // Rd·(Tv_p − Tv_e) je Level (J/kg pro Einheit −ln p)
 
   for (let i = start; i < fine.p.length; i++) {
@@ -120,6 +161,7 @@ function liftParcel(
     const tvE = virtualTemperature(fine.T[i], mixingRatioFromDewpoint(fine.Td[i], p))
     fineP.push(p)
     parcelT.push(tParcel)
+    envT.push(fine.T[i])
     buoy.push(RD * (tvP - tvE)) // ΔTv in °C == ΔTv in K
   }
 
@@ -156,6 +198,7 @@ function liftParcel(
     elP: elIdx >= 0 ? fineP[elIdx] : null,
     fineP,
     parcelT,
+    envT,
   }
 }
 
