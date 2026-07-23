@@ -10,6 +10,7 @@ import { useMeteogramSeries } from '../api/queries'
 import type { HourlySeries } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel, modelHorizonEnd } from '../config/models'
+import { formatRun, latestRun } from '../config/runs'
 import { getVariable } from '../config/variables'
 import { timeGridMs, timeToIndex } from '../config/time'
 import { useWorkbench, type PanelConfig } from '../state/workbench'
@@ -259,6 +260,9 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
                 style={{ background: SERIES_COLORS[panel.modelSlots[id] ?? 0] }}
               />
               <span className="legend-label">{getModel(id).label}</span>
+              <span className="legend-run" title="neuester verfügbarer Lauf">
+                {formatRun(latestRun(getModel(id), Date.now()))}
+              </span>
               <span className="legend-value">
                 {!supported && 'n. v.'}
                 {supported && r.isPending && '…'}

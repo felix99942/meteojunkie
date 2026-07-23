@@ -468,6 +468,14 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* Neuester verfügbarer Lauf pro Modell (Meteogramm-Legende) */
+.legend-run {
+  color: var(--ink-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
 /* --- Kartenpanel ----------------------------------------------------------- */
 
 .map-panel {
@@ -489,18 +497,36 @@ button:focus-visible {
   outline: none;
 }
 
-.map-time {
+/* Oben rechts gestapelt: Gültigkeitszeit + geschätzter aktiver Lauf */
+.map-topright {
   position: absolute;
   top: 4px;
   right: 4px;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.map-time {
   background: rgba(24, 25, 27, 0.85);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 1px 6px;
   color: var(--ink-secondary);
   font-variant-numeric: tabular-nums;
-  pointer-events: none;
+}
+
+.map-run {
+  background: rgba(24, 25, 27, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .map-status {

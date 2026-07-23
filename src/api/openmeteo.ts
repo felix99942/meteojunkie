@@ -140,6 +140,7 @@ async function runBatch(batch: PendingLocation): Promise<void> {
 import type { DomainPreset } from '../config/domains'
 import { MAP_FORECAST_DAYS } from '../config/time'
 import { getModel } from '../config/models'
+import { latestRun } from '../config/runs'
 import { useApiUsage, type UsageKind } from '../state/apiUsage'
 import { getCachedGrid, putCachedGrid } from './gridcache'
 import { gridRequestQueue } from './queue'
@@ -292,10 +293,12 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
   const nx = mockDims?.nx ?? domain.gridLon
 
   // Persistenter Cache zuerst, je Variable: Treffer lösen sofort auf und
-  // verkleinern das Bündel. Key trägt den Modelllauf-Bucket — neuer Lauf
-  // invalidiert, ein Reload innerhalb desselben Laufs kostet nichts.
+  // verkleinern das Bündel. Key trägt den Modelllauf-Bucket (Init-Zeit des
+  // neuesten verfügbaren Laufs) — neuer Lauf invalidiert, ein Reload innerhalb
+  // desselben Laufs kostet nichts. Dieselbe Lauf-Logik wie die Panel-Anzeige,
+  // damit gezeigter Lauf und gecachte Daten kohärent bleiben.
   // (Mock liest/schreibt den Cache nie — nicht mit echten Daten verwechselbar.)
-  const runBucket = Math.floor(Date.now() / (modelInfo.updateIntervalHours * 3_600_000))
+  const runBucket = latestRun(modelInfo, Date.now()).initTime
   const cacheKeyFor = (v: string) => `${domain.id}:${ny}x${nx}:${model}:${v}:${MAP_FORECAST_DAYS}d`
 
   const toFetch: [string, GridResolver[]][] = []
