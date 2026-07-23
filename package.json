@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "build:web": "tsc -b && VITE_ENABLE_MAP=false vite build",
+    "preview": "vite preview",
+    "preview:web": "npm run build:web && vite preview",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

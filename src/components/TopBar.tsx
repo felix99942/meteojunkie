@@ -1,6 +1,7 @@
 import { useWorkbench } from '../state/workbench'
 import { useApiUsage } from '../state/apiUsage'
 import { DOMAIN_PRESETS } from '../config/domains'
+import { MAP_ENABLED } from '../config/features'
 import { MOCK_MODE, mockGridDims } from '../api/mock'
 import { LocationPicker } from './LocationPicker'
 import { PresetBar } from './PresetBar'
@@ -60,22 +61,24 @@ export function TopBar() {
       >
         ⟲
       </button>
-      <label className="topbar-domain" title="Kartendomain — wirksam ab Phase 2 (Karten-Panels)">
-        <span className="label-muted">Domain</span>
-        <select
-          value={domain.id}
-          onChange={(e) => {
-            const d = DOMAIN_PRESETS.find((p) => p.id === e.target.value)
-            if (d) setDomain(d)
-          }}
-        >
-          {DOMAIN_PRESETS.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.label} (~{d.approxResolutionKm} km)
-            </option>
-          ))}
-        </select>
-      </label>
+      {MAP_ENABLED && (
+        <label className="topbar-domain" title="Kartendomain — nur für Karten-Panels">
+          <span className="label-muted">Domain</span>
+          <select
+            value={domain.id}
+            onChange={(e) => {
+              const d = DOMAIN_PRESETS.find((p) => p.id === e.target.value)
+              if (d) setDomain(d)
+            }}
+          >
+            {DOMAIN_PRESETS.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label} (~{d.approxResolutionKm} km)
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </header>
   )
 }

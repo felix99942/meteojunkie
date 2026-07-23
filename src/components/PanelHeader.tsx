@@ -1,4 +1,5 @@
 import { getModel, isDomainInCoverage, isInCoverage, MODELS } from '../config/models'
+import { MAP_ENABLED } from '../config/features'
 import { getColorScale } from '../config/colorscales'
 import { getVariable, HOURLY_VARIABLES, type VariableInfo } from '../config/variables'
 import { MAX_MODELS_PER_PANEL, SERIES_COLORS } from '../config/colors'
@@ -62,7 +63,9 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
         onChange={(e) => updatePanel(index, { mode: e.target.value as PanelMode })}
       >
         <option value="meteogram">Meteogramm</option>
-        <option value="map">Karte</option>
+        <option value="map" disabled={!MAP_ENABLED}>
+          Karte{MAP_ENABLED ? '' : ' (in dieser Version aus)'}
+        </option>
         <option value="profile">Vertikalprofil</option>
         <option value="ensemble" disabled>
           Ensemble (Phase 3)

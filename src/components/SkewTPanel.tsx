@@ -127,10 +127,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   const soundingsRef = useRef(soundings)
   soundingsRef.current = soundings
 
-  // Hodograf-Daten des Bezugsmodells (erstes mit Daten): u/v (kt) je Level,
-  // Höhe über Grund, Boden zuerst.
+  // Hodograf-Daten für EIN Modell: bevorzugt ECMWF (auf Wunsch), sonst das
+  // erste mit Daten. u/v (kt) je Level, Höhe über Grund, Boden zuerst.
   const hodoData = useMemo<HodoPoint[] | null>(() => {
-    const idx = panel.models.findIndex((_id, k) => results[k]?.data)
+    let idx = panel.models.findIndex((id, k) => id === 'ecmwf_ifs025' && results[k]?.data)
+    if (idx < 0) idx = panel.models.findIndex((_id, k) => results[k]?.data)
     if (idx < 0) return null
     const p = results[idx].data as Profile
     const ti = Math.min(timeToIndex(panelTime), p.times.length - 1)

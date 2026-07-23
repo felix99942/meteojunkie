@@ -4,10 +4,14 @@ import { PanelHeader } from './PanelHeader'
 import { Meteogram } from './Meteogram'
 import { SkewTPanel } from './SkewTPanel'
 
-// MapLibre (~1 MB) nur laden, wenn tatsächlich ein Panel im Kartenmodus ist
-const MapPanel = lazy(() =>
-  import('./MapPanel').then((m) => ({ default: m.MapPanel })),
-)
+// MapLibre (~1 MB) nur laden, wenn ein Panel im Kartenmodus ist. Der Env-Check
+// steht DIREKT hier (nicht über features.ts), damit Vite ihn zur Build-Zeit
+// inlint und Rollup bei deaktivierter Karte den import() als toten Zweig
+// entfernt → MapPanel + MapLibre + Basemaps fallen ganz aus dem Web-Build.
+const MapPanel =
+  import.meta.env.VITE_ENABLE_MAP === 'false'
+    ? null
+    : lazy(() => import('./MapPanel').then((m) => ({ default: m.MapPanel })))
 
 export function Panel({ index }: { index: number }) {
   // sync-aktive Panels lesen Modelle/Kartenmodell aus dem gemeinsamen Zustand
@@ -43,9 +47,16 @@ export function Panel({ index }: { index: number }) {
         {panel.mode === 'meteogram' ? (
           <Meteogram panel={panel} />
         ) : panel.mode === 'map' ? (
-          <Suspense fallback={<div className="panel-placeholder">Lade Karte…</div>}>
-            <MapPanel panel={panel} />
-          </Suspense>
+          MapPanel ? (
+            <Suspense fallback={<div className="panel-placeholder">Lade Karte…</div>}>
+              <MapPanel panel={panel} />
+            </Suspense>
+          ) : (
+            <div className="panel-placeholder">
+              Kartenansicht ist in dieser Version noch deaktiviert — Meteogramm oder
+              Vertikalprofil wählen
+            </div>
+          )
         ) : panel.mode === 'profile' ? (
           <SkewTPanel panel={panel} />
         ) : (
