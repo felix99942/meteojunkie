@@ -170,7 +170,10 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
   Zeitraum (600/min, 5.000/h, 10.000/Tag) — ein Gitter zählt ~ Punktzahl,
   NICHT als 1 Call. Deshalb: Gitterdims pro Domain klein halten,
   `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7), `gridRequestQueue`
-  (max. 2 parallel), 429-Backoff im Fetch-Layer (deshalb `retry: false` bei
+  (`RateAwareQueue`: Token-Bucket über gewichtete Locations/min, 500/min mit
+  Marge unter 600, plus Concurrency-Cap 2 — ein volles Gitter allein reißt
+  sonst das Minutenlimit, weil Location-Gewicht ≈ Punktzahl), 429-Backoff im
+  Fetch-Layer (deshalb `retry: false` bei
   Grid-Queries), IndexedDB-Cache gegen Reload-Kosten. **Gitter-Requests
   werden gebündelt** (`runGridBatch`): alle im selben Tick angeforderten
   Variablen desselben (Domain, Modell)-Paars gehen als EIN
