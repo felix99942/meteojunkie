@@ -86,13 +86,16 @@ async function fetchTextWithBackoff(url: string): Promise<string> {
     try {
       res = await fetch(url)
     } catch (err) {
-      // Netzwerkabbruch ist ebenfalls transient
-      const delay = backoff('Netzwerkfehler')
+      // Netzwerkabbruch ist ebenfalls transient. undici wirft nacktes
+      // „fetch failed" — die eigentliche Ursache steckt in err.cause.code
+      // (ECONNREFUSED = Upstream unerreichbar, ECONNRESET/UND_ERR_* = Reset).
+      const cause = (err as { cause?: { code?: string } })?.cause?.code
+      const delay = backoff(`Netzwerkfehler${cause ? ` (${cause})` : ''}`)
       if (delay !== null) {
         await sleep(delay)
         continue
       }
-      throw err instanceof Error ? err : new Error(String(err))
+      throw new Error(`Open-Meteo nicht erreichbar${cause ? ` (${cause})` : ''}`)
     }
 
     const text = await res.text()
