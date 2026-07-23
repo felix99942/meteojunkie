@@ -284,6 +284,24 @@ function flushGridBatches(): void {
   for (const batch of batches) void runGridBatch(batch)
 }
 
+// Proxy-Antwortform (/api/grid) — Werte als (number|null)[], null = fehlend.
+interface ProxyGridField {
+  lats: number[]
+  lons: number[]
+  times: number[]
+  values: (number | null)[]
+  unit: string
+}
+interface ProxyResponse {
+  fields: Record<string, ProxyGridField>
+  /** Realer Open-Meteo-Verbrauch dieses Requests (0 = serverseitiger Cache-Treffer). */
+  cost: number
+  run: { initTime: number; initHourUtc: number }
+}
+
+/** Client kann per Env auf einen Standalone-Proxy zeigen; Default = same-origin Vite-Middleware. */
+const GRID_PROXY_URL = import.meta.env.VITE_GRID_PROXY_URL ?? '/api/grid'
+
 async function runGridBatch(batch: PendingGridBatch): Promise<void> {
   const { domain, model } = batch
   const modelInfo = getModel(model)
@@ -292,11 +310,11 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
   const ny = mockDims?.ny ?? domain.gridLat
   const nx = mockDims?.nx ?? domain.gridLon
 
-  // Persistenter Cache zuerst, je Variable: Treffer lösen sofort auf und
-  // verkleinern das Bündel. Key trägt den Modelllauf-Bucket (Init-Zeit des
-  // neuesten verfügbaren Laufs) — neuer Lauf invalidiert, ein Reload innerhalb
-  // desselben Laufs kostet nichts. Dieselbe Lauf-Logik wie die Panel-Anzeige,
-  // damit gezeigter Lauf und gecachte Daten kohärent bleiben.
+  // Persistenter Client-Cache zuerst, je Variable: Treffer lösen sofort auf.
+  // Key trägt den Modelllauf-Bucket (Init-Zeit des neuesten verfügbaren Laufs)
+  // — neuer Lauf invalidiert, ein Reload innerhalb desselben Laufs kostet nichts.
+  // Dieselbe Lauf-Logik wie Panel-Anzeige und Proxy-Cache, damit gezeigter Lauf
+  // und gecachte Daten kohärent bleiben.
   // (Mock liest/schreibt den Cache nie — nicht mit echten Daten verwechselbar.)
   const runBucket = latestRun(modelInfo, Date.now()).initTime
   const cacheKeyFor = (v: string) => `${domain.id}:${ny}x${nx}:${model}:${v}:${MAP_FORECAST_DAYS}d`
@@ -313,6 +331,73 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
   }
   if (toFetch.length === 0) return
 
+  // Mock läuft weiter clientseitig (deterministische Felder, kein Netz) über den
+  // OM-geformten Pfad. Der Realbetrieb geht über den serverseitigen Proxy.
+  if (MOCK_MODE !== 'off') {
+    await runGridBatchMock(domain, model, ny, nx, toFetch)
+    return
+  }
+
+  // Realpfad: das Gitter kommt vom Proxy (/api/grid), der die Open-Meteo-
+  // Interaktion zentralisiert, pacet und pro Modelllauf für ALLE Clients cached
+  // (SPEC §5). Der Client hält seinen IDB-Cache als zusätzliche Ebene.
+  try {
+    const variables = toFetch.map(([v]) => v)
+    const params = new URLSearchParams({ domain: domain.id, model, variables: variables.join(',') })
+    const res = await fetch(`${GRID_PROXY_URL}?${params}`)
+    if (!res.ok) {
+      let reason = `HTTP ${res.status}`
+      try {
+        const body = (await res.json()) as { error?: string }
+        if (body.error) reason = body.error
+      } catch {
+        // Status reicht
+      }
+      throw new Error(reason)
+    }
+    const data = (await res.json()) as ProxyResponse
+    // Der Proxy meldet den REALEN Open-Meteo-Verbrauch (0 bei serverseitigem
+    // Cache-Treffer) — der TopBar-Zähler bleibt so aussagekräftig.
+    if (data.cost > 0) useApiUsage.getState().addUsage(data.cost, 'grid')
+    console.info(
+      `[grid] ${model} ${domain.id}: ${variables.join('+')} via Proxy, ` +
+        (data.cost > 0 ? `~${data.cost} gewichtete Locations` : 'Proxy-Cache — 0 API-Locations'),
+    )
+    for (const [variable, resolvers] of toFetch) {
+      const sf = data.fields[variable]
+      if (!sf) {
+        const e = new Error(`Keine Daten für ${variable} (${model})`)
+        for (const r of resolvers) r.reject(e)
+        continue
+      }
+      const values = new Float32Array(sf.values.length)
+      for (let i = 0; i < sf.values.length; i++) values[i] = sf.values[i] ?? NaN
+      const field: GridField = {
+        lats: sf.lats,
+        lons: sf.lons,
+        times: sf.times,
+        values,
+        unit: sf.unit,
+      }
+      void putCachedGrid(cacheKeyFor(variable), runBucket, field)
+      for (const r of resolvers) r.resolve(field)
+    }
+  } catch (err) {
+    const e = err instanceof Error ? err : new Error(String(err))
+    for (const [, resolvers] of toFetch) for (const r of resolvers) r.reject(e)
+  }
+}
+
+// Mock-Pfad: das bisherige clientseitige Multi-Location-Fetching gegen die
+// OM-geformte Mock-Antwort (kein Netz, kein Budget). Bewusst getrennt vom
+// Proxy-Realpfad, weil der Mock browserlokal deterministische Felder erzeugt.
+async function runGridBatchMock(
+  domain: DomainPreset,
+  model: string,
+  ny: number,
+  nx: number,
+  toFetch: [string, GridResolver[]][],
+): Promise<void> {
   const lats = linspace(domain.bbox.latMin, domain.bbox.latMax, ny)
   const lons = linspace(domain.bbox.lonMin, domain.bbox.lonMax, nx)
   const points: { lat: number; lon: number }[] = []
@@ -322,8 +407,7 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
     chunks.push(points.slice(i, i + MAX_POINTS_PER_REQUEST))
   }
 
-  // Variablen in 10er-Gruppen (Gewichtsheuristik), Punkte in 250er-Chunks;
-  // alles durch die Queue (max. 2 gleichzeitig)
+  // Variablen in 10er-Gruppen (Gewichtsheuristik), Punkte in 250er-Chunks
   for (let g = 0; g < toFetch.length; g += MAX_VARS_PER_REQUEST) {
     const group = toFetch.slice(g, g + MAX_VARS_PER_REQUEST)
     const groupVars = group.map(([v]) => v)
@@ -358,14 +442,11 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
         )
       }
 
-      // Payload und (geschätzten) Verbrauch im Blick behalten
+      // Payload im Blick behalten (Mock kostet kein Budget)
       const totalKb = Math.round(responses.reduce((s, r) => s + r.bytes, 0) / 1024)
       console.info(
         `[grid] ${model} ${domain.id} ${ny}×${nx}: ${groupVars.join('+')} gebündelt in ` +
-          `${chunks.length} Request(s), ${totalKb} KB, ` +
-          (MOCK_MODE === 'off'
-            ? `~${estimateWeight(points.length, groupVars.length)} gewichtete Locations`
-            : 'MOCK — 0 API-Locations'),
+          `${chunks.length} Request(s), ${totalKb} KB, MOCK — 0 API-Locations`,
       )
 
       const times = (locations[0].hourly.time as number[]).map((t) => t * 1000)
@@ -396,7 +477,8 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
           values,
           unit: locations[0].hourly_units?.[variable] ?? '',
         }
-        if (MOCK_MODE === 'off') void putCachedGrid(cacheKeyFor(variable), runBucket, field)
+        // Mock schreibt bewusst NICHT in den IDB-Cache (nicht mit echten Daten
+        // verwechselbar).
         for (const r of resolvers) r.resolve(field)
       }
     } catch (err) {

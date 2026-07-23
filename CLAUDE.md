@@ -39,13 +39,31 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
 - `src/state/workbench.ts` — Zustand-Store: globaler Zeit-Cursor, Domain,
   Location-Lock, Panel-Konfigurationen.
 - `src/api/openmeteo.ts` — Fetch-Layer: Request-Batching für Punktserien
-  (Anfragen desselben Ticks → ein HTTP-Request pro Punkt) und
-  `fetchGridField` für Kartengitter (Multi-Location in 250er-Chunks,
-  clientseitig zusammengesetzt, Payload/Verbrauch per `console.info` geloggt;
-  429-Backoff). `src/api/queue.ts` — Gitter-Requests laufen mit max. 2
-  gleichzeitig. `src/api/gridcache.ts` — persistenter IndexedDB-Cache für
-  Felder (Invalidierung über Modelllauf-Bucket aus `updateIntervalHours`).
+  (Meteogramme, Anfragen desselben Ticks → ein HTTP-Request pro Punkt, weiter
+  DIREKT an Open-Meteo — billige Punktabfragen). **Kartengitter laufen dagegen
+  über den serverseitigen Grid-Proxy** (`/api/grid`, siehe `server/` unten):
+  `runGridBatch` bündelt die Variablen eines Ticks und holt sie vom Proxy statt
+  direkt von Open-Meteo; der Proxy meldet den realen OM-Verbrauch zurück (0 bei
+  serverseitigem Cache-Treffer), der Client zählt ihn in `apiUsage`. Nur der
+  **Mock-Pfad** (`runGridBatchMock`) fetcht Gitter noch clientseitig
+  OM-geformt (deterministische Felder, kein Netz). `src/api/queue.ts`
+  (`RateAwareQueue`, Token-Bucket) pacet jetzt SERVERSEITIG im Proxy — der
+  Client nutzt sie fürs Gitter nicht mehr. `src/api/gridcache.ts` —
+  persistenter IndexedDB-Cache für Felder als zusätzliche Client-Ebene
+  (Invalidierung über Modelllauf-Bucket aus `latestRun`, siehe `config/runs.ts`).
   `src/api/queries.ts` — TanStack-Query-Hooks darüber.
+- `server/` — **Grid-Proxy (SPEC §5)**: zentralisiert die Open-Meteo-Gitter-
+  Beschaffung, holt jeden Modelllauf EINMAL und cached ihn für ALLE Clients —
+  entkoppelt Nutzungsfrequenz vom API-Verbrauch. `gridSource.ts` (Multi-Location
+  + 250er-Chunks + 10er-Variablenbündel + `RateAwareQueue`-Pacing + 429-Backoff,
+  wandert aus dem Browser hierher), `fieldCache.ts` (Memory + Disk-Cache pro Lauf,
+  Dedup gleichzeitiger Fetches), `gridHandler.ts` (HTTP, framework-neutral),
+  `upstream.ts` (**swap-bereit**: Env `OPENMETEO_BASE_URL`/`OPENMETEO_API_KEY`
+  schalten auf self-hosted OM bzw. Professional — erst damit werden native
+  Vollflächenfelder budgettauglich), `plugin.ts` (Vite-Dev-Middleware, lädt den
+  Handler per `ssrLoadModule`). v1-Upstream = Free-API, holt dasselbe
+  Domain-Gitter wie bisher (kein Nativ — dafür Upstream wechseln).
+  Typecheck: `tsconfig.server.json` (Node-Types, Bundler-Resolution).
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
@@ -154,11 +172,18 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
   Modellnamen (`temperature_2m_icon_seamless`), Ein-Modell-Antworten nicht —
   das Parsing in `runBatch()` hängt daran.
 - Kartengitter laufen über **Multi-Location an der normalen Forecast-API**
-  (kommaseparierte Koordinatenlisten, Antwort = Array in Request-Reihenfolge),
-  bewusst NICHT über `bounding_box` der Single-Runs-API — jene liefert native,
-  unregelmäßige Modellgitterzellen, verlangt ein fixiertes `run=` und
-  funktioniert nicht mit Seamless-Modellen (SPEC §6).
+  (kommaseparierte Koordinatenlisten, Antwort = Array in Request-Reihenfolge) —
+  serverseitig im Grid-Proxy (`server/gridSource.ts`).
   Max. 250 Punkte pro GET, sonst wird die URL zu lang (~15 KB bei 961 Punkten).
+- **`bounding_box` (natives Gitter) — live geprüft, bewusst NICHT genutzt:**
+  liefert echtes natives Modellgitter (AROME/ICON-D2 ~2 km, ICON-EU 7 km),
+  braucht KEIN `run=` (die SPEC-Annahme war veraltet), aber wird PRO NATIVER
+  ZELLE gewichtet: ein Vollflächenfeld kostet 3–47× das Tagesbudget in EINEM
+  Request (AROME-Österreich ~66.000 Zellen), und nicht jedes Modell kann es
+  (`gfs_global` → „Bounding box calls not supported"). Deshalb client-seitig
+  auf dem Free Tier tot — nativ wird erst mit Professional-/self-hosted-Upstream
+  im Proxy budgettauglich (siehe `server/upstream.ts`). Nur kleine Zoom-
+  Ausschnitte wären affordabel.
 - **Genau zwei Domains ist eine bewusste Entscheidung** (SPEC §3): jede
   weitere multipliziert die Cache-Kombinatorik und verhindert, dass der Cache
   je warm wird. Keine Domains ergänzen, ohne dass die SPEC das hergibt.
@@ -169,13 +194,14 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
   Bruchteilen, Größenordnung „~10 Variablen ≈ 1 Call“), Modellen und
   Zeitraum (600/min, 5.000/h, 10.000/Tag) — ein Gitter zählt ~ Punktzahl,
   NICHT als 1 Call. Deshalb: Gitterdims pro Domain klein halten,
-  `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7), `gridRequestQueue`
-  (`RateAwareQueue`: Token-Bucket über gewichtete Locations/min, 500/min mit
-  Marge unter 600, plus Concurrency-Cap 2 — ein volles Gitter allein reißt
-  sonst das Minutenlimit, weil Location-Gewicht ≈ Punktzahl), 429-Backoff im
-  Fetch-Layer (deshalb `retry: false` bei
-  Grid-Queries), IndexedDB-Cache gegen Reload-Kosten. **Gitter-Requests
-  werden gebündelt** (`runGridBatch`): alle im selben Tick angeforderten
+  `MAP_FORECAST_DAYS` = 3 (Meteogramme bleiben bei 7); Pacing + Chunking +
+  Bündelung passieren jetzt SERVERSEITIG im Grid-Proxy (`server/gridSource.ts`,
+  `RateAwareQueue`: Token-Bucket 500/min mit Marge unter 600, Concurrency-Cap 2
+  — ein volles Gitter allein reißt sonst das Minutenlimit, weil
+  Location-Gewicht ≈ Punktzahl), 429-Backoff serverseitig, Grid-Query
+  `retry: false` (Backoff macht der Proxy), plus serverseitiger Feld-Cache
+  (`fieldCache.ts`) UND Client-IDB-Cache gegen Reload-Kosten. **Gitter-Requests
+  werden gebündelt** (`runGridBatch` → Proxy): alle im selben Tick angeforderten
   Variablen desselben (Domain, Modell)-Paars gehen als EIN
   Multi-Variablen-Request (≤ 10 Vars) raus — NICHT zurück auf
   Einzelvariablen-Requests refactorn, das war der große Budget-Hebel für die

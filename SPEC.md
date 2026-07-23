@@ -27,8 +27,11 @@ Ziel ist ein Arbeitswerkzeug für Modellvergleich, nicht eine Consumer-Wetter-Ap
 - **uPlot** für Zeitreihen
 - **TanStack Query** für Fetching und Caching, **Zustand** für globalen State
 - **IndexedDB** als persistenter Cache über Sessions hinweg
-- Kein Backend. Reine Static-Site, direkt gegen die Open-Meteo API.
-  Backend-Proxy ist geplant, siehe §5.
+- Meteogramme (Punktserien) laufen direkt gegen die Open-Meteo API.
+  Kartengitter laufen über einen **serverseitigen Grid-Proxy** (`server/`, v1
+  umgesetzt) — holt jeden Modelllauf einmal, cached ihn für alle Clients.
+  Upstream swap-bereit (Free-API → Professional/self-hosted). Siehe §5.
+  In Dev als Vite-Middleware (gleiche Origin), Standalone-Deployment offen.
 
 **Node 22 LTS liegt unter `~/.local/node`** (lokal installiert, kein sudo).
 Vor der Arbeit: `export PATH="$HOME/.local/node/bin:$PATH"`.
@@ -102,10 +105,22 @@ verfügbar. Genau diese braucht Phase 3.
 
 Falls später doch nötig: **Professional**, nicht Standard.
 
-### Nächster Schritt
-Backend-Proxy mit serverseitigem Cache. Holt Gitter einmal pro Modelllauf und
-bedient daraus alle Clients. Entkoppelt Nutzungsfrequenz vom API-Verbrauch und
-erlaubt höhere Auflösung. Noch nicht umgesetzt.
+### Backend-Proxy (v1 umgesetzt)
+Grid-Proxy mit serverseitigem Cache (`server/`). Holt Gitter einmal pro
+Modelllauf und bedient daraus alle Clients — entkoppelt Nutzungsfrequenz vom
+API-Verbrauch, Pacing/Chunking/Bündelung/429-Backoff zentral, Memory- +
+Disk-Cache pro Lauf, Dedup gleichzeitiger Fetches.
+
+Upstream ist **swap-bereit** (Env `OPENMETEO_BASE_URL`/`OPENMETEO_API_KEY`):
+- v1 = Free-API → gleiche Domain-Auflösung wie bisher, aber geteilt/gecacht.
+- Professional oder self-hosted OM → erst damit werden **native** Vollflächen-
+  felder budgettauglich (Free Tier: ein natives AROME-AT-Feld ≈ 66.000
+  gewichtete Locations = 6,7× das Tagesbudget, live gemessen).
+
+Offen: Standalone-Deployment (derzeit Vite-Dev-Middleware), und der eigentliche
+Nativ-Sprung via `bounding_box` sobald ein zahlender/eigener Upstream steht.
+`bounding_box` ist live verifiziert (echtes natives Gitter, kein `run=` nötig),
+aber pro nativer Zelle gewichtet — daher nur mit höherem Budget sinnvoll.
 
 ---
 
