@@ -4,7 +4,7 @@
 // fürs Bezugsmodell — der gehobene Parzellenweg mit CAPE (rot) / CIN (blau).
 // Darunter eine Vergleichstabelle der Kennzahlen (Parameter × Modell).
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProfiles } from '../api/queries'
 import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
@@ -90,6 +90,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [showParams, setShowParams] = useState(false)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   const loadedKey = results.map((r) => (r.data ? '1' : '0')).join('')
@@ -201,12 +202,21 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       <div ref={containerRef} className="skewt-canvas">
         <canvas ref={canvasRef} />
       </div>
-      <div className="skewt-panel-foot">
-        <div className="skewt-legend">
-          <span className="skewt-time">{formatCursorTime(panelTime)}</span>
-          <span className="skewt-hint">— T · - - Td · ⋯ Paket · ▉ CAPE ▉ CIN · J/kg · SB-Paket im Diagramm</span>
-        </div>
-        <div className="skewt-table-wrap">
+      <span className="skewt-time">{formatCursorTime(panelTime)}</span>
+      <button
+        type="button"
+        className="skewt-params-toggle"
+        onClick={() => setShowParams((v) => !v)}
+        title="Kennzahlentabelle ein-/ausblenden — das Diagramm bleibt in voller Größe"
+      >
+        Kennzahlen {showParams ? '✕' : '▾'}
+      </button>
+      {showParams && (
+        <div className="skewt-params">
+          <span className="skewt-hint">
+            — T · - - Td · ⋯ Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
+            <span style={{ color: '#4a93e8' }}>▉ CIN</span> · CAPE/CIN in J/kg · SB-Paket im Diagramm
+          </span>
           <table className="skewt-table">
             <thead>
               <tr>
@@ -248,7 +258,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             </tbody>
           </table>
         </div>
-      </div>
+      )}
     </div>
   )
 }
