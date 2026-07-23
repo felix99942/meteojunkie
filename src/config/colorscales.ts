@@ -36,30 +36,72 @@ function bands(start: number, step: number, colors: string[]): ColorStop[] {
   return colors.map((color, i) => ({ value: start + i * step, color }))
 }
 
-// Mehrfarbige Temperaturrampe (kalt → warm), 4-°C-Bänder: Violett → Blau →
-// Cyan → Grün → Gelb → Orange → Rot → Magenta. Maximiert die Unterscheidbarkeit
-// benachbarter Stufen — anders als eine einfarbige Orange-Rampe.
-const TEMP_RAMP = [
+// Ankerfarben auf `count` Farben interpolieren (RGB) — so lassen sich viele
+// feine Bänder aus wenigen Stützfarben erzeugen, ohne jede Stufe von Hand zu
+// setzen. Anker sind '#rrggbb'.
+function hexToRgb(h: string): [number, number, number] {
+  return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+}
+function toHex(n: number): string {
+  return Math.round(n).toString(16).padStart(2, '0')
+}
+function lerpRamp(anchors: string[], count: number): string[] {
+  const rgb = anchors.map(hexToRgb)
+  const seg = anchors.length - 1
+  return Array.from({ length: count }, (_, i) => {
+    const t = count === 1 ? 0 : (i / (count - 1)) * seg
+    const lo = Math.min(seg - 1, Math.floor(t))
+    const f = t - lo
+    const [ar, ag, ab] = rgb[lo]
+    const [br, bg, bb] = rgb[lo + 1]
+    return `#${toHex(ar + (br - ar) * f)}${toHex(ag + (bg - ag) * f)}${toHex(ab + (bb - ab) * f)}`
+  })
+}
+
+/** Aufsteigende Schwellenliste [from … to] mit fester Schrittweite (inklusive). */
+function seq(from: number, to: number, step: number): number[] {
+  const out: number[] = []
+  for (let v = from; v <= to + 1e-9; v += step) out.push(Math.round(v * 100) / 100)
+  return out
+}
+
+// Mehrfarbige Temperatur-Stützfarben (kalt → warm) in 8-°C-Abständen von -30
+// bis 42: Violett → Blau → Cyan → Grün → Gelb → Orange → Rot → Magenta.
+// lerpRamp verdichtet sie auf 2-°C-Bänder — maximiert die Unterscheidbarkeit
+// benachbarter Stufen (anders als eine einfarbige Orange-Rampe).
+const TEMP_ANCHORS = [
   '#6a3d9a', // -30
-  '#7b4fb8',
-  '#5a5fd0',
-  '#3f6fdc', // -18
-  '#3288e0',
-  '#2fa0e2',
+  '#5a5fd0', // -22
+  '#3288e0', // -14
   '#37b7dc', // -6
-  '#4fccc9',
   '#5fcf9f', //  2
-  '#63c56a',
   '#8ed45a', // 10
-  '#c2dd52',
   '#f0d848', // 18
-  '#f6b23c',
   '#f28a30', // 26
-  '#e9612a',
   '#d93b2b', // 34
-  '#bd2947',
   '#8f1f5e', // 42
 ]
+
+// Niederschlags-Stützfarben, hell → dunkel: fahles Blau → Blau → Indigo →
+// Violett → Magenta → Rot (Extremwerte). lerpRamp verteilt sie auf die
+// gestaffelten Schwellen (dicht bei leichtem Regen, grob bei Starkregen).
+const PRECIP_ANCHORS = [
+  '#cfe3f7',
+  '#8fbdec',
+  '#4a93e8',
+  '#256abf',
+  '#1c5cab',
+  '#3f3f9e',
+  '#6a3d9a',
+  '#9c3990',
+  '#c23a6a',
+  '#d63a2b',
+]
+
+// Niederschlagsschwellen (mm/h): 0.1/0.2/0.5, dann 1er bis 10, 5er bis 50,
+// 10er bis 100 — so bildet die Legende die Modellauflösung ab.
+const PRECIP_STEPS = [0.1, 0.2, 0.5, ...seq(1, 10, 1), ...seq(15, 50, 5), ...seq(60, 100, 10)]
+const PRECIP_COLORS = lerpRamp(PRECIP_ANCHORS, PRECIP_STEPS.length)
 
 // Grün → Gelb → Orange → Rot → Magenta (kein Blau — grenzt Wind optisch von
 // der Temperatur ab, die im Kalten violett/blau beginnt).
@@ -69,31 +111,17 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
   temperature_2m: {
     kind: 'stepped',
     belowMin: 'clamp',
-    stops: bands(-30, 4, TEMP_RAMP), // -30 … 42 °C
+    stops: bands(-30, 2, lerpRamp(TEMP_ANCHORS, 37)), // -30 … 42 °C, 2-°C-Bänder
   },
   dew_point_2m: {
     kind: 'stepped',
     belowMin: 'clamp',
-    stops: bands(-30, 4, TEMP_RAMP.slice(0, 15)), // -30 … 26 °C
+    stops: bands(-30, 2, lerpRamp(TEMP_ANCHORS.slice(0, 8), 29)), // -30 … 26 °C, 2-°C-Bänder
   },
-  // sequenziell blau mit Schwellenwerten (mm/h); < 0,1 transparent
+  // sequenziell blau→rot, gestaffelte Schwellen (mm/h); < 0,1 transparent
   precipitation: {
     kind: 'stepped',
-    stops: [
-      { value: 0.1, color: '#173f7a' },
-      { value: 0.3, color: '#184f95' },
-      { value: 0.5, color: '#1c5cab' },
-      { value: 1, color: '#256abf' },
-      { value: 2, color: '#3987e5' },
-      { value: 3, color: '#4a93e8' },
-      { value: 5, color: '#5598e7' },
-      { value: 7, color: '#6fa8ec' },
-      { value: 10, color: '#86b6ef' },
-      { value: 15, color: '#a2c7f3' },
-      { value: 20, color: '#b7d3f6' },
-      { value: 30, color: '#d0e2fa' },
-      { value: 50, color: '#e8f1fd' },
-    ],
+    stops: PRECIP_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })),
   },
   snowfall: {
     kind: 'stepped',

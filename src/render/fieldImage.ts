@@ -14,7 +14,12 @@ import type { GridField } from '../api/openmeteo'
 import type { ColorScale } from '../config/colorscales'
 
 const IMAGE_WIDTH = 512
-const LUT_SIZE = 256
+// Wert → Farbe über eine LUT. Groß genug, dass auch dicht gestaffelte Skalen am
+// unteren Ende (Niederschlag: 0.1/0.2/0.5 …) nicht in dieselbe Zelle fallen —
+// die LUT bildet den Wertebereich LINEAR ab, feine Schwellen brauchen sonst
+// mehr Zellen, als 256 über z.B. 0…100 mm bieten (0.6 mm bekäme sonst die
+// 0.2-Farbe). 4096 Zellen ≈ 0,025 mm-Raster bei 100 mm Spanne.
+const LUT_SIZE = 4096
 
 function mercatorY(latDeg: number): number {
   return Math.log(Math.tan(Math.PI / 4 + (latDeg * Math.PI) / 360))
@@ -44,14 +49,19 @@ function buildLut(scale: ColorScale): Uint8ClampedArray {
   const min = stops[0].value
   const max = stops[stops.length - 1].value
   const rgba = stops.map((s) => parseHex(s.color))
+  // Halbe LUT-Zellbreite: ein Wert exakt auf einer Bandgrenze (z.B. 16,0 °C,
+  // 1,0 mm) mappt sonst durch die Quantisierung eine Zelle zu tief und bekäme
+  // die Farbe des Bandes darunter. Mit diesem Epsilon runden Grenzwerte in das
+  // richtige (obere) Band.
+  const eps = (max - min) / (LUT_SIZE - 1) / 2
 
   for (let i = 0; i < LUT_SIZE; i++) {
     const v = min + ((max - min) * i) / (LUT_SIZE - 1)
     let color: [number, number, number, number]
     if (scale.kind === 'stepped') {
-      // letzter Stop mit value <= v; unterhalb des ersten → transparent
+      // letzter Stop mit value <= v (+eps gegen Grenz-Rundung); darunter transparent
       let idx = -1
-      for (let s = 0; s < stops.length && stops[s].value <= v; s++) idx = s
+      for (let s = 0; s < stops.length && stops[s].value <= v + eps; s++) idx = s
       color = idx < 0 ? [0, 0, 0, 0] : rgba[idx]
     } else {
       let s = 0
