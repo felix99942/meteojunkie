@@ -33,7 +33,10 @@ export function useMeteogramSeries(
       enabled: location !== null && getModel(model).availableVariables.includes(variable),
       staleTime: SERIES_STALE_TIME_MS,
       gcTime: SERIES_GC_TIME_MS,
-      retry: 1,
+      // Punktserien gehen direkt an Open-Meteo; unter Last kommt „service is
+      // overloaded". Ein paar gestaffelte Retries fangen die transiente Überlast ab.
+      retry: 3,
+      retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
     })),
   })
 }

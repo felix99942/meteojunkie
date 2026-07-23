@@ -33,8 +33,8 @@ const MAX_VARS_PER_REQUEST = 10
 // mit Marge für Meteogramm-Serien, die weiterhin direkt vom Client kommen.
 const queue = new RateAwareQueue({ locationsPerMinute: 500, maxConcurrent: 2 })
 
-const RATE_LIMIT_RETRIES = 3
-const RATE_LIMIT_BASE_DELAY_MS = 2000
+const MAX_RETRIES = 4
+const RETRY_BASE_DELAY_MS = 1500
 
 function linspace(a: number, b: number, n: number): number[] {
   return Array.from({ length: n }, (_, i) => a + ((b - a) * i) / (n - 1))
@@ -45,29 +45,76 @@ export function estimateWeight(locations: number, variables: number): number {
   return Math.max(locations, Math.round((locations * variables) / MAX_VARS_PER_REQUEST))
 }
 
-function isRateLimited(status: number, reason: string): boolean {
-  return status === 429 || /limit/i.test(reason)
+// Transiente Upstream-Fehler, bei denen ein Retry mit Backoff sinnvoll ist:
+// Rate-Limit (429/„limit"), Überlast („service is overloaded"/„busy"/„try
+// again") und 5xx-Serverfehler. Open-Meteo antwortet unter Last mit
+// wechselnden Codes UND Texten — beide Achsen prüfen, nicht nur 429/„limit".
+function isTransient(status: number, reason: string): boolean {
+  return (
+    status === 429 ||
+    (status >= 500 && status <= 599) ||
+    /limit|overload|too many|temporar|try again|busy|unavailable/i.test(reason)
+  )
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Fehlerkörper `{error:true,reason}` erkennen (auch bei HTTP 200, SPEC §6). */
+function errorReason(text: string): string | null {
+  try {
+    const body = JSON.parse(text) as { error?: boolean; reason?: string }
+    if (body && body.error === true && typeof body.reason === 'string') return body.reason
+  } catch {
+    // kein JSON-Fehlerkörper
+  }
+  return null
+}
+
 async function fetchTextWithBackoff(url: string): Promise<string> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url)
-    if (res.ok) return res.text()
-    const text = await res.text()
-    let reason = `HTTP ${res.status}`
-    try {
-      const body = JSON.parse(text) as { reason?: string }
-      if (body.reason) reason = body.reason
-    } catch {
-      // Body nicht lesbar — Status reicht
+    // Verzögerung fürs nächste Retry oder null, wenn erschöpft.
+    const backoff = (why: string): number | null => {
+      if (attempt >= MAX_RETRIES) return null
+      const delay = RETRY_BASE_DELAY_MS * 2 ** attempt + Math.random() * 500
+      console.warn(`[proxy] ${why} — Retry ${attempt + 1}/${MAX_RETRIES} in ${Math.round(delay)} ms`)
+      return delay
     }
-    if (isRateLimited(res.status, reason) && attempt < RATE_LIMIT_RETRIES) {
-      const delay = RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt + Math.random() * 500
-      console.warn(`[proxy] Rate-Limit — Retry ${attempt + 1}/${RATE_LIMIT_RETRIES} in ${Math.round(delay)} ms`)
+
+    let res: Response
+    try {
+      res = await fetch(url)
+    } catch (err) {
+      // Netzwerkabbruch ist ebenfalls transient
+      const delay = backoff('Netzwerkfehler')
+      if (delay !== null) {
+        await sleep(delay)
+        continue
+      }
+      throw err instanceof Error ? err : new Error(String(err))
+    }
+
+    const text = await res.text()
+
+    if (res.ok) {
+      // Multi-Location-Erfolg ist IMMER ein Array. Ein Objekt bei HTTP 200 ist
+      // ein Fehlerkörper (Open-Meteo antwortet unter Last teils so, SPEC §6) —
+      // nicht als Erfolg durchreichen, sonst scheitert erst das Parsing downstream.
+      if (text.trimStart().startsWith('[')) return text
+      const reason = errorReason(text)
+      if (!reason) return text // Nicht-Array ohne Fehlerflag (z.B. Single-Location) — durchreichen
+      const delay = isTransient(200, reason) ? backoff(`Upstream-Fehler (${reason})`) : null
+      if (delay !== null) {
+        await sleep(delay)
+        continue
+      }
+      throw new Error(`Open-Meteo: ${reason}`)
+    }
+
+    const reason = errorReason(text) ?? `HTTP ${res.status}`
+    const delay = isTransient(res.status, reason) ? backoff(`Transienter Upstream-Fehler (${reason})`) : null
+    if (delay !== null) {
       await sleep(delay)
       continue
     }
