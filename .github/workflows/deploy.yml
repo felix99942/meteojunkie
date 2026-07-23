@@ -1,0 +1,63 @@
+# Baut die Web-Version (Karte deaktiviert) und deployt sie auf GitHub Pages.
+# Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
+# Läuft bei jedem Push auf main/master (localhost-Entwicklung bleibt unberührt).
+name: Deploy web version to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Nur ein Deploy gleichzeitig; laufende abbrechen, wenn neuer Push kommt.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # base-Pfad ableiten: <user>.github.io-Repos laufen unter '/',
+      # normale Project-Pages unter '/<repo>/'.
+      - name: Basispfad bestimmen
+        id: base
+        run: |
+          REPO="${{ github.event.repository.name }}"
+          if [[ "$REPO" == *.github.io ]]; then
+            echo "base=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Web-Version bauen (Karte aus)
+        run: npm run build:web
+        env:
+          VITE_BASE: ${{ steps.base.outputs.base }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
