@@ -21,6 +21,9 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
   const domain = useWorkbench((s) => s.domain)
 
   const isMap = panel.mode === 'map'
+  // Profile haben keine Einzelvariable (alle Drucklevel-Größen zugleich) —
+  // Parameter-Dropdown und parsync entfallen; Modellauswahl bleibt.
+  const isProfile = panel.mode === 'profile'
 
   // Radio-Semantik: Button-Zustand ausschließlich aus parSyncSource ableiten —
   // Quelle (bedienbar) / deaktiviert (andere Quelle aktiv) / normal
@@ -60,9 +63,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
       >
         <option value="meteogram">Meteogramm</option>
         <option value="map">Karte</option>
-        <option value="profile" disabled>
-          Vertikalprofil (Phase 3)
-        </option>
+        <option value="profile">Vertikalprofil</option>
         <option value="ensemble" disabled>
           Ensemble (Phase 3)
         </option>
@@ -157,41 +158,45 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
         </details>
       )}
 
-      <select
-        className="panel-variable"
-        value={panel.variable}
-        // Folge-Panels: Parameter-Dropdown gesperrt, solange parsync aktiv —
-        // Modell, Modus und Zeit-Sync bleiben frei bedienbar
-        disabled={parSyncBlocked}
-        title={
-          parSyncBlocked
-            ? `Parameter wird von Panel ${(parSyncSource ?? 0) + 1} gespiegelt (parsync)`
-            : undefined
-        }
-        onChange={(e) => setPanelVariable(index, e.target.value)}
-      >
-        {variables.map((v) => (
-          <option key={v.id} value={v.id}>
-            {v.label} ({v.unit})
-          </option>
-        ))}
-      </select>
+      {!isProfile && (
+        <>
+          <select
+            className="panel-variable"
+            value={panel.variable}
+            // Folge-Panels: Parameter-Dropdown gesperrt, solange parsync aktiv —
+            // Modell, Modus und Zeit-Sync bleiben frei bedienbar
+            disabled={parSyncBlocked}
+            title={
+              parSyncBlocked
+                ? `Parameter wird von Panel ${(parSyncSource ?? 0) + 1} gespiegelt (parsync)`
+                : undefined
+            }
+            onChange={(e) => setPanelVariable(index, e.target.value)}
+          >
+            {variables.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label} ({v.unit})
+              </option>
+            ))}
+          </select>
 
-      <button
-        type="button"
-        className={isParSyncSource ? 'sync-toggle parsync active' : 'sync-toggle parsync'}
-        disabled={parSyncBlocked}
-        title={
-          parSyncBlocked
-            ? `parsync ist in Panel ${(parSyncSource ?? 0) + 1} aktiv`
-            : isParSyncSource
-              ? 'Dieses Panel ist die Parameter-Quelle — Klick gibt alle wieder frei'
-              : 'Diesen Parameter auf alle Panels spiegeln (nur eine Quelle möglich)'
-        }
-        onClick={() => (isParSyncSource ? deactivateParSync(index) : activateParSync(index))}
-      >
-        ParSync
-      </button>
+          <button
+            type="button"
+            className={isParSyncSource ? 'sync-toggle parsync active' : 'sync-toggle parsync'}
+            disabled={parSyncBlocked}
+            title={
+              parSyncBlocked
+                ? `parsync ist in Panel ${(parSyncSource ?? 0) + 1} aktiv`
+                : isParSyncSource
+                  ? 'Dieses Panel ist die Parameter-Quelle — Klick gibt alle wieder frei'
+                  : 'Diesen Parameter auf alle Panels spiegeln (nur eine Quelle möglich)'
+            }
+            onClick={() => (isParSyncSource ? deactivateParSync(index) : activateParSync(index))}
+          >
+            ParSync
+          </button>
+        </>
+      )}
 
       <button
         type="button"

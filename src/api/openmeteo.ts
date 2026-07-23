@@ -5,6 +5,8 @@
 // (siehe queries.ts) — hier wird nur dedupliziert und gebündelt.
 
 import { FORECAST_DAYS } from '../config/time'
+import { PRESSURE_LEVELS, PROFILE_VARIABLES, levelVar } from '../config/levels'
+import { dewpoint } from '../lib/thermo'
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search'
@@ -486,6 +488,81 @@ async function runGridBatchMock(
       for (const [, resolvers] of group) for (const r of resolvers) r.reject(e)
     }
   }
+}
+
+// --- Vertikalprofile (Phase 3) ---------------------------------------------
+// Drucklevel-Größen als PUNKTabfrage (eine Location, ~100 Level-Variablen) —
+// budgetmäßig wie ein Meteogramm (Gewicht ~10), NICHT über den Grid-Proxy.
+// Läuft durch apiGet, also mock-fähig. Taupunkt wird aus T+RH pro Level
+// berechnet (Open-Meteo liefert keinen Level-Taupunkt).
+
+export interface Profile {
+  /** Zeitstempel Epoch-ms (UTC), volle Zeitreihe. */
+  times: number[]
+  /** Vorhandene Drucklevel (hPa), absteigend — Reihenfolge der Datenzeilen. */
+  levels: number[]
+  /** Je [levelIndex][timeIndex]. null = fehlend (Level/Stunde nicht geliefert). */
+  temperature: (number | null)[][]
+  dewpoint: (number | null)[][]
+  windSpeed: (number | null)[][]
+  windDirection: (number | null)[][]
+  height: (number | null)[][]
+}
+
+export async function fetchProfile(lat: number, lon: number, model: string): Promise<Profile> {
+  const vars: string[] = []
+  for (const lvl of PRESSURE_LEVELS) for (const v of PROFILE_VARIABLES) vars.push(levelVar(v, lvl))
+
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly: vars.join(','),
+    models: model,
+    forecast_days: String(FORECAST_DAYS),
+    timezone: 'UTC',
+    timeformat: 'unixtime',
+  })
+  const res = await apiGet(`${FORECAST_URL}?${params}`, estimateWeight(1, vars.length), 'point')
+  if (!res.ok) {
+    let reason = `HTTP ${res.status}`
+    try {
+      const body = JSON.parse(res.text) as { reason?: string }
+      if (body.reason) reason = body.reason
+    } catch {
+      // Status reicht
+    }
+    throw new Error(`Open-Meteo: ${reason}`)
+  }
+  const data = JSON.parse(res.text) as { hourly: Record<string, (number | null)[] | number[]> }
+  const times = (data.hourly.time as number[]).map((t) => t * 1000)
+  const nt = times.length
+  const nulls = (): (number | null)[] => new Array<number | null>(nt).fill(null)
+
+  const levels: number[] = []
+  const temperature: (number | null)[][] = []
+  const dewp: (number | null)[][] = []
+  const windSpeed: (number | null)[][] = []
+  const windDirection: (number | null)[][] = []
+  const height: (number | null)[][] = []
+
+  for (const lvl of PRESSURE_LEVELS) {
+    const T = data.hourly[levelVar('temperature', lvl)] as (number | null)[] | undefined
+    // Level nur aufnehmen, wenn das Modell dort überhaupt Temperatur liefert
+    if (!T || T.every((v) => v == null)) continue
+    const RH = data.hourly[levelVar('relative_humidity', lvl)] as (number | null)[] | undefined
+    const WS = data.hourly[levelVar('wind_speed', lvl)] as (number | null)[] | undefined
+    const WD = data.hourly[levelVar('wind_direction', lvl)] as (number | null)[] | undefined
+    const GH = data.hourly[levelVar('geopotential_height', lvl)] as (number | null)[] | undefined
+
+    levels.push(lvl)
+    temperature.push(T)
+    dewp.push(T.map((tv, i) => (tv != null && RH?.[i] != null ? dewpoint(tv, RH[i] as number) : null)))
+    windSpeed.push(WS ?? nulls())
+    windDirection.push(WD ?? nulls())
+    height.push(GH ?? nulls())
+  }
+
+  return { times, levels, temperature, dewpoint: dewp, windSpeed, windDirection, height }
 }
 
 // --- Geocoding -------------------------------------------------------------

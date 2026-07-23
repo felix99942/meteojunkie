@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { useEffectivePanel, useWorkbench } from '../state/workbench'
 import { PanelHeader } from './PanelHeader'
 import { Meteogram } from './Meteogram'
+import { SkewTPanel } from './SkewTPanel'
 
 // MapLibre (~1 MB) nur laden, wenn tatsächlich ein Panel im Kartenmodus ist
 const MapPanel = lazy(() =>
@@ -45,6 +46,8 @@ export function Panel({ index }: { index: number }) {
           <Suspense fallback={<div className="panel-placeholder">Lade Karte…</div>}>
             <MapPanel panel={panel} />
           </Suspense>
+        ) : panel.mode === 'profile' ? (
+          <SkewTPanel panel={panel} />
         ) : (
           <div className="panel-placeholder">Kommt in Phase 3</div>
         )}

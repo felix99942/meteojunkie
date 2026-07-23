@@ -226,7 +226,61 @@ function mockWind(model: string, lat: number, lon: number, t: number): number {
   )
 }
 
+/** Barometrische Höhe (m) aus Druck (hPa) — für Level-Profile. */
+function heightFromP(p: number): number {
+  return 44330 * (1 - (p / 1013.25) ** 0.1903)
+}
+
+// Drucklevel-Profile fürs Skew-T: physikalisch plausibel (T fällt mit Höhe bis
+// zur Tropopause, dann Stratosphäre; feuchte Grundschicht + trockene
+// Mittelschicht; Jet nahe 250 hPa; Wind dreht mit Höhe), deterministisch und
+// stetig in t wie der Rest des Mocks.
+function mockProfile(
+  baseVar: string,
+  level: number,
+  model: string,
+  lat: number,
+  lon: number,
+  t: number,
+): number {
+  const z = heightFromP(level) / 1000 // km
+  const phase = hash01(model) * Math.PI * 2
+  const shift = (hash01(model) - 0.5) * 4
+  const ztrop = 11 + 1.5 * Math.sin(lat / 10 + t / 40 + phase) // Tropopausenhöhe variiert
+  switch (baseVar) {
+    case 'temperature': {
+      const tsurf = mockTemperature(model, lat, lon, t)
+      const temp = z < ztrop ? tsurf - 6.5 * z : tsurf - 6.5 * ztrop + 1.2 * (z - ztrop)
+      const detail = 2 * (fbm(z * 2 + t * 0.05, lat, modelSeed(model, 5), 1.5) - 0.5)
+      const inversion = z < 1.5 ? 3 * Math.max(0, Math.sin(t / 9 + phase)) * (1 - z / 1.5) : 0
+      return round1(temp + detail + inversion + shift)
+    }
+    case 'relative_humidity': {
+      const moist = 85 - 8 * z
+      const dryZ = 3 + 2 * Math.sin(t / 20 + phase)
+      const dryLayer = -45 * Math.exp(-((z - dryZ) ** 2) / 4)
+      const noise = 20 * (fbm(z + t * 0.07, lat, modelSeed(model, 6), 1.2) - 0.5)
+      return round1(clamp(moist + dryLayer + noise, 3, 100))
+    }
+    case 'wind_speed': {
+      const jet = 60 * Math.exp(-((z - 10) ** 2) / 8)
+      const detail = 8 * (fbm(z + t * 0.1, lat, modelSeed(model, 7), 1) - 0.5)
+      return round1(Math.max(0, 5 + 2.5 * z + jet + detail + shift))
+    }
+    case 'wind_direction':
+      return Math.round((200 + 12 * z + 60 * Math.sin(t / 22 + phase) + 720) % 360)
+    case 'geopotential_height':
+      return Math.round(heightFromP(level))
+    default:
+      return 0
+  }
+}
+
+const LEVEL_VAR = /^(temperature|relative_humidity|wind_speed|wind_direction|geopotential_height)_(\d+)hPa$/
+
 function mockValue(variable: string, model: string, lat: number, lon: number, t: number): number {
+  const level = LEVEL_VAR.exec(variable)
+  if (level) return mockProfile(level[1], Number(level[2]), model, lat, lon, t)
   const phase = hash01(model) * Math.PI * 2
   switch (variable) {
     case 'temperature_2m':

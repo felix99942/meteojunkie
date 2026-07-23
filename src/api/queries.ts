@@ -4,9 +4,17 @@
 // Lange staleTime: Modellläufe ändern sich nur alle 1–6 h (SPEC §6).
 
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
-import { fetchGridField, fetchHourlySeries, type GridField, type HourlySeries } from './openmeteo'
+import {
+  fetchGridField,
+  fetchHourlySeries,
+  fetchProfile,
+  type GridField,
+  type HourlySeries,
+  type Profile,
+} from './openmeteo'
 import type { DomainPreset } from '../config/domains'
 import { getModel } from '../config/models'
+import { supportsPressureLevels } from '../config/levels'
 import type { LatLon } from '../state/workbench'
 
 export const SERIES_STALE_TIME_MS = 30 * 60 * 1000 // 30 min
@@ -35,6 +43,29 @@ export function useMeteogramSeries(
       gcTime: SERIES_GC_TIME_MS,
       // Punktserien gehen direkt an Open-Meteo; unter Last kommt „service is
       // overloaded". Ein paar gestaffelte Retries fangen die transiente Überlast ab.
+      retry: 3,
+      retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
+    })),
+  })
+}
+
+/** Vertikalprofile: eine Query pro Modell, gegatet auf Drucklevel-Support. */
+export function useProfiles(
+  location: LatLon | null,
+  models: string[],
+): UseQueryResult<Profile>[] {
+  return useQueries({
+    queries: models.map((model) => ({
+      queryKey: [
+        'profile',
+        location ? location.lat.toFixed(4) : null,
+        location ? location.lon.toFixed(4) : null,
+        model,
+      ],
+      queryFn: () => fetchProfile(location!.lat, location!.lon, model),
+      enabled: location !== null && supportsPressureLevels(model),
+      staleTime: SERIES_STALE_TIME_MS,
+      gcTime: SERIES_GC_TIME_MS,
       retry: 3,
       retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
     })),

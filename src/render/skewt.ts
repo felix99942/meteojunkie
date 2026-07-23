@@ -100,6 +100,80 @@ export const DEFAULT_SKEWT_THEME: SkewTTheme = {
   label: '#898781',
 }
 
+/**
+ * Standard-Windbarbe an (x, y). speedKt in Knoten, dirFrom = meteorologische
+ * Richtung (woher der Wind weht). Halbe Barbe 5 kt, ganze 10 kt, Wimpel 50 kt;
+ * Windstille (< 2.5 kt) als kleiner Kreis. Schaft zeigt in die Herkunftsrichtung.
+ */
+export function drawWindBarb(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  speedKt: number,
+  dirFrom: number,
+  color: string,
+): void {
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineWidth = 1.2
+  if (speedKt < 2.5) {
+    ctx.beginPath()
+    ctx.arc(x, y, 3, 0, 2 * Math.PI)
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+  const L = 30 // Schaftlänge px
+  const ang = (dirFrom * Math.PI) / 180
+  const ux = Math.sin(ang) // Einheitsvektor zur Herkunft (Nord oben)
+  const uy = -Math.cos(ang)
+  ctx.beginPath()
+  ctx.moveTo(x, y)
+  ctx.lineTo(x + ux * L, y + uy * L)
+  ctx.stroke()
+  const bx = uy // senkrecht zum Schaft (Barbenseite)
+  const by = -ux
+  const BARB = 11
+  let rem = Math.round(speedKt / 5) * 5
+  let pos = L
+  const step = 6
+  while (rem >= 50) {
+    const ax = x + ux * pos
+    const ay = y + uy * pos
+    const cx = x + ux * (pos - step * 1.6)
+    const cy = y + uy * (pos - step * 1.6)
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(ax + bx * BARB, ay + by * BARB)
+    ctx.lineTo(cx, cy)
+    ctx.closePath()
+    ctx.fill()
+    pos -= step * 1.6
+    rem -= 50
+  }
+  while (rem >= 10) {
+    const ax = x + ux * pos
+    const ay = y + uy * pos
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(ax + bx * BARB, ay + by * BARB)
+    ctx.stroke()
+    pos -= step
+    rem -= 10
+  }
+  if (rem >= 5) {
+    if (pos === L) pos -= step // einzelne Halbbarbe nicht ganz an die Spitze
+    const ax = x + ux * pos
+    const ay = y + uy * pos
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(ax + bx * BARB * 0.5, ay + by * BARB * 0.5)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 const ISOBARS = [1000, 850, 700, 500, 400, 300, 250, 200, 150, 100]
 const MIXING_RATIOS = [0.4, 1, 2, 4, 7, 10, 16, 24, 32]
 
