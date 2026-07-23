@@ -31,13 +31,15 @@ jobs:
 
       - run: npm ci
 
-      # base-Pfad ableiten: <user>.github.io-Repos laufen unter '/',
-      # normale Project-Pages unter '/<repo>/'.
+      # base-Pfad ableiten:
+      #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)
+      #  - <user>.github.io-Repo → '/'
+      #  - normale Project-Pages → '/<repo>/'
       - name: Basispfad bestimmen
         id: base
         run: |
           REPO="${{ github.event.repository.name }}"
-          if [[ "$REPO" == *.github.io ]]; then
+          if [[ -f public/CNAME || "$REPO" == *.github.io ]]; then
             echo "base=/" >> "$GITHUB_OUTPUT"
           else
             echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
