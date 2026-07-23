@@ -267,6 +267,110 @@ export function drawParcel(ctx: CanvasRenderingContext2D, g: SkewTGeometry, r: P
   ctx.restore()
 }
 
+// --- Hodograf --------------------------------------------------------------
+
+export interface HodoPoint {
+  /** Höhe über Grund (m). */
+  zAgl: number
+  u: number // kt (Ost)
+  v: number // kt (Nord)
+}
+
+// Höhengefärbte Segmente (Standard-Hodograf): 0–1 / 1–3 / 3–6 / 6–9 / >9 km
+const HODO_LAYERS: { max: number; color: string; label: string }[] = [
+  { max: 1000, color: '#e0524f', label: '0–1' },
+  { max: 3000, color: '#f0a53a', label: '1–3' },
+  { max: 6000, color: '#5cc36a', label: '3–6' },
+  { max: 9000, color: '#4a93e8', label: '6–9' },
+  { max: Infinity, color: '#9a7fe0', label: '9+' },
+]
+
+function hodoColor(zAgl: number): string {
+  for (const l of HODO_LAYERS) if (zAgl <= l.max) return l.color
+  return HODO_LAYERS[HODO_LAYERS.length - 1].color
+}
+
+/**
+ * Hodograf in einen (w×h)-Canvas zeichnen: Geschwindigkeitsringe (kt),
+ * u/v-Achsen, Windvektor-Kurve höhengefärbt (Boden → Höhe). points nach zAgl
+ * aufsteigend.
+ */
+export function drawHodograph(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  points: HodoPoint[],
+): void {
+  const cx = w / 2
+  const cy = h / 2
+  const R = Math.min(w, h) / 2 - 16
+  if (R < 20 || points.length < 2) return
+
+  const maxSpd = Math.max(20, ...points.map((p) => Math.hypot(p.u, p.v)))
+  const ringStep = maxSpd <= 40 ? 10 : maxSpd <= 90 ? 20 : 40
+  const maxRing = Math.ceil(maxSpd / ringStep) * ringStep
+  const scale = R / maxRing
+  const X = (u: number) => cx + u * scale
+  const Y = (v: number) => cy - v * scale // Nord oben
+
+  ctx.save()
+  ctx.font = '9px system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  // Ringe + Beschriftung
+  ctx.strokeStyle = '#3a3b40'
+  ctx.fillStyle = '#898781'
+  for (let s = ringStep; s <= maxRing; s += ringStep) {
+    ctx.beginPath()
+    ctx.arc(cx, cy, s * scale, 0, 2 * Math.PI)
+    ctx.stroke()
+    ctx.fillText(String(s), cx + s * scale, cy - 6)
+  }
+
+  // Achsenkreuz + Himmelsrichtungen
+  ctx.strokeStyle = '#4a4a46'
+  ctx.beginPath()
+  ctx.moveTo(cx - R, cy)
+  ctx.lineTo(cx + R, cy)
+  ctx.moveTo(cx, cy - R)
+  ctx.lineTo(cx, cy + R)
+  ctx.stroke()
+  ctx.fillStyle = '#898781'
+  ctx.fillText('N', cx, cy - R - 8)
+  ctx.fillText('S', cx, cy + R + 8)
+  ctx.fillText('O', cx + R + 8, cy)
+  ctx.fillText('W', cx - R - 8, cy)
+
+  // Windvektor-Kurve, höhengefärbt
+  ctx.lineWidth = 2
+  for (let i = 1; i < points.length; i++) {
+    ctx.strokeStyle = hodoColor(points[i].zAgl)
+    ctx.beginPath()
+    ctx.moveTo(X(points[i - 1].u), Y(points[i - 1].v))
+    ctx.lineTo(X(points[i].u), Y(points[i].v))
+    ctx.stroke()
+  }
+  // Bodenpunkt markieren
+  ctx.fillStyle = '#f2f2ef'
+  ctx.beginPath()
+  ctx.arc(X(points[0].u), Y(points[0].v), 3, 0, 2 * Math.PI)
+  ctx.fill()
+
+  // Höhen-Legende
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  let ly = 4
+  for (const l of HODO_LAYERS) {
+    ctx.fillStyle = l.color
+    ctx.fillRect(4, ly + 2, 8, 3)
+    ctx.fillStyle = '#898781'
+    ctx.fillText(`${l.label} km`, 15, ly)
+    ly += 12
+  }
+  ctx.restore()
+}
+
 const ISOBARS = [1000, 850, 700, 500, 400, 300, 250, 200, 150, 100]
 const MIXING_RATIOS = [0.4, 1, 2, 4, 7, 10, 16, 24, 32]
 
