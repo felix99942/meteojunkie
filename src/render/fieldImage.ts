@@ -101,9 +101,13 @@ export function renderFieldToCanvas(
   const lut = buildLut(scale)
   const scaleMin = scale.stops[0].value
   const scaleMax = scale.stops[scale.stops.length - 1].value
-  // gestuft: unterhalb des ersten Schwellenwerts transparent —
-  // der LUT-Clamp auf Index 0 würde sonst die erste Stufe färben
-  const transparentBelowMin = scale.kind === 'stepped'
+  // Unter dem ersten Schwellenwert: transparent (Basiskarte durch) ODER auf die
+  // unterste Bandfarbe clampen (Vollbereichsgrößen wie Temperatur). Default bei
+  // gestuften Skalen ist transparent; sonst würde der LUT-Clamp auf Index 0 die
+  // erste Stufe färben, wo eigentlich „nichts“ gemeint ist.
+  const transparentBelowMin = scale.belowMin
+    ? scale.belowMin === 'transparent'
+    : scale.kind === 'stepped'
   const img = ctx.createImageData(width, height)
   const px = img.data
   const base = tIndex * nx * ny

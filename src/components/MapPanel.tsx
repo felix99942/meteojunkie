@@ -20,6 +20,7 @@ import { CITIES } from '../config/cities'
 import { getColorScale, type ColorScale } from '../config/colorscales'
 import type { DomainPreset } from '../config/domains'
 import { getModel, isDomainInCoverage, modelHorizonEnd } from '../config/models'
+import { formatRun, latestRun } from '../config/runs'
 import { formatCursorTime, MAP_FORECAST_DAYS, STEP_MS, TIME_RANGE } from '../config/time'
 import { getVariable } from '../config/variables'
 import { renderFieldToCanvas } from '../render/fieldImage'
@@ -421,10 +422,18 @@ export function MapPanel({ panel }: { panel: PanelConfig }) {
   return (
     <div className="map-panel">
       <div ref={containerRef} className="map-container" />
-      <span className="map-time">
-        {formatCursorTime(displayTime)}
-        {!panel.sync && ' · lokal'}
-      </span>
+      <div className="map-topright">
+        <span className="map-time">
+          {formatCursorTime(displayTime)}
+          {!panel.sync && ' · lokal'}
+        </span>
+        {covered && available && (
+          // Geschätzter neuester verfügbarer Lauf (SPEC §13) — Laufauswahl folgt.
+          <span className="map-run" title={`${model.label} · neuester verfügbarer Lauf`}>
+            Lauf {formatRun(latestRun(model, Date.now()))}
+          </span>
+        )}
+      </div>
       {!covered && (
         <div className="map-hint">
           Domain „{domain.label}“ liegt außerhalb der Abdeckung von {model.label}.
@@ -488,6 +497,10 @@ function ScaleLegend({ scale, label }: { scale: ColorScale; label: string }) {
     )
   }
 
+  // Viele Bänder → nicht jede Stufe beschriften (sonst Zahlensalat): nur jede
+  // k-te Schwelle zeigen, damit ~6 Labels bleiben. Leere Spans halten die
+  // Ausrichtung unter den Farbkästen.
+  const labelEvery = Math.max(1, Math.round(scale.stops.length / 6))
   return (
     <div className="map-legend">
       <div className="legend-title">{label}</div>
@@ -497,8 +510,8 @@ function ScaleLegend({ scale, label }: { scale: ColorScale; label: string }) {
         ))}
       </div>
       <div className="legend-step-labels">
-        {scale.stops.map((s) => (
-          <span key={s.value}>{s.value}</span>
+        {scale.stops.map((s, i) => (
+          <span key={s.value}>{i % labelEvery === 0 ? s.value : ''}</span>
         ))}
       </div>
     </div>

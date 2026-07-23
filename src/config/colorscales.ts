@@ -2,10 +2,19 @@
 // Wertebereichen: kein Auto-Scaling, sonst sind Panels mit unterschiedlichen
 // Modellen nicht mehr vergleichbar (der Zweck der Workbench).
 //
-// Konventionen (dunkle Kartenfläche): sequenziell = eine Farbe, dunkel→hell
-// (niedrige Werte treten zurück, hohe leuchten); divergierend = zwei Farben
-// mit neutralem grauen Mittelpunkt. Werte unterhalb des ersten Stops einer
-// gestuften Skala sind transparent (z.B. Niederschlag < 0,1 mm).
+// Bewusst DISKRET (gestuft) statt glatt interpoliert: klar abgegrenzte
+// Farbbänder sind ablesbar — ein Wert lässt sich einer Stufe zuordnen. Eine
+// glatt interpolierte Rampe verwischt gerade im mittleren Bereich zu „einer
+// Farbe“ mit kaum unterscheidbaren Abstufungen (das war das Problem bei den
+// Temperaturen). Vollbereichsgrößen (Temperatur/Taupunkt) bekommen deshalb
+// eine mehrfarbige Rampe mit vielen Bändern statt eines einzigen Farbtons.
+//
+// belowMin steuert Werte unter stops[0].value:
+//   'transparent' (Default bei kind:'stepped') — Basiskarte scheint durch,
+//      für Größen mit „Null-Boden“ (Niederschlag/Schnee/Wind/Strahlung/Wolken:
+//      „unter der Schwelle = nichts zu zeigen“).
+//   'clamp' — unterste Bandfarbe, für Vollbereichsgrößen ohne Null-Boden
+//      (Temperatur/Taupunkt/Druck/Feuchte).
 // Windrichtung hat bewusst keine Skala — als Farbfeld ohne Vektoren sinnlos.
 
 export interface ColorStop {
@@ -15,49 +24,74 @@ export interface ColorStop {
 }
 
 export interface ColorScale {
-  /** 'linear': zwischen Stops interpolieren; 'stepped': Schwellenwerte, keine Interpolation */
+  /** 'linear': zwischen Stops interpolieren; 'stepped': diskrete Bänder, keine Interpolation */
   kind: 'linear' | 'stepped'
+  /** Verhalten unter stops[0].value. Default: 'stepped' → 'transparent'. */
+  belowMin?: 'transparent' | 'clamp'
   stops: ColorStop[] // aufsteigend; stops[0].value = Skalenminimum
 }
 
+/** Gleichmäßige Bänder ab `start` mit Schrittweite `step`, eine Farbe je Band. */
+function bands(start: number, step: number, colors: string[]): ColorStop[] {
+  return colors.map((color, i) => ({ value: start + i * step, color }))
+}
+
+// Mehrfarbige Temperaturrampe (kalt → warm), 4-°C-Bänder: Violett → Blau →
+// Cyan → Grün → Gelb → Orange → Rot → Magenta. Maximiert die Unterscheidbarkeit
+// benachbarter Stufen — anders als eine einfarbige Orange-Rampe.
+const TEMP_RAMP = [
+  '#6a3d9a', // -30
+  '#7b4fb8',
+  '#5a5fd0',
+  '#3f6fdc', // -18
+  '#3288e0',
+  '#2fa0e2',
+  '#37b7dc', // -6
+  '#4fccc9',
+  '#5fcf9f', //  2
+  '#63c56a',
+  '#8ed45a', // 10
+  '#c2dd52',
+  '#f0d848', // 18
+  '#f6b23c',
+  '#f28a30', // 26
+  '#e9612a',
+  '#d93b2b', // 34
+  '#bd2947',
+  '#8f1f5e', // 42
+]
+
+// Grün → Gelb → Orange → Rot → Magenta (kein Blau — grenzt Wind optisch von
+// der Temperatur ab, die im Kalten violett/blau beginnt).
+const WIND_RAMP = ['#2f9e6a', '#5cc36a', '#8ed45a', '#c2dd52', '#f0d848', '#f6b23c', '#f28a30', '#e9612a', '#d93b2b', '#bd2947', '#8f1f5e']
+
 export const COLOR_SCALES: Record<string, ColorScale> = {
-  // divergierend um 0 °C, neutraler Mittelpunkt
   temperature_2m: {
-    kind: 'linear',
-    stops: [
-      { value: -30, color: '#a6cdf7' },
-      { value: -20, color: '#5598e7' },
-      { value: -10, color: '#1c5cab' },
-      { value: 0, color: '#484844' },
-      { value: 10, color: '#8f3a1c' },
-      { value: 20, color: '#c14f1f' },
-      { value: 30, color: '#ef7133' },
-      { value: 40, color: '#ffab73' },
-    ],
+    kind: 'stepped',
+    belowMin: 'clamp',
+    stops: bands(-30, 4, TEMP_RAMP), // -30 … 42 °C
   },
   dew_point_2m: {
-    kind: 'linear',
-    stops: [
-      { value: -30, color: '#a6cdf7' },
-      { value: -20, color: '#5598e7' },
-      { value: -10, color: '#1c5cab' },
-      { value: 0, color: '#484844' },
-      { value: 10, color: '#8f3a1c' },
-      { value: 20, color: '#c14f1f' },
-      { value: 30, color: '#ef7133' },
-    ],
+    kind: 'stepped',
+    belowMin: 'clamp',
+    stops: bands(-30, 4, TEMP_RAMP.slice(0, 15)), // -30 … 26 °C
   },
   // sequenziell blau mit Schwellenwerten (mm/h); < 0,1 transparent
   precipitation: {
     kind: 'stepped',
     stops: [
-      { value: 0.1, color: '#184f95' },
+      { value: 0.1, color: '#173f7a' },
+      { value: 0.3, color: '#184f95' },
       { value: 0.5, color: '#1c5cab' },
       { value: 1, color: '#256abf' },
       { value: 2, color: '#3987e5' },
+      { value: 3, color: '#4a93e8' },
       { value: 5, color: '#5598e7' },
+      { value: 7, color: '#6fa8ec' },
       { value: 10, color: '#86b6ef' },
+      { value: 15, color: '#a2c7f3' },
       { value: 20, color: '#b7d3f6' },
+      { value: 30, color: '#d0e2fa' },
       { value: 50, color: '#e8f1fd' },
     ],
   },
@@ -65,64 +99,99 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
     kind: 'stepped',
     stops: [
       { value: 0.1, color: '#3a2f7d' },
+      { value: 0.3, color: '#43389a' },
       { value: 0.5, color: '#4a3aa7' },
       { value: 1, color: '#6a5cd0' },
       { value: 2, color: '#9085e9' },
+      { value: 3, color: '#a89ff0' },
       { value: 5, color: '#b7aef3' },
+      { value: 7, color: '#cbc4f7' },
       { value: 10, color: '#e0dcfb' },
     ],
   },
-  // sequenziell orange (km/h), Windstille transparent
+  // sequenziell grün→magenta (km/h), Windstille (< 1) transparent
   wind_speed_10m: {
-    kind: 'linear',
+    kind: 'stepped',
     stops: [
-      { value: 0, color: '#5e2b1200' },
-      { value: 10, color: '#5e2b12' },
-      { value: 30, color: '#93401a' },
-      { value: 50, color: '#c14f1f' },
-      { value: 70, color: '#e56a33' },
-      { value: 90, color: '#ff9d66' },
-      { value: 120, color: '#ffd0ae' },
+      { value: 1, color: WIND_RAMP[0] },
+      { value: 5, color: WIND_RAMP[1] },
+      { value: 10, color: WIND_RAMP[2] },
+      { value: 15, color: WIND_RAMP[3] },
+      { value: 20, color: WIND_RAMP[4] },
+      { value: 30, color: WIND_RAMP[5] },
+      { value: 40, color: WIND_RAMP[6] },
+      { value: 50, color: WIND_RAMP[7] },
+      { value: 65, color: WIND_RAMP[8] },
+      { value: 80, color: WIND_RAMP[9] },
+      { value: 100, color: WIND_RAMP[10] },
     ],
   },
   wind_gusts_10m: {
-    kind: 'linear',
+    kind: 'stepped',
     stops: [
-      { value: 0, color: '#5e2b1200' },
-      { value: 20, color: '#5e2b12' },
-      { value: 50, color: '#93401a' },
-      { value: 75, color: '#c14f1f' },
-      { value: 100, color: '#e56a33' },
-      { value: 125, color: '#ff9d66' },
-      { value: 150, color: '#ffd0ae' },
+      { value: 2, color: WIND_RAMP[0] },
+      { value: 10, color: WIND_RAMP[1] },
+      { value: 20, color: WIND_RAMP[2] },
+      { value: 30, color: WIND_RAMP[3] },
+      { value: 40, color: WIND_RAMP[4] },
+      { value: 55, color: WIND_RAMP[5] },
+      { value: 70, color: WIND_RAMP[6] },
+      { value: 90, color: WIND_RAMP[7] },
+      { value: 110, color: WIND_RAMP[8] },
+      { value: 130, color: WIND_RAMP[9] },
+      { value: 150, color: WIND_RAMP[10] },
     ],
   },
-  // klarer Himmel transparent → Basiskarte sichtbar
+  // klarer Himmel (< 10 %) transparent → Basiskarte sichtbar; dünne Wolken
+  // halbtransparent, dichte deckend
   cloud_cover: {
-    kind: 'linear',
+    kind: 'stepped',
     stops: [
-      { value: 0, color: '#c8c8c800' },
-      { value: 50, color: '#a0a09d80' },
-      { value: 100, color: '#dcdcd9' },
+      { value: 10, color: '#6f727866' },
+      { value: 20, color: '#7f828899' },
+      { value: 30, color: '#8f9298b3' },
+      { value: 40, color: '#a0a3a9cc' },
+      { value: 50, color: '#b0b3b9' },
+      { value: 60, color: '#c0c3c8' },
+      { value: 70, color: '#cfd2d6' },
+      { value: 80, color: '#dee0e4' },
+      { value: 90, color: '#eceef1' },
+      { value: 100, color: '#f6f7f9' },
     ],
   },
   relative_humidity_2m: {
-    kind: 'linear',
-    stops: [
-      { value: 0, color: '#123f2e' },
-      { value: 50, color: '#199e70' },
-      { value: 100, color: '#7fe3bd' },
-    ],
+    kind: 'stepped',
+    belowMin: 'clamp',
+    stops: bands(0, 10, [
+      '#123f2e',
+      '#155a41',
+      '#177754',
+      '#199e70',
+      '#3bb488',
+      '#5cc39c',
+      '#7fd3b0',
+      '#a2e0c6',
+      '#c2ebd9',
+      '#dcf4ea',
+      '#eefbf6',
+    ]), // 0 … 100 %
   },
-  // divergierend um 1013 hPa: Tief magenta, Hoch grün
+  // divergierend um 1013 hPa: Tief magenta, Hoch grün, neutraler Mittelpunkt
   pressure_msl: {
-    kind: 'linear',
+    kind: 'stepped',
+    belowMin: 'clamp',
     stops: [
-      { value: 960, color: '#ff8ab8' },
-      { value: 990, color: '#d55181' },
-      { value: 1013, color: '#484844' },
-      { value: 1035, color: '#199e70' },
-      { value: 1050, color: '#7fe3bd' },
+      { value: 960, color: '#c8236a' },
+      { value: 975, color: '#e0508a' },
+      { value: 990, color: '#f080a8' },
+      { value: 1000, color: '#f0a9c2' },
+      { value: 1008, color: '#b89aa2' },
+      { value: 1013, color: '#5c5c58' },
+      { value: 1018, color: '#8fc0a2' },
+      { value: 1024, color: '#57b98a' },
+      { value: 1030, color: '#2ba06a' },
+      { value: 1038, color: '#188a52' },
+      { value: 1046, color: '#0f7040' },
     ],
   },
   cape: {
@@ -131,19 +200,25 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
       { value: 100, color: '#4a2136' },
       { value: 250, color: '#7d2c4e' },
       { value: 500, color: '#a03962' },
+      { value: 750, color: '#b64270' },
       { value: 1000, color: '#c2497a' },
+      { value: 1500, color: '#d65e90' },
       { value: 2000, color: '#e070a0' },
+      { value: 2500, color: '#f08cba' },
       { value: 3000, color: '#ffa9cf' },
     ],
   },
   shortwave_radiation: {
-    kind: 'linear',
+    kind: 'stepped',
     stops: [
-      { value: 0, color: '#6e550000' },
-      { value: 200, color: '#6e5500' },
-      { value: 500, color: '#a37b00' },
-      { value: 800, color: '#c98500' },
-      { value: 1000, color: '#ffce6b' },
+      { value: 50, color: '#5a4a00' },
+      { value: 150, color: '#8a6f00' },
+      { value: 250, color: '#b38a00' },
+      { value: 400, color: '#d6a300' },
+      { value: 550, color: '#efc23a' },
+      { value: 700, color: '#f5d670' },
+      { value: 850, color: '#f8e59a' },
+      { value: 1000, color: '#fbf1c8' },
     ],
   },
 }
