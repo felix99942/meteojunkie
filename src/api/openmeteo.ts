@@ -129,9 +129,10 @@ async function runBatch(batch: PendingLocation): Promise<void> {
 //
 // Rate-Limit-Budget: Open-Meteo gewichtet nach Locations, Variablen (in
 // Bruchteilen, Größenordnung „~10 Variablen ≈ 1 Call“), Modellen und
-// Zeitraum. Deshalb: kleine Gitter, nur MAP_FORECAST_DAYS Tage, begrenzte
-// Nebenläufigkeit (gridRequestQueue), Backoff bei 429, persistenter
-// IndexedDB-Cache (gridcache.ts) — und vor allem BÜNDELUNG: alle im selben
+// Zeitraum. Deshalb: kleine Gitter, nur MAP_FORECAST_DAYS Tage, rate-aware
+// Pacing der gewichteten Locations pro Minute (gridRequestQueue, Token-Bucket),
+// Backoff bei 429, persistenter IndexedDB-Cache (gridcache.ts) — und vor allem
+// BÜNDELUNG: alle im selben
 // Tick angeforderten Variablen desselben (Domain, Modell)-Paars laufen als
 // EIN Multi-Variablen-Request (bis MAX_VARS_PER_REQUEST) statt als N
 // Einzelrequests. Cache-Treffer je Variable verkleinern das Bündel vorab.
@@ -325,8 +326,12 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
     const groupVars = group.map(([v]) => v)
     try {
       const responses = await Promise.all(
-        chunks.map((chunk) =>
-          gridRequestQueue.run(async () => {
+        chunks.map((chunk) => {
+          // Location-Gewicht dieses Chunks — steuert das Pacing der Queue UND
+          // den Verbrauchszähler (fetchTextWithBackoff), damit beide dieselbe
+          // Schätzung sehen.
+          const cost = estimateWeight(chunk.length, groupVars.length)
+          return gridRequestQueue.run(cost, async () => {
             const params = new URLSearchParams({
               latitude: chunk.map((p) => p.lat.toFixed(4)).join(','),
               longitude: chunk.map((p) => p.lon.toFixed(4)).join(','),
@@ -336,14 +341,11 @@ async function runGridBatch(batch: PendingGridBatch): Promise<void> {
               timezone: 'UTC',
               timeformat: 'unixtime',
             })
-            const text = await fetchTextWithBackoff(
-              `${FORECAST_URL}?${params}`,
-              estimateWeight(chunk.length, groupVars.length),
-            )
+            const text = await fetchTextWithBackoff(`${FORECAST_URL}?${params}`, cost)
             const json = JSON.parse(text) as GridLocationResponse | GridLocationResponse[]
             return { locations: Array.isArray(json) ? json : [json], bytes: text.length }
-          }),
-        ),
+          })
+        }),
       )
 
       const locations = responses.flatMap((r) => r.locations)
