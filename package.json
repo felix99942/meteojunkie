@@ -14,7 +14,8 @@
     "ingest:at": "node scripts/at-ingest-stations.mjs",
     "ingest:at:normals": "node scripts/at-ingest-normals.mjs",
     "ingest:at:records": "node scripts/at-ingest-records.mjs",
-    "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs"
+    "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs",
+    "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

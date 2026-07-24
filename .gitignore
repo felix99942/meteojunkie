@@ -25,3 +25,6 @@ dist-ssr
 
 # Grid-Proxy Feld-Cache (serverseitig)
 server/.cache/
+
+# MOS-Vorhersage: generierte Daten (stündlich per Cron erzeugt, nicht versionieren)
+public/mos/forecast/
