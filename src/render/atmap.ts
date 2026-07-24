@@ -7,10 +7,20 @@
 // mühelos. Gleiche Idiome wie render/skewt.ts (Geometrie-Objekt + reine
 // Zeichenfunktionen, DPR-Handling im Komponenten-Layer).
 
-import type { AtStation } from '../api/geosphere'
+/** Minimale Stationsform fürs Zeichnen — TAWES (AtStation) wie MOS erfüllen sie. */
+export interface MapStation {
+  name: string
+  lat: number
+  lon: number
+  altitude?: number | null
+  state?: string | null
+}
 
 /** Kartenausschnitt (Österreich mit etwas Rand). */
 export const AT_VIEW = { latMin: 46.3, latMax: 49.1, lonMin: 9.4, lonMax: 17.2 }
+
+/** Kartenausschnitt DACH (für den Vorhersage-Modus). */
+export const DACH_VIEW = { latMin: 45.6, latMax: 55.2, lonMin: 5.6, lonMax: 17.3 }
 
 export interface MapGeometry {
   left: number
@@ -94,7 +104,7 @@ export function drawBorderLines(
 export function drawStationPoints(
   ctx: CanvasRenderingContext2D,
   g: MapGeometry,
-  stations: AtStation[],
+  stations: MapStation[],
   opts: {
     radius: number
     fill: string
@@ -132,21 +142,32 @@ export function drawStationPoints(
 export function drawStationLabels(
   ctx: CanvasRenderingContext2D,
   g: MapGeometry,
-  stations: AtStation[],
+  stations: MapStation[],
   values: (number | null)[],
   format: (v: number) => string,
   colors?: (string | null)[],
   highlightIdx?: number,
+  /** Mindestabstand (px) zwischen Labels; >0 dünnt bei dichten Netzen aus. 0 = alle. */
+  minGap = 0,
 ): void {
   ctx.save()
   ctx.font = '700 16px system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
+  // Belegte Zellen (Raster in minGap-Auflösung) — schnelle Ausdünnung dichter Netze.
+  const occupied = minGap > 0 ? new Set<string>() : null
   for (let i = 0; i < stations.length; i++) {
     const v = values[i]
     if (v == null || !Number.isFinite(v)) continue
     const { x, y } = project(g, stations[i].lon, stations[i].lat)
+    if (occupied && i !== highlightIdx) {
+      const cx = Math.floor(x / minGap)
+      const cy = Math.floor(y / minGap)
+      const key = `${cx},${cy}`
+      if (occupied.has(key)) continue
+      occupied.add(key)
+    }
     const text = format(v)
     // Label über den Punkt setzen, damit der farbige Punkt sichtbar bleibt.
     const ty = y - 13
@@ -167,7 +188,7 @@ export function drawStationLabels(
  */
 export function nearestStation(
   g: MapGeometry,
-  stations: AtStation[],
+  stations: MapStation[],
   px: number,
   py: number,
   maxDist: number,

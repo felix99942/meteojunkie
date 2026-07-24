@@ -6,24 +6,32 @@
 // URL-Asset geladen statt in den JS-Bundle gezogen — wie in MapPanel.
 
 import { useEffect, useRef, useState } from 'react'
-import type { AtStation } from '../api/geosphere'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
 import {
+  AT_VIEW,
   drawBorderLines,
   drawStationLabels,
   drawStationPoints,
   makeMapGeometry,
   nearestStation,
   type MapGeometry,
+  type MapStation,
 } from '../render/atmap'
 
 interface BorderFeature {
   geometry: { type: string; coordinates: number[][] }
 }
 interface Basemap {
-  coast: { features: BorderFeature[] }
-  borders: { features: BorderFeature[] }
-  admin1: { features: BorderFeature[] }
+  coast?: { features: BorderFeature[] }
+  borders?: { features: BorderFeature[] }
+  admin1?: { features: BorderFeature[] }
+}
+
+interface MapView {
+  latMin: number
+  latMax: number
+  lonMin: number
+  lonMax: number
 }
 
 /** Wert kompakt formatieren (max. 1 Nachkommastelle). */
@@ -47,26 +55,37 @@ export function AtClimateMap({
   values,
   unit,
   onSelect,
+  view = AT_VIEW,
+  basemapUrl = austriaBasemapUrl,
+  labelMinGap = 0,
 }: {
-  stations: AtStation[]
+  stations: MapStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
   colors?: (string | null)[]
   /** Per-Station-Werte (parallel zu stations) — für den Tooltip. */
   values?: (number | null)[]
   unit?: string
-  onSelect?: (station: AtStation) => void
+  /** Klick auf eine Station → Index in `stations`. */
+  onSelect?: (idx: number) => void
+  /** Kartenausschnitt (Default Österreich). */
+  view?: MapView
+  /** URL der Basiskarte (Default Österreich). */
+  basemapUrl?: string
+  /** Label-Ausdünnung (px) für dichte Netze; 0 = alle Zahlen zeigen. */
+  labelMinGap?: number
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const geomRef = useRef<MapGeometry | null>(null)
   const [basemap, setBasemap] = useState<Basemap | null>(null)
-  const [hover, setHover] = useState<{ station: AtStation; idx: number; x: number; y: number } | null>(null)
+  const [hover, setHover] = useState<{ station: MapStation; idx: number; x: number; y: number } | null>(null)
   const hoverIdxRef = useRef<number>(-1)
 
-  // Basiskarte einmal laden.
+  // Basiskarte laden (bei Wechsel der URL neu).
   useEffect(() => {
     let cancelled = false
-    fetch(austriaBasemapUrl)
+    setBasemap(null)
+    fetch(basemapUrl)
       .then((r) => r.json())
       .then((d: Basemap) => {
         if (!cancelled) setBasemap(d)
@@ -75,7 +94,7 @@ export function AtClimateMap({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [basemapUrl])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -97,16 +116,18 @@ export function AtClimateMap({
       ctx.fillStyle = COLORS.bg
       ctx.fillRect(0, 0, w, h)
 
-      const g = makeMapGeometry(6, 6, w - 12, h - 12)
+      const g = makeMapGeometry(6, 6, w - 12, h - 12, view)
       geomRef.current = g
 
       if (basemap) {
-        drawBorderLines(ctx, g, basemap.admin1.features, COLORS.admin1, 1)
-        drawBorderLines(ctx, g, basemap.coast.features, COLORS.coast, 1)
-        drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
+        if (basemap.admin1) drawBorderLines(ctx, g, basemap.admin1.features, COLORS.admin1, 1)
+        if (basemap.coast) drawBorderLines(ctx, g, basemap.coast.features, COLORS.coast, 1)
+        if (basemap.borders) drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
+      // Punkte bei dichten Netzen (DACH) kleiner, damit die Karte nicht zuläuft.
+      const pointR = labelMinGap > 0 ? 3 : 5
       drawStationPoints(ctx, g, stations, {
-        radius: 5,
+        radius: pointR,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hoverIdxRef.current,
@@ -115,14 +136,15 @@ export function AtClimateMap({
         noDataFill: COLORS.noData,
       })
       // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
-      if (values) drawStationLabels(ctx, g, stations, values, formatValue, colors, hoverIdxRef.current)
+      if (values)
+        drawStationLabels(ctx, g, stations, values, formatValue, colors, hoverIdxRef.current, labelMinGap)
     }
 
     draw()
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap])
 
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const g = geomRef.current
@@ -147,7 +169,7 @@ export function AtClimateMap({
     if (!g || !canvas || !onSelect) return
     const rect = canvas.getBoundingClientRect()
     const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 10)
-    if (idx >= 0) onSelect(stations[idx])
+    if (idx >= 0) onSelect(idx)
   }
 
   return (

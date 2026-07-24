@@ -2,7 +2,7 @@ import { TopBar } from './components/TopBar'
 import { PanelGrid } from './components/PanelGrid'
 import { TimeScrubber } from './components/TimeScrubber'
 import { AppNav } from './components/AppNav'
-import { AtClimatePanel } from './components/AtClimatePanel'
+import { AtSection } from './components/AtSection'
 import { useAppView } from './state/appView'
 
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
           <TimeScrubber />
         </>
       ) : (
-        <AtClimatePanel />
+        <AtSection />
       )}
     </div>
   )

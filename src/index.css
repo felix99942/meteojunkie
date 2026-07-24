@@ -882,12 +882,56 @@ button:focus-visible {
 
 /* --- Österreich-Klimakarte ---------------------------------------------- */
 
+.atsection {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 6px;
+}
+
+.atsection-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.atsection-tabs button {
+  padding: 4px 16px;
+  color: var(--ink-muted);
+}
+
+.atsection-tabs button.is-active {
+  color: var(--ink);
+  background: var(--bg-control-hover);
+  border-color: var(--accent);
+}
+
 .atclima {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   gap: 6px;
+}
+
+.atclima-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 160px;
+}
+
+.atclima-slider input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 100px;
+}
+
+.atclima-step {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  min-width: 90px;
 }
 
 .atclima-bar {

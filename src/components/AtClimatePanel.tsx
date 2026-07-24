@@ -237,7 +237,7 @@ export function AtClimatePanel() {
               colors={colors}
               values={displayValues}
               unit={unit}
-              onSelect={setSelected}
+              onSelect={(i) => setSelected(shown[i])}
             />
             {selected && (
               <AtStationDetail
