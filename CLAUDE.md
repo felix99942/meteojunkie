@@ -77,6 +77,18 @@ npm run preview   # gebautes dist/ servieren
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
   Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). Reine Rechenkerne
   sind mit Vitest getestet (`*.test.ts`, `npm test`).
+- **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
+  schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
+  im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind
+  Grad+Dezimalminuten → umgerechnet). DWD hat **kein CORS** → die Daten werden
+  NICHT im Browser geholt, sondern per **Ingest im Deploy-Workflow** (`scripts/
+  mos-ingest-forecast.mjs`, KMZ→KML-Parser `scripts/lib/mosmix.mjs`, kein externes
+  Paket) zu kompakten Pro-Parameter-JSONs (`public/mos/forecast/*.json`, **gitignored**,
+  im Build erzeugt) verarbeitet; der Browser lädt sie same-origin (`api/mosApi.ts`).
+  `deploy.yml` läuft dafür zusätzlich alle 3 h (Cron). T2m/Niederschlag/Sonne/
+  Bewölkung/Wind stündlich (+72 h, Zeitschieber), Tmin/Tmax täglich. Karte:
+  `AtClimateMap` mit `DACH_VIEW` + `europe.basemap` + Label-Ausdünnung. Registry
+  `config/atForecast.ts`. Klimadaten bleiben davon unberührt (Österreich/TAWES).
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`

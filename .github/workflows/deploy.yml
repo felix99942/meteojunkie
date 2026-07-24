@@ -1,11 +1,15 @@
 # Baut die Web-Version (Karte deaktiviert) und deployt sie auf GitHub Pages.
 # Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
-# Läuft bei jedem Push auf main/master (localhost-Entwicklung bleibt unberührt).
+# Läuft bei jedem Push auf main/master UND alle 3 h (Cron) — der Cron-Lauf
+# frischt die MOS-Vorhersage auf (DWD MOSMIX rechnet ~4×/Tag). Die Forecast-
+# JSONs werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
 name: Deploy web version to GitHub Pages
 
 on:
   push:
     branches: [main, master]
+  schedule:
+    - cron: '15 */3 * * *' # alle 3 Stunden — MOS-Vorhersage aktualisieren
   workflow_dispatch:
 
 permissions:
@@ -30,6 +34,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # MOS-Vorhersage (DWD MOSMIX, DACH) frisch erzeugen → public/mos/forecast/.
+      # Die JSONs sind bewusst nicht im Repo (stündlich veränderlich); der Build
+      # bäckt sie ein. Ein DWD-Ausfall darf das Deployment nicht blockieren →
+      # continue-on-error (dann wird der letzte deployte Stand weiter ausgeliefert
+      # bzw. der Vorhersage-Tab zeigt „nicht ladbar", der Rest deployt normal).
+      - name: MOS-Vorhersage erzeugen
+        continue-on-error: true
+        run: npm run ingest:mos:forecast
 
       # base-Pfad ableiten:
       #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)
