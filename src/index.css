@@ -946,12 +946,22 @@ button:focus-visible {
   pointer-events: none;
   background: rgba(20, 21, 23, 0.94);
   border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 3px 7px;
+  border-radius: 4px;
+  padding: 6px 11px;
   white-space: nowrap;
   color: var(--ink);
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1.35;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
   z-index: 5;
+}
+
+.atmap-tooltip strong {
+  font-size: 15px;
+}
+
+.atmap-tt-value {
+  font-size: 15px;
 }
 
 .atmap-tt-state {

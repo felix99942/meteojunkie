@@ -106,7 +106,7 @@ export function AtClimateMap({
         drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
       drawStationPoints(ctx, g, stations, {
-        radius: 2.6,
+        radius: 4,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hoverIdxRef.current,
@@ -131,7 +131,7 @@ export function AtClimateMap({
     const rect = canvas.getBoundingClientRect()
     const px = e.clientX - rect.left
     const py = e.clientY - rect.top
-    const idx = nearestStation(g, stations, px, py, 7)
+    const idx = nearestStation(g, stations, px, py, 10)
     hoverIdxRef.current = idx
     setHover(idx >= 0 ? { station: stations[idx], idx, x: px, y: py } : null)
   }
@@ -146,7 +146,7 @@ export function AtClimateMap({
     const canvas = canvasRef.current
     if (!g || !canvas || !onSelect) return
     const rect = canvas.getBoundingClientRect()
-    const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 7)
+    const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 10)
     if (idx >= 0) onSelect(stations[idx])
   }
 

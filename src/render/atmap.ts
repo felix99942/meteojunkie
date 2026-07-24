@@ -138,7 +138,7 @@ export function drawStationLabels(
   highlightIdx?: number,
 ): void {
   ctx.save()
-  ctx.font = '600 11px system-ui, sans-serif'
+  ctx.font = '700 14px system-ui, sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
@@ -147,9 +147,9 @@ export function drawStationLabels(
     if (v == null || !Number.isFinite(v)) continue
     const { x, y } = project(g, stations[i].lon, stations[i].lat)
     const text = format(v)
-    // Label leicht über den Punkt setzen, damit der farbige Punkt sichtbar bleibt.
-    const ty = y - 7
-    ctx.lineWidth = 3
+    // Label über den Punkt setzen, damit der farbige Punkt sichtbar bleibt.
+    const ty = y - 11
+    ctx.lineWidth = 3.5
     ctx.strokeStyle = 'rgba(0,0,0,0.85)'
     ctx.strokeText(text, x, ty)
     ctx.fillStyle = i === highlightIdx ? '#ffd24a' : '#f4f2ee'
