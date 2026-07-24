@@ -34,6 +34,30 @@ interface MapView {
   lonMax: number
 }
 
+// Basiskarten modulweit cachen: einmal erfolgreich geladen, bleiben sie für die
+// ganze Session verfügbar — beim Zurückschalten (z.B. Vorhersage→Klima) sind die
+// Grenzen sofort da, kein erneutes Fetch-Fenster. FEHLSCHLÄGE werden NICHT
+// gecacht (das war der Bug: ein stilles catch ließ die Grenzen verschwinden),
+// sodass der nächste Versuch die Karte erneut lädt.
+const basemapCache = new Map<string, Promise<Basemap>>()
+
+function loadBasemap(url: string): Promise<Basemap> {
+  let p = basemapCache.get(url)
+  if (!p) {
+    p = fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Basiskarte HTTP ${r.status}`)
+        return r.json()
+      })
+      .catch((err) => {
+        basemapCache.delete(url) // Fehler nicht cachen → nächster Mount lädt neu
+        throw err
+      })
+    basemapCache.set(url, p)
+  }
+  return p
+}
+
 /** Wert kompakt formatieren (max. 1 Nachkommastelle). */
 const formatValue = (v: number): string =>
   Math.abs(v) >= 100 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1)
@@ -86,16 +110,24 @@ export function AtClimateMap({
   const drawRef = useRef<() => void>(() => {})
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
-  // Basiskarte laden (bei Wechsel der URL neu).
+  // Basiskarte laden (aus dem Modul-Cache, bei Wechsel der URL neu).
   useEffect(() => {
     let cancelled = false
-    setBasemap(null)
-    fetch(basemapUrl)
-      .then((r) => r.json())
-      .then((d: Basemap) => {
-        if (!cancelled) setBasemap(d)
-      })
-      .catch(() => {})
+    let retried = false
+    const attempt = () => {
+      loadBasemap(basemapUrl)
+        .then((d) => {
+          if (!cancelled) setBasemap(d)
+        })
+        .catch(() => {
+          // einmal automatisch nachfassen (transienter Fehler) statt still stumm zu bleiben
+          if (!cancelled && !retried) {
+            retried = true
+            setTimeout(attempt, 600)
+          }
+        })
+    }
+    attempt()
     return () => {
       cancelled = true
     }
