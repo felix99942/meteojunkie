@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { fetchStationSeries, type AtStation } from '../api/geosphere'
+import { loadRecords, type RecordsData } from '../api/atValues'
 import { getAtParameter } from '../config/atParameters'
 
 const INK_MUTED = '#898781'
@@ -42,6 +43,17 @@ export function AtStationDetail({
   const [data, setData] = useState<{ xs: number[]; ys: (number | null)[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [records, setRecords] = useState<RecordsData | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    loadRecords()
+      .then((r) => !cancelled && setRecords(r))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -129,6 +141,12 @@ export function AtStationDetail({
 
   const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
 
+  // Rekorde (Monatsextreme) für diesen Parameter — nur für die vorberechneten Codes.
+  const REC_CODES = new Set(['tl_mittel', 'tlmax', 'tlmin', 'rr', 'so_h'])
+  const recCode = spec.monthlyCode && REC_CODES.has(spec.monthlyCode) ? spec.monthlyCode : null
+  const stationRec = recCode ? records?.byStation[station.id]?.[recCode] : undefined
+  const nationalRec = recCode ? records?.national[recCode] : undefined
+
   return (
     <div className="atdetail">
       <div className="atdetail-head">
@@ -151,6 +169,23 @@ export function AtStationDetail({
           <span>Max <strong>{fmt(stats.max)}</strong></span>
           {(spec.agg === 'sum') && <span>Summe <strong>{fmt(stats.sum)}</strong></span>}
           <span className="label-muted">{stats.n} Tage</span>
+        </div>
+      )}
+      {stationRec && (
+        <div className="atdetail-records">
+          <span>
+            Rekord ▲ <strong>{fmt(stationRec.max.value)} {spec.unit}</strong>{' '}
+            <span className="label-muted">{stationRec.max.date}</span>
+          </span>
+          <span>
+            ▼ <strong>{fmt(stationRec.min.value)} {spec.unit}</strong>{' '}
+            <span className="label-muted">{stationRec.min.date}</span>
+          </span>
+          {nationalRec && (
+            <span className="label-muted" title="Österreichweiter Monatsrekord">
+              AT ▲ {fmt(nationalRec.max.value)} ({nationalRec.max.name}, {nationalRec.max.date})
+            </span>
+          )}
         </div>
       )}
       <div className="atdetail-chart">

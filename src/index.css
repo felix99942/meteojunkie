@@ -1077,6 +1077,14 @@ button:focus-visible {
   color: var(--ink-secondary);
 }
 
+.atdetail-records {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
 .atdetail-chart {
   position: relative;
   flex: 1 1 auto;

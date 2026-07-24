@@ -101,6 +101,40 @@ export function loadNormals(): Promise<NormalsMap> {
   return normalsPromise
 }
 
+// --- Rekorde (vorberechnet, public/at/records.json) ----------------------
+
+export interface RecordExtreme {
+  value: number
+  date: string // YYYY-MM
+  station?: number
+  name?: string
+}
+export interface RecordsData {
+  byStation: Record<number, Record<string, { max: RecordExtreme; min: RecordExtreme }>>
+  national: Record<string, { max: RecordExtreme; min: RecordExtreme }>
+}
+
+let recordsPromise: Promise<RecordsData> | null = null
+
+export function loadRecords(): Promise<RecordsData> {
+  if (!recordsPromise) {
+    recordsPromise = fetch(`${import.meta.env.BASE_URL}at/records.json`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Rekorde nicht ladbar: HTTP ${r.status}`)
+        return r.json()
+      })
+      .then((d: { byStation: RecordsData['byStation']; national: RecordsData['national'] }) => ({
+        byStation: d.byStation,
+        national: d.national,
+      }))
+      .catch((err) => {
+        recordsPromise = null
+        throw err
+      })
+  }
+  return recordsPromise
+}
+
 /** Normalwert für Station + Parameter + Periode (Monat/Jahr). null im Tag-Modus. */
 export function normalFor(
   normals: NormalsMap,

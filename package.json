@@ -11,7 +11,8 @@
     "preview:web": "npm run build:web && vite preview",
     "lint": "oxlint",
     "ingest:at": "node scripts/at-ingest-stations.mjs",
-    "ingest:at:normals": "node scripts/at-ingest-normals.mjs"
+    "ingest:at:normals": "node scripts/at-ingest-normals.mjs",
+    "ingest:at:records": "node scripts/at-ingest-records.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
