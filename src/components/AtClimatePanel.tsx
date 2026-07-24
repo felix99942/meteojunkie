@@ -14,6 +14,7 @@ import {
 import { AT_PARAMETERS, aggregate, getAtParameter } from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
+import { AtStationDetail } from './AtStationDetail'
 import { Colorbar } from './Colorbar'
 
 /** Datum als YYYY-MM-DD (UTC). */
@@ -33,6 +34,7 @@ export function AtClimatePanel() {
   const [showAll, setShowAll] = useState(false)
   const [paramCode, setParamCode] = useState('tl_mittel')
   const [day, setDay] = useState(defaultDay)
+  const [selected, setSelected] = useState<AtStation | null>(null)
 
   const [series, setSeries] = useState<StationSeries | null>(null)
   const [valuesLoading, setValuesLoading] = useState(false)
@@ -138,10 +140,24 @@ export function AtClimatePanel() {
           <div className="panel-placeholder">Lade Stationen …</div>
         ) : (
           <>
-            <AtClimateMap stations={shown} colors={colors} values={values} unit={spec.unit} />
+            <AtClimateMap
+              stations={shown}
+              colors={colors}
+              values={values}
+              unit={spec.unit}
+              onSelect={setSelected}
+            />
             <div className="atclima-legend">
               <Colorbar scale={spec.scale} unit={spec.unit} />
             </div>
+            {selected && (
+              <AtStationDetail
+                station={selected}
+                paramCode={paramCode}
+                day={day}
+                onClose={() => setSelected(null)}
+              />
+            )}
           </>
         )}
       </div>

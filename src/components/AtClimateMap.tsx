@@ -45,6 +45,7 @@ export function AtClimateMap({
   colors,
   values,
   unit,
+  onSelect,
 }: {
   stations: AtStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
@@ -52,6 +53,7 @@ export function AtClimateMap({
   /** Per-Station-Werte (parallel zu stations) — für den Tooltip. */
   values?: (number | null)[]
   unit?: string
+  onSelect?: (station: AtStation) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -136,9 +138,18 @@ export function AtClimateMap({
     setHover(null)
   }
 
+  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const g = geomRef.current
+    const canvas = canvasRef.current
+    if (!g || !canvas || !onSelect) return
+    const rect = canvas.getBoundingClientRect()
+    const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 7)
+    if (idx >= 0) onSelect(stations[idx])
+  }
+
   return (
     <div ref={containerRef} className="atmap">
-      <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={onLeave} />
+      <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick} />
       {hover && (
         <div
           className="atmap-tooltip"

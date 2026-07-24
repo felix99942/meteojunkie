@@ -1013,3 +1013,64 @@ button:focus-visible {
   color: var(--ink-secondary);
   font-size: 10px;
 }
+
+/* Stationsdetail (Klick) — Overlay rechts oben auf der Karte */
+.atdetail {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: min(420px, 46%);
+  height: min(320px, 70%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(16, 17, 19, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  z-index: 6;
+}
+
+.atdetail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.atdetail-close {
+  padding: 1px 7px;
+  line-height: 1.4;
+}
+
+.atdetail-sub {
+  color: var(--ink-secondary);
+  font-size: 11px;
+}
+
+.atdetail-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.atdetail-chart {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.atdetail-plot {
+  position: absolute;
+  inset: 0;
+}
+
+.atdetail-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
