@@ -15,7 +15,6 @@ import { AT_PARAMETERS, aggregate, getAtParameter } from '../config/atParameters
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
 import { AtStationDetail } from './AtStationDetail'
-import { Colorbar } from './Colorbar'
 
 /** Datum als YYYY-MM-DD (UTC). */
 function isoDay(d: Date): string {
@@ -147,9 +146,6 @@ export function AtClimatePanel() {
               unit={spec.unit}
               onSelect={setSelected}
             />
-            <div className="atclima-legend">
-              <Colorbar scale={spec.scale} unit={spec.unit} />
-            </div>
             {selected && (
               <AtStationDetail
                 station={selected}

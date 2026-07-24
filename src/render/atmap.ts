@@ -125,6 +125,40 @@ export function drawStationPoints(
 }
 
 /**
+ * Werte als Text direkt an die Stationen zeichnen (gut sichtbar: weiße Schrift
+ * mit dunklem Halo). Überlappung wird bewusst in Kauf genommen. Stationen ohne
+ * Wert bekommen kein Label. `format` wandelt den Zahlenwert in den Anzeigetext.
+ */
+export function drawStationLabels(
+  ctx: CanvasRenderingContext2D,
+  g: MapGeometry,
+  stations: AtStation[],
+  values: (number | null)[],
+  format: (v: number) => string,
+  highlightIdx?: number,
+): void {
+  ctx.save()
+  ctx.font = '600 11px system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineJoin = 'round'
+  for (let i = 0; i < stations.length; i++) {
+    const v = values[i]
+    if (v == null || !Number.isFinite(v)) continue
+    const { x, y } = project(g, stations[i].lon, stations[i].lat)
+    const text = format(v)
+    // Label leicht über den Punkt setzen, damit der farbige Punkt sichtbar bleibt.
+    const ty = y - 7
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)'
+    ctx.strokeText(text, x, ty)
+    ctx.fillStyle = i === highlightIdx ? '#ffd24a' : '#f4f2ee'
+    ctx.fillText(text, x, ty)
+  }
+  ctx.restore()
+}
+
+/**
  * Nächste Station zu einem Pixelpunkt finden (Hit-Test für Hover), oder -1.
  * `maxDist` in CSS-Pixeln.
  */

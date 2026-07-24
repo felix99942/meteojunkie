@@ -10,6 +10,7 @@ import type { AtStation } from '../api/geosphere'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
 import {
   drawBorderLines,
+  drawStationLabels,
   drawStationPoints,
   makeMapGeometry,
   nearestStation,
@@ -105,7 +106,7 @@ export function AtClimateMap({
         drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
       drawStationPoints(ctx, g, stations, {
-        radius: 3,
+        radius: 2.6,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hoverIdxRef.current,
@@ -113,13 +114,15 @@ export function AtClimateMap({
         colors,
         noDataFill: COLORS.noData,
       })
+      // Werte direkt in die Karte schreiben (ersetzt die Legende) — nur wenn Werte da sind.
+      if (values) drawStationLabels(ctx, g, stations, values, formatValue, hoverIdxRef.current)
     }
 
     draw()
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, hover])
+  }, [basemap, stations, colors, values, hover])
 
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const g = geomRef.current
