@@ -969,6 +969,27 @@ button:focus-visible {
   gap: 5px;
 }
 
+.atclima-modes {
+  display: flex;
+  gap: 2px;
+}
+
+.atclima-modes button {
+  padding: 3px 9px;
+  color: var(--ink-muted);
+}
+
+.atclima-modes button.is-active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: var(--bg-control-hover);
+}
+
+.atclima-modes button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .atclima-legend {
   position: absolute;
   left: 10px;

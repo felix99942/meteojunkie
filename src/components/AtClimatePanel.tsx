@@ -1,30 +1,36 @@
-// Österreich-Klimakarte — Bereichs-Container (Schritt 3). Lädt Stammdaten, bietet
-// Parameter- und Datumswahl, holt die Werte in EINEM Bulk-Request über alle
-// gezeigten Stationen (gecacht) und färbt die Karte samt Colorbar ein.
-// Stationsdetail (Klick) folgt in Schritt 4, Normale/Anomalien in Schritt 5.
+// Österreich-Klimakarte — Bereichs-Container (Schritt 3–5). Lädt Stammdaten,
+// bietet Parameter-, Zeitbezug- (Tag/Monat/Jahr) und Modus-Wahl (Absolut/
+// Abweichung vom Normal 1991–2020), holt die Werte in EINEM Bulk-Request und
+// färbt die Karte samt In-Karten-Beschriftung ein. Klick → Stationsdetail.
 
 import { useEffect, useMemo, useState } from 'react'
+import { activeStations, loadStations, type AtStation } from '../api/geosphere'
 import {
-  activeStations,
-  fetchStationSeries,
-  loadStations,
-  type AtStation,
-  type StationSeries,
-} from '../api/geosphere'
-import { AT_PARAMETERS, aggregate, getAtParameter } from '../config/atParameters'
+  fetchPeriodValues,
+  isParamAvailable,
+  loadNormals,
+  normalFor,
+  type NormalsMap,
+  type Period,
+} from '../api/atValues'
+import { anomaly, AT_PARAMETERS, getAtParameter } from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
 import { AtStationDetail } from './AtStationDetail'
 
-/** Datum als YYYY-MM-DD (UTC). */
-function isoDay(d: Date): string {
-  return d.toISOString().slice(0, 10)
-}
-/** Default: ein sicher verfügbarer historischer Tag (Klima-Daten haben Vorlauf). */
-function defaultDay(): string {
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+function defaults() {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() - 5)
-  return isoDay(d)
+  const day = isoDay(d)
+  const lastMonth = new Date()
+  lastMonth.setUTCDate(1)
+  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1)
+  const monthStr = `${lastMonth.getUTCFullYear()}-${pad2(lastMonth.getUTCMonth() + 1)}`
+  const year = new Date().getUTCFullYear() - 1
+  return { day, monthStr, year }
 }
 
 export function AtClimatePanel() {
@@ -32,14 +38,31 @@ export function AtClimatePanel() {
   const [stationsError, setStationsError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [paramCode, setParamCode] = useState('tl_mittel')
-  const [day, setDay] = useState(defaultDay)
   const [selected, setSelected] = useState<AtStation | null>(null)
 
-  const [series, setSeries] = useState<StationSeries | null>(null)
+  const init = useMemo(defaults, [])
+  const [periodKind, setPeriodKind] = useState<Period['kind']>('day')
+  const [day, setDay] = useState(init.day)
+  const [monthStr, setMonthStr] = useState(init.monthStr)
+  const [year, setYear] = useState(init.year)
+  const [mode, setMode] = useState<'abs' | 'anom'>('abs')
+
+  const [values, setValues] = useState<Record<number, number | null> | null>(null)
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
+  const [normals, setNormals] = useState<NormalsMap | null>(null)
+
+  const period = useMemo<Period>(() => {
+    if (periodKind === 'day') return { kind: 'day', day }
+    if (periodKind === 'month') {
+      const [y, m] = monthStr.split('-').map(Number)
+      return { kind: 'month', year: y, month: m }
+    }
+    return { kind: 'year', year }
+  }, [periodKind, day, monthStr, year])
 
   const spec = getAtParameter(paramCode)
+  const anomActive = mode === 'anom' && periodKind !== 'day' && isParamAvailable(spec, period)
 
   useEffect(() => {
     let cancelled = false
@@ -51,26 +74,41 @@ export function AtClimatePanel() {
     }
   }, [])
 
+  // Normale nur laden, wenn der Abweichungsmodus sie braucht.
+  useEffect(() => {
+    if (mode !== 'anom' || normals) return
+    let cancelled = false
+    loadNormals()
+      .then((n) => !cancelled && setNormals(n))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [mode, normals])
+
   const shown = useMemo(
     () => (stations ? (showAll ? stations : activeStations(stations)) : []),
     [stations, showAll],
   )
   const idsKey = useMemo(() => shown.map((s) => s.id).join(','), [shown])
 
-  // Werte holen: ein Bulk-Request über alle gezeigten Stationen (gecacht).
+  // Wenn der Parameter im gewählten Zeitbezug nicht verfügbar ist (z.B. Schnee im
+  // Monat), auf Temperatur zurückfallen — nie stumm leer zeigen.
   useEffect(() => {
-    if (shown.length === 0) return
+    if (!isParamAvailable(spec, period)) setParamCode('tl_mittel')
+  }, [spec, period])
+
+  // Bulk-Abruf der Periodenwerte.
+  useEffect(() => {
+    if (shown.length === 0 || !isParamAvailable(spec, period)) return
     let cancelled = false
     setValuesLoading(true)
     setValuesError(null)
-    const ids = shown.map((s) => s.id)
-    fetchStationSeries(paramCode, day, day, ids)
-      .then((s) => {
-        if (!cancelled) setSeries(s)
-      })
+    fetchPeriodValues(spec, period, shown)
+      .then((r) => !cancelled && setValues(r.byStation))
       .catch((err) => {
         if (!cancelled) {
-          setSeries(null)
+          setValues(null)
           setValuesError(err?.message ?? 'Werte nicht ladbar')
         }
       })
@@ -78,54 +116,109 @@ export function AtClimatePanel() {
     return () => {
       cancelled = true
     }
-    // shown wird über idsKey (stabiler String) gekeyed — das Array selbst ist jede Runde neu
+    // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, day, idsKey])
+  }, [paramCode, period, idsKey])
 
-  // Aggregierte Werte + Farben je gezeigter Station (parallel zu `shown`).
-  const { values, colors, covered } = useMemo(() => {
-    const values: (number | null)[] = new Array(shown.length).fill(null)
+  // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
+  const scale = anomActive ? spec.anomalyScale : spec.scale
+  const unit = anomActive ? spec.anomalyUnit : spec.unit
+  const { displayValues, colors, covered } = useMemo(() => {
+    const displayValues: (number | null)[] = new Array(shown.length).fill(null)
     const colors: (string | null)[] = new Array(shown.length).fill(null)
     let covered = 0
-    if (series) {
-      for (let i = 0; i < shown.length; i++) {
-        const data = series.byStation[shown[i].id]
-        if (!data) continue
-        const v = aggregate(data, spec.agg)
-        values[i] = v
-        if (v != null) {
-          colors[i] = colorForValue(spec.scale, v)
-          covered++
-        }
+    for (let i = 0; i < shown.length; i++) {
+      const raw = values?.[shown[i].id]
+      if (raw == null) continue
+      let v: number | null = raw
+      if (anomActive) {
+        const norm = normals ? normalFor(normals, spec, period, shown[i].id) : null
+        v = norm != null ? anomaly(raw, norm, spec.anomalyKind) : null
+      }
+      displayValues[i] = v
+      if (v != null) {
+        colors[i] = colorForValue(scale, v)
+        covered++
       }
     }
-    return { values, colors, covered }
-  }, [series, shown, spec])
+    return { displayValues, colors, covered }
+  }, [values, normals, shown, spec, period, anomActive, scale])
+
+  const refDay = useMemo(() => {
+    if (period.kind === 'day') return period.day
+    if (period.kind === 'month') {
+      const last = new Date(Date.UTC(period.year, period.month, 0))
+      return isoDay(last > new Date() ? new Date() : last)
+    }
+    const dec = new Date(Date.UTC(period.year, 11, 31))
+    return isoDay(dec > new Date() ? new Date() : dec)
+  }, [period])
+
+  const status = valuesLoading
+    ? 'lädt Werte …'
+    : valuesError
+      ? `⚠ ${valuesError}`
+      : anomActive && !normals
+        ? 'lädt Normale …'
+        : `${covered}/${shown.length} Stationen`
 
   return (
     <div className="atclima">
       <div className="atclima-bar">
-        <span className="atclima-title">Österreich-Klimakarte</span>
+        <span className="atclima-title">Österreich-Klima</span>
         <label className="atclima-ctrl">
           <span className="label-muted">Parameter</span>
           <select value={paramCode} onChange={(e) => setParamCode(e.target.value)}>
-            {AT_PARAMETERS.map((p) => (
+            {AT_PARAMETERS.filter((p) => isParamAvailable(p, period)).map((p) => (
               <option key={p.code} value={p.code}>
-                {p.category} – {p.label} ({p.unit})
+                {p.category} – {p.label}
               </option>
             ))}
           </select>
         </label>
         <label className="atclima-ctrl">
-          <span className="label-muted">Tag</span>
-          <input type="date" value={day} max={isoDay(new Date())} onChange={(e) => setDay(e.target.value)} />
+          <span className="label-muted">Zeitbezug</span>
+          <select value={periodKind} onChange={(e) => setPeriodKind(e.target.value as Period['kind'])}>
+            <option value="day">Tag</option>
+            <option value="month">Monat</option>
+            <option value="year">Jahr</option>
+          </select>
         </label>
+        {periodKind === 'day' && (
+          <input type="date" value={day} max={isoDay(new Date())} onChange={(e) => setDay(e.target.value)} />
+        )}
+        {periodKind === 'month' && (
+          <input type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
+        )}
+        {periodKind === 'year' && (
+          <input
+            type="number"
+            value={year}
+            min={1991}
+            max={new Date().getUTCFullYear()}
+            onChange={(e) => setYear(Number(e.target.value))}
+            style={{ width: 70 }}
+          />
+        )}
+        <div className="atclima-modes" title={periodKind === 'day' ? 'Anomalien gibt es für Monat/Jahr' : ''}>
+          <button
+            type="button"
+            className={mode === 'abs' ? 'is-active' : ''}
+            onClick={() => setMode('abs')}
+          >
+            Absolut
+          </button>
+          <button
+            type="button"
+            className={mode === 'anom' ? 'is-active' : ''}
+            disabled={periodKind === 'day'}
+            onClick={() => setMode('anom')}
+          >
+            Abweichung
+          </button>
+        </div>
         <span className="atclima-sub">
-          {valuesLoading
-            ? 'lädt Werte …'
-            : valuesError
-              ? `⚠ ${valuesError}`
-              : `${covered}/${shown.length} Stationen mit Wert`}
+          {status} · {anomActive ? `Δ ${unit} vs. 1991–2020` : unit}
         </span>
         <label className="atclima-toggle" title="Auch stillgelegte historische Stationen zeigen">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
@@ -142,15 +235,15 @@ export function AtClimatePanel() {
             <AtClimateMap
               stations={shown}
               colors={colors}
-              values={values}
-              unit={spec.unit}
+              values={displayValues}
+              unit={unit}
               onSelect={setSelected}
             />
             {selected && (
               <AtStationDetail
                 station={selected}
-                paramCode={paramCode}
-                day={day}
+                paramCode={isParamAvailable(spec, period) ? paramCode : 'tl_mittel'}
+                day={refDay}
                 onClose={() => setSelected(null)}
               />
             )}
@@ -158,7 +251,7 @@ export function AtClimatePanel() {
         )}
       </div>
       <span className="atclima-attribution">
-        Datenquelle: GeoSphere Austria, Datensatz klima-v2-1d (CC BY 4.0)
+        Datenquelle: GeoSphere Austria, klima-v2-1d/-1m (CC BY 4.0)
       </span>
     </div>
   )

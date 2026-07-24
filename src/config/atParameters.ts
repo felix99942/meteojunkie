@@ -12,15 +12,65 @@ import { COLOR_SCALES, type ColorScale } from './colorscales'
 /** Wie eine Reihe täglicher Werte auf EINEN Kartenwert reduziert wird. */
 export type AggMode = 'mean' | 'sum' | 'max' | 'min' | 'last'
 
+/** Anomalie als absolute Differenz (K, %-Punkte) oder als Prozent des Normals. */
+export type AnomalyKind = 'delta' | 'percent'
+
 export interface AtParameterSpec {
-  /** GeoSphere-Parametercode (klima-v2-1d). */
+  /** GeoSphere-Parametercode im Tagesdatensatz (klima-v2-1d). */
   code: string
+  /** Code im Monatsdatensatz (klima-v2-1m); fehlt → nur im Tag-Modus verfügbar. */
+  monthlyCode?: string
   label: string
   unit: string
   category: 'Temperatur' | 'Niederschlag' | 'Sonne' | 'Schnee' | 'Feuchte' | 'Wind'
-  /** Reduktion über einen Zeitraum (bei Einzeltag irrelevant). */
+  /** Reduktion täglicher Werte auf einen Wert (Tag/Monat-Aggregat der Rohreihe). */
   agg: AggMode
+  /** Reduktion der 12 Monatswerte auf den Jahreswert. */
+  annualAgg: AggMode
+  /** Wie die Abweichung vom Normal ausgedrückt wird. */
+  anomalyKind: AnomalyKind
+  /** Einheit der Anomalie (z. B. 'K' oder '%'). */
+  anomalyUnit: string
   scale: ColorScale
+  /** Divergierende Skala für den Anomalie-Modus. */
+  anomalyScale: ColorScale
+}
+
+// Divergierende Temperatur-Anomalie (K): blau (kalt) → neutral → rot (warm).
+// ColorBrewer RdBu, barrierefrei. belowMin clamp (Extremkälte = dunkelblau).
+const TEMP_ANOM_SCALE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: [
+    { value: -12, color: '#2166ac' },
+    { value: -8, color: '#4393c3' },
+    { value: -5, color: '#92c5de' },
+    { value: -2, color: '#d1e5f0' },
+    { value: -0.5, color: '#dcdcdc' },
+    { value: 0.5, color: '#fddbc7' },
+    { value: 2, color: '#f4a582' },
+    { value: 5, color: '#d6604d' },
+    { value: 8, color: '#b2182b' },
+    { value: 12, color: '#67001f' },
+  ],
+}
+
+// Divergierende %-Anomalie (Niederschlag/Sonne): braun (trocken) → neutral →
+// grün/teal (nass). ColorBrewer BrBG, um 100 % zentriert. belowMin clamp.
+const PERCENT_ANOM_SCALE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: [
+    { value: 20, color: '#8c510a' },
+    { value: 40, color: '#bf812d' },
+    { value: 60, color: '#dfc27d' },
+    { value: 80, color: '#f6e8c3' },
+    { value: 95, color: '#dcdcdc' },
+    { value: 105, color: '#c7eae5' },
+    { value: 130, color: '#80cdc1' },
+    { value: 160, color: '#35978f' },
+    { value: 200, color: '#01665e' },
+  ],
 }
 
 // Sonnenscheindauer (h/Tag): sequenziell dunkel→hell-gelb, im Stil der
@@ -58,13 +108,13 @@ const SNOW_DEPTH_SCALE: ColorScale = {
 }
 
 export const AT_PARAMETERS: AtParameterSpec[] = [
-  { code: 'tl_mittel', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', scale: COLOR_SCALES.temperature_2m },
-  { code: 'tlmax', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', scale: COLOR_SCALES.temperature_2m },
-  { code: 'tlmin', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', scale: COLOR_SCALES.temperature_2m },
-  { code: 'rr', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', scale: COLOR_SCALES.precipitation },
-  { code: 'so_h', label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', scale: SUNSHINE_SCALE },
-  { code: 'sh', label: 'Schneehöhe', unit: 'cm', category: 'Schnee', agg: 'last', scale: SNOW_DEPTH_SCALE },
-  { code: 'rfb_mittel', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', scale: COLOR_SCALES.relative_humidity_2m },
+  { code: 'tl_mittel', monthlyCode: 'tl_mittel', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tlmax', monthlyCode: 'tlmax', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tlmin', monthlyCode: 'tlmin', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'rr', monthlyCode: 'rr', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE },
+  { code: 'so_h', monthlyCode: 'so_h', label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE },
+  { code: 'rfb_mittel', monthlyCode: 'rf_mittel', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'sh', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE },
 ]
 
 const byCode = new Map(AT_PARAMETERS.map((p) => [p.code, p]))
@@ -73,6 +123,12 @@ export function getAtParameter(code: string): AtParameterSpec {
   const p = byCode.get(code)
   if (!p) throw new Error(`Unbekannter AT-Parameter: ${code}`)
   return p
+}
+
+/** Abweichung eines Werts vom Normal: delta = Wert−Normal, percent = 100·Wert/Normal. */
+export function anomaly(value: number, normal: number, kind: AnomalyKind): number | null {
+  if (kind === 'percent') return normal !== 0 ? (100 * value) / normal : null
+  return value - normal
 }
 
 /** Reihe (mit möglichen null-Lücken) gemäß Aggregat auf einen Wert reduzieren. */

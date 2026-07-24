@@ -86,7 +86,8 @@ export const activeStations = (stations: AtStation[]): AtStation[] =>
 // --- Werte-Bulk-Abruf (Schritt 3) ---------------------------------------
 
 const GEOSPHERE_BASE = 'https://dataset.api.hub.geosphere.at/v1'
-const DATASET = 'station/historical/klima-v2-1d'
+export const DATASET_DAILY = 'station/historical/klima-v2-1d'
+export const DATASET_MONTHLY = 'station/historical/klima-v2-1m'
 
 /** Zeitreihe eines Parameters je Station: stationId → tägliche Werte (null-Lücken). */
 export interface StationSeries {
@@ -110,14 +111,15 @@ export async function fetchStationSeries(
   start: string,
   end: string,
   stationIds: number[],
+  dataset: string = DATASET_DAILY,
 ): Promise<StationSeries> {
   const ids = [...stationIds].sort((a, b) => a - b)
-  const key = `${parameter}|${start}|${end}|${ids.join(',')}`
+  const key = `${dataset}|${parameter}|${start}|${end}|${ids.join(',')}`
   const cached = await cacheGet<StationSeries>(key)
   if (cached) return cached
 
   const url =
-    `${GEOSPHERE_BASE}/${DATASET}?parameters=${encodeURIComponent(parameter)}` +
+    `${GEOSPHERE_BASE}/${dataset}?parameters=${encodeURIComponent(parameter)}` +
     `&start=${start}&end=${end}&station_ids=${ids.join(',')}&output_format=geojson`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`GeoSphere-Abruf fehlgeschlagen: HTTP ${res.status}`)
