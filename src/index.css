@@ -1050,16 +1050,17 @@ button:focus-visible {
   position: absolute;
   right: 10px;
   top: 10px;
-  width: min(420px, 46%);
-  height: min(320px, 70%);
+  width: min(560px, 64%);
+  max-height: calc(100% - 20px);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background: rgba(16, 17, 19, 0.96);
+  gap: 5px;
+  background: rgba(16, 17, 19, 0.97);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px 10px;
   z-index: 6;
+  overflow-y: auto;
 }
 
 .atdetail-head {
@@ -1087,18 +1088,78 @@ button:focus-visible {
   color: var(--ink-secondary);
 }
 
-.atdetail-records {
+/* Rekord-Block: absolut/national (Zeilen), Saison (4er-Raster), Monat (12er-Raster) */
+.atdetail-recblock {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  padding-top: 5px;
+}
+
+.atdetail-records-empty {
+  font-size: 11px;
+}
+
+.atdetail-recrow {
   display: flex;
   gap: 12px;
+  align-items: baseline;
   flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--ink-secondary);
+}
+
+.atdetail-reclabel {
+  min-width: 20px;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.atdetail-recnat {
+  font-size: 10px;
+}
+
+.atdetail-recgrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.atdetail-recmonths {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 2px;
+  font-size: 10px;
+}
+
+.atdetail-reccell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: var(--bg-control);
+  border-radius: 3px;
+  padding: 3px 2px;
+  line-height: 1.2;
+}
+
+.atdetail-reccap {
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.atdetail-recmax {
+  color: #ec8a5a;
+}
+
+.atdetail-recmin {
+  color: #6aa9e0;
 }
 
 .atdetail-chart {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
+  height: 150px;
+  flex: 0 0 auto;
 }
 
 .atdetail-plot {

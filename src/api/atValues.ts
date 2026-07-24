@@ -101,38 +101,73 @@ export function loadNormals(): Promise<NormalsMap> {
   return normalsPromise
 }
 
-// --- Rekorde (vorberechnet, public/at/records.json) ----------------------
+// --- Rekorde (vorberechnet, public/at/records/<id>.json + _national.json) --
+//
+// Drei Ebenen je Parameter: abs (absoluter Stationsrekord), mon[12]
+// (Monatsrekorde je Kalendermonat) und sea (Saisonrekorde DJF/MAM/JJA/SON).
+// Pro Station eine kleine Datei — nur die angeklickte wird geladen.
 
-export interface RecordExtreme {
-  value: number
-  date: string // YYYY-MM
-  station?: number
-  name?: string
+export type Season = 'DJF' | 'MAM' | 'JJA' | 'SON'
+export const SEASONS: Season[] = ['DJF', 'MAM', 'JJA', 'SON']
+export const SEASON_LABEL: Record<Season, string> = {
+  DJF: 'Winter',
+  MAM: 'Frühling',
+  JJA: 'Sommer',
+  SON: 'Herbst',
 }
-export interface RecordsData {
-  byStation: Record<number, Record<string, { max: RecordExtreme; min: RecordExtreme }>>
-  national: Record<string, { max: RecordExtreme; min: RecordExtreme }>
+
+/** Ein Extremwert: v = Wert; d = Monat (YYYY-MM, nur abs); y = Jahr; s/n = Station (nur national). */
+export interface Extreme {
+  v: number
+  d?: string
+  y?: number
+  s?: number
+  n?: string
+}
+export interface MaxMin {
+  max: Extreme
+  min: Extreme
+}
+export interface ParamRecords {
+  abs: MaxMin
+  mon: MaxMin[] // 12, Jänner … Dezember
+  sea: Record<Season, MaxMin>
+}
+/** code → Rekorde einer Station. */
+export type StationRecords = Record<string, ParamRecords>
+/** code → absolute nationale Rekorde. */
+export type NationalRecords = Record<string, MaxMin>
+
+const stationRecordsCache = new Map<number, Promise<StationRecords | null>>()
+let nationalPromise: Promise<NationalRecords> | null = null
+
+/** Rekorde EINER Station laden (klein, je Station gecacht). null wenn keine. */
+export function loadStationRecords(id: number): Promise<StationRecords | null> {
+  let p = stationRecordsCache.get(id)
+  if (!p) {
+    p = fetch(`${import.meta.env.BASE_URL}at/records/${id}.json`)
+      .then((r) => (r.ok ? (r.json() as Promise<StationRecords>) : null))
+      .catch(() => null)
+    stationRecordsCache.set(id, p)
+  }
+  return p
 }
 
-let recordsPromise: Promise<RecordsData> | null = null
-
-export function loadRecords(): Promise<RecordsData> {
-  if (!recordsPromise) {
-    recordsPromise = fetch(`${import.meta.env.BASE_URL}at/records.json`)
+/** Österreichweite absolute Rekorde laden (einmal). */
+export function loadNationalRecords(): Promise<NationalRecords> {
+  if (!nationalPromise) {
+    nationalPromise = fetch(`${import.meta.env.BASE_URL}at/records/_national.json`)
       .then((r) => {
         if (!r.ok) throw new Error(`Rekorde nicht ladbar: HTTP ${r.status}`)
         return r.json()
       })
-      .then((d: { byStation: RecordsData['byStation']; national: RecordsData['national'] }) => ({
-        byStation: d.byStation,
-        national: d.national,
-      }))
+      .then((d: { national: NationalRecords }) => d.national)
       .catch((err) => {
-        recordsPromise = null
+        nationalPromise = null
         throw err
       })
   }
-  return recordsPromise
+  return nationalPromise
 }
 
 /** Normalwert für Station + Parameter + Periode (Monat/Jahr). null im Tag-Modus. */

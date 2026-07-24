@@ -7,8 +7,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { fetchStationSeries, type AtStation } from '../api/geosphere'
-import { loadRecords, type RecordsData } from '../api/atValues'
+import {
+  loadNationalRecords,
+  loadStationRecords,
+  SEASON_LABEL,
+  SEASONS,
+  type NationalRecords,
+  type StationRecords,
+} from '../api/atValues'
 import { getAtParameter } from '../config/atParameters'
+
+const MONTH_ABBR = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
@@ -43,17 +52,20 @@ export function AtStationDetail({
   const [data, setData] = useState<{ xs: number[]; ys: (number | null)[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [records, setRecords] = useState<RecordsData | null>(null)
+  const [records, setRecords] = useState<StationRecords | null>(null)
+  const [national, setNational] = useState<NationalRecords | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    loadRecords()
-      .then((r) => !cancelled && setRecords(r))
+    setRecords(null)
+    loadStationRecords(station.id).then((r) => !cancelled && setRecords(r))
+    loadNationalRecords()
+      .then((n) => !cancelled && setNational(n))
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [station.id])
 
   useEffect(() => {
     let cancelled = false
@@ -144,8 +156,9 @@ export function AtStationDetail({
   // Rekorde (Monatsextreme) für diesen Parameter — nur für die vorberechneten Codes.
   const REC_CODES = new Set(['tl_mittel', 'tlmax', 'tlmin', 'rr', 'so_h'])
   const recCode = spec.monthlyCode && REC_CODES.has(spec.monthlyCode) ? spec.monthlyCode : null
-  const stationRec = recCode ? records?.byStation[station.id]?.[recCode] : undefined
-  const nationalRec = recCode ? records?.national[recCode] : undefined
+  const rec = recCode && records ? records[recCode] : undefined
+  const natRec = recCode && national ? national[recCode] : undefined
+  const u = spec.unit
 
   return (
     <div className="atdetail">
@@ -171,21 +184,39 @@ export function AtStationDetail({
           <span className="label-muted">{stats.n} Tage</span>
         </div>
       )}
-      {stationRec && (
-        <div className="atdetail-records">
-          <span>
-            Rekord ▲ <strong>{fmt(stationRec.max.value)} {spec.unit}</strong>{' '}
-            <span className="label-muted">{stationRec.max.date}</span>
-          </span>
-          <span>
-            ▼ <strong>{fmt(stationRec.min.value)} {spec.unit}</strong>{' '}
-            <span className="label-muted">{stationRec.min.date}</span>
-          </span>
-          {nationalRec && (
-            <span className="label-muted" title="Österreichweiter Monatsrekord">
-              AT ▲ {fmt(nationalRec.max.value)} ({nationalRec.max.name}, {nationalRec.max.date})
-            </span>
+      {recCode && !rec && <div className="atdetail-records-empty label-muted">Lade Rekorde …</div>}
+      {rec && (
+        <div className="atdetail-recblock">
+          <div className="atdetail-recrow">
+            <span className="atdetail-reclabel">Absolut</span>
+            <span className="atdetail-recmax">▲ {fmt(rec.abs.max.v)} {u} <span className="label-muted">{rec.abs.max.d}</span></span>
+            <span className="atdetail-recmin">▼ {fmt(rec.abs.min.v)} {u} <span className="label-muted">{rec.abs.min.d}</span></span>
+          </div>
+          {natRec && (
+            <div className="atdetail-recrow atdetail-recnat" title="Österreichweiter Monatsrekord">
+              <span className="atdetail-reclabel">AT</span>
+              <span className="atdetail-recmax">▲ {fmt(natRec.max.v)} {u} <span className="label-muted">{natRec.max.n}, {natRec.max.d}</span></span>
+              <span className="atdetail-recmin">▼ {fmt(natRec.min.v)} {u} <span className="label-muted">{natRec.min.n}, {natRec.min.d}</span></span>
+            </div>
           )}
+          <div className="atdetail-recgrid">
+            {SEASONS.map((s) => (
+              <div key={s} className="atdetail-reccell">
+                <span className="atdetail-reccap">{SEASON_LABEL[s]}</span>
+                <span className="atdetail-recmax">▲ {fmt(rec.sea[s].max.v)} <span className="label-muted">’{String(rec.sea[s].max.y).slice(2)}</span></span>
+                <span className="atdetail-recmin">▼ {fmt(rec.sea[s].min.v)} <span className="label-muted">’{String(rec.sea[s].min.y).slice(2)}</span></span>
+              </div>
+            ))}
+          </div>
+          <div className="atdetail-recmonths">
+            {rec.mon.map((m, i) => (
+              <div key={i} className="atdetail-reccell" title={`${MONTH_ABBR[i]}: ▲${fmt(m.max.v)} ${m.max.y} · ▼${fmt(m.min.v)} ${m.min.y}`}>
+                <span className="atdetail-reccap">{MONTH_ABBR[i]}</span>
+                <span className="atdetail-recmax">{fmt(m.max.v)}</span>
+                <span className="atdetail-recmin">{fmt(m.min.v)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <div className="atdetail-chart">
