@@ -80,6 +80,11 @@ export function AtClimateMap({
   const [basemap, setBasemap] = useState<Basemap | null>(null)
   const [hover, setHover] = useState<{ station: MapStation; idx: number; x: number; y: number } | null>(null)
   const hoverIdxRef = useRef<number>(-1)
+  // Zoom/Pan-Transform im Bildschirmraum: screen = basisProjektion·zoom + offset.
+  // Als Ref (kein Re-Render pro Rad/Zug); Neuzeichnen über drawRef.
+  const tfRef = useRef({ zoom: 1, ox: 0, oy: 0 })
+  const drawRef = useRef<() => void>(() => {})
+  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
   // Basiskarte laden (bei Wechsel der URL neu).
   useEffect(() => {
@@ -116,7 +121,11 @@ export function AtClimateMap({
       ctx.fillStyle = COLORS.bg
       ctx.fillRect(0, 0, w, h)
 
-      const g = makeMapGeometry(6, 6, w - 12, h - 12, view)
+      const base = makeMapGeometry(6, 6, w - 12, h - 12, view)
+      // Zoom/Pan auf die Basisgeometrie falten → project() liefert direkt den
+      // Bildschirmpunkt (Text bleibt dabei konstant groß, nur Positionen skalieren).
+      const { zoom, ox, oy } = tfRef.current
+      const g = { ...base, left: base.left * zoom + ox, top: base.top * zoom + oy, scale: base.scale * zoom }
       geomRef.current = g
 
       if (basemap) {
@@ -140,11 +149,46 @@ export function AtClimateMap({
         drawStationLabels(ctx, g, stations, values, formatValue, colors, hoverIdxRef.current, labelMinGap)
     }
 
+    drawRef.current = draw
     draw()
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
   }, [basemap, stations, colors, values, hover, view, labelMinGap])
+
+  // Zoom per Mausrad (um den Cursor). Nativer Listener mit passive:false, damit
+  // preventDefault das Seiten-Scrollen zuverlässig unterbindet.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      const { zoom, ox, oy } = tfRef.current
+      const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2
+      let nz = Math.min(20, Math.max(1, zoom * factor))
+      if (nz <= 1.0001) {
+        tfRef.current = { zoom: 1, ox: 0, oy: 0 } // ganz raus = wieder eingepasst
+      } else {
+        // Geo-Punkt unter der Maus fixieren: noffset = m − (m − offset)/zoom · nz
+        tfRef.current = {
+          zoom: nz,
+          ox: mx - ((mx - ox) / zoom) * nz,
+          oy: my - ((my - oy) / zoom) * nz,
+        }
+      }
+      drawRef.current()
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const onDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    dragRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, moved: false }
+  }
 
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const g = geomRef.current
@@ -153,12 +197,32 @@ export function AtClimateMap({
     const rect = canvas.getBoundingClientRect()
     const px = e.clientX - rect.left
     const py = e.clientY - rect.top
+    // Ziehen → Karte verschieben (Pan).
+    if (dragRef.current) {
+      const dx = px - dragRef.current.x
+      const dy = py - dragRef.current.y
+      if (Math.abs(dx) + Math.abs(dy) > 2) dragRef.current.moved = true
+      dragRef.current.x = px
+      dragRef.current.y = py
+      tfRef.current = { ...tfRef.current, ox: tfRef.current.ox + dx, oy: tfRef.current.oy + dy }
+      if (hoverIdxRef.current !== -1) {
+        hoverIdxRef.current = -1
+        setHover(null)
+      }
+      drawRef.current()
+      return
+    }
     const idx = nearestStation(g, stations, px, py, 10)
     hoverIdxRef.current = idx
     setHover(idx >= 0 ? { station: stations[idx], idx, x: px, y: py } : null)
   }
 
+  const onUp = () => {
+    dragRef.current = null
+  }
+
   const onLeave = () => {
+    dragRef.current = null
     hoverIdxRef.current = -1
     setHover(null)
   }
@@ -167,14 +231,28 @@ export function AtClimateMap({
     const g = geomRef.current
     const canvas = canvasRef.current
     if (!g || !canvas || !onSelect) return
+    if (dragRef.current?.moved) return // war ein Pan, keine Auswahl
     const rect = canvas.getBoundingClientRect()
     const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 10)
     if (idx >= 0) onSelect(idx)
   }
 
+  const onDoubleClick = () => {
+    tfRef.current = { zoom: 1, ox: 0, oy: 0 } // zurück auf eingepassten Ausschnitt
+    drawRef.current()
+  }
+
   return (
     <div ref={containerRef} className="atmap">
-      <canvas ref={canvasRef} onMouseMove={onMove} onMouseLeave={onLeave} onClick={onClick} />
+      <canvas
+        ref={canvasRef}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseUp={onUp}
+        onMouseLeave={onLeave}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+      />
       {hover && (
         <div
           className="atmap-tooltip"
@@ -192,6 +270,7 @@ export function AtClimateMap({
           {hover.station.state && <span className="atmap-tt-state"> · {hover.station.state}</span>}
         </div>
       )}
+      <span className="atmap-help">Rad = Zoom · Ziehen = Verschieben · Doppelklick = Reset</span>
     </div>
   )
 }
