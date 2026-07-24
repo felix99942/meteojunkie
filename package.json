@@ -9,7 +9,8 @@
     "build:web": "tsc -b && VITE_ENABLE_MAP=false vite build",
     "preview": "vite preview",
     "preview:web": "npm run build:web && vite preview",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "ingest:at": "node scripts/at-ingest-stations.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

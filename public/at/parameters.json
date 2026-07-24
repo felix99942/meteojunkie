@@ -1,0 +1,334 @@
+{
+  "meta": {
+    "source": "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d/metadata",
+    "dataset": "klima-v2-1d",
+    "license": "CC BY 4.0"
+  },
+  "parameters": [
+    {
+      "code": "bewd_i",
+      "label": "Bewölkungsdichte zum Beobachtungstermin I",
+      "unit": "code"
+    },
+    {
+      "code": "bewd_ii",
+      "label": "Bewölkungsdichte zum Beobachtungstermin II",
+      "unit": "code"
+    },
+    {
+      "code": "bewd_iii",
+      "label": "Bewölkungsdichte zum Beobachtungstermin III",
+      "unit": "code"
+    },
+    {
+      "code": "bewm_i",
+      "label": "Bewölkungsmenge zum Beobachtungstermin I",
+      "unit": "1/10"
+    },
+    {
+      "code": "bewm_ii",
+      "label": "Bewölkungsmenge zum Beobachtungstermin II",
+      "unit": "1/10"
+    },
+    {
+      "code": "bewm_iii",
+      "label": "Bewölkungsmenge zum Beobachtungstermin III",
+      "unit": "1/10"
+    },
+    {
+      "code": "bewm_mittel",
+      "label": "Bewölkungsmenge Mittelwert",
+      "unit": "1/100"
+    },
+    {
+      "code": "bft6",
+      "label": "Sturm Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "bft8",
+      "label": "Schwerer Sturm Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "cglo_j",
+      "label": "Globalstrahlung",
+      "unit": "J/cm²"
+    },
+    {
+      "code": "dampf_i",
+      "label": "Dampfdruck zum Beobachtungstermin I",
+      "unit": "hPa"
+    },
+    {
+      "code": "dampf_ii",
+      "label": "Dampfdruck zum Beobachtungstermin II",
+      "unit": "hPa"
+    },
+    {
+      "code": "dampf_iii",
+      "label": "Dampfdruck zum Beobachtungstermin III",
+      "unit": "hPa"
+    },
+    {
+      "code": "dampf_mittel",
+      "label": "Dampfdruck Mittelwert",
+      "unit": "hPa"
+    },
+    {
+      "code": "dd32_i",
+      "label": "Windrichtung zum Beobachtungstermin I",
+      "unit": " "
+    },
+    {
+      "code": "dd32_ii",
+      "label": "Windrichtung zum Beobachtungstermin II",
+      "unit": " "
+    },
+    {
+      "code": "dd32_iii",
+      "label": "Windrichtung zum Beobachtungstermin III",
+      "unit": " "
+    },
+    {
+      "code": "erdb_i",
+      "label": "Erdbodenzustand zum Beobachtungstermin I",
+      "unit": "code"
+    },
+    {
+      "code": "erdb_ii",
+      "label": "Erdbodenzustand zum Beobachtungstermin II",
+      "unit": "code"
+    },
+    {
+      "code": "erdb_iii",
+      "label": "Erdbodenzustand zum Beobachtungstermin III",
+      "unit": "code"
+    },
+    {
+      "code": "ffx",
+      "label": "Maximale Windgeschwindigkeit (Spitzenböe)",
+      "unit": "m/s"
+    },
+    {
+      "code": "gew",
+      "label": "Gewitter Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "glatt",
+      "label": "Glatteis Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "nebel",
+      "label": "Nebel Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "p_i",
+      "label": "Luftdruck zum Beobachtungstermin I",
+      "unit": "hPa"
+    },
+    {
+      "code": "p_ii",
+      "label": "Luftdruck zum Beobachtungstermin II",
+      "unit": "hPa"
+    },
+    {
+      "code": "p_iii",
+      "label": "Luftdruck zum Beobachtungstermin III",
+      "unit": "hPa"
+    },
+    {
+      "code": "p_mittel",
+      "label": "Luftdruck Mittelwert",
+      "unit": "hPa"
+    },
+    {
+      "code": "raureif",
+      "label": "Raureif Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "reif",
+      "label": "Reif Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "rfb_i",
+      "label": "Relative Feuchte aus Feuchttemperatur zum Beobachtungstermin I",
+      "unit": "%"
+    },
+    {
+      "code": "rfb_ii",
+      "label": "Relative Feuchte aus Feuchttemperatur zum Beobachtungstermin II",
+      "unit": "%"
+    },
+    {
+      "code": "rfb_iii",
+      "label": "Relative Feuchte aus Feuchttemperatur zum Beobachtungstermin III",
+      "unit": "%"
+    },
+    {
+      "code": "rfb_mittel",
+      "label": "Relative Feuchte Mittelwert aus Feuchttemperatur",
+      "unit": "%"
+    },
+    {
+      "code": "rf_i",
+      "label": "Relative Feuchte zum Beobachtungstermin I",
+      "unit": "%"
+    },
+    {
+      "code": "rf_ii",
+      "label": "Relative Feuchte zum Beobachtungstermin II",
+      "unit": "%"
+    },
+    {
+      "code": "rf_iii",
+      "label": "Relative Feuchte zum Beobachtungstermin III",
+      "unit": "%"
+    },
+    {
+      "code": "rf_mittel",
+      "label": "Relative Feuchte Mittelwert",
+      "unit": "%"
+    },
+    {
+      "code": "rr",
+      "label": "Niederschlag 24h Summe",
+      "unit": "mm"
+    },
+    {
+      "code": "rra_manu",
+      "label": "Niederschlagsart 24h",
+      "unit": "code"
+    },
+    {
+      "code": "rra_manu_i",
+      "label": "Niederschlagsart 12h zum Beobachtungstermin I",
+      "unit": "code"
+    },
+    {
+      "code": "rra_manu_iii",
+      "label": "Niederschlagsart 12h zum Beobachtungstermin III",
+      "unit": "code"
+    },
+    {
+      "code": "rr_i",
+      "label": "Niederschlag 12h Summe zum Beobachtungstermin I",
+      "unit": "mm"
+    },
+    {
+      "code": "rr_iii",
+      "label": "Niederschlag 12h Summe zum Beobachtungstermin III",
+      "unit": "mm"
+    },
+    {
+      "code": "sh",
+      "label": "Gesamtschneehöhe, Schneepegelmessung",
+      "unit": "cm"
+    },
+    {
+      "code": "sha_manu",
+      "label": "Schneeart",
+      "unit": "code"
+    },
+    {
+      "code": "sh_manu",
+      "label": "Gesamtschneehöhe, Handmessung",
+      "unit": "cm"
+    },
+    {
+      "code": "shneu_manu",
+      "label": "Neuschneehöhe, Handmessung",
+      "unit": "cm"
+    },
+    {
+      "code": "sicht_i",
+      "label": "Sichtweite zum Beobachtungstermin I",
+      "unit": "m"
+    },
+    {
+      "code": "sicht_ii",
+      "label": "Sichtweite zum Beobachtungstermin II",
+      "unit": "m"
+    },
+    {
+      "code": "sicht_iii",
+      "label": "Sichtweite zum Beobachtungstermin III",
+      "unit": "m"
+    },
+    {
+      "code": "so_h",
+      "label": "Sonnenscheindauer",
+      "unit": "h"
+    },
+    {
+      "code": "tau",
+      "label": "Tau Indikator",
+      "unit": "bool"
+    },
+    {
+      "code": "tl_i",
+      "label": "Lufttemperatur 2m zum Beobachtungstermin I",
+      "unit": "°C"
+    },
+    {
+      "code": "tl_ii",
+      "label": "Lufttemperatur 2m zum Beobachtungstermin II",
+      "unit": "°C"
+    },
+    {
+      "code": "tl_iii",
+      "label": "Lufttemperatur 2m zum Beobachtungstermin III",
+      "unit": "°C"
+    },
+    {
+      "code": "tlmax",
+      "label": "Lufttemperatur 2m Maximalwert",
+      "unit": "°C"
+    },
+    {
+      "code": "tlmin",
+      "label": "Lufttemperatur 2m Minimalwert",
+      "unit": "°C"
+    },
+    {
+      "code": "tl_mittel",
+      "label": "Lufttemperatur 2m Mittelwert",
+      "unit": "°C"
+    },
+    {
+      "code": "tsmin",
+      "label": "Lufttemperatur 5cm Nachtminimum (18 UTC Vortag bis 6 UTC)",
+      "unit": "°C"
+    },
+    {
+      "code": "vvbft_i",
+      "label": "Windstärke zum Beobachtungstermin I",
+      "unit": "Beaufort"
+    },
+    {
+      "code": "vvbft_ii",
+      "label": "Windstärke zum Beobachtungstermin II",
+      "unit": "Beaufort"
+    },
+    {
+      "code": "vvbft_iii",
+      "label": "Windstärke zum Beobachtungstermin III",
+      "unit": "Beaufort"
+    },
+    {
+      "code": "vv_mittel",
+      "label": "Windgeschwindigkeit Mittelwert",
+      "unit": "m/s"
+    },
+    {
+      "code": "zeitx",
+      "label": "Zeitpunkt der maximalen Windgeschwindigkeit (Spitzenböe)",
+      "unit": "hhmm"
+    }
+  ]
+}
