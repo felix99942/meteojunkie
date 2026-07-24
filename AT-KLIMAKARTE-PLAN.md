@@ -74,11 +74,33 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
 - **Navigation:** **View-Switch im Zustand-Store** (kein react-router).
 - **Stationsumfang:** Default **nur aktive** (492), Umschalter für alle (1100).
 
-## E. Roadmap (unverändert aus MD, Schritte 1–6)
+## E. Roadmap — Umsetzungsstand
 
-1. Stationsstammdaten → `stations.json` + Parameterliste (aus `/metadata`).
-2. Statische AT-Karte (SVG/Canvas) + Stationspunkte + Hover-Tooltip.
-3. Parameter-Registry + Werte-Layer (ein Bulk-Request) + Dropdown + Colorbar (`dataviz`).
-4. Stationsdetail/Meteogramm (uPlot-Muster, Quelle GeoSphere).
-5. Normale/Anomalien/Rekorde (vorberechnet) + divergierende Colormaps.
-6. Feinschliff, Cache-Abnahme (1 Auswahl = 1 Request, Wiederholung = 0), Tests, Visual-Checks.
+1. ✅ Stationsstammdaten → `public/at/stations.json` (1100/492 aktiv) + `parameters.json`.
+   Loader `src/api/geosphere.ts`. Ingest: `scripts/at-ingest-stations.mjs`.
+2. ✅ Statische AT-Karte (Canvas) + Stationspunkte + Hover-Tooltip. `render/atmap.ts`,
+   `components/AtClimateMap.tsx`. View-Switch: `state/appView.ts` + `AppNav`.
+3. ✅ Parameter-Registry (`config/atParameters.ts`) + Werte-Layer (ein Bulk-Request,
+   `fetchStationSeries`) + Dropdown. **Statt Colorbar: Werte direkt in der Karte**
+   (Nutzer-Feedback). IndexedDB-Cache `api/atcache.ts`.
+4. ✅ Stationsdetail (`AtStationDetail.tsx`, uPlot): 12-Monats-Zeitreihe + Kennzahlen.
+5. ✅ Zeitbezug Tag/Monat/Jahr (`api/atValues.ts`) + Normale 1991–2020
+   (`at-ingest-normals.mjs` → `normals.json`, 806 Stationen) + Anomalien (Temp K,
+   Niederschlag/Sonne % vom Normal, divergierende RdBu/BrBG-Skalen). Rekorde
+   (`at-ingest-records.mjs` → `records.json`, 1094 Stationen) im Detailpanel.
+6. ✅ Vitest-Tests (`*.test.ts`: aggregate/anomaly/colorForValue). Ladezustände +
+   Fehleranzeigen vorhanden. Build + Lint grün.
+
+## F. Betrieb & bewusste Grenzen
+
+- **Daten-Refresh:** `npm run ingest:at` / `ingest:at:normals` / `ingest:at:records`
+  regenerieren die statischen JSON-Assets aus GeoSphere. Historische Daten sind
+  statisch — ein Refresh ist nur nötig, wenn neue Monate/Normalperioden gewünscht
+  sind. Ideal vor dem Build in CI ausführen.
+- **Caching-Abnahme:** `fetchStationSeries` cached je (Datensatz|Parameter|Zeitraum|
+  Stations-IDs) in IndexedDB → eine Auswahl = ein Request, Wiederholung = 0.
+- **Grenzen (bewusst):** Rekorde ab **1900** (die wenigen Reihen bis ins 18. Jh.
+  bleiben außen vor). Schnee (`sh`) nur im Tag-Modus (kein Monatswert). Feuchte
+  monatlich als `rf_mittel` (Tag: `rfb_mittel`). Fehlwert-Sentinels (−1 bei rr/sh)
+  werden gefiltert. Nur im Monatsdatensatz vorhandene Stations-IDs bekommen
+  Normale/Rekorde (der Hub 403t sonst den ganzen Request).

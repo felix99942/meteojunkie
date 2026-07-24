@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "preview:web": "npm run build:web && vite preview",
     "lint": "oxlint",
+    "test": "vitest run",
     "ingest:at": "node scripts/at-ingest-stations.mjs",
     "ingest:at:normals": "node scripts/at-ingest-normals.mjs",
     "ingest:at:records": "node scripts/at-ingest-records.mjs"
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
   }
 }

@@ -25,7 +25,8 @@ npm run lint      # oxlint
 npm run preview   # gebautes dist/ servieren
 ```
 
-Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
+`npm run build` ist die Haupt-Verifikation. Für reine Rechenkerne der
+Österreich-Klimakarte gibt es Vitest-Tests (`npm test`, `src/**/*.test.ts`).
 
 ## Architektur
 
@@ -64,6 +65,18 @@ Kein Test-Setup vorhanden. `npm run build` ist die Verifikation.
   Handler per `ssrLoadModule`). v1-Upstream = Free-API, holt dasselbe
   Domain-Gitter wie bisher (kein Nativ — dafür Upstream wechseln).
   Typecheck: `tsconfig.server.json` (Node-Types, Bundler-Resolution).
+- **Österreich-Klimakarte** (`AT-KLIMAKARTE-PLAN.md`) — eigener Bereich neben der
+  Workbench, umgeschaltet über `state/appView.ts` (`AppNav`). Statisch-direkt:
+  kein Backend, GeoSphere Austria ist **CORS-offen + keyless**, der Browser fragt
+  direkt. Stammdaten/Normale/Rekorde sind vorgenerierte Assets unter `public/at/`
+  (`scripts/at-ingest-*.mjs`, npm `ingest:at*`); tages-/monatsaktuelle Werte holt
+  `api/geosphere.ts`/`api/atValues.ts` in EINEM Bulk-Request über alle Stationen
+  (IndexedDB-Cache `api/atcache.ts`, historisch = für immer). Karte ist ein
+  leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
+  MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
+  gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
+  Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). Reine Rechenkerne
+  sind mit Vitest getestet (`*.test.ts`, `npm test`).
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
