@@ -34,16 +34,17 @@ const BARB_MIN_GAP = 13
 const dash = (v: string | number | null | undefined): string =>
   v == null ? '–' : typeof v === 'number' ? String(v) : v
 
-// Tabellenzeilen: Parameter × Modell. SB-Paket ist das Bezugspaket im Diagramm.
+// Tabellenzeilen: Parameter × Modell. ML-Paket ist das Bezugspaket im Diagramm
+// (robuster als SB gegen die abendliche Grenzschichtproblematik).
 const TABLE_ROWS: { label: string; get: (s: SoundingParams) => string }[] = [
   { label: 'PWAT', get: (s) => `${s.pwat.toFixed(1)} mm` },
   { label: 'SB-CAPE', get: (s) => `${Math.round(s.sb.cape)}` },
   { label: 'ML-CAPE', get: (s) => `${Math.round(s.ml.cape)}` },
   { label: 'MU-CAPE', get: (s) => `${Math.round(s.mu.cape)}` },
-  { label: 'CIN (SB)', get: (s) => `${Math.round(s.sb.cin)}` },
-  { label: 'LCL', get: (s) => dash(s.sb.lclP != null ? `${Math.round(s.sb.lclP)} hPa` : null) },
-  { label: 'LFC', get: (s) => dash(s.sb.lfcP != null ? `${Math.round(s.sb.lfcP)} hPa` : null) },
-  { label: 'EL', get: (s) => dash(s.sb.elP != null ? `${Math.round(s.sb.elP)} hPa` : null) },
+  { label: 'CIN (ML)', get: (s) => `${Math.round(s.ml.cin)}` },
+  { label: 'LCL', get: (s) => dash(s.ml.lclP != null ? `${Math.round(s.ml.lclP)} hPa` : null) },
+  { label: 'LFC', get: (s) => dash(s.ml.lfcP != null ? `${Math.round(s.ml.lfcP)} hPa` : null) },
+  { label: 'EL', get: (s) => dash(s.ml.elP != null ? `${Math.round(s.ml.elP)} hPa` : null) },
   { label: 'LI', get: (s) => dash(s.li != null ? s.li.toFixed(1) : null) },
   { label: 'K-Index', get: (s) => dash(s.kIndex != null ? `${Math.round(s.kIndex)}` : null) },
   { label: 'Total Totals', get: (s) => dash(s.totalTotals != null ? `${Math.round(s.totalTotals)}` : null) },
@@ -183,9 +184,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         if (!profile) return
         const ti = Math.min(timeIdx, profile.times.length - 1)
         const color = SERIES_COLORS[panel.modelSlots[id] ?? 0]
-        // Bezugsmodell = erstes mit Sondierung: Parzelle + CAPE/CIN zuerst (unten)
+        // Bezugsmodell = erstes mit Sondierung: ML-Paket + CAPE/CIN zuerst (unten).
+        // ML statt SB, weil das SB-Paket abends durch die Grenzschichtproblematik
+        // (nächtliche Bodeninversion) irreführendes CAPE liefert.
         if (!refParcelDrawn && sounds[i]) {
-          drawParcel(ctx, g, sounds[i]!.sb)
+          drawParcel(ctx, g, sounds[i]!.ml)
           refParcelDrawn = true
         }
         strokeProfileLine(ctx, g, profile, profile.temperature, ti, color, [])
@@ -291,7 +294,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         <div className="skewt-params">
           <span className="skewt-hint">
             — T · - - Td · ⋯ Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
-            <span style={{ color: '#4a93e8' }}>▉ CIN</span> · CAPE/CIN in J/kg · SB-Paket im Diagramm
+            <span style={{ color: '#4a93e8' }}>▉ CIN</span> · CAPE/CIN in J/kg · ML-Paket im Diagramm
           </span>
           <table className="skewt-table">
             <thead>
