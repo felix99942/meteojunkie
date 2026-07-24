@@ -9,6 +9,8 @@
 // Diese Datei ersetzt die in der Spec skizzierten Server-Endpunkte
 // `/api/at/stations` und `/api/at/parameters` durch statisch-direkte Loader.
 
+import { cacheGet, cacheSet } from './atcache'
+
 /** Eine TAWES-/Klima-Station aus dem GeoSphere-Datensatz `klima-v2-1d`. */
 export interface AtStation {
   id: number
@@ -80,3 +82,61 @@ export function loadParameters(): Promise<AtParameter[]> {
 /** Nur die derzeit aktiven Stationen (Default-Kartenumfang). */
 export const activeStations = (stations: AtStation[]): AtStation[] =>
   stations.filter((s) => s.isActive)
+
+// --- Werte-Bulk-Abruf (Schritt 3) ---------------------------------------
+
+const GEOSPHERE_BASE = 'https://dataset.api.hub.geosphere.at/v1'
+const DATASET = 'station/historical/klima-v2-1d'
+
+/** Zeitreihe eines Parameters je Station: stationId → tägliche Werte (null-Lücken). */
+export interface StationSeries {
+  timestamps: string[]
+  /** stationId → Werte, ausgerichtet an timestamps. */
+  byStation: Record<number, (number | null)[]>
+  unit: string
+}
+
+/**
+ * EINEN Parameter für einen Zeitraum über beliebig viele Stationen holen — ein
+ * einziger Bulk-Request an GeoSphere (nicht pro Punkt). CORS ist offen, kein Key.
+ * Ergebnis wird persistent gecacht (historische Daten sind statisch → für immer
+ * gültig); ein wiederholter Abruf derselben Auswahl kostet 0 Requests.
+ *
+ * `start`/`end` als ISO-Datum (YYYY-MM-DD). `stationIds` bestimmt den Cache-Key
+ * mit — für stabile Keys sortiert übergeben.
+ */
+export async function fetchStationSeries(
+  parameter: string,
+  start: string,
+  end: string,
+  stationIds: number[],
+): Promise<StationSeries> {
+  const ids = [...stationIds].sort((a, b) => a - b)
+  const key = `${parameter}|${start}|${end}|${ids.join(',')}`
+  const cached = await cacheGet<StationSeries>(key)
+  if (cached) return cached
+
+  const url =
+    `${GEOSPHERE_BASE}/${DATASET}?parameters=${encodeURIComponent(parameter)}` +
+    `&start=${start}&end=${end}&station_ids=${ids.join(',')}&output_format=geojson`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`GeoSphere-Abruf fehlgeschlagen: HTTP ${res.status}`)
+  const geo = (await res.json()) as {
+    timestamps?: string[]
+    features?: {
+      properties: { station: number; parameters: Record<string, { unit?: string; data: (number | null)[] }> }
+    }[]
+  }
+
+  const byStation: Record<number, (number | null)[]> = {}
+  let unit = ''
+  for (const f of geo.features ?? []) {
+    const p = f.properties.parameters?.[parameter]
+    if (!p) continue
+    byStation[f.properties.station] = p.data
+    if (!unit && p.unit) unit = p.unit
+  }
+  const result: StationSeries = { timestamps: geo.timestamps ?? [], byStation, unit }
+  await cacheSet(key, result)
+  return result
+}

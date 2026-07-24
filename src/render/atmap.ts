@@ -86,12 +86,24 @@ export function drawBorderLines(
   ctx.restore()
 }
 
-/** Stationspunkte als Kreise zeichnen; optionaler Index wird hervorgehoben. */
+/**
+ * Stationspunkte als Kreise zeichnen; optionaler Index wird hervorgehoben.
+ * `colors` (parallel zu stations) färbt je Station ein; null/fehlt → `noDataFill`
+ * (kleiner, gedämpft = „kein Wert"). Ohne `colors` bekommen alle `fill`.
+ */
 export function drawStationPoints(
   ctx: CanvasRenderingContext2D,
   g: MapGeometry,
   stations: AtStation[],
-  opts: { radius: number; fill: string; stroke: string; highlightIdx?: number; highlightFill?: string },
+  opts: {
+    radius: number
+    fill: string
+    stroke: string
+    highlightIdx?: number
+    highlightFill?: string
+    colors?: (string | null)[]
+    noDataFill?: string
+  },
 ): void {
   ctx.save()
   ctx.lineWidth = 1
@@ -99,9 +111,12 @@ export function drawStationPoints(
     const s = stations[i]
     const { x, y } = project(g, s.lon, s.lat)
     const hl = i === opts.highlightIdx
+    const perStation = opts.colors ? opts.colors[i] : opts.fill
+    const noData = opts.colors && perStation == null
+    const r = noData ? opts.radius - 0.8 : hl ? opts.radius + 2 : opts.radius
     ctx.beginPath()
-    ctx.arc(x, y, hl ? opts.radius + 2 : opts.radius, 0, Math.PI * 2)
-    ctx.fillStyle = hl && opts.highlightFill ? opts.highlightFill : opts.fill
+    ctx.arc(x, y, Math.max(0.8, r), 0, Math.PI * 2)
+    ctx.fillStyle = hl && opts.highlightFill ? opts.highlightFill : (perStation ?? opts.noDataFill ?? opts.fill)
     ctx.fill()
     ctx.strokeStyle = opts.stroke
     ctx.stroke()

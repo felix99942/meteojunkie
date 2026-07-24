@@ -254,3 +254,31 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
 export function getColorScale(variableId: string): ColorScale | undefined {
   return COLOR_SCALES[variableId]
 }
+
+/**
+ * Einzelwert → Farbe (für Punkt-/Stationskarten). Gleiche Semantik wie die
+ * LUT in render/fieldImage.ts, aber ohne Bild: 'stepped' wählt das Band des
+ * letzten Stops mit value ≤ v, 'linear' interpoliert. Unter dem ersten Stop
+ * greift belowMin (Default 'transparent' bei stepped → null). null = nicht
+ * einfärben (Basiskarte/Punkt-Default sichtbar).
+ */
+export function colorForValue(scale: ColorScale, v: number): string | null {
+  const stops = scale.stops
+  if (v < stops[0].value) {
+    const transparent = scale.belowMin ? scale.belowMin === 'transparent' : scale.kind === 'stepped'
+    return transparent ? null : stops[0].color
+  }
+  if (scale.kind === 'stepped') {
+    let idx = 0
+    for (let s = 0; s < stops.length && stops[s].value <= v; s++) idx = s
+    return stops[idx].color
+  }
+  // linear
+  let s = 0
+  while (s < stops.length - 2 && stops[s + 1].value < v) s++
+  const span = stops[s + 1].value - stops[s].value
+  const f = span > 0 ? Math.min(1, Math.max(0, (v - stops[s].value) / span)) : 0
+  const [ar, ag, ab] = hexToRgb(stops[s].color)
+  const [br, bg, bb] = hexToRgb(stops[s + 1].color)
+  return `#${toHex(ar + (br - ar) * f)}${toHex(ag + (bg - ag) * f)}${toHex(ab + (bb - ab) * f)}`
+}

@@ -25,6 +25,10 @@ interface Basemap {
   admin1: { features: BorderFeature[] }
 }
 
+/** Wert kompakt formatieren (max. 1 Nachkommastelle). */
+const formatValue = (v: number): string =>
+  Math.abs(v) >= 100 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1)
+
 const COLORS = {
   bg: '#0f1012',
   admin1: 'rgba(150,150,150,0.14)',
@@ -32,15 +36,28 @@ const COLORS = {
   coast: 'rgba(120,160,200,0.5)',
   pointFill: 'rgba(232,228,220,0.85)',
   pointStroke: 'rgba(30,30,30,0.9)',
+  noData: 'rgba(140,135,129,0.5)',
   highlight: '#e8b23a',
 }
 
-export function AtClimateMap({ stations }: { stations: AtStation[] }) {
+export function AtClimateMap({
+  stations,
+  colors,
+  values,
+  unit,
+}: {
+  stations: AtStation[]
+  /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
+  colors?: (string | null)[]
+  /** Per-Station-Werte (parallel zu stations) — für den Tooltip. */
+  values?: (number | null)[]
+  unit?: string
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const geomRef = useRef<MapGeometry | null>(null)
   const [basemap, setBasemap] = useState<Basemap | null>(null)
-  const [hover, setHover] = useState<{ station: AtStation; x: number; y: number } | null>(null)
+  const [hover, setHover] = useState<{ station: AtStation; idx: number; x: number; y: number } | null>(null)
   const hoverIdxRef = useRef<number>(-1)
 
   // Basiskarte einmal laden.
@@ -86,11 +103,13 @@ export function AtClimateMap({ stations }: { stations: AtStation[] }) {
         drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
       drawStationPoints(ctx, g, stations, {
-        radius: 2.6,
+        radius: 3,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hoverIdxRef.current,
         highlightFill: COLORS.highlight,
+        colors,
+        noDataFill: COLORS.noData,
       })
     }
 
@@ -98,7 +117,7 @@ export function AtClimateMap({ stations }: { stations: AtStation[] }) {
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, hover])
+  }, [basemap, stations, colors, hover])
 
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const g = geomRef.current
@@ -109,7 +128,7 @@ export function AtClimateMap({ stations }: { stations: AtStation[] }) {
     const py = e.clientY - rect.top
     const idx = nearestStation(g, stations, px, py, 7)
     hoverIdxRef.current = idx
-    setHover(idx >= 0 ? { station: stations[idx], x: px, y: py } : null)
+    setHover(idx >= 0 ? { station: stations[idx], idx, x: px, y: py } : null)
   }
 
   const onLeave = () => {
@@ -126,6 +145,13 @@ export function AtClimateMap({ stations }: { stations: AtStation[] }) {
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
           <strong>{hover.station.name}</strong>
+          {values && values[hover.idx] != null && (
+            <span className="atmap-tt-value">
+              {' '}
+              {formatValue(values[hover.idx] as number)}
+              {unit ? ` ${unit}` : ''}
+            </span>
+          )}
           {hover.station.altitude != null && <span> · {Math.round(hover.station.altitude)} m</span>}
           {hover.station.state && <span className="atmap-tt-state"> · {hover.station.state}</span>}
         </div>

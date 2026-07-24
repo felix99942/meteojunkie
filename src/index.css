@@ -957,3 +957,59 @@ button:focus-visible {
 .atmap-tt-state {
   color: var(--ink-muted);
 }
+
+.atmap-tt-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.atclima-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.atclima-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  background: rgba(20, 21, 23, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 10px 18px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.colorbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.colorbar-bands {
+  display: flex;
+  height: 12px;
+}
+
+.colorbar-band {
+  position: relative;
+  width: 12px;
+  height: 100%;
+}
+
+.colorbar-tick {
+  position: absolute;
+  top: 13px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.colorbar-unit {
+  margin-left: 8px;
+  color: var(--ink-secondary);
+  font-size: 10px;
+}
