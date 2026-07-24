@@ -106,7 +106,7 @@ export function AtClimateMap({
         drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
       drawStationPoints(ctx, g, stations, {
-        radius: 4,
+        radius: 5,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hoverIdxRef.current,
@@ -114,8 +114,8 @@ export function AtClimateMap({
         colors,
         noDataFill: COLORS.noData,
       })
-      // Werte direkt in die Karte schreiben (ersetzt die Legende) — nur wenn Werte da sind.
-      if (values) drawStationLabels(ctx, g, stations, values, formatValue, hoverIdxRef.current)
+      // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
+      if (values) drawStationLabels(ctx, g, stations, values, formatValue, colors, hoverIdxRef.current)
     }
 
     draw()
