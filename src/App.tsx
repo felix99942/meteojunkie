@@ -1,13 +1,24 @@
 import { TopBar } from './components/TopBar'
 import { PanelGrid } from './components/PanelGrid'
 import { TimeScrubber } from './components/TimeScrubber'
+import { AppNav } from './components/AppNav'
+import { AtClimatePanel } from './components/AtClimatePanel'
+import { useAppView } from './state/appView'
 
 export default function App() {
+  const view = useAppView((s) => s.view)
   return (
     <div className="app">
-      <TopBar />
-      <PanelGrid />
-      <TimeScrubber />
+      <AppNav />
+      {view === 'workbench' ? (
+        <>
+          <TopBar />
+          <PanelGrid />
+          <TimeScrubber />
+        </>
+      ) : (
+        <AtClimatePanel />
+      )}
     </div>
   )
 }

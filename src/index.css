@@ -858,3 +858,102 @@ button:focus-visible {
 .u-select {
   background: rgba(57, 135, 229, 0.15);
 }
+
+/* --- Bereichs-Navigation ------------------------------------------------- */
+
+.appnav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.appnav-tab {
+  padding: 4px 12px;
+  color: var(--ink-muted);
+  background: var(--bg-control);
+}
+
+.appnav-tab.is-active {
+  color: var(--ink);
+  background: var(--bg-control-hover);
+  border-color: var(--accent);
+}
+
+/* --- Österreich-Klimakarte ---------------------------------------------- */
+
+.atclima {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 6px;
+}
+
+.atclima-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.atclima-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.atclima-sub {
+  color: var(--ink-muted);
+}
+
+.atclima-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.atclima-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.atclima-attribution {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.atmap {
+  position: absolute;
+  inset: 0;
+}
+
+.atmap canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.atmap-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(20, 21, 23, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 11px;
+  z-index: 5;
+}
+
+.atmap-tt-state {
+  color: var(--ink-muted);
+}
