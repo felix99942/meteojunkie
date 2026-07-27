@@ -18,7 +18,10 @@ const L_URL = (id) =>
   `https://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_L/single_stations/${id}/kml/MOSMIX_L_LATEST_${id}.kmz`
 
 const HOURLY_CAP = 72 // Stunden für die stündlichen Parameter (Zeitschieber)
-const WANTED = new Set(['TTT', 'RR1c', 'SunD1', 'Neff', 'FF'])
+// TX/TN = MOSMIX-eigene 12-h-Extreme (synoptisch), NICHT aus stündlichem TTT
+// zusammengerechnet — der Punktforecast TTT unterschätzt den Tagesgang sonst um
+// 1–2 °C (gerade bei Hitze). Siehe dailyExtremes().
+const WANTED = new Set(['TTT', 'TX', 'TN', 'RR1c', 'SunD1', 'Neff', 'FF'])
 const CONCURRENCY = 24
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'mos')
@@ -38,19 +41,34 @@ async function fetchStation(id) {
   }
 }
 
-/** Tages-Extrem (max/min) aus stündlichem TTT je Kalendertag (UTC). */
-function dailyExtremes(timeSteps, ttt) {
-  const byDay = new Map()
+/**
+ * Synoptische Tagesextreme (Kelvin) je UTC-Kalendertag aus den MOSMIX-eigenen
+ * 12-h-Elementen:
+ *   TX @18:00Z = Höchstwert der letzten 12 h (06–18 UTC, Tagphase) → Tagesmaximum
+ *   TN @06:00Z = Tiefstwert  der letzten 12 h (18–06 UTC, Nacht)   → Tagesminimum
+ * Das ist das echte MOS-Tagesextrem. Der stündliche Punktforecast TTT glättet den
+ * Tagesgang und liefert als Max/Min pro Tag systematisch 1–2 °C zu niedrige
+ * Höchstwerte (bei Hitzewellen der sichtbare Fehler) — deshalb nur Fallback für
+ * Tage/Stationen ohne TX/TN (z. B. der laufende Tag hat kein 06:00Z-TN mehr).
+ */
+function dailyExtremes(timeSteps, ttt, tx, tn) {
+  const maxByDay = new Map()
+  const minByDay = new Map()
+  const tttByDay = new Map()
   for (let i = 0; i < timeSteps.length; i++) {
-    const v = ttt?.[i]
-    if (v == null) continue
     const day = timeSteps[i].slice(0, 10)
-    if (!byDay.has(day)) byDay.set(day, [])
-    byDay.get(day).push(v)
+    const hhmm = timeSteps[i].slice(11, 16)
+    if (tx?.[i] != null && hhmm === '18:00') maxByDay.set(day, tx[i])
+    if (tn?.[i] != null && hhmm === '06:00') minByDay.set(day, tn[i])
+    const v = ttt?.[i]
+    if (v != null) {
+      if (!tttByDay.has(day)) tttByDay.set(day, [])
+      tttByDay.get(day).push(v)
+    }
   }
-  const days = [...byDay.keys()].sort()
-  const max = days.map((d) => Math.max(...byDay.get(d)))
-  const min = days.map((d) => Math.min(...byDay.get(d)))
+  const days = [...new Set([...maxByDay.keys(), ...minByDay.keys(), ...tttByDay.keys()])].sort()
+  const max = days.map((d) => maxByDay.get(d) ?? (tttByDay.has(d) ? Math.max(...tttByDay.get(d)) : null))
+  const min = days.map((d) => minByDay.get(d) ?? (tttByDay.has(d) ? Math.min(...tttByDay.get(d)) : null))
   return { days, max, min }
 }
 
@@ -93,10 +111,14 @@ async function main() {
       if (st.SunD1) sun[id] = cut(st.SunD1, (v) => (v == null ? null : Math.round(v / 60))) // s → min
       if (st.Neff) cloud[id] = cut(st.Neff, (v) => (v == null ? null : Math.round(v)))
       if (st.FF) wind[id] = cut(st.FF, (v) => (v == null ? null : Math.round(v * 3.6))) // m/s → km/h
-      const ext = dailyExtremes(steps, st.TTT)
+      const ext = dailyExtremes(steps, st.TTT, st.TX, st.TN)
       if (!dayLabels) dayLabels = ext.days
-      tmax[id] = ext.max.map(K2C)
-      tmin[id] = ext.min.map(K2C)
+      // Werte an das kanonische Tagesraster ausrichten (Station könnte einzelne
+      // Tage anders belegen) statt auf Indexgleichheit zu vertrauen.
+      const maxByDay = new Map(ext.days.map((d, j) => [d, ext.max[j]]))
+      const minByDay = new Map(ext.days.map((d, j) => [d, ext.min[j]]))
+      tmax[id] = dayLabels.map((d) => K2C(maxByDay.get(d) ?? null))
+      tmin[id] = dayLabels.map((d) => K2C(minByDay.get(d) ?? null))
       ok++
     }
     process.stdout.write(`  ${Math.min(i + CONCURRENCY, ids.length)}/${ids.length} (${ok} mit Daten)\n`)
