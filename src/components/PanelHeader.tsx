@@ -111,7 +111,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
           >
             {ENSEMBLE_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.label} · {m.members} Mitglieder
+                {m.label} · {m.members} Member
               </option>
             ))}
           </select>

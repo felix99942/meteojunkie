@@ -322,13 +322,13 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             ⤢ Zoom zurück
           </button>
         )}
-        <label className="ens-toggle" title="Alle Mitglieder als Spaghetti zeigen">
+        <label className="ens-toggle" title="Alle Member als Spaghetti zeigen">
           <input
             type="checkbox"
             checked={showMembers}
             onChange={(e) => setShowMembers(e.target.checked)}
           />
-          Mitglieder
+          Member
         </label>
       </div>
 
@@ -337,18 +337,18 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         <span title="Deterministischer ECMWF-Lauf (HRES) — höher aufgelöst, EINE Lösung ohne Störung. Eigener Abruf, das Ensemble liefert ihn nicht mit.">
           <i style={{ background: HRES_LINE }} /> Hauptlauf
         </span>
-        <span title="Ungestörtes Ensemble-Mitglied in Ensemble-Auflösung — die Referenz INNERHALB der Verteilung, nicht der Hauptlauf.">
+        <span title="Ungestörter Ensemble-Member in Ensemble-Auflösung — die Referenz INNERHALB der Verteilung, nicht der Hauptlauf.">
           <i className="ens-dash" style={{ background: CONTROL_LINE }} /> Kontrolllauf
         </span>
-        <span title="Mittleres Mitglied je Zeitschritt (50. Perzentil)">
+        <span title="Mittlerer Member je Zeitschritt (50. Perzentil)">
           <i style={{ background: MEDIAN_LINE, height: 3 }} /> Median
         </span>
-        <span title="80 % der Mitglieder liegen in diesem Band">
+        <span title="80 % der Member liegen in diesem Band">
           <i className="ens-bandswatch" /> P10–P90
         </span>
         {showMembers && (
-          <span title="Alle gestörten Mitglieder als Spaghetti">
-            <i style={{ background: 'rgba(120,170,230,0.6)' }} /> {model.members - 1} Mitglieder
+          <span title="Alle gestörten Member als Spaghetti">
+            <i style={{ background: 'rgba(120,170,230,0.6)' }} /> {model.members - 1} Member
           </span>
         )}
         <span className="ens-hint label-muted">
@@ -396,12 +396,12 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
               <strong>{fmtVal(readout.r.spread)}</strong> {variable.unit}
             </span>
             <span className="label-muted">
-              {readout.r.count} von {model.members} Mitgliedern
+              {readout.r.count} von {model.members} Member
             </span>
           </>
         ) : (
           <span className="label-muted">
-            {model.label} · {model.members} Mitglieder · {model.forecastDays} Tage
+            {model.label} · {model.members} Member · {model.forecastDays} Tage
             {variable.kind === 'accum' ? ' · Werte über die Vorhersagezeit aufsummiert' : ''}
           </span>
         )}
