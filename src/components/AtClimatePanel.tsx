@@ -10,8 +10,10 @@ import {
   isParamAvailable,
   loadNormals,
   normalFor,
+  todayUtc,
   type NormalsMap,
   type Period,
+  type PeriodValues,
 } from '../api/atValues'
 import { anomaly, AT_PARAMETERS, getAtParameter } from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
@@ -21,10 +23,19 @@ import { AtStationDetail } from './AtStationDetail'
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 
+// Live-Werte des laufenden Tages ticken alle 10 min weiter — solange „heute"
+// gewählt ist, im gleichen Takt nachladen (Cache-TTL in atValues deckelt die Last).
+const LIVE_REFRESH_MS = 5 * 60 * 1000
+
+const fmtClock = new Intl.DateTimeFormat('de-AT', {
+  timeZone: 'Europe/Vienna',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZoneName: 'short',
+})
+
 function defaults() {
-  const d = new Date()
-  d.setUTCDate(d.getUTCDate() - 5)
-  const day = isoDay(d)
+  const day = todayUtc()
   const lastMonth = new Date()
   lastMonth.setUTCDate(1)
   lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1)
@@ -48,6 +59,8 @@ export function AtClimatePanel() {
   const [mode, setMode] = useState<'abs' | 'anom'>('abs')
 
   const [values, setValues] = useState<Record<number, number | null> | null>(null)
+  const [source, setSource] = useState<PeriodValues['source'] | null>(null)
+  const [asOf, setAsOf] = useState<string | null>(null)
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
   const [normals, setNormals] = useState<NormalsMap | null>(null)
@@ -98,6 +111,16 @@ export function AtClimatePanel() {
     if (!isParamAvailable(spec, period)) setParamCode('tl_mittel')
   }, [spec, period])
 
+  // Läuft der gewählte Tag gerade noch? Dann kommen die Werte aus dem
+  // 10-Minuten-Datensatz und müssen periodisch nachgezogen werden.
+  const isToday = periodKind === 'day' && day >= todayUtc()
+  const [refreshTick, setRefreshTick] = useState(0)
+  useEffect(() => {
+    if (!isToday) return
+    const t = setInterval(() => setRefreshTick((n) => n + 1), LIVE_REFRESH_MS)
+    return () => clearInterval(t)
+  }, [isToday])
+
   // Bulk-Abruf der Periodenwerte.
   useEffect(() => {
     if (shown.length === 0 || !isParamAvailable(spec, period)) return
@@ -105,10 +128,17 @@ export function AtClimatePanel() {
     setValuesLoading(true)
     setValuesError(null)
     fetchPeriodValues(spec, period, shown)
-      .then((r) => !cancelled && setValues(r.byStation))
+      .then((r) => {
+        if (cancelled) return
+        setValues(r.byStation)
+        setSource(r.source)
+        setAsOf(r.asOf ?? null)
+      })
       .catch((err) => {
         if (!cancelled) {
           setValues(null)
+          setSource(null)
+          setAsOf(null)
           setValuesError(err?.message ?? 'Werte nicht ladbar')
         }
       })
@@ -118,7 +148,7 @@ export function AtClimatePanel() {
     }
     // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, period, idsKey])
+  }, [paramCode, period, idsKey, refreshTick])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
   const scale = anomActive ? spec.anomalyScale : spec.scale
@@ -161,6 +191,15 @@ export function AtClimatePanel() {
       : anomActive && !normals
         ? 'lädt Normale …'
         : `${covered}/${shown.length} Stationen`
+
+  // Live-Hinweis: der laufende Tag ist ein Zwischenstand aus 10-Minuten-Messwerten,
+  // kein geprüftes Tagesaggregat — das muss an der Zahl dranstehen.
+  const live = source === 'live' && !valuesLoading && !valuesError
+  const liveNote = live
+    ? asOf
+      ? `vorläufig, Stand ${fmtClock.format(new Date(asOf))}`
+      : 'vorläufig (10-Minuten-Messwerte)'
+    : null
 
   return (
     <div className="atclima">
@@ -220,6 +259,14 @@ export function AtClimatePanel() {
         <span className="atclima-sub">
           {status} · {anomActive ? `Δ ${unit} vs. 1991–2020` : unit}
         </span>
+        {liveNote && (
+          <span
+            className="atclima-live"
+            title="Der Tagesdatensatz klima-v2-1d wird erst nach Tagesende gerechnet; der laufende Tag wird hier aus den 10-Minuten-Messwerten (klima-v2-10min) zusammengefasst und alle 5 min aktualisiert."
+          >
+            ● {liveNote}
+          </span>
+        )}
         <label className="atclima-toggle" title="Auch stillgelegte historische Stationen zeigen">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           Historische
@@ -251,7 +298,7 @@ export function AtClimatePanel() {
         )}
       </div>
       <span className="atclima-attribution">
-        Datenquelle: GeoSphere Austria, klima-v2-1d/-1m (CC BY 4.0)
+        Datenquelle: GeoSphere Austria, klima-v2-1d/-1m/-10min (CC BY 4.0)
       </span>
     </div>
   )

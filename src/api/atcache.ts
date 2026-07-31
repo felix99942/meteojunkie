@@ -29,21 +29,40 @@ function toPromise<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+/** Ablaufbehafteter Eintrag — nur für tagesaktuelle (noch veränderliche) Werte. */
+interface Expiring<T> {
+  __exp: number
+  v: T
+}
+
+function isExpiring<T>(raw: unknown): raw is Expiring<T> {
+  return typeof raw === 'object' && raw !== null && '__exp' in raw
+}
+
 export async function cacheGet<T>(key: string): Promise<T | undefined> {
   try {
     const db = await openDb()
     const tx = db.transaction(STORE, 'readonly')
-    return (await toPromise(tx.objectStore(STORE).get(key))) as T | undefined
+    const raw = await toPromise(tx.objectStore(STORE).get(key))
+    if (isExpiring<T>(raw)) return raw.__exp > Date.now() ? raw.v : undefined
+    return raw as T | undefined
   } catch {
     return undefined
   }
 }
 
-export async function cacheSet<T>(key: string, value: T): Promise<void> {
+/**
+ * Schreiben. `ttlMs` gesetzt → Eintrag verfällt (für Werte des laufenden Tages,
+ * die sich noch ändern); ohne TTL gilt der Eintrag für immer (historisch = statisch).
+ */
+export async function cacheSet<T>(key: string, value: T, ttlMs?: number): Promise<void> {
   try {
     const db = await openDb()
     const tx = db.transaction(STORE, 'readwrite')
-    tx.objectStore(STORE).put(value, key)
+    tx.objectStore(STORE).put(
+      ttlMs != null ? ({ __exp: Date.now() + ttlMs, v: value } satisfies Expiring<T>) : value,
+      key,
+    )
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error ?? new Error('IndexedDB-Schreibfehler'))

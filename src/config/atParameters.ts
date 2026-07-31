@@ -20,6 +20,15 @@ export interface AtParameterSpec {
   code: string
   /** Code im Monatsdatensatz (klima-v2-1m); fehlt → nur im Tag-Modus verfügbar. */
   monthlyCode?: string
+  /**
+   * Code im 10-Minuten-Datensatz (klima-v2-10min) für den LAUFENDEN Tag, den
+   * klima-v2-1d noch nicht aggregiert hat. Fehlt → am aktuellen Tag kein Wert.
+   */
+  liveCode?: string
+  /** Reduktion der 10-Minuten-Werte auf den Tageswert (meist = `agg`). */
+  liveAgg?: AggMode
+  /** Faktor auf den Live-Wert, wenn die 10-Minuten-Einheit abweicht (so: s → h). */
+  liveFactor?: number
   label: string
   unit: string
   category: 'Temperatur' | 'Niederschlag' | 'Sonne' | 'Schnee' | 'Feuchte' | 'Wind'
@@ -108,13 +117,13 @@ const SNOW_DEPTH_SCALE: ColorScale = {
 }
 
 export const AT_PARAMETERS: AtParameterSpec[] = [
-  { code: 'tl_mittel', monthlyCode: 'tl_mittel', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'tlmax', monthlyCode: 'tlmax', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'tlmin', monthlyCode: 'tlmin', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'rr', monthlyCode: 'rr', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE },
-  { code: 'so_h', monthlyCode: 'so_h', label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE },
-  { code: 'rfb_mittel', monthlyCode: 'rf_mittel', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'sh', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE },
+  { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE },
+  { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'sh', liveCode: 'sh', liveAgg: 'last', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE },
 ]
 
 const byCode = new Map(AT_PARAMETERS.map((p) => [p.code, p]))

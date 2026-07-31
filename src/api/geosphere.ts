@@ -27,6 +27,8 @@ export interface AtStation {
   isActive: boolean
   hasSunshine: boolean
   hasRadiation: boolean
+  /** Station liefert auch 10-Minuten-Messwerte (klima-v2-10min) — Basis der Tagesaktualität. */
+  has10min: boolean
 }
 
 /** Eine verfügbare Messgröße (Qualitätsflags sind beim Ingest bereits entfernt). */
@@ -88,6 +90,13 @@ export const activeStations = (stations: AtStation[]): AtStation[] =>
 const GEOSPHERE_BASE = 'https://dataset.api.hub.geosphere.at/v1'
 export const DATASET_DAILY = 'station/historical/klima-v2-1d'
 export const DATASET_MONTHLY = 'station/historical/klima-v2-1m'
+/**
+ * 10-Minuten-Messwerte. Der Tagesdatensatz klima-v2-1d wird erst NACH Tagesende
+ * aggregiert (heute → durchgehend null, gestern liegt vor) — der laufende Tag
+ * kommt deshalb nur hierüber. Gleiche Parametercodes wie der Tagesdatensatz
+ * (tl/tlmax/tlmin/rr/so/rf/sh), aber weniger Stationen (siehe `has10min`).
+ */
+export const DATASET_10MIN = 'station/historical/klima-v2-10min'
 
 /** Zeitreihe eines Parameters je Station: stationId → tägliche Werte (null-Lücken). */
 export interface StationSeries {
@@ -103,8 +112,10 @@ export interface StationSeries {
  * Ergebnis wird persistent gecacht (historische Daten sind statisch → für immer
  * gültig); ein wiederholter Abruf derselben Auswahl kostet 0 Requests.
  *
- * `start`/`end` als ISO-Datum (YYYY-MM-DD). `stationIds` bestimmt den Cache-Key
- * mit — für stabile Keys sortiert übergeben.
+ * `start`/`end` als ISO-Datum (YYYY-MM-DD) bzw. ISO-Zeitpunkt (YYYY-MM-DDTHH:MM
+ * beim 10-Minuten-Datensatz). `stationIds` bestimmt den Cache-Key mit — für
+ * stabile Keys sortiert übergeben. `ttlMs` setzen, wenn der Zeitraum noch
+ * wachsen kann (laufender Tag) — dann verfällt der Cache-Eintrag.
  */
 export async function fetchStationSeries(
   parameter: string,
@@ -112,6 +123,7 @@ export async function fetchStationSeries(
   end: string,
   stationIds: number[],
   dataset: string = DATASET_DAILY,
+  ttlMs?: number,
 ): Promise<StationSeries> {
   const ids = [...stationIds].sort((a, b) => a - b)
   const key = `${dataset}|${parameter}|${start}|${end}|${ids.join(',')}`
@@ -139,6 +151,6 @@ export async function fetchStationSeries(
     if (!unit && p.unit) unit = p.unit
   }
   const result: StationSeries = { timestamps: geo.timestamps ?? [], byStation, unit }
-  await cacheSet(key, result)
+  await cacheSet(key, result, ttlMs)
   return result
 }

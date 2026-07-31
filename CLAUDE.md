@@ -71,7 +71,14 @@ npm run preview   # gebautes dist/ servieren
   direkt. Stammdaten/Normale/Rekorde sind vorgenerierte Assets unter `public/at/`
   (`scripts/at-ingest-*.mjs`, npm `ingest:at*`); tages-/monatsaktuelle Werte holt
   `api/geosphere.ts`/`api/atValues.ts` in EINEM Bulk-Request über alle Stationen
-  (IndexedDB-Cache `api/atcache.ts`, historisch = für immer). Karte ist ein
+  (IndexedDB-Cache `api/atcache.ts`, historisch = für immer). **Der laufende Tag
+  kommt NICHT aus `klima-v2-1d`** (das aggregiert erst nach Tagesende und liefert
+  für heute durchgehend null), sondern aus `klima-v2-10min`: `fetchLiveDayValues()`
+  fasst die 10-Minuten-Werte des Tages zusammen (`liveCode`/`liveAgg`/`liveFactor`
+  je Parameter in `config/atParameters.ts`), TTL-Cache 5 min, `PeriodValues.source`
+  = `'live'` → UI markiert den Wert als vorläufig samt Messzeitpunkt. Nur Stationen
+  mit `has10min` dürfen in den Request — eine unbekannte ID lässt den GANZEN
+  Bulk-Request mit HTTP 400 scheitern. Karte ist ein
   leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,

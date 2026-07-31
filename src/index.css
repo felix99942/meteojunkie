@@ -950,6 +950,13 @@ button:focus-visible {
   color: var(--ink-muted);
 }
 
+/* Laufender Tag: Werte sind ein Zwischenstand aus 10-Minuten-Messwerten. */
+.atclima-live {
+  color: #e0a800;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .atclima-toggle {
   margin-left: auto;
   display: flex;

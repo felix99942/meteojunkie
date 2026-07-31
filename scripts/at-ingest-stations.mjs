@@ -19,6 +19,12 @@ import { fileURLToPath } from 'node:url'
 
 const META_URL =
   'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d/metadata'
+// Der 10-Minuten-Datensatz trägt den LAUFENDEN Tag (klima-v2-1d aggregiert erst
+// nach Tagesende). Er kennt nicht alle Klimastationen — welche, wird hier als
+// `has10min` mitgeschrieben: unbekannte IDs lassen den ganzen Wert-Request mit
+// HTTP 400 scheitern, das Frontend muss vorher filtern können.
+const META_10MIN_URL =
+  'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-10min/metadata'
 
 // Österreich-Bounding-Box (grob, mit Puffer) — Plausibilitätsprüfung der Koordinaten.
 const AT_BBOX = { latMin: 46.0, latMax: 49.2, lonMin: 9.3, lonMax: 17.3 }
@@ -30,6 +36,11 @@ async function main() {
   const res = await fetch(META_URL)
   if (!res.ok) throw new Error(`Metadaten-Fetch fehlgeschlagen: HTTP ${res.status}`)
   const meta = await res.json()
+
+  process.stdout.write(`Lade Metadaten … ${META_10MIN_URL}\n`)
+  const res10 = await fetch(META_10MIN_URL)
+  if (!res10.ok) throw new Error(`10min-Metadaten-Fetch fehlgeschlagen: HTTP ${res10.status}`)
+  const ids10min = new Set(((await res10.json()).stations ?? []).map((s) => s.id))
 
   const rawStations = meta.stations ?? []
   const rawParams = meta.parameters ?? []
@@ -50,6 +61,7 @@ async function main() {
       isActive: Boolean(s.is_active),
       hasSunshine: Boolean(s.has_sunshine),
       hasRadiation: Boolean(s.has_global_radiation),
+      has10min: ids10min.has(s.id),
     }))
     .filter((s) => typeof s.lat === 'number' && typeof s.lon === 'number')
 
@@ -71,8 +83,10 @@ async function main() {
       s.lon < AT_BBOX.lonMin ||
       s.lon > AT_BBOX.lonMax,
   )
+  const live = active.filter((s) => s.has10min)
   process.stdout.write(
-    `Stationen: ${stations.length} gesamt, ${active.length} aktiv · ` +
+    `Stationen: ${stations.length} gesamt, ${active.length} aktiv ` +
+      `(davon ${live.length} mit 10-Minuten-Daten) · ` +
       `Parameter (ohne Flags): ${parameters.length}\n`,
   )
   if (outOfBox.length > 0) {

@@ -8,10 +8,12 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { fetchStationSeries, type AtStation } from '../api/geosphere'
 import {
+  fetchLiveDayValues,
   loadNationalRecords,
   loadStationRecords,
   SEASON_LABEL,
   SEASONS,
+  todayUtc,
   type NationalRecords,
   type StationRecords,
 } from '../api/atValues'
@@ -72,21 +74,29 @@ export function AtStationDetail({
     setLoading(true)
     setError(null)
     fetchStationSeries(paramCode, start, day, [station.id])
-      .then((s) => {
+      .then(async (s) => {
         if (cancelled) return
         const xs = s.timestamps.map((t) => Date.parse(t) / 1000)
         const raw = s.byStation[station.id] ?? []
         // GeoSphere nutzt bei rr/sh -1 (o.ä. < 0) als Fehlwert → als Lücke behandeln
         const nonNeg = spec.category === 'Niederschlag' || spec.category === 'Schnee'
         const ys = raw.map((v) => (v == null || (nonNeg && v < 0) ? null : v))
-        setData({ xs, ys })
+        // Der laufende Tag fehlt im Tagesdatensatz — Zwischenstand aus den
+        // 10-Minuten-Messwerten nachtragen, damit Chart und Karte übereinstimmen.
+        const lastIdx = s.timestamps.length - 1
+        if (day >= todayUtc() && lastIdx >= 0 && s.timestamps[lastIdx].startsWith(day)) {
+          const live = await fetchLiveDayValues(spec, day, [station]).catch(() => null)
+          const v = live?.byStation[station.id]
+          if (v != null) ys[lastIdx] = v
+        }
+        if (!cancelled) setData({ xs, ys })
       })
       .catch((err) => !cancelled && setError(err?.message ?? 'Zeitreihe nicht ladbar'))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [station.id, paramCode, start, day, spec.category])
+  }, [station, paramCode, start, day, spec])
 
   // Kennzahlen über das Fenster.
   const stats = useMemo(() => {

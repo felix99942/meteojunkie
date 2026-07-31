@@ -51,6 +51,19 @@ GET /v1/station/historical/klima-v2-1d?parameters=tl_mittel,rr
 ```
 **Gotcha:** GeoSphere-Geometrie ist `[lat, lon]` (nicht GeoJSON-Standard `[lon, lat]`).
 
+4. **`klima-v2-1d` kennt den laufenden Tag NICHT** (live geprüft 2026-07-31):
+   Für „heute" liefert der Datensatz durchgehend `null`, der Vortag liegt
+   dagegen schon am Folgetag vor (454/462 Stationen). Tagesaggregate entstehen
+   erst nach Tagesende. Der laufende Tag kommt deshalb aus
+   **`station/historical/klima-v2-10min`** (gleiche Parametercodes
+   `tl`/`tlmax`/`tlmin`/`rr`/`so`/`rf`/`sh`, `so` in **Sekunden**), im Browser
+   über die 10-Minuten-Werte des Tages aggregiert — vorläufig und ungeprüft,
+   deshalb in der UI als solches markiert. Der Datensatz kennt **474 der 492
+   aktiven** Klimastationen; unbekannte `station_ids` lassen den GESAMTEN
+   Request mit HTTP 400 scheitern → Filter `has10min` aus dem Stations-Ingest.
+   Gleiches gilt für `klima-v2-1m` und den laufenden Monat (ebenfalls `null`) —
+   dort bisher nicht behandelt.
+
 ## C. Empfohlene Architektur (statisch, ohne Live-Server)
 
 Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:

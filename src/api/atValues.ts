@@ -9,6 +9,7 @@
 // Schnee (kein Monatswert) ist nur im Tag-Modus verfügbar.
 
 import {
+  DATASET_10MIN,
   DATASET_DAILY,
   DATASET_MONTHLY,
   fetchStationSeries,
@@ -22,6 +23,21 @@ export type Period =
   | { kind: 'year'; year: number }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** Heutiges Datum in UTC — GeoSphere-Klimatage laufen 00–24 UTC. */
+export const todayUtc = (): string => new Date().toISOString().slice(0, 10)
+
+const dayOffsetUtc = (day: string, n: number): string => {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Live-Werte des laufenden Tages sind noch unvollständig und ändern sich alle
+ * 10 min — Cache deshalb kurz halten (der historische Pfad cacht für immer).
+ */
+const LIVE_TTL_MS = 5 * 60 * 1000
 
 /** Ob der Parameter im gewählten Zeitbezug überhaupt Werte hat. */
 export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean {
@@ -39,6 +55,66 @@ export interface PeriodValues {
   /** stationId → Absolutwert der Periode. */
   byStation: Record<number, number | null>
   unit: string
+  /**
+   * `live` = aus 10-Minuten-Messwerten des laufenden Tages zusammengefasst
+   * (vorläufig, ungeprüft); `daily`/`monthly` = fertiges Klima-Aggregat.
+   */
+  source: 'daily' | 'monthly' | 'live'
+  /** Nur bei `live`: Zeitstempel des jüngsten verwendeten Messwerts (ISO). */
+  asOf?: string
+}
+
+/**
+ * Tageswerte des LAUFENDEN Tages aus dem 10-Minuten-Datensatz zusammenfassen.
+ * klima-v2-1d aggregiert erst nach Tagesende, deshalb gibt es „heute" nur so.
+ * Ein Bulk-Request über alle Stationen, wie im historischen Pfad.
+ */
+export async function fetchLiveDayValues(
+  spec: AtParameterSpec,
+  day: string,
+  stations: AtStation[],
+): Promise<PeriodValues> {
+  const byStation: Record<number, number | null> = {}
+  if (!spec.liveCode) return { byStation, unit: spec.unit, source: 'live' }
+
+  // Nur Stationen, die der 10-Minuten-Datensatz kennt — unbekannte IDs lassen
+  // den GESAMTEN Request mit HTTP 400 scheitern, nicht nur ihren Anteil.
+  const ids = stations.filter((s) => s.has10min).map((s) => s.id)
+  if (ids.length === 0) return { byStation, unit: spec.unit, source: 'live' }
+
+  const s = await fetchStationSeries(
+    spec.liveCode,
+    `${day}T00:00`,
+    `${day}T23:50`,
+    ids,
+    DATASET_10MIN,
+    LIVE_TTL_MS,
+  )
+
+  const factor = spec.liveFactor ?? 1
+  let lastIdx = -1
+  for (const id of ids) {
+    const data = s.byStation[id]
+    if (!data) {
+      byStation[id] = null
+      continue
+    }
+    const cleaned = data.map((v) => clean(spec, v))
+    for (let i = cleaned.length - 1; i > lastIdx; i--) {
+      if (cleaned[i] != null) {
+        lastIdx = i
+        break
+      }
+    }
+    const v = aggregate(cleaned, spec.liveAgg ?? spec.agg)
+    byStation[id] = v == null ? null : v * factor
+  }
+  return {
+    byStation,
+    unit: spec.unit,
+    source: 'live',
+    asOf: lastIdx >= 0 ? s.timestamps[lastIdx] : undefined,
+  }
 }
 
 /** Kartenwerte für die Periode holen — ein Bulk-Request über alle Stationen. */
@@ -51,16 +127,28 @@ export async function fetchPeriodValues(
   const byStation: Record<number, number | null> = {}
 
   if (period.kind === 'day') {
+    // Laufender Tag: klima-v2-1d ist durchgehend null — direkt live holen.
+    const today = todayUtc()
+    if (period.day >= today) return fetchLiveDayValues(spec, period.day, stations)
+
     const s = await fetchStationSeries(spec.code, period.day, period.day, ids, DATASET_DAILY)
+    let covered = 0
     for (const id of ids) {
       const data = s.byStation[id]
-      byStation[id] = data ? aggregate(data.map((v) => clean(spec, v)), spec.agg) : null
+      const v = data ? aggregate(data.map((x) => clean(spec, x)), spec.agg) : null
+      byStation[id] = v
+      if (v != null) covered++
     }
-    return { byStation, unit: s.unit || spec.unit }
+    // Der Tagesdatensatz hinkt gelegentlich nach; für gestern dann live nachladen,
+    // statt eine leere Karte zu zeigen.
+    if (covered === 0 && period.day >= dayOffsetUtc(today, -1)) {
+      return fetchLiveDayValues(spec, period.day, stations)
+    }
+    return { byStation, unit: s.unit || spec.unit, source: 'daily' }
   }
 
   // Monat/Jahr über den Monatsdatensatz
-  if (!spec.monthlyCode) return { byStation, unit: spec.unit }
+  if (!spec.monthlyCode) return { byStation, unit: spec.unit, source: 'monthly' }
   const [start, end, annual] =
     period.kind === 'month'
       ? [`${period.year}-${pad2(period.month)}-01`, `${period.year}-${pad2(period.month)}-01`, false]
@@ -71,7 +159,7 @@ export async function fetchPeriodValues(
     const data = s.byStation[id]?.map((v) => clean(spec, v))
     byStation[id] = data ? (annual ? aggregate(data, spec.annualAgg) : (data[0] ?? null)) : null
   }
-  return { byStation, unit: s.unit || spec.unit }
+  return { byStation, unit: s.unit || spec.unit, source: 'monthly' }
 }
 
 // --- Normale 1991–2020 (vorberechnet, public/at/normals.json) ------------
