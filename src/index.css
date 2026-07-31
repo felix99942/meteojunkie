@@ -1231,11 +1231,103 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+/* Maximiert: füllt den Kartenbereich, vollständige Tabelle. */
+.atrank.is-max {
+  inset: 8px;
+  width: auto;
+  max-height: none;
+  overflow: hidden;
+}
+
 .atrank-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
+}
+
+.atrank-search {
+  margin: 4px 0 2px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.atrank-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--ink-muted);
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.atrank-stats strong {
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabelle scrollt, Kopfzeile bleibt stehen. */
+.atrank-tablewrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.atrank-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.atrank-table th {
+  position: sticky;
+  top: 0;
+  background: #101113;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px 2px;
+}
+
+.atrank-sortbtn {
+  padding: 1px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  background: none;
+  border: none;
+}
+
+.atrank-sortbtn:hover {
+  color: var(--ink);
+  background: none;
+}
+
+.atrank-table td {
+  padding: 1px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.atrank-table tbody tr {
+  cursor: pointer;
+}
+
+.atrank-table tbody tr:hover td {
+  background: var(--bg-control-hover);
+  color: var(--ink);
+}
+
+.atrank-table .atrank-name {
+  overflow: visible;
+  width: 99%;
 }
 
 .atrank-sub {
@@ -1308,9 +1400,99 @@ button:focus-visible {
   gap: 8px;
 }
 
+/* Maximiert: füllt den Kartenbereich, zweispaltig (Verlauf | Rekorde). */
+.atdetail.is-max {
+  inset: 8px;
+  width: auto;
+  max-height: none;
+}
+
+.atdetail-headbtns {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 .atdetail-close {
   padding: 1px 7px;
   line-height: 1.4;
+}
+
+.atdetail-cols {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.atdetail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* Erklärtext — bewusst kleiner als die Zahlen, aber nicht flüsterleise. */
+.atdetail-note {
+  color: var(--ink-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.atdetail-note strong {
+  color: var(--ink-secondary);
+}
+
+.is-max .atdetail-chart {
+  height: 260px;
+}
+
+.atdetail-rechead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.atrec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.atrec-table th {
+  text-align: left;
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  padding: 2px 4px;
+}
+
+.atrec-table td {
+  padding: 1px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.atrec-table tr:hover td {
+  background: var(--bg-control-hover);
+}
+
+/* Aufgelöster Rekordtag hebt sich vom bloßen Monat/Jahr ab. */
+.atrec-exact {
+  color: var(--ink);
+}
+
+.atrec-daybtn {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--ink-muted);
 }
 
 .atdetail-sub {

@@ -108,6 +108,10 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
 8. ✅ Rangliste der Extremwerte (`AtRankList`, Kern `atRank.ts` + Tests) mit
    Karten-Highlight beim Hover; MOS-Punktvorhersage beim Klick auf eine
    Vorhersagestation (`AtForecastDetail`, Ausrichtung über `alignSeries` + Tests).
+9. ✅ Schnellansicht ↔ maximiert für Rangliste und Detail; sortierbare
+   Volltabelle mit Suche und Kennzahlen; tagesgenaue Rekorde für Tmax/Tmin
+   (`api/atRecords.ts` + Tests, aus dem Tagesdatensatz nachgeladen);
+   Parameter- und Rekord-Beschreibungen in der UI.
 
 ## F. Betrieb & bewusste Grenzen
 

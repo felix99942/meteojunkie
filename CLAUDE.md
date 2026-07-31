@@ -86,10 +86,21 @@ npm run preview   # gebautes dist/ servieren
   springt auf den neuesten Stand (Tag = heute; Monat/Jahr = letzte
   ABGESCHLOSSENE Periode) und holt den laufenden Tag mit `force` am TTL-Cache
   vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
-  geladenen Kartenwerte (auch Anomalien) nach Extremen — rein clientseitig,
-  kein zusätzlicher Request; Hover markiert die Station in der Karte
-  (`highlightIdx`), Klick öffnet ihr Detail. Reine Rechenkerne sind mit Vitest
-  getestet (`*.test.ts`, `npm test`).
+  geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
+  Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick
+  öffnet ihr Detail. Rangliste und Stationsdetail haben beide **zwei Größen**
+  (Schnellansicht in der Ecke ↔ maximiert über den Kartenbereich, CSS-Modifier
+  `.is-max`): maximiert zeigt die Rangliste eine sortierbare Volltabelle
+  (Rang bleibt IMMER global — Suche/Sortierung ändern nur die Anzeige) und das
+  Detail alle Rekordebenen als Tabelle mit Datum. **Rekordtage** (`api/
+  atRecords.ts`): die Assets kennen nur Monat/Jahr, aber bei `tlmax`/`tlmin`
+  IST der Monatswert ein Tagesextrem („Monats-Maximum aus 24-h-Maxima") — ein
+  Tagesabruf über den Rekordzeitraum liefert den exakten Tag (für immer
+  gecacht). Bei Mittel-/Summenparametern gibt es bewusst KEINE Auflösung, dort
+  existiert kein Rekordtag; `DAY_RESOLVABLE` ist die Whitelist. Absolute
+  Rekorde lösen sich beim Öffnen auf, die übrigen 32 Zeilen erst auf Klick.
+  Parameter-Klartext steht als `description` in der Registry. Reine Rechenkerne
+  sind mit Vitest getestet (`*.test.ts`, `npm test`).
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind

@@ -216,6 +216,14 @@ export function AtClimatePanel() {
     return isoDay(dec > new Date() ? new Date() : dec)
   }, [period])
 
+  // Die geöffnete Station bleibt in der Karte markiert; ein Hover in der
+  // Rangliste hat Vorrang.
+  const selectedIdx = useMemo(() => {
+    if (!selected) return null
+    const i = shown.findIndex((s) => s.id === selected.id)
+    return i >= 0 ? i : null
+  }, [selected, shown])
+
   const periodLabel = useMemo(() => {
     if (period.kind === 'day') return fmtDayLabel.format(new Date(`${period.day}T12:00:00Z`))
     if (period.kind === 'month') return fmtMonthLabel.format(new Date(Date.UTC(period.year, period.month - 1, 15)))
@@ -245,7 +253,7 @@ export function AtClimatePanel() {
         <span className="atclima-title">Österreich-Klima</span>
         <label className="atclima-ctrl">
           <span className="label-muted">Parameter</span>
-          <select value={paramCode} onChange={(e) => setParamCode(e.target.value)}>
+          <select value={paramCode} onChange={(e) => setParamCode(e.target.value)} title={spec.description}>
             {AT_PARAMETERS.filter((p) => isParamAvailable(p, period)).map((p) => (
               <option key={p.code} value={p.code}>
                 {p.category} – {p.label}
@@ -346,7 +354,7 @@ export function AtClimatePanel() {
               values={displayValues}
               unit={unit}
               onSelect={(i) => setSelected(shown[i])}
-              highlightIdx={rankHover}
+              highlightIdx={rankHover ?? selectedIdx}
             />
             {showRank && (
               <AtRankList
@@ -354,6 +362,11 @@ export function AtClimatePanel() {
                 values={displayValues}
                 unit={anomActive ? `Δ ${unit}` : unit}
                 title={`${spec.label}${anomActive ? ' — Abweichung' : ''} · ${periodLabel}`}
+                description={
+                  anomActive
+                    ? `${spec.description} Gereiht wird hier die Abweichung vom Normal 1991–2020.`
+                    : spec.description
+                }
                 signed={anomActive}
                 onSelect={(i) => setSelected(shown[i])}
                 onHover={setRankHover}

@@ -31,6 +31,13 @@ export interface AtParameterSpec {
   liveFactor?: number
   label: string
   unit: string
+  /**
+   * Klartext für die UI: was die Größe misst und wie Tag/Monat/Jahr daraus
+   * gebildet werden. Steht im Detailpanel und als Tooltip am Dropdown — die
+   * Aggregatsfrage ("Monatsmittel oder Monatsmaximum?") entscheidet, wie ein
+   * Rekord zu lesen ist.
+   */
+  description: string
   category: 'Temperatur' | 'Niederschlag' | 'Sonne' | 'Schnee' | 'Feuchte' | 'Wind'
   /** Reduktion täglicher Werte auf einen Wert (Tag/Monat-Aggregat der Rohreihe). */
   agg: AggMode
@@ -117,13 +124,13 @@ const SNOW_DEPTH_SCALE: ColorScale = {
 }
 
 export const AT_PARAMETERS: AtParameterSpec[] = [
-  { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE },
-  { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE },
-  { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE },
-  { code: 'sh', liveCode: 'sh', liveAgg: 'last', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE },
+  { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere Lufttemperatur in 2 m Höhe. Tageswert aus Termin- und Extremwerten; Monat und Jahr sind Mittelwerte daraus.' },
+  { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Höchste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der HÖCHSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
+  { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Tiefste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der TIEFSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
+  { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE, description: 'Niederschlagshöhe als 24-Stunden-Summe (Termin 6 UTC). Monat und Jahr sind Summen — der Rekord ist ein nasser Monat, kein einzelner Tag.' },
+  { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
+  { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere relative Luftfeuchte. Im Tagesdatensatz aus dem Feuchtefühler (rfb_mittel), im Monatsdatensatz als rf_mittel geführt.' },
+  { code: 'sh', liveCode: 'sh', liveAgg: 'last', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE, description: 'Gesamtschneehöhe zum Beobachtungstermin. Nur im Tag-Modus verfügbar — der Monatsdatensatz führt keine Schneehöhe, deshalb gibt es dafür weder Normale noch Rekorde.' },
 ]
 
 const byCode = new Map(AT_PARAMETERS.map((p) => [p.code, p]))
