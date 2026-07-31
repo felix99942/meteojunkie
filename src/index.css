@@ -1148,6 +1148,159 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+/* MOS-Punktvorhersage: Diagrammstapel im Detailpanel (nutzt .atdetail). */
+.atfc-days {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.atfc-day {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.atfc-daycap {
+  color: var(--ink-muted);
+}
+
+.atfc-max {
+  color: #e08a6a;
+  font-weight: 600;
+}
+
+.atfc-min {
+  color: #6aa9e0;
+  font-weight: 600;
+}
+
+.atfc-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.atfc-chartcap {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.atfc-legend {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+
+.atfc-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 2px;
+  vertical-align: middle;
+}
+
+.atfc-plot {
+  height: 88px;
+  min-height: 88px;
+}
+
+/* Rangliste — Gegenstück zum Detailpanel, deshalb auf der linken Seite. */
+.atrank {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 264px;
+  max-height: calc(100% - 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(16, 17, 19, 0.97);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 8px 6px;
+  z-index: 5;
+  overflow-y: auto;
+}
+
+.atrank-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.atrank-sub {
+  color: var(--ink-secondary);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.atrank-cap {
+  color: var(--ink-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 6px 0 1px;
+}
+
+.atrank-row {
+  display: grid;
+  grid-template-columns: 18px 46px 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.atrank-row:hover {
+  background: var(--bg-control-hover);
+  border-color: var(--border);
+}
+
+.atrank-no {
+  color: var(--ink-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.atrank-val {
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.atrank-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atrank-meta,
+.atrank-foot,
+.atrank-empty {
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.atrank-foot {
+  margin-top: 6px;
+}
+
 .atdetail-head {
   display: flex;
   justify-content: space-between;

@@ -9,6 +9,7 @@ import { colorForValue } from '../config/colorscales'
 import { DACH_VIEW } from '../render/atmap'
 import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import { AtClimateMap } from './AtClimateMap'
+import { AtForecastDetail } from './AtForecastDetail'
 
 const fmtHour = new Intl.DateTimeFormat('de-DE', {
   timeZone: 'Europe/Berlin',
@@ -25,6 +26,7 @@ export function AtForecastPanel() {
   const [data, setData] = useState<ForecastData | null>(null)
   const [loading, setLoading] = useState(false)
   const [idx, setIdx] = useState(0)
+  const [selected, setSelected] = useState<MosStation | null>(null)
 
   const spec = getForecastSpec(paramKey)
 
@@ -91,6 +93,14 @@ export function AtForecastPanel() {
     return data?.kind === 'hourly' ? fmtHour.format(new Date(t)) : fmtDay.format(new Date(`${t}T12:00:00Z`))
   }, [steps, clampedIdx, data])
 
+  // Gewählter Zeitschritt als ms — Marker im Punkt-Verlauf, damit Karte und
+  // Meteogramm denselben Termin zeigen.
+  const markTime = useMemo(() => {
+    if (!steps.length) return undefined
+    const t = steps[clampedIdx]
+    return data?.kind === 'hourly' ? Date.parse(t) : Date.parse(`${t}T12:00:00Z`)
+  }, [steps, clampedIdx, data])
+
   const runLabel = data ? fmtHour.format(new Date(data.meta.run)) : ''
 
   return (
@@ -132,15 +142,25 @@ export function AtForecastPanel() {
         ) : !stations || !data ? (
           <div className="panel-placeholder">Lade Vorhersage …</div>
         ) : (
-          <AtClimateMap
-            stations={stations}
-            colors={colors}
-            values={values}
-            unit={spec.unit}
-            view={DACH_VIEW}
-            basemapUrl={europeBasemapUrl}
-            labelMinGap={38}
-          />
+          <>
+            <AtClimateMap
+              stations={stations}
+              colors={colors}
+              values={values}
+              unit={spec.unit}
+              view={DACH_VIEW}
+              basemapUrl={europeBasemapUrl}
+              labelMinGap={38}
+              onSelect={(i) => setSelected(stations[i])}
+            />
+            {selected && (
+              <AtForecastDetail
+                station={selected}
+                markTime={markTime}
+                onClose={() => setSelected(null)}
+              />
+            )}
+          </>
         )}
       </div>
       <span className="atclima-attribution">Datenquelle: DWD MOSMIX (GeoNutzV) · MOS-Vorhersage</span>

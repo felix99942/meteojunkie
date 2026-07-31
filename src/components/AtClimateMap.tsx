@@ -82,6 +82,7 @@ export function AtClimateMap({
   view = AT_VIEW,
   basemapUrl = austriaBasemapUrl,
   labelMinGap = 0,
+  highlightIdx = null,
 }: {
   stations: MapStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
@@ -97,6 +98,12 @@ export function AtClimateMap({
   basemapUrl?: string
   /** Label-Ausdünnung (px) für dichte Netze; 0 = alle Zahlen zeigen. */
   labelMinGap?: number
+  /**
+   * Von außen hervorgehobene Station (z.B. Hover in der Rangliste). Der eigene
+   * Maus-Hover hat Vorrang, und die Markierung setzt sich über die
+   * Label-Ausdünnung hinweg — sonst bliebe sie im dichten Netz unsichtbar.
+   */
+  highlightIdx?: number | null
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -167,18 +174,18 @@ export function AtClimateMap({
       }
       // Punkte bei dichten Netzen (DACH) kleiner, damit die Karte nicht zuläuft.
       const pointR = labelMinGap > 0 ? 3 : 5
+      const hi = hoverIdxRef.current >= 0 ? hoverIdxRef.current : (highlightIdx ?? -1)
       drawStationPoints(ctx, g, stations, {
         radius: pointR,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
-        highlightIdx: hoverIdxRef.current,
+        highlightIdx: hi,
         highlightFill: COLORS.highlight,
         colors,
         noDataFill: COLORS.noData,
       })
       // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
-      if (values)
-        drawStationLabels(ctx, g, stations, values, formatValue, colors, hoverIdxRef.current, labelMinGap)
+      if (values) drawStationLabels(ctx, g, stations, values, formatValue, colors, hi, labelMinGap)
     }
 
     drawRef.current = draw
@@ -186,7 +193,7 @@ export function AtClimateMap({
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover, view, labelMinGap])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap, highlightIdx])
 
   // Zoom per Mausrad (um den Cursor). Nativer Listener mit passive:false, damit
   // preventDefault das Seiten-Scrollen zuverlässig unterbindet.

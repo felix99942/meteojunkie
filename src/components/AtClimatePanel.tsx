@@ -18,6 +18,7 @@ import {
 import { anomaly, AT_PARAMETERS, getAtParameter } from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
+import { AtRankList } from './AtRankList'
 import { AtStationDetail } from './AtStationDetail'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -26,6 +27,14 @@ const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 // Live-Werte des laufenden Tages ticken alle 10 min weiter — solange „heute"
 // gewählt ist, im gleichen Takt nachladen (Cache-TTL in atValues deckelt die Last).
 const LIVE_REFRESH_MS = 5 * 60 * 1000
+
+const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+const fmtMonthLabel = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long', year: 'numeric' })
 
 const fmtClock = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'Europe/Vienna',
@@ -57,6 +66,8 @@ export function AtClimatePanel() {
   const [showAll, setShowAll] = useState(false)
   const [paramCode, setParamCode] = useState('tl_mittel')
   const [selected, setSelected] = useState<AtStation | null>(null)
+  const [showRank, setShowRank] = useState(false)
+  const [rankHover, setRankHover] = useState<number | null>(null)
 
   const init = useMemo(latestPeriods, [])
   const [periodKind, setPeriodKind] = useState<Period['kind']>('day')
@@ -205,6 +216,12 @@ export function AtClimatePanel() {
     return isoDay(dec > new Date() ? new Date() : dec)
   }, [period])
 
+  const periodLabel = useMemo(() => {
+    if (period.kind === 'day') return fmtDayLabel.format(new Date(`${period.day}T12:00:00Z`))
+    if (period.kind === 'month') return fmtMonthLabel.format(new Date(Date.UTC(period.year, period.month - 1, 15)))
+    return String(period.year)
+  }, [period])
+
   const status = valuesLoading
     ? 'lädt Werte …'
     : valuesError
@@ -303,6 +320,14 @@ export function AtClimatePanel() {
             ● {liveNote}
           </span>
         )}
+        <button
+          type="button"
+          className={`atclima-now${showRank ? ' is-active' : ''}`}
+          onClick={() => setShowRank((v) => !v)}
+          title="Extremwerte der aktuellen Auswahl als Liste (Hover markiert die Station, Klick öffnet das Detail)"
+        >
+          Rangliste
+        </button>
         <label className="atclima-toggle" title="Auch stillgelegte historische Stationen zeigen">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           Historische
@@ -321,7 +346,23 @@ export function AtClimatePanel() {
               values={displayValues}
               unit={unit}
               onSelect={(i) => setSelected(shown[i])}
+              highlightIdx={rankHover}
             />
+            {showRank && (
+              <AtRankList
+                stations={shown}
+                values={displayValues}
+                unit={anomActive ? `Δ ${unit}` : unit}
+                title={`${spec.label}${anomActive ? ' — Abweichung' : ''} · ${periodLabel}`}
+                signed={anomActive}
+                onSelect={(i) => setSelected(shown[i])}
+                onHover={setRankHover}
+                onClose={() => {
+                  setShowRank(false)
+                  setRankHover(null)
+                }}
+              />
+            )}
             {selected && (
               <AtStationDetail
                 station={selected}

@@ -103,6 +103,11 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
    (`at-ingest-records.mjs` → `records.json`, 1094 Stationen) im Detailpanel.
 6. ✅ Vitest-Tests (`*.test.ts`: aggregate/anomaly/colorForValue). Ladezustände +
    Fehleranzeigen vorhanden. Build + Lint grün.
+7. ✅ Laufender Tag live aus `klima-v2-10min` + „Aktuell"-Knopf (springt auf den
+   neuesten Stand, holt heute am TTL-Cache vorbei).
+8. ✅ Rangliste der Extremwerte (`AtRankList`, Kern `atRank.ts` + Tests) mit
+   Karten-Highlight beim Hover; MOS-Punktvorhersage beim Klick auf eine
+   Vorhersagestation (`AtForecastDetail`, Ausrichtung über `alignSeries` + Tests).
 
 ## F. Betrieb & bewusste Grenzen
 

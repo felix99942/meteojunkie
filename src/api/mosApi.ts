@@ -22,6 +22,27 @@ export interface ForecastData {
   byStation: Record<string, (number | null)[]>
 }
 
+/**
+ * Werte EINER Station auf eine Referenz-Zeitachse legen — über die Termine,
+ * nicht über den Index: MOSMIX liefert nicht für jeden Parameter zwingend
+ * dieselben Zeitschritte, stumpfes Index-Matching würde Kurven verschieben.
+ * Fehlende Termine (und eine fehlende Datei) ergeben Lücken, keine Fehler.
+ */
+export function alignSeries(
+  ref: string[],
+  data: ForecastData | null,
+  stationId: string,
+): (number | null)[] {
+  if (!data) return ref.map(() => null)
+  const own = data.timeSteps ?? data.days ?? []
+  const vals = data.byStation[stationId] ?? []
+  const pos = new Map(own.map((t, i) => [t, i]))
+  return ref.map((t) => {
+    const i = pos.get(t)
+    return i == null ? null : (vals[i] ?? null)
+  })
+}
+
 function assetUrl(path: string): string {
   return `${import.meta.env.BASE_URL}${path}`
 }

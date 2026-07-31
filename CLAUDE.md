@@ -82,8 +82,14 @@ npm run preview   # gebautes dist/ servieren
   leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
-  Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). Reine Rechenkerne
-  sind mit Vitest getestet (`*.test.ts`, `npm test`).
+  Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). „Aktuell"-Knopf
+  springt auf den neuesten Stand (Tag = heute; Monat/Jahr = letzte
+  ABGESCHLOSSENE Periode) und holt den laufenden Tag mit `force` am TTL-Cache
+  vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
+  geladenen Kartenwerte (auch Anomalien) nach Extremen — rein clientseitig,
+  kein zusätzlicher Request; Hover markiert die Station in der Karte
+  (`highlightIdx`), Klick öffnet ihr Detail. Reine Rechenkerne sind mit Vitest
+  getestet (`*.test.ts`, `npm test`).
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind
@@ -95,7 +101,14 @@ npm run preview   # gebautes dist/ servieren
   `deploy.yml` läuft dafür zusätzlich alle 3 h (Cron). T2m/Niederschlag/Sonne/
   Bewölkung/Wind stündlich (+72 h, Zeitschieber), Tmin/Tmax täglich. Karte:
   `AtClimateMap` mit `DACH_VIEW` + `europe.basemap` + Label-Ausdünnung. Registry
-  `config/atForecast.ts`. Klimadaten bleiben davon unberührt (Österreich/TAWES).
+  `config/atForecast.ts`. Klick auf eine Station → `AtForecastDetail`:
+  Punktvorhersage mit allen Parametern als uPlot-Stapel (T2m, Niederschlag als
+  Balken, Bewölkung/Sonne in %, Wind) plus Tmin/Tmax-Karten; der Kartenschieber
+  setzt dort eine Marker-Linie. Kostet nichts extra — beim ersten Klick werden
+  die übrigen Parameter-JSONs einmal nachgeladen (`loadForecast` cached
+  modulweit). Die Reihen werden über ihre TERMINE ausgerichtet
+  (`alignSeries`), nicht über den Index. Klimadaten bleiben davon unberührt
+  (Österreich/TAWES).
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
