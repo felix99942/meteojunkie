@@ -3,6 +3,7 @@
 // Shift+←/→ = ±6 h, Leertaste = Play/Pause.
 
 import { useEffect, useMemo } from 'react'
+import { getEnsembleModel } from '../config/ensemble'
 import { getModel, modelHorizonEnd } from '../config/models'
 import { formatCursorTime, STEP_MS, TIME_RANGE } from '../config/time'
 import { useWorkbench } from '../state/workbench'
@@ -26,6 +27,14 @@ export function TimeScrubber() {
     let maxHorizon = TIME_RANGE.start
     let hasModels = false
     for (const p of panels) {
+      // Ensemble-Panels haben eigene Modelle (andere Registry): ihr Horizont
+      // ist tagesgenau ab Rasterbeginn, weil forecast_days genau so zählt.
+      if (p.mode === 'ensemble') {
+        hasModels = true
+        const days = getEnsembleModel(p.ensembleModel).forecastDays
+        maxHorizon = Math.max(maxHorizon, TIME_RANGE.start + (days * 24 - 1) * STEP_MS)
+        continue
+      }
       const ids =
         p.mode === 'map'
           ? [p.sync ? sharedMapModel : p.mapModel]

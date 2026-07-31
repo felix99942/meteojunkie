@@ -3,9 +3,27 @@
 // Seite fixiert (Start = heute 00:00 UTC), damit Panels und Scrubber über die
 // gesamte Session dasselbe Achsenraster teilen.
 
-export const FORECAST_DAYS = 7
+/**
+ * Zeitraster über den LÄNGSTEN verfügbaren Modellhorizont — 16 Tage ist das
+ * Maximum, das die Forecast-API überhaupt hergibt (`forecast_days=16`, live
+ * geprüft). GFS reicht so weit, ECMWF IFS 15 Tage, das Ensemble ebenfalls;
+ * kürzere Modelle liefern hinten null und ihre Serien enden entsprechend
+ * (Maskierung über modelHorizonEnd, Schraffur im Scrubber).
+ *
+ * Kostet fast nichts: Open-Meteo gewichtet den Zeitraum erst jenseits von zwei
+ * Wochen, 16 Tage sind also ~1,15 Calls statt 1 — Punktabfragen bleiben billig.
+ * Kartenfelder sind davon bewusst NICHT betroffen (siehe MAP_FORECAST_DAYS).
+ */
+export const FORECAST_DAYS = 16
 /** Kartenfelder holen weniger Tage als Meteogramme — Rate-Limit-Budget (Gewichtung ~ Locations × Zeitraum). */
 export const MAP_FORECAST_DAYS = 3
+/**
+ * Vertikalprofile bleiben kurz: ~100 Level-Variablen mal 16 Tage wären ein
+ * Vielfaches der Datenmenge für einen Bereich, in dem Profile ohnehin nichts
+ * mehr aussagen. Jenseits davon zeigt das Panel eine Meldung statt eines
+ * stillschweigend älteren Profils.
+ */
+export const PROFILE_FORECAST_DAYS = 7
 export const STEP_MS = 3_600_000 // 1 h
 
 function startOfTodayUtc(): number {

@@ -5,14 +5,18 @@
 
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
 import {
+  fetchDeterministicSeries,
+  fetchEnsembleSeries,
   fetchGridField,
   fetchHourlySeries,
   fetchProfile,
+  type EnsembleSeries,
   type GridField,
   type HourlySeries,
   type Profile,
 } from './openmeteo'
 import type { DomainPreset } from '../config/domains'
+import { getEnsembleModel } from '../config/ensemble'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
 import type { LatLon } from '../state/workbench'
@@ -69,6 +73,80 @@ export function useProfiles(
       retry: 3,
       retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
     })),
+  })
+}
+
+/**
+ * Ensemble-Plume an EINEM Punkt. Teurer als eine Meteogramm-Serie (51
+ * Mitglieder ≈ 5 gewichtete Locations), deshalb bewusst genau eine Query je
+ * Panel — kein Modellvergleich über mehrere Ensembles. Lange staleTime: der
+ * IFS-Lauf wechselt nur alle 6 h.
+ */
+export function useEnsembleSeries(
+  location: LatLon | null,
+  model: string,
+  variable: string,
+): UseQueryResult<EnsembleSeries> {
+  const info = getEnsembleModel(model)
+  return useQuery({
+    queryKey: [
+      'ensemble',
+      location ? location.lat.toFixed(4) : null,
+      location ? location.lon.toFixed(4) : null,
+      model,
+      variable,
+    ],
+    queryFn: () =>
+      fetchEnsembleSeries(
+        location!.lat,
+        location!.lon,
+        model,
+        variable,
+        info.forecastDays,
+        info.members,
+      ),
+    enabled: location !== null,
+    staleTime: SERIES_STALE_TIME_MS,
+    gcTime: SERIES_GC_TIME_MS,
+    // Ein Retry kostet hier gleich wieder ~5 Calls — sparsamer als bei Punktserien.
+    retry: 1,
+    retryDelay: 2000,
+  })
+}
+
+/**
+ * Hauptlauf (deterministisch) zum Ensemble — eine gewichtete Location, also
+ * ~20 % Aufschlag auf die Plume. Ohne ihn fehlt der Bezugspunkt: liegt der
+ * Hauptlauf im Median oder am Rand der Verteilung?
+ */
+export function useDeterministicSeries(
+  location: LatLon | null,
+  ensembleModelId: string,
+  variable: string,
+): UseQueryResult<HourlySeries> {
+  const info = getEnsembleModel(ensembleModelId)
+  return useQuery({
+    queryKey: [
+      'deterministic',
+      location ? location.lat.toFixed(4) : null,
+      location ? location.lon.toFixed(4) : null,
+      info.deterministicModel,
+      variable,
+      info.forecastDays,
+    ],
+    queryFn: () =>
+      fetchDeterministicSeries(
+        location!.lat,
+        location!.lon,
+        info.deterministicModel,
+        variable,
+        info.forecastDays,
+      ),
+    enabled: location !== null,
+    staleTime: SERIES_STALE_TIME_MS,
+    gcTime: SERIES_GC_TIME_MS,
+    retry: 2,
+    retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
   })
 }
 

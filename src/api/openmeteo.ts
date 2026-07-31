@@ -4,7 +4,7 @@
 // Modelle und Variablen pro Call). Caching übernimmt TanStack Query darüber
 // (siehe queries.ts) — hier wird nur dedupliziert und gebündelt.
 
-import { FORECAST_DAYS } from '../config/time'
+import { FORECAST_DAYS, PROFILE_FORECAST_DAYS } from '../config/time'
 import { PRESSURE_LEVELS, PROFILE_VARIABLES, levelVar } from '../config/levels'
 import { dewpoint } from '../lib/thermo'
 
@@ -85,7 +85,11 @@ async function runBatch(batch: PendingLocation): Promise<void> {
       timezone: 'UTC',
       timeformat: 'unixtime',
     })
-    const res = await apiGet(`${FORECAST_URL}?${params}`, 1, 'point')
+    // Modelle multiplizieren das Gewicht wie Locations, der Zeitraum kommt
+    // obendrauf — vorher stand hier pauschal 1, was Multi-Modell-Meteogramme
+    // im Zähler zu billig aussehen ließ.
+    const cost = estimateWeight(models.length, variables.length, FORECAST_DAYS)
+    const res = await apiGet(`${FORECAST_URL}?${params}`, cost, 'point')
     if (!res.ok) {
       let reason = `HTTP ${res.status}`
       try {
@@ -144,6 +148,7 @@ import { MAP_FORECAST_DAYS } from '../config/time'
 import { getModel } from '../config/models'
 import { latestRun } from '../config/runs'
 import { useApiUsage, type UsageKind } from '../state/apiUsage'
+import { parseEnsembleBody, type EnsembleBody, type ParsedEnsemble } from './ensembleParse'
 import { getCachedGrid, putCachedGrid } from './gridcache'
 import { gridRequestQueue } from './queue'
 import { maybeMockApiGet, MOCK_MODE, mockGridDims, type HttpResult } from './mock'
@@ -235,9 +240,17 @@ interface GridLocationResponse {
 /** Open-Meteo-Gewichtsheuristik: bis ~10 Variablen zählen wie eine. */
 const MAX_VARS_PER_REQUEST = 10
 
+/**
+ * Bis zu zwei Wochen kostet der Zeitraum nichts extra; darüber wächst das
+ * Gewicht anteilig („15 Variablen über 14 Tage = 1,5 Calls, 4 Wochen = 3,0").
+ * Relevant, seit Punktserien 16 Tage holen (~1,14×).
+ */
+const FREE_PERIOD_DAYS = 14
+
 /** Geschätztes Gewicht eines Requests (Formel unveröffentlicht, SPEC §5). */
-function estimateWeight(locations: number, variables: number): number {
-  return Math.max(locations, Math.round((locations * variables) / MAX_VARS_PER_REQUEST))
+function estimateWeight(locations: number, variables: number, days = FREE_PERIOD_DAYS): number {
+  const base = Math.max(locations, Math.round((locations * variables) / MAX_VARS_PER_REQUEST))
+  return base * Math.max(1, days / FREE_PERIOD_DAYS)
 }
 
 interface GridResolver {
@@ -419,7 +432,7 @@ async function runGridBatchMock(
           // Location-Gewicht dieses Chunks — steuert das Pacing der Queue UND
           // den Verbrauchszähler (fetchTextWithBackoff), damit beide dieselbe
           // Schätzung sehen.
-          const cost = estimateWeight(chunk.length, groupVars.length)
+          const cost = estimateWeight(chunk.length, groupVars.length, MAP_FORECAST_DAYS)
           return gridRequestQueue.run(cost, async () => {
             const params = new URLSearchParams({
               latitude: chunk.map((p) => p.lat.toFixed(4)).join(','),
@@ -518,11 +531,11 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
     longitude: lon.toFixed(4),
     hourly: vars.join(','),
     models: model,
-    forecast_days: String(FORECAST_DAYS),
+    forecast_days: String(PROFILE_FORECAST_DAYS),
     timezone: 'UTC',
     timeformat: 'unixtime',
   })
-  const res = await apiGet(`${FORECAST_URL}?${params}`, estimateWeight(1, vars.length), 'point')
+  const res = await apiGet(`${FORECAST_URL}?${params}`, estimateWeight(1, vars.length, PROFILE_FORECAST_DAYS), 'point')
   if (!res.ok) {
     let reason = `HTTP ${res.status}`
     try {
@@ -563,6 +576,106 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
   }
 
   return { times, levels, temperature, dewpoint: dewp, windSpeed, windDirection, height }
+}
+
+// --- Ensemble (SPEC §9 Phase 3) --------------------------------------------
+// EIGENER Endpunkt (ensemble-api.open-meteo.com), aber derselbe apiGet-Pfad:
+// Mock-fähig und im Verbrauchszähler sichtbar. PUNKTabfrage — ein Ensemble-Feld
+// wäre auf dem Free Tier unbezahlbar (51 Mitglieder × Gitterpunkte, siehe
+// config/ensemble.ts), deshalb gibt es hier bewusst keine Multi-Location-Variante.
+//
+// Antwortform (live geprüft): `hourly.<var>` ist der KONTROLLLAUF, dazu
+// `hourly.<var>_member01…member50`. Nur EIN Modell pro Request — sonst kämen
+// zusätzlich Modell-Suffixe wie bei der Forecast-API dazu.
+
+const ENSEMBLE_URL = 'https://ensemble-api.open-meteo.com/v1/ensemble'
+
+export type EnsembleSeries = ParsedEnsemble
+
+export async function fetchEnsembleSeries(
+  lat: number,
+  lon: number,
+  model: string,
+  variable: string,
+  forecastDays: number,
+  memberCount: number,
+): Promise<EnsembleSeries> {
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly: variable,
+    models: model,
+    forecast_days: String(forecastDays),
+    timezone: 'UTC',
+    timeformat: 'unixtime',
+  })
+  // Konservativ: jedes Mitglied zählt wie eine Variable (~10 ≈ 1 Call). Die API
+  // gibt ihr echtes Gewicht nicht preis — lieber zu viel zählen als zu wenig.
+  const cost = estimateWeight(1, memberCount, forecastDays)
+  const res = await apiGet(`${ENSEMBLE_URL}?${params}`, cost, 'point')
+  if (!res.ok) {
+    let reason = `HTTP ${res.status}`
+    try {
+      const body = JSON.parse(res.text) as { reason?: string }
+      if (body.reason) reason = body.reason
+    } catch {
+      // Status reicht
+    }
+    if (isRateLimited(res.status, reason)) throw new RateLimitError(reason)
+    throw new Error(`Open-Meteo Ensemble: ${reason}`)
+  }
+
+  return parseEnsembleBody(JSON.parse(res.text) as EnsembleBody, variable)
+}
+
+/**
+ * Deterministischer Lauf (HRES) als Vergleichslinie zur Plume — eigener
+ * Abruf über die normale Forecast-API, weil das Ensemble den Hauptlauf NICHT
+ * mitliefert (die suffixlose Reihe dort ist der Kontrolllauf, ein Mitglied mit
+ * ungestörten Anfangsbedingungen und derselben groben Auflösung).
+ *
+ * Kostet genau EINE gewichtete Location — neben den ~5 des Ensembles
+ * vernachlässigbar, und ohne ihn fehlt der Bezug: „liegt der Hauptlauf im
+ * Median oder am Rand der Verteilung?" ist die eigentliche Ensemble-Frage.
+ * Eigener Abruf statt fetchHourlySeries, weil hier 15 statt 7 Tage nötig sind.
+ */
+export async function fetchDeterministicSeries(
+  lat: number,
+  lon: number,
+  model: string,
+  variable: string,
+  forecastDays: number,
+): Promise<HourlySeries> {
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly: variable,
+    models: model,
+    forecast_days: String(forecastDays),
+    timezone: 'UTC',
+    timeformat: 'unixtime',
+  })
+  const res = await apiGet(`${FORECAST_URL}?${params}`, estimateWeight(1, 1, forecastDays), 'point')
+  if (!res.ok) {
+    let reason = `HTTP ${res.status}`
+    try {
+      const body = JSON.parse(res.text) as { reason?: string }
+      if (body.reason) reason = body.reason
+    } catch {
+      // Status reicht
+    }
+    if (isRateLimited(res.status, reason)) throw new RateLimitError(reason)
+    throw new Error(`Open-Meteo: ${reason}`)
+  }
+  const data = JSON.parse(res.text) as {
+    hourly: Record<string, (number | null)[] | number[]>
+    hourly_units?: Record<string, string>
+  }
+  return {
+    times: (data.hourly.time as number[]).map((t) => t * 1000),
+    values: (data.hourly[variable] as (number | null)[] | undefined) ?? [],
+    unit: data.hourly_units?.[variable] ?? '',
+  }
 }
 
 // --- Geocoding -------------------------------------------------------------

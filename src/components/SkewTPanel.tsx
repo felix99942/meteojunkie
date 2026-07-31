@@ -10,7 +10,7 @@ import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
-import { formatCursorTime, timeToIndex } from '../config/time'
+import { formatCursorTime, PROFILE_FORECAST_DAYS, timeToIndex } from '../config/time'
 import { columnFromProfile, computeSounding, type SoundingParams } from '../lib/sounding'
 import {
   DEFAULT_SKEWT_THEME,
@@ -257,6 +257,20 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   if (!panel.models.some((id) => supportsPressureLevels(id))) {
     return (
       <div className="panel-placeholder">Keines der gewählten Modelle liefert Drucklevel-Daten</div>
+    )
+  }
+  // Profile werden nur für PROFILE_FORECAST_DAYS geholt, das Zeitraster reicht
+  // aber über 16 Tage. Ohne diese Meldung würde das Panel stillschweigend das
+  // LETZTE verfügbare Profil zeichnen und so eine falsche Zeit behaupten.
+  const profileEnd = results.reduce(
+    (end, r) => (r.data?.times.length ? Math.max(end, r.data.times[r.data.times.length - 1]) : end),
+    0,
+  )
+  if (profileEnd > 0 && panelTime > profileEnd) {
+    return (
+      <div className="panel-placeholder">
+        Vertikalprofile enden bei +{PROFILE_FORECAST_DAYS * 24} h — Zeit-Cursor liegt dahinter
+      </div>
     )
   }
 

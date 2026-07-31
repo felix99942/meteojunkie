@@ -21,6 +21,7 @@
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { DOMAIN_PRESETS, type DomainPreset } from '../config/domains'
+import { DEFAULT_ENSEMBLE_MODEL, DEFAULT_ENSEMBLE_VARIABLE } from '../config/ensemble'
 import { MAX_MODELS_PER_PANEL } from '../config/colors'
 import { clampToRange, floorToStep, STEP_MS, TIME_RANGE } from '../config/time'
 
@@ -46,6 +47,15 @@ export interface PanelConfig {
   /** Karte: genau ein Modell — getrennt von der Meteogramm-Auswahl. */
   mapModel: string
   variable: string
+  /**
+   * Ensemble: eigenes Modell und eigene Variable. Getrennt von `models`/
+   * `variable`, weil die Ensemble-API andere Modelle UND andere Größen führt
+   * (u.a. Höhenwetter) — eine gemeinsame Auswahl würde ständig auf nicht
+   * verfügbare Kombinationen zeigen. Ensembles werden bewusst NICHT von SYNC
+   * gekoppelt: ein Ensemble je Panel ist teuer genug.
+   */
+  ensembleModel: string
+  ensembleVariable: string
   /** SYNC: Zeit, Kartenzoom und Modell folgen dem gemeinsamen Zustand. */
   sync: boolean
   /** Eingefrorene Panel-Zeit, wirksam bei sync=false. */
@@ -132,6 +142,8 @@ function makePanel(variable: string): PanelConfig {
     modelSlots: defaultSlots(DEFAULT_MODELS),
     mapModel: DEFAULT_MAP_MODEL,
     variable,
+    ensembleModel: DEFAULT_ENSEMBLE_MODEL,
+    ensembleVariable: DEFAULT_ENSEMBLE_VARIABLE,
     sync: true,
     localTime: INITIAL_CURSOR,
   }

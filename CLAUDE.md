@@ -120,6 +120,16 @@ npm run preview   # gebautes dist/ servieren
   modulweit). Die Reihen werden über ihre TERMINE ausgerichtet
   (`alignSeries`), nicht über den Index. Klimadaten bleiben davon unberührt
   (Österreich/TAWES).
+- **Ensemble-Modus** (`EnsemblePanel`, `config/ensemble.ts`, Kern `render/plume.ts`,
+  Parsing `api/ensembleParse.ts`) — vierter Panel-Modus, **punktbasiert**.
+  Eigener Endpunkt (`ensemble-api.open-meteo.com`), aber derselbe `apiGet`-Pfad
+  (mock-fähig, im Verbrauchszähler sichtbar). Nur ECMWF: `ecmwf_ifs025` und
+  `ecmwf_aifs025`, je 51 Mitglieder, 15 Tage. Die suffixlose Reihe der Antwort
+  ist der **Kontrolllauf**, NICHT der Hauptlauf — der kommt als eigener
+  deterministischer Abruf dazu (1 Call). Eigene Modell- UND Variablenregistry
+  (u.a. 850 hPa / 500 hPa), eigene Zeitachse über den vollen Horizont, Zoom per
+  Mausrad. **Keine Kartenvariante**: ein Punkt kostet ~5 gewichtete Locations,
+  ein AT-Gitter käme auf ~7.200 Calls pro Feld (Rechnung in `config/ensemble.ts`).
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
@@ -192,6 +202,11 @@ npm run preview   # gebautes dist/ servieren
   Zeitraster (`TIME_RANGE`, `timeGridMs()` in `config/time.ts`) wird beim Laden
   fixiert und von Scrubber, Meteogrammen und API-Requests geteilt. uPlot
   arbeitet in Sekunden — Umrechnung nur an der uPlot-Grenze.
+  **`FORECAST_DAYS` = 16** (API-Maximum, so weit wie das längste Modell);
+  Karten holen weiter nur `MAP_FORECAST_DAYS` = 3, Vertikalprofile
+  `PROFILE_FORECAST_DAYS` = 7 (100 Level-Variablen × 16 Tage wären sinnlos
+  groß). Panels, deren Daten früher enden, zeigen eine Meldung — nie
+  stillschweigend den letzten verfügbaren Zeitschritt.
 - **API-Sparsamkeit ist Architektur** (SPEC §1/§6): neue Datenpfade gehen durch
   den Batcher in `openmeteo.ts` und durch TanStack Query mit langer `staleTime`
   (30 min) — kein direktes `fetch` in Komponenten.
@@ -212,8 +227,14 @@ npm run preview   # gebautes dist/ servieren
   wählbar, wenn `coverage` die Domain-BBox vollständig enthält
   (`isDomainInCoverage`); globale Modelle immer. `recommendedModels` der
   Domain ist nur Dropdown-Priorisierung, keine Verfügbarkeitsliste.
-- **Vorhersagehorizont**: `modelHorizonEnd()` (Registry-`forecastHours` ab
-  Forecast-Start) gegen die gültige Panel-Zeit (global bei Sync an, lokal bei
+- **Vorhersagehorizont**: `forecastHours` zählt **ab der Init-Zeit des Laufs**,
+  nicht ab Rasterbeginn — `modelHorizonEnd(model, now)` rechnet deshalb vom
+  geschätzten Lauf (`config/runs.ts`) aus und deckelt auf `TIME_RANGE.end`.
+  Vorher war der Bezug der Rasterbeginn, was aus einem 12-UTC-Lauf 13 Stunden
+  vorhandener Vorhersage weggeschnitten hat. Die Werte sind live gemessen
+  (best_match 384 h, ECMWF 360 h — die alten 168/240 waren deutlich zu klein),
+  ebenso die Laufverzögerungen (UKMO global braucht ~13 h, nicht 7).
+  Geprüft wird gegen die gültige Panel-Zeit (global bei Sync an, lokal bei
   Sync aus). Jenseits davon: keine Extrapolation — Karte zeigt Meldung statt
   Feld, Meteogramm-Serien enden (Maskierung + Endlinien im Chart, Legende „—"),
   Scrubber schraffiert den Bereich hinter dem längsten aktiven Horizont.

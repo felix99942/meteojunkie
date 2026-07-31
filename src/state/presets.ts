@@ -17,6 +17,7 @@ import { create } from 'zustand'
 import { DOMAIN_PRESETS } from '../config/domains'
 import { getModel, isDomainInCoverage, MODELS } from '../config/models'
 import { HOURLY_VARIABLES } from '../config/variables'
+import { ENSEMBLE_MODELS, ENSEMBLE_VARIABLES } from '../config/ensemble'
 import {
   useWorkbench,
   type LatLon,
@@ -33,6 +34,9 @@ export interface PresetPanel {
   modelSlots: Record<string, number>
   mapModel: string
   variable: string
+  /** Seit dem Ensemble-Modus; ältere Presets haben sie nicht (siehe restorePanel). */
+  ensembleModel?: string
+  ensembleVariable?: string
   sync: boolean
 }
 
@@ -105,6 +109,8 @@ function snapshotPanels(): PresetPanel[] {
     modelSlots: { ...(p.sync ? s.sharedModelSlots : p.modelSlots) },
     mapModel: p.sync ? s.sharedMapModel : p.mapModel,
     variable: p.variable,
+    ensembleModel: p.ensembleModel,
+    ensembleVariable: p.ensembleVariable,
     sync: p.sync,
   }))
 }
@@ -161,12 +167,30 @@ function restorePanel(pp: PresetPanel, current: PanelConfig, now: number): Panel
     variable = current.variable
   }
 
+  // Ensemble-Felder gibt es erst seit dem Ensemble-Modus. Fehlen sie, ist das
+  // KEIN unvollständiges Preset (es ist schlicht älter als die Funktion) —
+  // deshalb still auf den bisherigen Wert zurückfallen, ohne Warnung. Ein
+  // unbekannter Eintrag dagegen wird gemeldet, wie bei den übrigen Feldern.
+  let ensembleModel = current.ensembleModel
+  if (pp.ensembleModel != null) {
+    if (ENSEMBLE_MODELS.some((m) => m.id === pp.ensembleModel)) ensembleModel = pp.ensembleModel
+    else issues.push(`Ensemble-Modell „${pp.ensembleModel}“ unbekannt — bisheriges beibehalten`)
+  }
+  let ensembleVariable = current.ensembleVariable
+  if (pp.ensembleVariable != null) {
+    if (ENSEMBLE_VARIABLES.some((v) => v.id === pp.ensembleVariable))
+      ensembleVariable = pp.ensembleVariable
+    else issues.push(`Ensemble-Parameter „${pp.ensembleVariable}“ unbekannt — bisheriger beibehalten`)
+  }
+
   return {
     mode: pp.mode,
     models,
     modelSlots,
     mapModel,
     variable,
+    ensembleModel,
+    ensembleVariable,
     sync: pp.sync,
     localTime: now, // Zeiten werden nicht persistiert — aktuelle Zeit bleibt
     presetWarning: issues.length > 0 ? issues.join(' · ') : undefined,

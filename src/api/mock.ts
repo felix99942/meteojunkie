@@ -382,14 +382,94 @@ function buildForecastBody(u: URL): MockLocation | MockLocation[] {
     : makeLocation(lats[0], lons[0])
 }
 
+// --- Ensemble ---------------------------------------------------------------
+// Der Ensemble-Endpunkt MUSS mitgemockt werden: sonst würde ?mock=1 zwar
+// Karten und Meteogramme abfangen, das Ensemble-Panel aber echt fetchen — also
+// genau das Budget verbrennen, das der Mock-Modus schützen soll.
+//
+// Streuung wächst mit der Vorhersagezeit (in den ersten Stunden liegen die
+// Mitglieder aufeinander, ab Tag 5 fächern sie auf) — sonst sähe die Plume aus
+// wie ein Bündel paralleler Linien und die Darstellung wäre nicht prüfbar.
+
+/** Typische Streuungsamplitude je Variable am Ende des Horizonts. */
+const ENSEMBLE_SPREAD: Record<string, number> = {
+  temperature_2m: 6,
+  temperature_850hPa: 6,
+  dew_point_2m: 5,
+  precipitation: 1.2,
+  snowfall: 0.8,
+  cloud_cover: 40,
+  pressure_msl: 12,
+  wind_speed_10m: 14,
+  wind_gusts_10m: 22,
+  cape: 700,
+  geopotential_height_500hPa: 120,
+}
+
+const NON_NEGATIVE = new Set([
+  'precipitation',
+  'snowfall',
+  'cloud_cover',
+  'wind_speed_10m',
+  'wind_gusts_10m',
+  'cape',
+])
+
+function buildEnsembleBody(u: URL): MockLocation {
+  const lat = Number(u.searchParams.get('latitude') ?? '0')
+  const lon = Number(u.searchParams.get('longitude') ?? '0')
+  const model = (u.searchParams.get('models') ?? 'ecmwf_ifs025').split(',')[0]
+  const variable = (u.searchParams.get('hourly') ?? 'temperature_2m').split(',')[0]
+  const days = Number(u.searchParams.get('forecast_days') ?? '15')
+  const members = 51
+
+  const startSec = TIME_RANGE.start / 1000
+  const nt = days * 24
+  const time = Array.from({ length: nt }, (_, i) => startSec + i * 3600)
+  const amp = ENSEMBLE_SPREAD[variable] ?? 1
+  const nonNeg = NON_NEGATIVE.has(variable)
+
+  const hourly: MockLocation['hourly'] = { time }
+  const hourly_units: Record<string, string> = { time: 'unixtime' }
+  for (let m = 0; m < members; m++) {
+    // Kontrolllauf ohne Suffix, Mitglieder als _member01… — exakt wie die API.
+    const key = m === 0 ? variable : `${variable}_member${String(m).padStart(2, '0')}`
+    const phase = hash01(`${model}|${variable}|m${m}`) * Math.PI * 2
+    const tilt = hash01(`tilt|${m}`) - 0.5
+    hourly[key] = time.map((_, t) => {
+      if (MOCK_MODE === 'empty') return null
+      const base = mockValue(variable, model, lat, lon, t)
+      if (m === 0) return round1(base)
+      // Wachstum ~ sqrt(Vorhersagezeit), gedeckelt am Horizontende
+      const growth = Math.min(1, Math.sqrt(t / (nt || 1)))
+      const dev = amp * growth * (0.7 * Math.sin(t / 26 + phase) + 1.3 * tilt)
+      const v = base + dev
+      return round1(nonNeg ? Math.max(0, v) : v)
+    })
+    hourly_units[key] = UNITS[variable] ?? ''
+  }
+  return { latitude: lat, longitude: lon, hourly, hourly_units }
+}
+
 /**
  * Mock-Interception für den API-Layer: null = kein Mock, echt fetchen.
- * Gilt nur für den Forecast-Endpoint; Geocoding bleibt echt (zählt nicht
+ * Gilt für Forecast- und Ensemble-Endpoint; Geocoding bleibt echt (zählt nicht
  * gegen das gewichtete Limit und ist nur nutzerausgelöst).
  */
 export async function maybeMockApiGet(url: string): Promise<HttpResult | null> {
   if (MOCK_MODE === 'off') return null
   const u = new URL(url)
+  if (u.pathname.startsWith('/v1/ensemble')) {
+    await new Promise((r) => setTimeout(r, 120))
+    if (MOCK_MODE === 'ratelimit') {
+      return {
+        ok: false,
+        status: 429,
+        text: JSON.stringify({ error: true, reason: 'Mock: Minutely API request limit exceeded.' }),
+      }
+    }
+    return { ok: true, status: 200, text: JSON.stringify(buildEnsembleBody(u)) }
+  }
   if (!u.pathname.startsWith('/v1/forecast')) return null
   await new Promise((r) => setTimeout(r, 120)) // Ladezustände bleiben sichtbar
   if (MOCK_MODE === 'ratelimit') {

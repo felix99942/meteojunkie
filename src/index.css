@@ -443,6 +443,141 @@ button:focus-visible {
 
 /* Das Diagramm füllt IMMER das Panel; Kennzahlen liegen als ein-/ausklappbares
    Overlay darüber, damit der Skew-T nie gestaucht wird. */
+/* --- Ensemble-Panel ------------------------------------------------------ */
+
+.ens {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 3px;
+}
+
+.ens-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.ens-quickcap {
+  margin-right: 2px;
+}
+
+.ens-quick {
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.ens-quick.is-active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: var(--bg-control-hover);
+}
+
+.ens-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+/* Legende: erklärt die Linien — ohne sie ist die Plume nicht lesbar. */
+.ens-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--ink-secondary);
+}
+
+.ens-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.ens-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  flex: 0 0 auto;
+}
+
+/* Gestrichelt wie der Kontrolllauf im Plot. */
+.ens-legend i.ens-dash {
+  background: none !important;
+  height: 0;
+  border-top: 2px dashed currentColor;
+  color: #d55181;
+}
+
+.ens-legend i.ens-bandswatch {
+  height: 9px;
+  background: rgba(57, 135, 229, 0.35);
+  border-top: 1px solid rgba(57, 135, 229, 0.6);
+  border-bottom: 1px solid rgba(57, 135, 229, 0.6);
+}
+
+.ens-hint {
+  margin-left: auto;
+  cursor: default !important;
+}
+
+.ens-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ens-plot {
+  position: absolute;
+  inset: 0;
+}
+
+/* Ziehen verschiebt den Ausschnitt — Zeiger sagt das auch. */
+.ens-plot .u-over {
+  cursor: grab;
+}
+
+.ens-plot .u-over:active {
+  cursor: grabbing;
+}
+
+.ens-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 12px;
+}
+
+.ens-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.ens-readcap {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .skewt {
   flex: 1;
   min-width: 0;

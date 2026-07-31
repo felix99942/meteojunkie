@@ -1,10 +1,12 @@
-// Oberste Bereichs-Navigation: Umschalter zwischen Workbench und
-// Österreich-Klimakarte (siehe state/appView.ts).
+// Oberste Bereichs-Navigation: Umschalter zwischen Meteogramm-Workbench und
+// Österreich-Klimakarte (siehe state/appView.ts). Der View-Key bleibt
+// 'workbench' (State/Presets hängen daran), nur die Beschriftung sagt
+// „Meteogramm" — darunter fallen Meteogramm, Karte, Profil und Ensemble.
 
 import { useAppView, type AppView } from '../state/appView'
 
 const TABS: { id: AppView; label: string }[] = [
-  { id: 'workbench', label: 'Workbench' },
+  { id: 'workbench', label: 'Meteogramm' },
   { id: 'at-klima', label: 'Österreich-Klima' },
 ]
 

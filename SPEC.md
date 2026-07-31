@@ -182,7 +182,14 @@ Coverage-Warnung im Dropdown, wenn der Standort außerhalb der Abdeckung liegt.
 ## 8. Vorhersagehorizont
 
 Die Horizonte unterscheiden sich stark: AROME-AT ~60 h, ICON-D2 ~48 h,
-ICON-EU ~78 h, globale Modelle 7+ Tage. Das Zeitraster läuft über 7 Tage.
+ICON-EU ~120 h, ICON global 180 h, ECMWF IFS 360 h, GFS/best_match 384 h.
+Das Zeitraster läuft über **16 Tage** — das API-Maximum (`forecast_days=16`),
+also so weit wie das längste verfügbare Modell. Kürzere Modelle enden früher.
+
+`forecastHours` zählt ab der **Init-Zeit des Laufs**, nicht ab Rasterbeginn:
+`modelHorizonEnd()` rechnet deshalb vom geschätzten Lauf (§7 / `config/runs.ts`)
+aus und deckelt auf das Rasterende. Alle Werte sind live gemessen, nicht aus
+der Doku übernommen.
 
 - **Karte:** Liegt die Panel-Zeit hinter dem Horizont, klare Meldung im Panel
   („Modell endet bei +60 h"). Kein eingefrorenes Feld, keine Extrapolation.
@@ -227,9 +234,17 @@ Zeitreihe an einem Punkt, mehrere Modelle überlagert. Kern des Modellvergleichs
 Druckflächen-Variablen (`temperature_1000hPa`, `geopotential_height_500hPa`,
 `wind_speed_850hPa` …).
 
-### Modus: Ensemble *(Phase 3)*
-Ensemble-API mit einzelnen Membern, Plume plus Median und Spread.
-Ensemble-Requests zählen gewichtet mehrfach.
+### Modus: Ensemble *(umgesetzt)*
+ECMWF-Ensemble am Punkt: Plume aus 51 Mitgliedern, P10–P90-Band, Median,
+Kontrolllauf und — als eigener Abruf — der deterministische Hauptlauf.
+Eigene 15-Tage-Achse, Mausrad-Zoom, Zeit-Cursor als Markerlinie.
+
+**Punktbasiert, bewusst ohne Kartenvariante.** Live gemessen: ein Punkt kostet
+~5 gewichtete Locations (Mitglied ≈ Variable), ein Österreich-Gitter mit 480
+Punkten käme auf ~7.200 Calls = 72 % des Tagesbudgets pro Feld und würde das
+Minutenlimit sofort reißen. Verfügbar sind `ecmwf_ifs025` und `ecmwf_aifs025`
+(je 51 Mitglieder, 15 Tage); `ecmwf_ifs04` liefert nur noch ein Mitglied, die
+9-km-Europa-Ensembles der Doku sind über die freie API nicht erreichbar.
 
 ---
 
@@ -289,8 +304,8 @@ Modellvergleich) und Phase 2 (Karten, zwei Domains, Rate-Limit-Umbau,
 Horizontbehandlung).
 
 **Phase 3 — offen**
-- Vertikalprofile
-- Ensemble-Plumes
+- ~~Vertikalprofile~~ (umgesetzt)
+- ~~Ensemble-Plumes~~ (umgesetzt, §9: ECMWF punktbasiert)
 - Layout-Presets: gespeicherte Panel-Konfigurationen für konkrete Wetterlagen
   (Föhn, Konvektion, Winterniederschlag, Sturm) statt manuellem Zusammenklicken
 - Modelllauf-Auswahl über die Single-Runs-API

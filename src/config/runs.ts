@@ -33,7 +33,10 @@ const AVAILABILITY_LAG_H: Record<string, number> = {
   meteofrance_arpege_europe: 4,
   meteofrance_arome_france: 3,
   geosphere_arome_austria: 3,
-  ukmo_global_deterministic_10km: 7,
+  // Live gemessen (2026-07-31, 18:30 UTC): geliefert wurde noch der 00-UTC-Lauf,
+  // der 06-UTC-Lauf war nach 12,5 h also nicht online. Mit 7 h Verzögerung hätte
+  // die Horizontrechnung 5 h Vorhersage behauptet, die es nicht gab.
+  ukmo_global_deterministic_10km: 13,
   ukmo_uk_deterministic_2km: 5,
 }
 const DEFAULT_LAG_H = 4

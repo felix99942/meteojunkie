@@ -1,8 +1,10 @@
+import { useEffect, useRef } from 'react'
 import { getModel, isDomainInCoverage, isInCoverage, MODELS } from '../config/models'
 import { MAP_ENABLED } from '../config/features'
 import { getColorScale } from '../config/colorscales'
 import { getVariable, HOURLY_VARIABLES, type VariableInfo } from '../config/variables'
 import { MAX_MODELS_PER_PANEL, SERIES_COLORS } from '../config/colors'
+import { ENSEMBLE_MODELS, ENSEMBLE_VARIABLES, getEnsembleModel } from '../config/ensemble'
 import { useWorkbench, type PanelConfig, type PanelMode } from '../state/workbench'
 
 // `panel` ist die EFFEKTIVE Config (bei aktivem Sync die gemeinsamen Werte).
@@ -21,10 +23,36 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
   const location = useWorkbench((s) => s.lockedLocation)
   const domain = useWorkbench((s) => s.domain)
 
+  // <details> schließt von sich aus NUR über sein Summary — ein Klick daneben
+  // ließ die Modellliste offen stehen und über das Panel darunter liegen.
+  // Deshalb hier von Hand: Klick außerhalb oder Escape schließt sie.
+  const pickerRef = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const close = () => {
+      if (pickerRef.current?.open) pickerRef.current.open = false
+    }
+    const onPointerDown = (e: MouseEvent) => {
+      const el = pickerRef.current
+      if (el?.open && !el.contains(e.target as Node)) close()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
   const isMap = panel.mode === 'map'
   // Profile haben keine Einzelvariable (alle Drucklevel-Größen zugleich) —
   // Parameter-Dropdown und parsync entfallen; Modellauswahl bleibt.
   const isProfile = panel.mode === 'profile'
+  // Ensemble hat eigene Modell-/Parameterwahl (eigene API-Registry) und kein
+  // parsync — der gespiegelte Parameter existiert dort oft gar nicht.
+  const isEnsemble = panel.mode === 'ensemble'
 
   // Radio-Semantik: Button-Zustand ausschließlich aus parSyncSource ableiten —
   // Quelle (bedienbar) / deaktiviert (andere Quelle aktiv) / normal
@@ -67,12 +95,39 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
           Karte{MAP_ENABLED ? '' : ' (in dieser Version aus)'}
         </option>
         <option value="profile">Vertikalprofil</option>
-        <option value="ensemble" disabled>
-          Ensemble (Phase 3)
-        </option>
+        <option value="ensemble">Ensemble</option>
       </select>
 
-      {isMap ? (
+      {isEnsemble ? (
+        // Ensemble: eigenes Modell UND eigene Variable — die Ensemble-API führt
+        // andere Modelle und andere Größen (Höhenwetter) als die Forecast-API.
+        // Bewusst NICHT an SYNC gekoppelt: jede Auswahl kostet ~5 Locations.
+        <>
+          <select
+            className="panel-map-model"
+            value={panel.ensembleModel}
+            title={getEnsembleModel(panel.ensembleModel).note}
+            onChange={(e) => updatePanel(index, { ensembleModel: e.target.value })}
+          >
+            {ENSEMBLE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} · {m.members} Mitglieder
+              </option>
+            ))}
+          </select>
+          <select
+            className="panel-variable"
+            value={panel.ensembleVariable}
+            onChange={(e) => updatePanel(index, { ensembleVariable: e.target.value })}
+          >
+            {ENSEMBLE_VARIABLES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label} ({v.unit})
+              </option>
+            ))}
+          </select>
+        </>
+      ) : isMap ? (
         // Karte: genau ein Modell. Verfügbarkeit wird abgeleitet, nicht pro
         // Domain gepflegt: wählbar, wenn die coverage die Domain-BBox
         // vollständig enthält. Empfohlene Modelle der Domain zuerst.
@@ -116,7 +171,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
           )
         })()
       ) : (
-        <details className="model-picker">
+        <details className="model-picker" ref={pickerRef}>
           <summary>
             {panel.models.length} {panel.models.length === 1 ? 'Modell' : 'Modelle'} ▾
           </summary>
@@ -161,7 +216,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
         </details>
       )}
 
-      {!isProfile && (
+      {!isProfile && !isEnsemble && (
         <>
           <select
             className="panel-variable"

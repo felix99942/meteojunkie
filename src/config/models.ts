@@ -1,11 +1,20 @@
 // Modell-Registry (SPEC §7). Die UI filtert Parameter-Dropdowns anhand dieser
 // Metadaten und warnt, wenn Location/Domain außerhalb der Modellabdeckung liegt.
 //
-// Hinweis: resolutionKm / updateIntervalHours / forecastHours / coverage sind
-// Näherungswerte aus der Open-Meteo-Doku (Stand Juli 2026) — bei Bedarf gegen
+// Hinweis: resolutionKm / updateIntervalHours / coverage sind Näherungswerte
+// aus der Open-Meteo-Doku (Stand Juli 2026) — bei Bedarf gegen
 // https://open-meteo.com/en/docs abgleichen. resolutionKm = 0 bedeutet
 // "variabel" (best_match / seamless).
+//
+// `forecastHours` dagegen ist LIVE GEMESSEN (2026-07-31, letzter nicht-null
+// Zeitschritt je Modell, umgerechnet auf die Init-Zeit des Laufs). Zwei Werte
+// waren deutlich zu klein und haben vorhandene Vorhersage abgeschnitten:
+//   best_match    168 → 384 h (der Blend reicht so weit wie GFS)
+//   ecmwf_ifs025  240 → 360 h (ECMWF liefert 15 Tage, nicht 10)
+// Die übrigen Werte stimmten, sobald die Laufstunde berücksichtigt wird
+// (siehe modelHorizonEnd).
 
+import { latestRun } from './runs'
 import { STEP_MS, TIME_RANGE } from './time'
 
 export interface BBox {
@@ -50,7 +59,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'Open-Meteo',
     resolutionKm: 0,
     updateIntervalHours: 1,
-    forecastHours: 168,
+    forecastHours: 384,
     coverage: 'global',
     supportsBoundingBox: false,
     availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
@@ -107,7 +116,7 @@ export const MODELS: ModelInfo[] = [
     provider: 'ECMWF',
     resolutionKm: 25,
     updateIntervalHours: 6,
-    forecastHours: 240,
+    forecastHours: 360,
     coverage: 'global',
     supportsBoundingBox: true,
     availableVariables: [...BASE_VARS, 'cape'],
@@ -210,12 +219,23 @@ export function isInCoverage(model: ModelInfo, lat: number, lon: number): boolea
 }
 
 /**
- * Ende des Modellhorizonts als Epoch-ms — registry-basierte Näherung:
- * forecastHours bezogen auf den Forecast-Start des Session-Zeitrasters.
- * Jenseits davon wird nicht extrapoliert (Karte: Meldung, Meteogramm: Serienende).
+ * Ende des Modellhorizonts als Epoch-ms. `forecastHours` zählt ab der INIT-Zeit
+ * des Laufs, nicht ab Mitternacht — deshalb wird der geschätzte Lauf
+ * (config/runs.ts) als Bezugspunkt genommen.
+ *
+ * Das war vorher der Session-Start, was den Horizont systematisch um die
+ * Laufstunde zu früh ansetzte: live gemessen liefert ICON Global aus dem
+ * 12-UTC-Lauf Daten bis +193 h ab Mitternacht, die alte Rechnung schnitt bei
+ * +180 h ab — 13 Stunden vorhandener Vorhersage wurden weggeworfen.
+ * Jenseits des Horizonts wird nicht extrapoliert (Karte: Meldung,
+ * Meteogramm: Serienende).
  */
-export function modelHorizonEnd(model: ModelInfo): number {
-  return TIME_RANGE.start + model.forecastHours * STEP_MS
+export function modelHorizonEnd(model: ModelInfo, now: number = Date.now()): number {
+  // Auf das Zeitraster deckeln: die API liefert höchstens forecast_days=16 ab
+  // Rasterbeginn, egal wie weit das Modell rechnet. Ohne den Deckel läge der
+  // Horizont von GFS/best_match rechnerisch HINTER dem letzten Zeitschritt —
+  // die Schraffur im Scrubber verspräche dann Daten, die es nicht gibt.
+  return Math.min(TIME_RANGE.end, latestRun(model, now).initTime + model.forecastHours * STEP_MS)
 }
 
 /** Liegt die Domain vollständig in der Modellabdeckung? (Teilweise außerhalb → Multi-Location-Request schlägt fehl.) */

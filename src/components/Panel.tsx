@@ -3,6 +3,7 @@ import { useEffectivePanel, useWorkbench } from '../state/workbench'
 import { PanelHeader } from './PanelHeader'
 import { Meteogram } from './Meteogram'
 import { SkewTPanel } from './SkewTPanel'
+import { EnsemblePanel } from './EnsemblePanel'
 
 // MapLibre (~1 MB) nur laden, wenn ein Panel im Kartenmodus ist. Der Env-Check
 // steht DIREKT hier (nicht über features.ts), damit Vite ihn zur Build-Zeit
@@ -59,6 +60,8 @@ export function Panel({ index }: { index: number }) {
           )
         ) : panel.mode === 'profile' ? (
           <SkewTPanel panel={panel} />
+        ) : panel.mode === 'ensemble' ? (
+          <EnsemblePanel panel={panel} />
         ) : (
           <div className="panel-placeholder">Kommt in Phase 3</div>
         )}
