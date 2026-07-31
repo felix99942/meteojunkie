@@ -34,7 +34,14 @@ const fmtClock = new Intl.DateTimeFormat('de-AT', {
   timeZoneName: 'short',
 })
 
-function defaults() {
+/**
+ * Neuester sinnvoll darstellbarer Stand je Zeitbezug — zugleich Startwert und
+ * Ziel des „Aktuell"-Knopfs. Tag = heute (Live-Werte aus klima-v2-10min);
+ * Monat/Jahr = letzte ABGESCHLOSSENE Periode, weil klima-v2-1m erst nach
+ * Periodenende aggregiert und der laufende Monat durchgehend null liefert.
+ * Bewusst nicht memoisiert: über Mitternacht offene Tabs sollen weiterrücken.
+ */
+function latestPeriods() {
   const day = todayUtc()
   const lastMonth = new Date()
   lastMonth.setUTCDate(1)
@@ -51,7 +58,7 @@ export function AtClimatePanel() {
   const [paramCode, setParamCode] = useState('tl_mittel')
   const [selected, setSelected] = useState<AtStation | null>(null)
 
-  const init = useMemo(defaults, [])
+  const init = useMemo(latestPeriods, [])
   const [periodKind, setPeriodKind] = useState<Period['kind']>('day')
   const [day, setDay] = useState(init.day)
   const [monthStr, setMonthStr] = useState(init.monthStr)
@@ -114,12 +121,26 @@ export function AtClimatePanel() {
   // Läuft der gewählte Tag gerade noch? Dann kommen die Werte aus dem
   // 10-Minuten-Datensatz und müssen periodisch nachgezogen werden.
   const isToday = periodKind === 'day' && day >= todayUtc()
-  const [refreshTick, setRefreshTick] = useState(0)
+  // `force` nur beim Knopfdruck: der Timer darf den TTL-Cache nutzen.
+  const [refresh, setRefresh] = useState({ n: 0, force: false })
   useEffect(() => {
     if (!isToday) return
-    const t = setInterval(() => setRefreshTick((n) => n + 1), LIVE_REFRESH_MS)
+    const t = setInterval(() => setRefresh((r) => ({ n: r.n + 1, force: false })), LIVE_REFRESH_MS)
     return () => clearInterval(t)
   }, [isToday])
+
+  // „Aktuell": auf den neuesten Stand springen — steht der schon, den laufenden
+  // Tag stattdessen sofort neu holen (am Cache vorbei, sonst passiert 5 min nichts).
+  const latest = latestPeriods()
+  const atLatest =
+    periodKind === 'day' ? day >= latest.day : periodKind === 'month' ? monthStr === latest.monthStr : year === latest.year
+  const goLatest = () => {
+    const l = latestPeriods()
+    if (periodKind === 'month') setMonthStr(l.monthStr)
+    else if (periodKind === 'year') setYear(l.year)
+    else if (day < l.day) setDay(l.day)
+    else setRefresh((r) => ({ n: r.n + 1, force: true }))
+  }
 
   // Bulk-Abruf der Periodenwerte.
   useEffect(() => {
@@ -127,7 +148,7 @@ export function AtClimatePanel() {
     let cancelled = false
     setValuesLoading(true)
     setValuesError(null)
-    fetchPeriodValues(spec, period, shown)
+    fetchPeriodValues(spec, period, shown, refresh.force)
       .then((r) => {
         if (cancelled) return
         setValues(r.byStation)
@@ -148,7 +169,7 @@ export function AtClimatePanel() {
     }
     // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, period, idsKey, refreshTick])
+  }, [paramCode, period, idsKey, refresh])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
   const scale = anomActive ? spec.anomalyScale : spec.scale
@@ -239,6 +260,21 @@ export function AtClimatePanel() {
             style={{ width: 70 }}
           />
         )}
+        <button
+          type="button"
+          className={`atclima-now${atLatest ? ' is-active' : ''}`}
+          onClick={goLatest}
+          disabled={atLatest && periodKind !== 'day'}
+          title={
+            periodKind === 'day'
+              ? 'Zum heutigen Tag springen; ist er schon gewählt, die 10-Minuten-Messwerte sofort neu holen'
+              : periodKind === 'month'
+                ? 'Zum letzten abgeschlossenen Monat springen (der laufende Monat wird erst nach Monatsende aggregiert)'
+                : 'Zum letzten abgeschlossenen Jahr springen'
+          }
+        >
+          {atLatest && periodKind === 'day' ? '↻ Aktuell' : 'Aktuell'}
+        </button>
         <div className="atclima-modes" title={periodKind === 'day' ? 'Anomalien gibt es für Monat/Jahr' : ''}>
           <button
             type="button"

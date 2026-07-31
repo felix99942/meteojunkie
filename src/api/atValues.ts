@@ -73,6 +73,7 @@ export async function fetchLiveDayValues(
   spec: AtParameterSpec,
   day: string,
   stations: AtStation[],
+  force = false,
 ): Promise<PeriodValues> {
   const byStation: Record<number, number | null> = {}
   if (!spec.liveCode) return { byStation, unit: spec.unit, source: 'live' }
@@ -89,6 +90,7 @@ export async function fetchLiveDayValues(
     ids,
     DATASET_10MIN,
     LIVE_TTL_MS,
+    force,
   )
 
   const factor = spec.liveFactor ?? 1
@@ -117,11 +119,17 @@ export async function fetchLiveDayValues(
   }
 }
 
-/** Kartenwerte für die Periode holen — ein Bulk-Request über alle Stationen. */
+/**
+ * Kartenwerte für die Periode holen — ein Bulk-Request über alle Stationen.
+ * `force` gilt nur dem laufenden Tag: dort umgeht es den TTL-Cache, damit der
+ * „Aktuell"-Knopf wirklich den jüngsten Messpunkt holt. Historische Perioden
+ * sind statisch und bleiben gecacht.
+ */
 export async function fetchPeriodValues(
   spec: AtParameterSpec,
   period: Period,
   stations: AtStation[],
+  force = false,
 ): Promise<PeriodValues> {
   const ids = stations.map((s) => s.id)
   const byStation: Record<number, number | null> = {}
@@ -129,7 +137,7 @@ export async function fetchPeriodValues(
   if (period.kind === 'day') {
     // Laufender Tag: klima-v2-1d ist durchgehend null — direkt live holen.
     const today = todayUtc()
-    if (period.day >= today) return fetchLiveDayValues(spec, period.day, stations)
+    if (period.day >= today) return fetchLiveDayValues(spec, period.day, stations, force)
 
     const s = await fetchStationSeries(spec.code, period.day, period.day, ids, DATASET_DAILY)
     let covered = 0
@@ -142,7 +150,7 @@ export async function fetchPeriodValues(
     // Der Tagesdatensatz hinkt gelegentlich nach; für gestern dann live nachladen,
     // statt eine leere Karte zu zeigen.
     if (covered === 0 && period.day >= dayOffsetUtc(today, -1)) {
-      return fetchLiveDayValues(spec, period.day, stations)
+      return fetchLiveDayValues(spec, period.day, stations, force)
     }
     return { byStation, unit: s.unit || spec.unit, source: 'daily' }
   }

@@ -1047,6 +1047,23 @@ button:focus-visible {
   gap: 5px;
 }
 
+/* „Aktuell": neuester Stand — hervorgehoben, wenn er gerade gezeigt wird. */
+.atclima-now {
+  padding: 3px 9px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.atclima-now.is-active {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.atclima-now:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .atclima-modes {
   display: flex;
   gap: 2px;

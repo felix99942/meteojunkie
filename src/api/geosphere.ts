@@ -115,7 +115,9 @@ export interface StationSeries {
  * `start`/`end` als ISO-Datum (YYYY-MM-DD) bzw. ISO-Zeitpunkt (YYYY-MM-DDTHH:MM
  * beim 10-Minuten-Datensatz). `stationIds` bestimmt den Cache-Key mit — für
  * stabile Keys sortiert übergeben. `ttlMs` setzen, wenn der Zeitraum noch
- * wachsen kann (laufender Tag) — dann verfällt der Cache-Eintrag.
+ * wachsen kann (laufender Tag) — dann verfällt der Cache-Eintrag. `force`
+ * überspringt das LESEN des Caches (Nutzer verlangt ausdrücklich den neuesten
+ * Stand, bevor die TTL abgelaufen ist); geschrieben wird trotzdem.
  */
 export async function fetchStationSeries(
   parameter: string,
@@ -124,10 +126,11 @@ export async function fetchStationSeries(
   stationIds: number[],
   dataset: string = DATASET_DAILY,
   ttlMs?: number,
+  force = false,
 ): Promise<StationSeries> {
   const ids = [...stationIds].sort((a, b) => a - b)
   const key = `${dataset}|${parameter}|${start}|${end}|${ids.join(',')}`
-  const cached = await cacheGet<StationSeries>(key)
+  const cached = force ? null : await cacheGet<StationSeries>(key)
   if (cached) return cached
 
   const url =
