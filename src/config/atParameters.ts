@@ -12,6 +12,14 @@ import { COLOR_SCALES, type ColorScale } from './colorscales'
 /** Wie eine Reihe täglicher Werte auf EINEN Kartenwert reduziert wird. */
 export type AggMode = 'mean' | 'sum' | 'max' | 'min' | 'last'
 
+/**
+ * Größenordnung des gezeigten Werts. Summenparameter wachsen mit dem Zeitbezug
+ * um Größenordnungen (1 mm/Tag ↔ 1.000 mm/Jahr) — mit EINER festen Skala läge
+ * in der Jahreskarte jede Station im obersten Band. Deshalb je Zeitbezug eine
+ * eigene, wieder FESTE Skala (kein Auto-Scaling, SPEC §8).
+ */
+export type ValueSpan = 'day' | 'month' | 'year'
+
 /** Anomalie als absolute Differenz (K, %-Punkte) oder als Prozent des Normals. */
 export type AnomalyKind = 'delta' | 'percent'
 
@@ -48,6 +56,10 @@ export interface AtParameterSpec {
   /** Einheit der Anomalie (z. B. 'K' oder '%'). */
   anomalyUnit: string
   scale: ColorScale
+  /** Skala für Monatswerte, falls die Tagesskala nicht passt (Summenparameter). */
+  monthScale?: ColorScale
+  /** Skala für Jahreswerte (auch für Jahres-Normale einer Klimaperiode). */
+  yearScale?: ColorScale
   /** Divergierende Skala für den Anomalie-Modus. */
   anomalyScale: ColorScale
 }
@@ -123,12 +135,75 @@ const SNOW_DEPTH_SCALE: ColorScale = {
   ],
 }
 
+/** Dieselbe Rampe auf einen längeren Zeitbezug strecken (Summenparameter). */
+function stretch(scale: ColorScale, factor: number): ColorScale {
+  return { ...scale, stops: scale.stops.map((s) => ({ ...s, value: s.value * factor })) }
+}
+
+// Niederschlag: die Tagesskala (0,1–100 mm) wird für Monats-/Jahressummen um
+// den Faktor „Tage im Zeitraum" gestreckt — gleiche Farben, gleiche Staffelung,
+// nur andere Schwellen. Jahreswerte reichen in Österreich von ~450 mm
+// (Seewinkel) bis > 2.500 mm (Nordstau).
+const PRECIP_MONTH_SCALE = stretch(COLOR_SCALES.precipitation, 10)
+const PRECIP_YEAR_SCALE = stretch(COLOR_SCALES.precipitation, 30)
+
+// Sonnenschein: hier trägt das Strecken nicht (Jahressummen liegen alle zwischen
+// ~1.300 und ~2.200 h, eine gestreckte Tagesskala hätte dort drei Bänder) —
+// eigene Schwellen, gleiche Rampe.
+const SUNSHINE_RAMP = ['#3a3320', '#5a4a00', '#8a6f00', '#b38a00', '#d6a300', '#efc23a', '#f5d670', '#f8e59a']
+const sunshineScale = (values: number[]): ColorScale => ({
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: values.map((value, i) => ({ value, color: SUNSHINE_RAMP[i] })),
+})
+const SUNSHINE_MONTH_SCALE = sunshineScale([40, 70, 100, 130, 160, 190, 220, 250])
+const SUNSHINE_YEAR_SCALE = sunshineScale([1200, 1350, 1500, 1650, 1800, 1900, 2000, 2100])
+
+// Differenz zweier Klimaperioden (K): das Signal ist ~1 K und läge in der
+// Wetter-Anomalieskala (±12 K) durchgehend im selben Band. Feinere Stufung,
+// gleiche RdBu-Farben; neutral ist ±0,25 K.
+const CLIMATE_DELTA_SCALE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: [
+    { value: -2, color: '#2166ac' },
+    { value: -1.5, color: '#4393c3' },
+    { value: -1, color: '#74add1' },
+    { value: -0.5, color: '#c6dbef' },
+    { value: -0.25, color: '#dcdcdc' },
+    { value: 0.25, color: '#fddbc7' },
+    { value: 0.5, color: '#f4a582' },
+    { value: 1, color: '#d6604d' },
+    { value: 1.5, color: '#b2182b' },
+    { value: 2, color: '#67001f' },
+  ],
+}
+
+// Dasselbe für prozentuale Größen (Niederschlag/Sonne): zwischen zwei Perioden
+// ändern sie sich um wenige Prozent, nicht um Faktoren.
+const CLIMATE_PERCENT_SCALE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: [
+    { value: 70, color: '#8c510a' },
+    { value: 80, color: '#bf812d' },
+    { value: 90, color: '#dfc27d' },
+    { value: 95, color: '#f6e8c3' },
+    { value: 98, color: '#dcdcdc' },
+    { value: 102, color: '#c7eae5' },
+    { value: 105, color: '#80cdc1' },
+    { value: 110, color: '#35978f' },
+    { value: 120, color: '#01665e' },
+    { value: 130, color: '#003c30' },
+  ],
+}
+
 export const AT_PARAMETERS: AtParameterSpec[] = [
   { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere Lufttemperatur in 2 m Höhe. Tageswert aus Termin- und Extremwerten; Monat und Jahr sind Mittelwerte daraus.' },
   { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Höchste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der HÖCHSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
   { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Tiefste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der TIEFSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
-  { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, anomalyScale: PERCENT_ANOM_SCALE, description: 'Niederschlagshöhe als 24-Stunden-Summe (Termin 6 UTC). Monat und Jahr sind Summen — der Rekord ist ein nasser Monat, kein einzelner Tag.' },
-  { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
+  { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, monthScale: PRECIP_MONTH_SCALE, yearScale: PRECIP_YEAR_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Niederschlagshöhe als 24-Stunden-Summe (Termin 6 UTC). Monat und Jahr sind Summen — der Rekord ist ein nasser Monat, kein einzelner Tag.' },
+  { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, monthScale: SUNSHINE_MONTH_SCALE, yearScale: SUNSHINE_YEAR_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
   { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere relative Luftfeuchte. Im Tagesdatensatz aus dem Feuchtefühler (rfb_mittel), im Monatsdatensatz als rf_mittel geführt.' },
   { code: 'sh', liveCode: 'sh', liveAgg: 'last', label: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE, description: 'Gesamtschneehöhe zum Beobachtungstermin. Nur im Tag-Modus verfügbar — der Monatsdatensatz führt keine Schneehöhe, deshalb gibt es dafür weder Normale noch Rekorde.' },
 ]
@@ -139,6 +214,26 @@ export function getAtParameter(code: string): AtParameterSpec {
   const p = byCode.get(code)
   if (!p) throw new Error(`Unbekannter AT-Parameter: ${code}`)
   return p
+}
+
+/**
+ * Farbskala eines ABSOLUTWERTS im gewählten Zeitbezug. Summenparameter haben
+ * eigene Monats-/Jahresskalen; alles andere behält seine eine feste Skala.
+ */
+export function scaleFor(spec: AtParameterSpec, span: ValueSpan): ColorScale {
+  if (span === 'year') return spec.yearScale ?? spec.monthScale ?? spec.scale
+  if (span === 'month') return spec.monthScale ?? spec.scale
+  return spec.scale
+}
+
+/**
+ * Farbskala einer ABWEICHUNG. `climate` = Differenz zweier 30-Jahres-Perioden:
+ * dort geht es um ~1 K bzw. wenige Prozent, wofür die Wetter-Anomalieskala
+ * (±12 K, 20–200 %) zu grob ist — dann die feine Klimaskala.
+ */
+export function anomalyScaleFor(spec: AtParameterSpec, climate: boolean): ColorScale {
+  if (!climate) return spec.anomalyScale
+  return spec.anomalyKind === 'percent' ? CLIMATE_PERCENT_SCALE : CLIMATE_DELTA_SCALE
 }
 
 /** Abweichung eines Werts vom Normal: delta = Wert−Normal, percent = 100·Wert/Normal. */

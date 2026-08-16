@@ -1085,6 +1085,13 @@ button:focus-visible {
   color: var(--ink-muted);
 }
 
+/* Klimaperiode: Hinweis auf die Deckungsregel der Normale (kein Warnzustand). */
+.atclima-hint {
+  color: var(--ink-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* Laufender Tag: Werte sind ein Zwischenstand aus 10-Minuten-Messwerten. */
 .atclima-live {
   color: #e0a800;

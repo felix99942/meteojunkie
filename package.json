@@ -12,7 +12,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "ingest:at": "node scripts/at-ingest-stations.mjs",
-    "ingest:at:normals": "node scripts/at-ingest-normals.mjs",
+    "ingest:at:normals": "node scripts/at-ingest-normals.mjs 1991-2020",
+    "ingest:at:normals:1961": "node scripts/at-ingest-normals.mjs 1961-1990",
     "ingest:at:records": "node scripts/at-ingest-records.mjs",
     "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs",
     "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs"

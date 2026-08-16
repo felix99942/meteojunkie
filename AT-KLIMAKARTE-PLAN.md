@@ -71,8 +71,8 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
 1. **Ingest-/Build-Skript** (Node, lokal oder in CI) berechnet **statische JSON-Assets**
    vor und legt sie ins Repo/`public/` — Laufzeitkosten = 0:
    - `stations.json` (id, name, lat, lon, höhe, zeitraum, is_active, params)
-   - `normals.json` (langjährige Mittel 1991–2020 je Station/Parameter — aus
-     `klima-v2-1m` aggregiert, nicht täglich)
+   - `normals-<periode>.json` (langjährige Mittel je Station/Parameter, eine
+     Datei je Klimaperiode — aus `klima-v2-1m` aggregiert, nicht täglich)
    - `records.json` (min/max je Station + national)
 2. **Laufzeit = Browser → GeoSphere direkt** für tages-/monatsaktuelle Werte &
    Detail-Zeitreihen. **Ein Bulk-Request pro Kartenansicht** über alle `station_ids`.
@@ -97,8 +97,8 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
    `fetchStationSeries`) + Dropdown. **Statt Colorbar: Werte direkt in der Karte**
    (Nutzer-Feedback). IndexedDB-Cache `api/atcache.ts`.
 4. ✅ Stationsdetail (`AtStationDetail.tsx`, uPlot): 12-Monats-Zeitreihe + Kennzahlen.
-5. ✅ Zeitbezug Tag/Monat/Jahr (`api/atValues.ts`) + Normale 1991–2020
-   (`at-ingest-normals.mjs` → `normals.json`, 806 Stationen) + Anomalien (Temp K,
+5. ✅ Zeitbezug Tag/Monat/Jahr (`api/atValues.ts`) + Normale
+   (`at-ingest-normals.mjs` → `normals-<periode>.json`) + Anomalien (Temp K,
    Niederschlag/Sonne % vom Normal, divergierende RdBu/BrBG-Skalen). Rekorde
    (`at-ingest-records.mjs` → `records.json`, 1094 Stationen) im Detailpanel.
 6. ✅ Vitest-Tests (`*.test.ts`: aggregate/anomaly/colorForValue). Ladezustände +
@@ -112,13 +112,34 @@ Da Produktion statisch ist und GeoSphere CORS-offen + keyless ist:
    Volltabelle mit Suche und Kennzahlen; tagesgenaue Rekorde für Tmax/Tmin
    (`api/atRecords.ts` + Tests, aus dem Tagesdatensatz nachgeladen);
    Parameter- und Rekord-Beschreibungen in der UI.
+10. ✅ Zeitbezug **Klimaperiode** (`config/atNormals.ts`): langjähriges Mittel
+    einer WMO-Normalperiode als eigene Kartenebene — 1991–2020 und 1961–1990,
+    Jahresmittel oder einzelner Kalendermonat (z. B. durchschnittlicher
+    Jahresniederschlag). Werte kommen aus den Assets, kein Request. Im
+    Abweichungsmodus vergleicht dieser Zeitbezug die beiden Perioden
+    MITEINANDER (Klimasignal, +1,1 K im Median beim Jahresmittel der Temperatur,
+    +3,4 % beim Jahresniederschlag) — dafür eine feinere Differenzskala
+    (`anomalyScaleFor`). Summenparameter haben je Zeitbezug eine eigene feste
+    Skala (`scaleFor`), sonst läge jede Jahressumme im obersten Band der
+    Tagesskala.
 
 ## F. Betrieb & bewusste Grenzen
 
-- **Daten-Refresh:** `npm run ingest:at` / `ingest:at:normals` / `ingest:at:records`
-  regenerieren die statischen JSON-Assets aus GeoSphere. Historische Daten sind
-  statisch — ein Refresh ist nur nötig, wenn neue Monate/Normalperioden gewünscht
-  sind. Ideal vor dem Build in CI ausführen.
+- **Daten-Refresh:** `npm run ingest:at` / `ingest:at:normals` /
+  `ingest:at:normals:1961` / `ingest:at:records` regenerieren die statischen
+  JSON-Assets aus GeoSphere. Historische Daten sind statisch — ein Refresh ist nur
+  nötig, wenn neue Monate/Normalperioden gewünscht sind. Ideal vor dem Build in CI
+  ausführen. Eine weitere Periode braucht einen Eintrag in `PERIODS`
+  (Ingest-Skript) UND in `AT_NORMAL_PERIODS` (`config/atNormals.ts`).
+- **Deckungsregel der Normale (WMO):** ein Normal entsteht nur aus mindestens 24
+  der 30 Jahre, und ein Jahr zählt nur mit allen 12 Monaten — sonst wäre eine
+  „Jahressumme" aus sieben Monaten systematisch zu klein und eine Station mit drei
+  Messjahren stünde gleichberechtigt neben einer mit dreißig. Das kostet Stationen
+  (1991–2020: 300 statt der früheren 806 mit Wert), macht aber Anomalien und den
+  Periodenvergleich erst belastbar. Dauernullen bei Niederschlag/Sonne gelten als
+  „Parameter nicht geführt", nicht als Messwert. Für ältere Perioden lohnt der
+  Haken **Historische**: 1961–1990 haben 243 Stationen einen Jahresniederschlag,
+  aber nur 121 davon messen heute noch.
 - **Caching-Abnahme:** `fetchStationSeries` cached je (Datensatz|Parameter|Zeitraum|
   Stations-IDs) in IndexedDB → eine Auswahl = ein Request, Wiederholung = 0.
 - **Grenzen (bewusst):** Rekorde ab **1900** (die wenigen Reihen bis ins 18. Jh.

@@ -1,7 +1,8 @@
 // Tests der reinen Klima-Rechenkerne (Aggregation, Anomalie) — Schritt 6.
 
 import { describe, expect, it } from 'vitest'
-import { aggregate, anomaly } from './atParameters'
+import { aggregate, anomaly, anomalyScaleFor, getAtParameter, scaleFor } from './atParameters'
+import { colorForValue } from './colorscales'
 
 describe('aggregate', () => {
   it('reduziert je Modus korrekt', () => {
@@ -38,5 +39,43 @@ describe('anomaly', () => {
 
   it('percent bei Normal 0 → null (keine Division durch 0)', () => {
     expect(anomaly(5, 0, 'percent')).toBeNull()
+  })
+})
+
+describe('scaleFor', () => {
+  const rr = getAtParameter('rr')
+  const t = getAtParameter('tl_mittel')
+
+  it('streckt die Niederschlagsskala auf Monat und Jahr', () => {
+    expect(scaleFor(rr, 'day').stops.at(-1)!.value).toBe(100)
+    expect(scaleFor(rr, 'month').stops.at(-1)!.value).toBe(1000)
+    expect(scaleFor(rr, 'year').stops.at(-1)!.value).toBe(3000)
+  })
+
+  it('trennt Jahresniederschläge farblich, statt alles ins oberste Band zu legen', () => {
+    const year = scaleFor(rr, 'year')
+    const [dry, wet] = [600, 2000].map((v) => colorForValue(year, v))
+    expect(dry).not.toBe(wet)
+    // auf der Tagesskala lägen beide im obersten Band
+    expect(colorForValue(rr.scale, 600)).toBe(colorForValue(rr.scale, 2000))
+  })
+
+  it('lässt Größen ohne Zeitbezugs-Skala unverändert', () => {
+    expect(scaleFor(t, 'year')).toBe(t.scale)
+  })
+})
+
+describe('anomalyScaleFor', () => {
+  const t = getAtParameter('tl_mittel')
+
+  it('nutzt die Wetterskala für Monat/Jahr', () => {
+    expect(anomalyScaleFor(t, false)).toBe(t.anomalyScale)
+  })
+
+  it('löst das Klimasignal zwischen zwei Perioden feiner auf', () => {
+    const climate = anomalyScaleFor(t, true)
+    // +0,6 K und +1,2 K sind in der Wetterskala dasselbe Band, im Periodenvergleich nicht
+    expect(colorForValue(t.anomalyScale, 0.6)).toBe(colorForValue(t.anomalyScale, 1.2))
+    expect(colorForValue(climate, 0.6)).not.toBe(colorForValue(climate, 1.2))
   })
 })

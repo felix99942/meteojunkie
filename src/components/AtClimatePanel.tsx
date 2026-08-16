@@ -1,7 +1,12 @@
 // Österreich-Klimakarte — Bereichs-Container (Schritt 3–5). Lädt Stammdaten,
-// bietet Parameter-, Zeitbezug- (Tag/Monat/Jahr) und Modus-Wahl (Absolut/
-// Abweichung vom Normal 1991–2020), holt die Werte in EINEM Bulk-Request und
+// bietet Parameter-, Zeitbezug- (Tag/Monat/Jahr/Klimaperiode) und Modus-Wahl
+// (Absolut/Abweichung vom Normal), holt die Werte in EINEM Bulk-Request und
 // färbt die Karte samt In-Karten-Beschriftung ein. Klick → Stationsdetail.
+//
+// Zeitbezug „Klimaperiode" zeigt das langjährige Mittel einer WMO-Normalperiode
+// (z. B. den durchschnittlichen Jahresniederschlag 1961–1990) — vorberechnete
+// Assets, also kein Request. Im Abweichungsmodus vergleicht dieser Zeitbezug die
+// beiden Perioden MITEINANDER: das ist das Klimasignal, nicht das Wetter.
 
 import { useEffect, useMemo, useState } from 'react'
 import { activeStations, loadStations, type AtStation } from '../api/geosphere'
@@ -15,7 +20,21 @@ import {
   type Period,
   type PeriodValues,
 } from '../api/atValues'
-import { anomaly, AT_PARAMETERS, getAtParameter } from '../config/atParameters'
+import {
+  AT_NORMAL_PERIODS,
+  comparePeriod,
+  DEFAULT_NORMAL_PERIOD,
+  normalPeriod,
+  type NormalPeriodId,
+} from '../config/atNormals'
+import {
+  anomaly,
+  anomalyScaleFor,
+  AT_PARAMETERS,
+  getAtParameter,
+  scaleFor,
+  type ValueSpan,
+} from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
 import { AtRankList } from './AtRankList'
@@ -35,6 +54,8 @@ const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
   year: 'numeric',
 })
 const fmtMonthLabel = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long', year: 'numeric' })
+const fmtMonthName = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long' })
+const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => fmtMonthName.format(new Date(Date.UTC(2001, i, 15))))
 
 const fmtClock = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'Europe/Vienna',
@@ -74,6 +95,9 @@ export function AtClimatePanel() {
   const [day, setDay] = useState(init.day)
   const [monthStr, setMonthStr] = useState(init.monthStr)
   const [year, setYear] = useState(init.year)
+  // Klimaperiode: welche Periode und welcher Ausschnitt (null = Jahresmittel).
+  const [normPeriodId, setNormPeriodId] = useState<NormalPeriodId>(DEFAULT_NORMAL_PERIOD)
+  const [normMonth, setNormMonth] = useState<number | null>(null)
   const [mode, setMode] = useState<'abs' | 'anom'>('abs')
 
   const [values, setValues] = useState<Record<number, number | null> | null>(null)
@@ -81,7 +105,8 @@ export function AtClimatePanel() {
   const [asOf, setAsOf] = useState<string | null>(null)
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
-  const [normals, setNormals] = useState<NormalsMap | null>(null)
+  // Normale je Klimaperiode — im Vergleichsmodus wird die Bezugsperiode geladen.
+  const [normals, setNormals] = useState<Partial<Record<NormalPeriodId, NormalsMap>>>({})
 
   const period = useMemo<Period>(() => {
     if (periodKind === 'day') return { kind: 'day', day }
@@ -89,11 +114,21 @@ export function AtClimatePanel() {
       const [y, m] = monthStr.split('-').map(Number)
       return { kind: 'month', year: y, month: m }
     }
+    if (periodKind === 'normal') return { kind: 'normal', periodId: normPeriodId, month: normMonth }
     return { kind: 'year', year }
-  }, [periodKind, day, monthStr, year])
+  }, [periodKind, day, monthStr, year, normPeriodId, normMonth])
 
   const spec = getAtParameter(paramCode)
   const anomActive = mode === 'anom' && periodKind !== 'day' && isParamAvailable(spec, period)
+  /** Perioden-Vergleich: Normale gegen Normale statt Wetter gegen Normal. */
+  const climate = anomActive && period.kind === 'normal'
+  /**
+   * Bezugsperiode der Abweichung: im Klimaperioden-Zeitbezug die jeweils andere
+   * Periode (sonst wäre die Karte durchgehend null), sonst die gültige Norm.
+   */
+  const refPeriodId: NormalPeriodId =
+    period.kind === 'normal' ? comparePeriod(period.periodId) : DEFAULT_NORMAL_PERIOD
+  const refNormals = normals[refPeriodId] ?? null
 
   useEffect(() => {
     let cancelled = false
@@ -105,17 +140,18 @@ export function AtClimatePanel() {
     }
   }, [])
 
-  // Normale nur laden, wenn der Abweichungsmodus sie braucht.
+  // Normale der BEZUGSperiode nur laden, wenn der Abweichungsmodus sie braucht
+  // (die angezeigte Periode holt fetchPeriodValues selbst).
   useEffect(() => {
-    if (mode !== 'anom' || normals) return
+    if (mode !== 'anom' || normals[refPeriodId]) return
     let cancelled = false
-    loadNormals()
-      .then((n) => !cancelled && setNormals(n))
+    loadNormals(refPeriodId)
+      .then((n) => !cancelled && setNormals((prev) => ({ ...prev, [refPeriodId]: n })))
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [mode, normals])
+  }, [mode, normals, refPeriodId])
 
   const shown = useMemo(
     () => (stations ? (showAll ? stations : activeStations(stations)) : []),
@@ -144,9 +180,16 @@ export function AtClimatePanel() {
   // Tag stattdessen sofort neu holen (am Cache vorbei, sonst passiert 5 min nichts).
   const latest = latestPeriods()
   const atLatest =
-    periodKind === 'day' ? day >= latest.day : periodKind === 'month' ? monthStr === latest.monthStr : year === latest.year
+    periodKind === 'day'
+      ? day >= latest.day
+      : periodKind === 'month'
+        ? monthStr === latest.monthStr
+        : periodKind === 'year'
+          ? year === latest.year
+          : true // Klimaperioden sind fest — es gibt nichts "Aktuelleres"
   const goLatest = () => {
     const l = latestPeriods()
+    if (periodKind === 'normal') return
     if (periodKind === 'month') setMonthStr(l.monthStr)
     else if (periodKind === 'year') setYear(l.year)
     else if (day < l.day) setDay(l.day)
@@ -183,7 +226,19 @@ export function AtClimatePanel() {
   }, [paramCode, period, idsKey, refresh])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
-  const scale = anomActive ? spec.anomalyScale : spec.scale
+  // Der Zeitbezug bestimmt die Größenordnung und damit die Skala: eine
+  // Jahressumme gehört nicht auf die Tagesskala (sonst alles im obersten Band).
+  const span: ValueSpan =
+    period.kind === 'day'
+      ? 'day'
+      : period.kind === 'month'
+        ? 'month'
+        : period.kind === 'year'
+          ? 'year'
+          : period.month != null
+            ? 'month'
+            : 'year'
+  const scale = anomActive ? anomalyScaleFor(spec, climate) : scaleFor(spec, span)
   const unit = anomActive ? spec.anomalyUnit : spec.unit
   const { displayValues, colors, covered } = useMemo(() => {
     const displayValues: (number | null)[] = new Array(shown.length).fill(null)
@@ -194,7 +249,7 @@ export function AtClimatePanel() {
       if (raw == null) continue
       let v: number | null = raw
       if (anomActive) {
-        const norm = normals ? normalFor(normals, spec, period, shown[i].id) : null
+        const norm = refNormals ? normalFor(refNormals, spec, period, shown[i].id) : null
         v = norm != null ? anomaly(raw, norm, spec.anomalyKind) : null
       }
       displayValues[i] = v
@@ -204,7 +259,7 @@ export function AtClimatePanel() {
       }
     }
     return { displayValues, colors, covered }
-  }, [values, normals, shown, spec, period, anomActive, scale])
+  }, [values, refNormals, shown, spec, period, anomActive, scale])
 
   const refDay = useMemo(() => {
     if (period.kind === 'day') return period.day
@@ -212,7 +267,10 @@ export function AtClimatePanel() {
       const last = new Date(Date.UTC(period.year, period.month, 0))
       return isoDay(last > new Date() ? new Date() : last)
     }
-    const dec = new Date(Date.UTC(period.year, 11, 31))
+    // Klimaperiode: das Stationsdetail zeigt Tageswerte — sinnvoller Anker ist
+    // das Ende der Periode, nicht heute.
+    const endYear = period.kind === 'year' ? period.year : normalPeriod(period.periodId).lastYear
+    const dec = new Date(Date.UTC(endYear, 11, 31))
     return isoDay(dec > new Date() ? new Date() : dec)
   }, [period])
 
@@ -227,6 +285,10 @@ export function AtClimatePanel() {
   const periodLabel = useMemo(() => {
     if (period.kind === 'day') return fmtDayLabel.format(new Date(`${period.day}T12:00:00Z`))
     if (period.kind === 'month') return fmtMonthLabel.format(new Date(Date.UTC(period.year, period.month - 1, 15)))
+    if (period.kind === 'normal') {
+      const label = normalPeriod(period.periodId).label
+      return period.month == null ? `Jahresmittel ${label}` : `${MONTH_NAMES[period.month - 1]} ${label}`
+    }
     return String(period.year)
   }, [period])
 
@@ -234,9 +296,11 @@ export function AtClimatePanel() {
     ? 'lädt Werte …'
     : valuesError
       ? `⚠ ${valuesError}`
-      : anomActive && !normals
+      : anomActive && !refNormals
         ? 'lädt Normale …'
         : `${covered}/${shown.length} Stationen`
+
+  const refLabel = normalPeriod(refPeriodId).label
 
   // Live-Hinweis: der laufende Tag ist ein Zwischenstand aus 10-Minuten-Messwerten,
   // kein geprüftes Tagesaggregat — das muss an der Zahl dranstehen.
@@ -267,6 +331,7 @@ export function AtClimatePanel() {
             <option value="day">Tag</option>
             <option value="month">Monat</option>
             <option value="year">Jahr</option>
+            <option value="normal">Klimaperiode</option>
           </select>
         </label>
         {periodKind === 'day' && (
@@ -285,6 +350,34 @@ export function AtClimatePanel() {
             style={{ width: 70 }}
           />
         )}
+        {periodKind === 'normal' && (
+          <>
+            <select
+              value={normPeriodId}
+              onChange={(e) => setNormPeriodId(e.target.value as NormalPeriodId)}
+              title="30-jährige Bezugsperiode (WMO-Normalperiode) — vorberechnetes langjähriges Mittel"
+            >
+              {AT_NORMAL_PERIODS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={normMonth ?? 'year'}
+              onChange={(e) => setNormMonth(e.target.value === 'year' ? null : Number(e.target.value))}
+              title="Jahresmittel der Periode oder das Mittel eines einzelnen Kalendermonats"
+            >
+              <option value="year">Jahr</option>
+              {MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        {periodKind !== 'normal' && (
         <button
           type="button"
           className={`atclima-now${atLatest ? ' is-active' : ''}`}
@@ -300,7 +393,17 @@ export function AtClimatePanel() {
         >
           {atLatest && periodKind === 'day' ? '↻ Aktuell' : 'Aktuell'}
         </button>
-        <div className="atclima-modes" title={periodKind === 'day' ? 'Anomalien gibt es für Monat/Jahr' : ''}>
+        )}
+        <div
+          className="atclima-modes"
+          title={
+            periodKind === 'day'
+              ? 'Anomalien gibt es für Monat/Jahr/Klimaperiode'
+              : periodKind === 'normal'
+                ? `Abweichung vergleicht die gewählte Klimaperiode mit ${refLabel}`
+                : ''
+          }
+        >
           <button
             type="button"
             className={mode === 'abs' ? 'is-active' : ''}
@@ -318,8 +421,23 @@ export function AtClimatePanel() {
           </button>
         </div>
         <span className="atclima-sub">
-          {status} · {anomActive ? `Δ ${unit} vs. 1991–2020` : unit}
+          {status} · {anomActive ? `Δ ${unit} vs. ${refLabel}` : unit}
         </span>
+        {periodKind === 'normal' && (
+          <span
+            className="atclima-hint"
+            title={
+              'Langjähriges Mittel der Klimaperiode, vorberechnet aus dem Monatsdatensatz klima-v2-1m. ' +
+              'Eine Station bekommt nur dann ein Normal, wenn sie in der Periode mindestens 24 vollständige ' +
+              'Jahre gemessen hat (WMO-Regel) — kürzere Reihen bleiben leer statt ein Mittel aus wenigen ' +
+              'Jahren vorzutäuschen. Deshalb sind hier weniger Stationen besetzt als in der Tageskarte, ' +
+              'und im Vergleich zweier Perioden nur jene, die in BEIDEN messen. Bei älteren Perioden ' +
+              'lohnt der Haken „Historische": viele Stationen von 1961–1990 sind heute stillgelegt.'
+            }
+          >
+            Normal, ≥ 24 Jahre
+          </span>
+        )}
         {liveNote && (
           <span
             className="atclima-live"
@@ -364,8 +482,10 @@ export function AtClimatePanel() {
                 title={`${spec.label}${anomActive ? ' — Abweichung' : ''} · ${periodLabel}`}
                 description={
                   anomActive
-                    ? `${spec.description} Gereiht wird hier die Abweichung vom Normal 1991–2020.`
-                    : spec.description
+                    ? `${spec.description} Gereiht wird hier die Abweichung vom Normal ${refLabel}.`
+                    : period.kind === 'normal'
+                      ? `${spec.description} Gereiht wird das langjährige Mittel der Periode ${normalPeriod(period.periodId).label}.`
+                      : spec.description
                 }
                 signed={anomActive}
                 onSelect={(i) => setSelected(shown[i])}

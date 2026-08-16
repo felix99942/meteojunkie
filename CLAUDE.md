@@ -101,6 +101,20 @@ npm run preview   # gebautes dist/ servieren
   Rekorde lösen sich beim Öffnen auf, die übrigen 32 Zeilen erst auf Klick.
   Parameter-Klartext steht als `description` in der Registry. Reine Rechenkerne
   sind mit Vitest getestet (`*.test.ts`, `npm test`).
+  **Klimaperioden** (`config/atNormals.ts`, `AT_NORMAL_PERIODS`): vierter
+  Zeitbezug neben Tag/Monat/Jahr — das langjährige Mittel einer WMO-Normalperiode
+  (1991–2020, 1961–1990), wahlweise Jahresmittel oder ein Kalendermonat (z. B.
+  „durchschnittlicher Jahresniederschlag 1961–1990"). Die Werte stehen in den
+  vorberechneten Assets `public/at/normals-<periode>.json`
+  (`scripts/at-ingest-normals.mjs <periode>`), dieser Zeitbezug kostet also KEINEN
+  Request. Im Abweichungsmodus vergleicht er die beiden Perioden MITEINANDER
+  (`comparePeriod`, Bezug = nächstältere Periode) statt Wetter gegen Normal.
+  **Deckungsregel**: ein Normal entsteht nur aus ≥ 24 der 30 Jahre und ein Jahr
+  zählt nur mit allen 12 Monaten — deshalb hat lange nicht jede Station eines
+  (1991–2020: 300, 1961–1990: 280 Stationen), und die alte Datei `normals.json`
+  mit 806 Stationen ist bewusst weg: die zusätzlichen Werte stammten aus
+  Teilreihen. Für ältere Perioden zeigt erst der Haken „Historische" das volle
+  Netz.
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind
@@ -288,7 +302,13 @@ npm run preview   # gebautes dist/ servieren
 - **Farbskalen haben feste Wertebereiche** (kein Auto-Scaling!) — sonst sind
   Panels mit unterschiedlichen Modellen nicht vergleichbar. Neue Karten-
   Variablen brauchen einen Eintrag in `colorscales.ts`, sonst tauchen sie im
-  Karten-Dropdown nicht auf (Windrichtung ist bewusst ausgenommen). Die
+  Karten-Dropdown nicht auf (Windrichtung ist bewusst ausgenommen). In der
+  AT-Klimakarte hängt die Skala zusätzlich am ZEITBEZUG (`scaleFor` in
+  `config/atParameters.ts`): Summenparameter wachsen von mm/Tag auf mm/Jahr um
+  Größenordnungen, mit einer Skala läge jede Jahreskarte im obersten Band —
+  ebenfalls feste Bereiche, nur je Zeitbezug einer. Analog `anomalyScaleFor`: der
+  Vergleich zweier Klimaperioden (~1 K, wenige %) braucht eine feinere Stufung
+  als eine Wetteranomalie (±12 K). Die
   konkreten Bereiche/Schwellen sind laut SPEC §11 noch nicht final festgelegt —
   die Werte in `colorscales.ts` sind ein Arbeitsstand.
 - Die MapLibre-image-Source spannt Bilder linear im **Web-Mercator**-Raum auf;

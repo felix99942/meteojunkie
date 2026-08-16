@@ -1,10 +1,11 @@
 // Perioden-/Anomalie-Auflösung der Österreich-Klimakarte (Schritt 5).
 // Bündelt die Kartenwerte je nach Zeitbezug (Tag/Monat/Jahr) in EINEM
-// Bulk-Request und liefert optional die Abweichung vom Normal 1991–2020.
+// Bulk-Request und liefert optional die Abweichung vom Normal.
 //
-//   Tag   → Tagesdatensatz klima-v2-1d, Einzeltag
-//   Monat → Monatsdatensatz klima-v2-1m, ein Monatswert je Station
-//   Jahr  → Monatsdatensatz, 12 Monatswerte je Station → annualAgg
+//   Tag         → Tagesdatensatz klima-v2-1d, Einzeltag
+//   Monat       → Monatsdatensatz klima-v2-1m, ein Monatswert je Station
+//   Jahr        → Monatsdatensatz, 12 Monatswerte je Station → annualAgg
+//   Klimaperiode→ vorberechnete Normale (public/at/normals-<id>.json), KEIN Request
 //
 // Schnee (kein Monatswert) ist nur im Tag-Modus verfügbar.
 
@@ -16,11 +17,14 @@ import {
   type AtStation,
 } from './geosphere'
 import { aggregate, type AtParameterSpec } from '../config/atParameters'
+import type { NormalPeriodId } from '../config/atNormals'
 
 export type Period =
   | { kind: 'day'; day: string } // YYYY-MM-DD
   | { kind: 'month'; year: number; month: number } // month 1..12
   | { kind: 'year'; year: number }
+  /** Langjähriges Mittel einer Klimaperiode; month = null → Jahreswert. */
+  | { kind: 'normal'; periodId: NormalPeriodId; month: number | null }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
@@ -57,9 +61,10 @@ export interface PeriodValues {
   unit: string
   /**
    * `live` = aus 10-Minuten-Messwerten des laufenden Tages zusammengefasst
-   * (vorläufig, ungeprüft); `daily`/`monthly` = fertiges Klima-Aggregat.
+   * (vorläufig, ungeprüft); `daily`/`monthly` = fertiges Klima-Aggregat;
+   * `normal` = vorberechnetes 30-Jahres-Mittel aus dem Asset.
    */
-  source: 'daily' | 'monthly' | 'live'
+  source: 'daily' | 'monthly' | 'live' | 'normal'
   /** Nur bei `live`: Zeitstempel des jüngsten verwendeten Messwerts (ISO). */
   asOf?: string
 }
@@ -134,6 +139,16 @@ export async function fetchPeriodValues(
   const ids = stations.map((s) => s.id)
   const byStation: Record<number, number | null> = {}
 
+  // Klimaperiode: die Normale sind vorberechnet — kein GeoSphere-Abruf.
+  if (period.kind === 'normal') {
+    if (!spec.monthlyCode) return { byStation, unit: spec.unit, source: 'normal' }
+    const normals = await loadNormals(period.periodId)
+    for (const id of ids) {
+      byStation[id] = normalValue(normals[id]?.[spec.monthlyCode], period.month)
+    }
+    return { byStation, unit: spec.unit, source: 'normal' }
+  }
+
   if (period.kind === 'day') {
     // Laufender Tag: klima-v2-1d ist durchgehend null — direkt live holen.
     const today = todayUtc()
@@ -170,31 +185,47 @@ export async function fetchPeriodValues(
   return { byStation, unit: s.unit || spec.unit, source: 'monthly' }
 }
 
-// --- Normale 1991–2020 (vorberechnet, public/at/normals.json) ------------
+// --- Normale je Klimaperiode (vorberechnet, public/at/normals-<id>.json) ---
+//
+// Eine Datei je Periode (1991–2020, 1961–1990), erzeugt von
+// scripts/at-ingest-normals.mjs. Ein Normal entsteht dort nur aus mindestens 24
+// VOLLSTÄNDIGEN Jahren der Periode — Stationen mit kurzer Reihe haben deshalb
+// bewusst keinen Wert statt eines aus wenigen Jahren gemittelten Scheinnormals.
 
-/** stationId → monthlyCode → { monthly[12], annual }. */
+/** stationId → monthlyCode → { monthly[12], annual, ny }. */
 export interface NormalsEntry {
   monthly: (number | null)[]
   annual: number | null
+  /** Zahl der vollständigen Jahre hinter `annual` (Deckung der Periode). */
+  ny?: number
 }
 export type NormalsMap = Record<number, Record<string, NormalsEntry>>
 
-let normalsPromise: Promise<NormalsMap> | null = null
+const normalsPromises = new Map<NormalPeriodId, Promise<NormalsMap>>()
 
-export function loadNormals(): Promise<NormalsMap> {
-  if (!normalsPromise) {
-    normalsPromise = fetch(`${import.meta.env.BASE_URL}at/normals.json`)
+/** Normale EINER Klimaperiode laden (je Periode einmal, prozessweit geteilt). */
+export function loadNormals(periodId: NormalPeriodId): Promise<NormalsMap> {
+  let p = normalsPromises.get(periodId)
+  if (!p) {
+    p = fetch(`${import.meta.env.BASE_URL}at/normals-${periodId}.json`)
       .then((r) => {
-        if (!r.ok) throw new Error(`Normale nicht ladbar: HTTP ${r.status}`)
+        if (!r.ok) throw new Error(`Normale ${periodId} nicht ladbar: HTTP ${r.status}`)
         return r.json()
       })
       .then((d: { normals: NormalsMap }) => d.normals)
       .catch((err) => {
-        normalsPromise = null
+        normalsPromises.delete(periodId)
         throw err
       })
+    normalsPromises.set(periodId, p)
   }
-  return normalsPromise
+  return p
+}
+
+/** Monats- oder Jahresnormal aus einem Eintrag (month = null → Jahr). */
+export function normalValue(entry: NormalsEntry | undefined, month: number | null): number | null {
+  if (!entry) return null
+  return month == null ? entry.annual : (entry.monthly[month - 1] ?? null)
 }
 
 // --- Rekorde (vorberechnet, public/at/records/<id>.json + _national.json) --
@@ -266,7 +297,12 @@ export function loadNationalRecords(): Promise<NationalRecords> {
   return nationalPromise
 }
 
-/** Normalwert für Station + Parameter + Periode (Monat/Jahr). null im Tag-Modus. */
+/**
+ * Bezugs-Normalwert für Station + Parameter + Periode. Der Zeitausschnitt der
+ * Periode bestimmt, WELCHES Normal gilt (Monatswert ↔ Monatsnormal,
+ * Jahreswert ↔ Jahresnormal); aus WELCHER Periode die Normale stammen,
+ * entscheidet der Aufrufer über die übergebene Karte. null im Tag-Modus.
+ */
 export function normalFor(
   normals: NormalsMap,
   spec: AtParameterSpec,
@@ -274,7 +310,6 @@ export function normalFor(
   stationId: number,
 ): number | null {
   if (period.kind === 'day' || !spec.monthlyCode) return null
-  const entry = normals[stationId]?.[spec.monthlyCode]
-  if (!entry) return null
-  return period.kind === 'month' ? (entry.monthly[period.month - 1] ?? null) : entry.annual
+  const month = period.kind === 'month' ? period.month : period.kind === 'normal' ? period.month : null
+  return normalValue(normals[stationId]?.[spec.monthlyCode], month)
 }
