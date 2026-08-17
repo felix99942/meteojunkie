@@ -132,7 +132,7 @@ export function useDeterministicSeries(
       location ? location.lon.toFixed(4) : null,
       info.deterministicModel,
       variable,
-      info.forecastDays,
+      info.deterministicDays,
     ],
     queryFn: () =>
       fetchDeterministicSeries(
@@ -140,7 +140,9 @@ export function useDeterministicSeries(
         location!.lon,
         info.deterministicModel,
         variable,
-        info.forecastDays,
+        // NICHT forecastDays: die Forecast-API deckelt bei 16 Tagen und
+        // quittiert mehr mit einem Fehler (siehe config/ensemble.ts)
+        info.deterministicDays,
       ),
     enabled: location !== null,
     staleTime: SERIES_STALE_TIME_MS,

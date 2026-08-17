@@ -3,10 +3,16 @@ import { useApiUsage } from '../state/apiUsage'
 import { DOMAIN_PRESETS } from '../config/domains'
 import { MAP_ENABLED } from '../config/features'
 import { MOCK_MODE, mockGridDims } from '../api/mock'
+import { isPanelSection, useAppView } from '../state/appView'
 import { LocationPicker } from './LocationPicker'
 import { PresetBar } from './PresetBar'
+import { LayoutPicker } from './LayoutPicker'
 
 export function TopBar() {
+  const view = useAppView((s) => s.view)
+  // Die Domain gilt nur für Kartenfelder — die gibt es ausschließlich im
+  // Meteogramm-Bereich. Ensemble und Profil sind punktbasiert.
+  const showDomain = isPanelSection(view) && view === 'workbench'
   const domain = useWorkbench((s) => s.domain)
   const setDomain = useWorkbench((s) => s.setDomain)
   const gridLocations = useApiUsage((s) => s.gridLocations)
@@ -40,6 +46,7 @@ export function TopBar() {
           )
         })()}
       <LocationPicker />
+      <LayoutPicker />
       <PresetBar />
       <span
         className="api-usage"
@@ -61,7 +68,7 @@ export function TopBar() {
       >
         ⟲
       </button>
-      {MAP_ENABLED && (
+      {MAP_ENABLED && showDomain && (
         <label className="topbar-domain" title="Kartendomain — nur für Karten-Panels">
           <span className="label-muted">Domain</span>
           <select

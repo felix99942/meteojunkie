@@ -16,12 +16,20 @@
 import { create } from 'zustand'
 import { DOMAIN_PRESETS } from '../config/domains'
 import { getModel, isDomainInCoverage, MODELS } from '../config/models'
-import { HOURLY_VARIABLES } from '../config/variables'
-import { ENSEMBLE_MODELS, ENSEMBLE_VARIABLES } from '../config/ensemble'
+import { HOURLY_VARIABLES, type AccumView } from '../config/variables'
 import {
+  ENSEMBLE_MODELS,
+  ENSEMBLE_VARIABLES,
+  type EnsembleAccumView,
+} from '../config/ensemble'
+import type { PanelSection } from './appView'
+import {
+  DEFAULT_LAYOUT,
   useWorkbench,
+  visiblePanelIndices,
   type LatLon,
   type PanelConfig,
+  type PanelLayout,
   type PanelMode,
 } from './workbench'
 
@@ -37,6 +45,10 @@ export interface PresetPanel {
   /** Seit dem Ensemble-Modus; ältere Presets haben sie nicht (siehe restorePanel). */
   ensembleModel?: string
   ensembleVariable?: string
+  /** Seit dem Rate/Summe-Umschalter; fehlt in älteren Presets → 'rate'. */
+  accumView?: AccumView
+  /** Ensemble: Summe ↔ 6-h-Mengen; fehlt in älteren Presets → 'sum'. */
+  ensembleAccumView?: EnsembleAccumView
   sync: boolean
 }
 
@@ -57,6 +69,17 @@ export interface Preset {
    * und beim Laden von den Panel-Flags abgedeckt.
    */
   zoomSync: boolean
+  /**
+   * Sichtbares Layout JE BEREICH (6/4/2/1). Alle sechs Panel-Configs stehen
+   * unabhängig davon in `panels` — das Layout blendet nur aus, es löscht nichts.
+   */
+  layouts?: Record<PanelSection, PanelLayout>
+  /**
+   * Vorgänger von `layouts`, als es nur einen Bereich gab. Wird beim Laden als
+   * Meteogramm-Layout übernommen; fehlt auch das, gilt das 6er-Vollraster —
+   * so sah die Workbench aus, als solche Presets entstanden.
+   */
+  layout?: PanelLayout
   lockedLocation?: LatLon
 }
 
@@ -65,7 +88,15 @@ const BUILTIN_PRESETS: Preset[] = []
 
 // --- Validierung -----------------------------------------------------------
 
-const PANEL_MODES: PanelMode[] = ['map', 'meteogram', 'profile', 'ensemble']
+const PANEL_MODES: PanelMode[] = ['map', 'meteogram']
+/**
+ * Modi, die es als Panel-Modus nicht mehr gibt — Ensemble und Vertikalprofil
+ * sind eigene BEREICHE geworden (state/appView.ts). Sie bleiben hier gültig,
+ * damit ältere Presets nicht komplett verworfen werden; restorePanel setzt sie
+ * auf 'meteogram' und sagt im presetWarning, wo die Ansicht jetzt lebt.
+ */
+const LEGACY_PANEL_MODES = ['profile', 'ensemble']
+const VALID_LAYOUTS: PanelLayout[] = [6, 4, 2, 1]
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'string')
@@ -85,7 +116,11 @@ export function validatePresetStructure(u: unknown): string | null {
   for (const [i, pp] of (p.panels as unknown[]).entries()) {
     if (typeof pp !== 'object' || pp === null) return `Panel ${i + 1}: kein Objekt`
     const q = pp as Record<string, unknown>
-    if (!PANEL_MODES.includes(q.mode as PanelMode)) return `Panel ${i + 1}: ungültiger Modus`
+    if (
+      !PANEL_MODES.includes(q.mode as PanelMode) &&
+      !LEGACY_PANEL_MODES.includes(q.mode as string)
+    )
+      return `Panel ${i + 1}: ungültiger Modus`
     if (!isStringArray(q.models)) return `Panel ${i + 1}: models ungültig`
     if (typeof q.mapModel !== 'string') return `Panel ${i + 1}: mapModel fehlt`
     if (typeof q.variable !== 'string') return `Panel ${i + 1}: variable fehlt`
@@ -95,6 +130,10 @@ export function validatePresetStructure(u: unknown): string | null {
   }
   if (p.parSyncSource !== null && typeof p.parSyncSource !== 'number')
     return 'parSyncSource ungültig'
+  if (p.layout !== undefined && !VALID_LAYOUTS.includes(p.layout as PanelLayout))
+    return 'layout ungültig'
+  if (p.layouts !== undefined && (typeof p.layouts !== 'object' || p.layouts === null))
+    return 'layouts ungültig'
   return null
 }
 
@@ -111,6 +150,8 @@ function snapshotPanels(): PresetPanel[] {
     variable: p.variable,
     ensembleModel: p.ensembleModel,
     ensembleVariable: p.ensembleVariable,
+    accumView: p.accumView,
+    ensembleAccumView: p.ensembleAccumView,
     sync: p.sync,
   }))
 }
@@ -127,6 +168,7 @@ export function createPresetFromState(name: string, includeLocation: boolean): P
     panels: snapshotPanels(),
     parSyncSource: s.parSyncSource,
     zoomSync: s.panels.some((p) => p.sync),
+    layouts: { ...s.layouts },
     ...(includeLocation && s.lockedLocation ? { lockedLocation: s.lockedLocation } : {}),
   }
 }
@@ -144,6 +186,17 @@ const variableExists = (id: string) => HOURLY_VARIABLES.some((v) => v.id === id)
  */
 function restorePanel(pp: PresetPanel, current: PanelConfig, now: number): PanelConfig {
   const issues: string[] = []
+
+  // Ensemble/Vertikalprofil waren früher Panel-Modi und sind heute eigene
+  // Bereiche. Das Panel lädt als Meteogramm — seine Ensemble- und
+  // Profil-Einstellungen sind nicht verloren, sie leben in den jeweiligen
+  // Bereichen weiter; nur die Modusangabe hat dort keine Bedeutung mehr.
+  let mode: PanelMode = pp.mode
+  if (!PANEL_MODES.includes(mode)) {
+    const where = (pp.mode as string) === 'ensemble' ? 'Ensemble' : 'Vertikalprofil'
+    issues.push(`„${where}" ist jetzt ein eigener Bereich — Panel lädt als Meteogramm`)
+    mode = 'meteogram'
+  }
 
   const models = pp.models.filter((id) => {
     if (modelExists(id)) return true
@@ -184,16 +237,38 @@ function restorePanel(pp: PresetPanel, current: PanelConfig, now: number): Panel
   }
 
   return {
-    mode: pp.mode,
+    mode,
     models,
     modelSlots,
     mapModel,
     variable,
     ensembleModel,
     ensembleVariable,
+    // Unbekannter Wert oder fehlend → Rate: das ist die Standardansicht, und
+    // eine stillschweigend kumulierte Kurve wäre die verwirrendere Überraschung
+    accumView: pp.accumView === 'sum' ? 'sum' : 'rate',
+    ensembleAccumView: pp.ensembleAccumView === '6h' ? '6h' : 'sum',
     sync: pp.sync,
     localTime: now, // Zeiten werden nicht persistiert — aktuelle Zeit bleibt
     presetWarning: issues.length > 0 ? issues.join(' · ') : undefined,
+  }
+}
+
+/**
+ * Layouts eines Presets auf die heutige Form bringen. Drei Generationen:
+ * gar nichts (vor dem Umschalter → Vollraster, so sah es damals aus), das alte
+ * Einzelfeld `layout` (galt für den einzigen Bereich = Meteogramm) und das
+ * heutige `layouts` je Bereich. Unbekannte Werte fallen auf den Standard
+ * zurück, statt ein leeres Raster zu erzeugen.
+ */
+function presetLayouts(p: Preset): Record<PanelSection, PanelLayout> {
+  const valid = (v: unknown, fallback: PanelLayout): PanelLayout =>
+    VALID_LAYOUTS.includes(v as PanelLayout) ? (v as PanelLayout) : fallback
+  const legacy = p.layout !== undefined ? valid(p.layout, 6) : undefined
+  return {
+    workbench: valid(p.layouts?.workbench, legacy ?? 6),
+    ensemble: valid(p.layouts?.ensemble, DEFAULT_LAYOUT.ensemble),
+    profile: valid(p.layouts?.profile, DEFAULT_LAYOUT.profile),
   }
 }
 
@@ -237,10 +312,18 @@ export function applyPreset(preset: Preset): void {
       ? preset.parSyncSource
       : null
 
+  const layouts = presetLayouts(preset)
+
   useWorkbench.setState({
     ...(domain ? { domain } : {}),
     panels,
-    parSyncSource,
+    layouts,
+    // Quelle darf nicht hinter einem reduzierten Layout verschwinden — sonst
+    // bleiben die übrigen Parameter-Dropdowns gesperrt (siehe workbench.ts).
+    // Geprüft wird gegen den Meteogramm-Bereich: nur dort gibt es parsync.
+    parSyncSource: visiblePanelIndices(layouts.workbench).includes(parSyncSource ?? -1)
+      ? parSyncSource
+      : null,
     ...(firstSync
       ? {
           sharedModels: [...firstSync.models],
@@ -260,6 +343,9 @@ function comparableOfPreset(p: Preset): string {
     domain: p.domain,
     panels: p.panels,
     parSyncSource: p.parSyncSource,
+    // Layout-Default wie in applyPreset — sonst gälte jedes ältere Preset
+    // allein wegen des fehlenden Feldes sofort als „geändert“
+    layouts: presetLayouts(p),
     lockedLocation: p.lockedLocation ?? null,
   })
 }
@@ -271,6 +357,7 @@ export function comparableOfCurrentState(preset: Preset): string {
     domain: s.domain.id,
     panels: snapshotPanels(),
     parSyncSource: s.parSyncSource,
+    layouts: s.layouts,
     lockedLocation: preset.lockedLocation ? s.lockedLocation : null,
   })
 }

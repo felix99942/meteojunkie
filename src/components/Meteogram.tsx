@@ -11,7 +11,8 @@ import type { HourlySeries } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel, modelHorizonEnd } from '../config/models'
 import { formatRun, latestRun } from '../config/runs'
-import { getVariable } from '../config/variables'
+import { getVariable, unitFor } from '../config/variables'
+import { accumulateSeries } from '../render/plume'
 import { timeGridMs, timeToIndex } from '../config/time'
 import { useWorkbench, type PanelConfig } from '../state/workbench'
 
@@ -20,6 +21,12 @@ const GRIDLINE = '#2c2c2a'
 const AXIS_FONT = '10px system-ui, sans-serif'
 
 const fmtDay = new Intl.DateTimeFormat('de-DE', { timeZone: 'UTC', weekday: 'short' })
+
+/** Serienfarbe als halbtransparente Füllung (Hex aus der Palette → rgba). */
+function fillOf(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
 
 /** Serie auf das gemeinsame Zeitraster legen (Zeitstempel-Abgleich statt Index-Annahme). */
 function alignToGrid(gridMs: number[], series: HourlySeries): (number | null)[] {
@@ -34,6 +41,9 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
 
   const results = useMeteogramSeries(location, panel.models, panel.variable)
   const variable = getVariable(panel.variable)
+  // Summengrößen: Rate (mm/h) als Stufenblöcke oder kumulierte Summe.
+  const isAccum = variable.accum === true
+  const showSum = isAccum && panel.accumView === 'sum'
 
   const containerRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
@@ -54,12 +64,15 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
         for (let t = 0; t < aligned.length; t++) {
           if (gridMs[t] > horizon) aligned[t] = null
         }
-        return aligned
+        // Erst maskieren, dann aufsummieren: die Summenkurve endet damit am
+        // Modellhorizont, statt dahinter waagrecht weiterzulaufen und „kein
+        // Niederschlag mehr" zu behaupten.
+        return showSum ? accumulateSeries(aligned) : aligned
       }),
     ],
     // results ist jede Renderrunde ein neues Array — auf geladene Daten keyen
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loadedKey, gridMs, xsSec, panel.models.join(), panel.variable],
+    [loadedKey, gridMs, xsSec, panel.models.join(), panel.variable, showSum],
   )
 
   // Cursor-Linie: Ref statt Prop, damit der Draw-Hook ohne Chart-Neuaufbau
@@ -92,12 +105,26 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
         : {},
       series: [
         {},
-        ...panel.models.map((id) => ({
-          label: getModel(id).label,
-          stroke: SERIES_COLORS[panel.modelSlots[id] ?? 0],
-          width: 2,
-          points: { show: false },
-        })),
+        ...panel.models.map((id) => {
+          const color = SERIES_COLORS[panel.modelSlots[id] ?? 0]
+          return {
+            label: getModel(id).label,
+            stroke: color,
+            width: 2,
+            points: { show: false },
+            // Rate einer Summengröße: STUFEN statt interpolierter Linie. Der
+            // Wert gilt für die vorangegangene Stunde (align: -1), drei gleiche
+            // Werte eines 3-h-Modells werden so zu EINEM drei Stunden breiten
+            // Block statt zu einer schrägen Treppe. Die Füllung macht die
+            // Fläche — also die Menge — ablesbar.
+            ...(isAccum && !showSum
+              ? {
+                  paths: uPlot.paths.stepped?.({ align: -1 }),
+                  fill: fillOf(color, 0.22),
+                }
+              : {}),
+          }
+        }),
       ],
       axes: [
         {
@@ -211,7 +238,7 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
       plotRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelsKey, panel.variable, panel.modelSlots, gridMs, variable.nonNegative])
+  }, [modelsKey, panel.variable, panel.modelSlots, gridMs, variable.nonNegative, isAccum, showSum])
 
   // Daten nachschieben, sobald Queries eintreffen
   useEffect(() => {
@@ -270,7 +297,7 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
                 {supported &&
                   r.data &&
                   (value != null
-                    ? `${value.toFixed(1)} ${variable.unit}`
+                    ? `${value.toFixed(1)} ${unitFor(variable, panel.accumView)}`
                     : beyondHorizon
                       ? '—'
                       : '–')}

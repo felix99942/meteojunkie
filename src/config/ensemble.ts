@@ -1,14 +1,26 @@
-// Registry des Ensemble-Modus (SPEC §9 Phase 3). Bewusst NUR ECMWF: die
-// Ensemble-API ist teuer genug, dass ein Modellvergleich über mehrere
-// Ensembles das Budget nicht wert wäre (siehe Kostenhinweis unten).
+// Registry des Ensemble-Modus (SPEC §9 Phase 3).
 //
 // ALLES HIER IST LIVE GEGEN DIE API GEPRÜFT (SPEC §6), nicht aus der Doku
-// übernommen — Stand 2026-07-31:
+// übernommen — Stand 2026-07-31, GEFS ergänzt 2026-08-17:
 //   ecmwf_ifs025  → 51 Mitglieder (Kontrolllauf + member01…50), 15 Tage
 //   ecmwf_aifs025 → 51 Mitglieder, 15 Tage (KI-Modell)
+//   gfs_seamless  → 31 Mitglieder (Kontrolllauf + member01…30), Horizont live
+//                   819 h ≈ 34 Tage; alle zehn Variablen unten vollständig
 //   ecmwf_ifs04   → liefert nur noch EIN Mitglied, deshalb hier nicht geführt
 // Die 9-km-Europa-Ensembles der Doku sind über die freie API unter keiner ID
 // erreichbar (Professional/self-hosted).
+//
+// GEFS-Auflösung: `gfs_seamless` ist der Blend und dominiert die Einzeldomains —
+// live geprüft ist es in den ersten 240 h Wert für Wert identisch mit `gfs025`
+// (0,25°) und wechselt danach auf `gfs05` (0,5°). Deshalb genau EIN GEFS-Eintrag
+// statt drei: `gfs025` endet bei 255 h, `gfs05` ist früh gröber.
+//
+// **Eine KI-Version des GFS gibt es nicht** (Stand 2026-08-17, live geprüft):
+// `gfs_graphcast025` wird als ID zwar angenommen, liefert aber sowohl auf der
+// Ensemble- als auch auf der Forecast-API durchgehend null — der klassische
+// „HTTP 200 mit leeren Arrays"-Fall aus SPEC §6. `gencast025`, `graphcast025`,
+// `gfs_aifs025` und `noaa_gefs_ai` sind gar keine gültigen IDs. Die einzige
+// verfügbare KI-Ensemble-Alternative bleibt ECMWF AIFS.
 //
 // KOSTEN (SPEC §5): Die Ensemble-API liefert keine Kosten-Header und die Doku
 // sagt zu Mitgliedern nichts Genaues. Wir rechnen konservativ mit „Mitglied =
@@ -25,8 +37,17 @@ export interface EnsembleModelInfo {
   label: string
   /** Mitglieder inkl. Kontrolllauf (live gezählt). */
   members: number
-  /** Horizont in Tagen (forecast_days-Maximum der API). */
+  /** Horizont in Tagen (forecast_days-Maximum der Ensemble-API). */
   forecastDays: number
+  /**
+   * Horizont des deterministischen Hauptlaufs in Tagen — SEPARAT, weil die
+   * normale Forecast-API bei 16 Tagen hart deckelt („Allowed range 0 to 16",
+   * live geprüft). GEFS läuft im Ensemble weiter als sein Hauptlauf reichen
+   * kann; mit `forecastDays` für beide Abrufe scheitert der Hauptlauf-Request
+   * komplett. Kürzere Reihe ist richtig — das Panel lässt sie enden, statt zu
+   * extrapolieren (SPEC §8).
+   */
+  deterministicDays: number
   updateIntervalHours: number
   resolutionKm: number
   /**
@@ -44,6 +65,7 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     label: 'ECMWF IFS ENS',
     members: 51,
     forecastDays: 15,
+    deterministicDays: 15,
     updateIntervalHours: 6,
     resolutionKm: 25,
     deterministicModel: 'ecmwf_ifs025',
@@ -54,10 +76,25 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     label: 'ECMWF AIFS ENS (KI)',
     members: 51,
     forecastDays: 15,
+    deterministicDays: 15,
     updateIntervalHours: 6,
     resolutionKm: 25,
     deterministicModel: 'ecmwf_aifs025_single',
     note: 'KI-Ensemble von ECMWF, 0,25°. Nativ 6-stündlich. Interessant als zweite Meinung zum IFS — nicht als Ersatz.',
+  },
+  {
+    id: 'gfs_seamless',
+    label: 'NOAA GEFS',
+    members: 31,
+    // Ensemble-API akzeptiert 35; der Blend endet live bei 819 h (~34 Tage).
+    // Die volle Länge erreicht nur der 00-UTC-Lauf, die übrigen enden bei
+    // ~384 h — das Panel lässt die Reihen dann enden (SPEC §8).
+    forecastDays: 35,
+    deterministicDays: 16, // Maximum der Forecast-API, siehe deterministicDays
+    updateIntervalHours: 6,
+    resolutionKm: 25,
+    deterministicModel: 'gfs_seamless',
+    note: 'NOAA GEFS, 31 Mitglieder. Seamless: bis +240 h 0,25°, danach 0,5° bis ~34 Tage. Deutlich weniger Mitglieder als ECMWF, dafür der einzige Weg über 15 Tage hinaus. Der deterministische Hauptlauf endet bei 16 Tagen (API-Grenze).',
   },
 ]
 
@@ -86,8 +123,9 @@ export interface EnsembleVariableInfo {
 // unberührt bleiben. Alle Einträge live geprüft.
 export const ENSEMBLE_VARIABLES: EnsembleVariableInfo[] = [
   { id: 'temperature_2m', label: 'Temperatur 2 m', unit: '°C', kind: 'instant' },
-  { id: 'precipitation', label: 'Niederschlag (Summe)', unit: 'mm', kind: 'accum', zeroBased: true },
-  { id: 'snowfall', label: 'Schneefall (Summe)', unit: 'cm', kind: 'accum', zeroBased: true },
+  // Label ohne „(Summe)": die Darstellung ist umschaltbar (Summe ↔ 6 h)
+  { id: 'precipitation', label: 'Niederschlag', unit: 'mm', kind: 'accum', zeroBased: true },
+  { id: 'snowfall', label: 'Schneefall', unit: 'cm', kind: 'accum', zeroBased: true },
   { id: 'wind_speed_10m', label: 'Wind 10 m', unit: 'km/h', kind: 'instant', zeroBased: true },
   { id: 'wind_gusts_10m', label: 'Böen 10 m', unit: 'km/h', kind: 'instant', zeroBased: true },
   { id: 'cloud_cover', label: 'Bewölkung', unit: '%', kind: 'instant', zeroBased: true },
@@ -98,6 +136,61 @@ export const ENSEMBLE_VARIABLES: EnsembleVariableInfo[] = [
 ]
 
 export const DEFAULT_ENSEMBLE_VARIABLE = 'temperature_2m'
+
+/**
+ * Darstellung von Summengrößen im Ensemble. `sum` = kumuliert ab Rasterbeginn,
+ * `6h` = 6-Stunden-Mengen je Mitglied (Wetterzentrale-Manier) — die zeigt, WANN
+ * der Niederschlag fällt, was die Summenkurve nicht hergibt.
+ */
+export type EnsembleAccumView = 'sum' | '6h'
+
+/** Intervalllänge der 6-h-Ansicht in Stunden. */
+export const ENSEMBLE_BUCKET_HOURS = 6
+
+export interface EnsembleVariableOption {
+  /** Zusammengesetzter Wert `id` bzw. `id:view` — nur fürs <select>. */
+  value: string
+  label: string
+  variable: string
+  view: EnsembleAccumView
+}
+
+/** Wert eines Dropdown-Eintrags zerlegen; ohne Ansichtsteil gilt 'sum'. */
+export function parseEnsembleVariableValue(value: string): {
+  variable: string
+  view: EnsembleAccumView
+} {
+  const [variable, view] = value.split(':')
+  return { variable, view: view === '6h' ? '6h' : 'sum' }
+}
+
+/**
+ * Dropdown-Einträge des Ensembles. Summengrößen stehen zweimal drin — als
+ * kumulierte Summe und als 6-h-Mengen je Mitglied. Die Ansicht ist Teil der
+ * Auswahl, nicht ein separater Umschalter daneben.
+ */
+export function ensembleVariableOptions(): EnsembleVariableOption[] {
+  const out: EnsembleVariableOption[] = []
+  for (const v of ENSEMBLE_VARIABLES) {
+    if (v.kind !== 'accum') {
+      out.push({ value: v.id, label: `${v.label} (${v.unit})`, variable: v.id, view: 'sum' })
+      continue
+    }
+    out.push({
+      value: `${v.id}:sum`,
+      label: `${v.label} Summe (${v.unit})`,
+      variable: v.id,
+      view: 'sum',
+    })
+    out.push({
+      value: `${v.id}:6h`,
+      label: `${v.label} ${ENSEMBLE_BUCKET_HOURS} h (${v.unit}/${ENSEMBLE_BUCKET_HOURS} h)`,
+      variable: v.id,
+      view: '6h',
+    })
+  }
+  return out
+}
 
 export function getEnsembleVariable(id: string): EnsembleVariableInfo {
   return ENSEMBLE_VARIABLES.find((v) => v.id === id) ?? ENSEMBLE_VARIABLES[0]

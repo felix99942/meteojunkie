@@ -15,13 +15,14 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useDeterministicSeries, useEnsembleSeries } from '../api/queries'
 import {
+  ENSEMBLE_BUCKET_HOURS,
   ENSEMBLE_QUICK_POINTS,
   getEnsembleModel,
   getEnsembleVariable,
 } from '../config/ensemble'
 import { TIME_RANGE } from '../config/time'
-import { accumulateMembers, plumeStats, readoutAt } from '../render/plume'
-import { useWorkbench, type PanelConfig } from '../state/workbench'
+import { accumulateMembers, bucketMembers, plumeStats, readoutAt } from '../render/plume'
+import { cursorRangeEnd, useWorkbench, type PanelConfig } from '../state/workbench'
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
@@ -67,29 +68,54 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const plotRef = useRef<uPlot | null>(null)
   const cursorRef = useRef(cursorTime)
 
-  // Summengrößen (Niederschlag/Schnee) als kumulierte Kurve — Stundenwerte als
-  // 51 Spaghetti sind nicht lesbar, die Summe ist die eigentliche Frage.
+  // Summengrößen (Niederschlag/Schnee): Stundenwerte als 51 Spaghetti sind
+  // unlesbar. Zwei brauchbare Sichten — kumulierte Summe (Gesamtmenge) oder
+  // 6-h-Mengen je Mitglied (zeitlicher Ablauf, Wetterzentrale-Manier).
+  const bucketed = variable.kind === 'accum' && panel.ensembleAccumView === '6h'
+  // In der 6-h-Ansicht ist der Wert eine Menge JE INTERVALL, nicht der Stand
+  // einer Summenkurve — das muss an der Zahl stehen, sonst liest man 6-h-Mengen
+  // als Gesamtmenge.
+  const unitLabel = bucketed ? `${variable.unit}/${ENSEMBLE_BUCKET_HOURS} h` : variable.unit
   const prepared = useMemo(() => {
     if (!query.data) return null
-    const members =
-      variable.kind === 'accum' ? accumulateMembers(query.data.members) : query.data.members
+
     // Hauptlauf auf die Zeitachse des Ensembles legen (er hat eigene Stützstellen
     // und einen eigenen Horizont) — Index-Matching wäre hier schlicht falsch.
-    let deterministic: (number | null)[] | null = null
+    let rawDet: (number | null)[] | null = null
     if (hres.data) {
       const byTime = new Map<number, number | null>()
       for (let i = 0; i < hres.data.times.length; i++) byTime.set(hres.data.times[i], hres.data.values[i])
-      const raw = query.data.times.map((t) => byTime.get(t) ?? null)
-      deterministic = variable.kind === 'accum' ? accumulateMembers([raw])[0] : raw
+      rawDet = query.data.times.map((t) => byTime.get(t) ?? null)
     }
+
+    let times = query.data.times
+    let members: (number | null)[][]
+    let deterministic: (number | null)[] | null
+
+    if (bucketed) {
+      // Hauptlauf als zusätzliche „Reihe" mitbündeln, damit er GARANTIERT auf
+      // denselben Stützstellen landet wie die Mitglieder
+      const all = rawDet ? [...query.data.members, rawDet] : query.data.members
+      const b = bucketMembers(query.data.times, all, ENSEMBLE_BUCKET_HOURS)
+      times = b.times
+      members = rawDet ? b.members.slice(0, -1) : b.members
+      deterministic = rawDet ? b.members[b.members.length - 1] : null
+    } else if (variable.kind === 'accum') {
+      members = accumulateMembers(query.data.members)
+      deterministic = rawDet ? accumulateMembers([rawDet])[0] : null
+    } else {
+      members = query.data.members
+      deterministic = rawDet
+    }
+
     return {
-      times: query.data.times,
+      times,
       members,
       deterministic,
       unit: query.data.unit,
       stats: plumeStats(members),
     }
-  }, [query.data, hres.data, variable.kind])
+  }, [query.data, hres.data, variable.kind, bucketed])
 
   // Ablesezeile am Zeit-Cursor.
   const readout = useMemo(() => {
@@ -260,7 +286,11 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       // Zeit-Cursor bei jedem Ziehen mitspringen.
       if (downX >= 0 && Math.abs(e.clientX - downX) > 3) return
       const t = u.posToVal(u.cursor.left ?? -1, 'x') * 1000
-      if (Number.isFinite(t) && t >= TIME_RANGE.start && t <= TIME_RANGE.end) setCursorTime(t)
+      // Obergrenze aus dem Store, NICHT TIME_RANGE.end: die Plume reicht bei
+      // GEFS über das 16-Tage-Raster hinaus, und ein Klick dorthin muss den
+      // Cursor genauso setzen können wie einer davor.
+      const end = cursorRangeEnd(useWorkbench.getState())
+      if (Number.isFinite(t) && t >= TIME_RANGE.start && t <= end) setCursorTime(t)
     }
     const onDblClick = () => u.setScale('x', { min: fullMin, max: fullMax })
 
@@ -381,7 +411,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             </span>
             <span style={{ color: HRES_LINE }}>
               Hauptlauf{' '}
-              <strong>{readout.hres != null ? fmtVal(readout.hres) : '—'}</strong> {variable.unit}
+              <strong>{readout.hres != null ? fmtVal(readout.hres) : '—'}</strong> {unitLabel}
             </span>
             <span style={{ color: CONTROL_LINE }}>
               Kontrolllauf{' '}
@@ -393,10 +423,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             <span className="label-muted">
               P10–P90 {fmtVal(readout.r.p10)}…{fmtVal(readout.r.p90)} · Spanne{' '}
               {fmtVal(readout.r.min)}…{fmtVal(readout.r.max)} · Streuung{' '}
-              <strong>{fmtVal(readout.r.spread)}</strong> {variable.unit}
-            </span>
-            <span className="label-muted">
-              {readout.r.count} von {model.members} Member
+              <strong>{fmtVal(readout.r.spread)}</strong> {unitLabel}
             </span>
           </>
         ) : (

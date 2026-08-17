@@ -2,11 +2,9 @@
 // Slider + Play/Pause + Schrittasten. Tastatur: ←/→ = ±1 h,
 // Shift+←/→ = ±6 h, Leertaste = Play/Pause.
 
-import { useEffect, useMemo } from 'react'
-import { getEnsembleModel } from '../config/ensemble'
-import { getModel, modelHorizonEnd } from '../config/models'
+import { useEffect } from 'react'
 import { formatCursorTime, STEP_MS, TIME_RANGE } from '../config/time'
-import { useWorkbench } from '../state/workbench'
+import { activeHorizonEnd, cursorRangeEnd, useWorkbench } from '../state/workbench'
 
 const PLAY_INTERVAL_MS = 400
 
@@ -16,49 +14,34 @@ export function TimeScrubber() {
   const setCursorTime = useWorkbench((s) => s.setCursorTime)
   const stepCursor = useWorkbench((s) => s.stepCursor)
   const setPlaying = useWorkbench((s) => s.setPlaying)
-  const panels = useWorkbench((s) => s.panels)
-  const sharedModels = useWorkbench((s) => s.sharedModels)
-  const sharedMapModel = useWorkbench((s) => s.sharedMapModel)
 
-  // Bereich markieren, ab dem die aktuell gewählten Modelle keine Daten mehr
-  // haben — bei mehreren Modellen zählt der längste Horizont (Registry).
-  // Sync-aktive Panels nutzen die gemeinsame Modellauswahl (effektive Config).
-  const beyondPct = useMemo(() => {
-    let maxHorizon = TIME_RANGE.start
-    let hasModels = false
-    for (const p of panels) {
-      // Ensemble-Panels haben eigene Modelle (andere Registry): ihr Horizont
-      // ist tagesgenau ab Rasterbeginn, weil forecast_days genau so zählt.
-      if (p.mode === 'ensemble') {
-        hasModels = true
-        const days = getEnsembleModel(p.ensembleModel).forecastDays
-        maxHorizon = Math.max(maxHorizon, TIME_RANGE.start + (days * 24 - 1) * STEP_MS)
-        continue
-      }
-      const ids =
-        p.mode === 'map'
-          ? [p.sync ? sharedMapModel : p.mapModel]
-          : p.mode === 'meteogram'
-            ? p.sync
-              ? sharedModels
-              : p.models
-            : []
-      for (const id of ids) {
-        hasModels = true
-        maxHorizon = Math.max(maxHorizon, modelHorizonEnd(getModel(id)))
-      }
-    }
-    if (!hasModels) return 0
-    const span = TIME_RANGE.end - TIME_RANGE.start
-    return Math.min(100, Math.max(0, ((TIME_RANGE.end - maxHorizon) / span) * 100))
-  }, [panels, sharedModels, sharedMapModel])
+  // Reglerende folgt dem längsten AKTIVEN Modell: Ensembles reichen weiter als
+  // das deterministische 16-Tage-Raster (GEFS ~34 Tage). Beide Werte kommen aus
+  // derselben Quelle wie der Clamp im Store — sonst zeigt der Regler ein Ende,
+  // das der Cursor gar nicht annehmen kann.
+  const rangeEnd = useWorkbench(cursorRangeEnd)
+  const maxHorizon = useWorkbench(activeHorizonEnd)
+
+  // Bereich markieren, ab dem die aktiven Modelle keine Daten mehr haben.
+  const span = rangeEnd - TIME_RANGE.start
+  const beyondPct =
+    maxHorizon === null || span <= 0
+      ? 0
+      : Math.min(100, Math.max(0, ((rangeEnd - maxHorizon) / span) * 100))
+
+  // Schrumpft der Horizont (langes Ensemble abgewählt), darf der Cursor nicht
+  // hinter dem Regler stehen bleiben — sonst zeigt der Griff am Anschlag eine
+  // andere Zeit an als die Beschriftung.
+  useEffect(() => {
+    if (cursorTime > rangeEnd) setCursorTime(rangeEnd)
+  }, [cursorTime, rangeEnd, setCursorTime])
 
   // Play: Zeitschritte durchsteppen, am Ende wieder von vorn
   useEffect(() => {
     if (!playing) return
     const id = setInterval(() => {
       const s = useWorkbench.getState()
-      if (s.cursorTime >= TIME_RANGE.end) s.setCursorTime(TIME_RANGE.start)
+      if (s.cursorTime >= cursorRangeEnd(s)) s.setCursorTime(TIME_RANGE.start)
       else s.stepCursor(1)
     }, PLAY_INTERVAL_MS)
     return () => clearInterval(id)
@@ -115,7 +98,7 @@ export function TimeScrubber() {
           type="range"
           className="scrubber-slider"
           min={TIME_RANGE.start}
-          max={TIME_RANGE.end}
+          max={rangeEnd}
           step={STEP_MS}
           value={cursorTime}
           onChange={(e) => setCursorTime(Number(e.target.value))}

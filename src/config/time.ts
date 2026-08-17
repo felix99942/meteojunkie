@@ -49,8 +49,15 @@ export function floorToStep(t: number): number {
   return Math.floor(t / STEP_MS) * STEP_MS
 }
 
-export function clampToRange(t: number): number {
-  return Math.min(TIME_RANGE.end, Math.max(TIME_RANGE.start, t))
+/**
+ * Auf das Raster begrenzen. `end` ist überschreibbar, weil der Zeit-Cursor
+ * WEITER reichen darf als das deterministische Raster: Ensembles laufen bis zu
+ * 35 Tage, die Forecast-API deckelt bei 16. Der Cursor folgt dem längsten
+ * aktiven Modell (`cursorRangeEnd` in state/workbench.ts), alles andere —
+ * Gitterindizes, Meteogramm-Achse, Requests — bleibt beim 16-Tage-Raster.
+ */
+export function clampToRange(t: number, end: number = TIME_RANGE.end): number {
+  return Math.min(end, Math.max(TIME_RANGE.start, t))
 }
 
 /** Index eines Zeitpunkts im Raster (geclampt). */

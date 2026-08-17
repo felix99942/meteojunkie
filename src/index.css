@@ -50,6 +50,9 @@ body {
 
 /* --- Formularelemente ---------------------------------------------------- */
 
+/* Bedienelemente eine Spur größer als die Grundschrift (12px): das UI ist
+   informationsdicht, aber Dropdowns und Knöpfe werden angeklickt und gelesen —
+   sie dürfen nicht auf Beschriftungsgröße schrumpfen. */
 select,
 input[type='text'],
 button {
@@ -58,7 +61,9 @@ button {
   border: 1px solid var(--border);
   border-radius: 3px;
   font: inherit;
-  padding: 2px 6px;
+  font-size: 13.5px;
+  line-height: 1.3;
+  padding: 4px 8px;
 }
 
 button {
@@ -114,6 +119,45 @@ button:focus-visible {
   gap: 6px;
 }
 
+/* --- Layout-Umschalter ---------------------------------------------------- */
+
+.layout-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Segmentierte Gruppe: die drei Layouts sind eine Auswahl, keine drei Aktionen */
+.layout-buttons {
+  display: flex;
+}
+
+.layout-buttons button {
+  min-width: 26px;
+  padding: 4px 8px;
+  border-radius: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.layout-buttons button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.layout-buttons button:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+/* Rechter Rand des Vorgängers wandert unter den linken des Nachfolgers */
+.layout-buttons button + button {
+  margin-left: -1px;
+}
+
+.layout-buttons button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  z-index: 1; /* sonst überdeckt der Nachbar den Akzentrand an der Nahtstelle */
+}
+
 .api-usage {
   margin-left: auto;
   color: var(--ink-muted);
@@ -123,8 +167,8 @@ button:focus-visible {
 }
 
 .api-usage-reset {
-  padding: 0 5px;
-  font-size: 11px;
+  padding: 2px 7px;
+  font-size: 13px;
   color: var(--ink-muted);
 }
 
@@ -141,8 +185,8 @@ button:focus-visible {
 }
 
 .preset-bar button {
-  min-width: 24px;
-  padding: 2px 4px;
+  min-width: 28px;
+  padding: 4px 6px;
 }
 
 .preset-dirty {
@@ -161,7 +205,8 @@ button:focus-visible {
   background: var(--bg-control);
   border: 1px solid var(--border);
   border-radius: 3px;
-  padding: 2px 7px;
+  font-size: 13.5px;
+  padding: 4px 9px;
   color: var(--ink-secondary);
   user-select: none;
 }
@@ -267,13 +312,34 @@ button:focus-visible {
 
 /* --- Panel-Grid ---------------------------------------------------------- */
 
+/* Rasterform folgt dem Layout (6/4/2/1). Die Panelzahl steckt in der Klasse,
+   nicht in auto-fit — sonst würde ein Panel im 1er-Layout auf Drittelbreite
+   stehen bleiben. */
 .panel-grid {
   flex: 1;
   min-height: 0;
   display: grid;
+  gap: 6px;
+}
+
+.panel-grid.layout-6 {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 6px;
+}
+
+.panel-grid.layout-4 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
+
+.panel-grid.layout-2 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: 1fr;
+}
+
+.panel-grid.layout-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 
 .panel {
@@ -290,14 +356,23 @@ button:focus-visible {
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 4px;
+  gap: 5px;
+  padding: 4px 5px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
+/* min-width: 0 ist Pflicht — Flex-Elemente schrumpfen sonst nicht unter ihre
+   Inhaltsbreite und sprengen im 6er-Layout den Panel-Kopf, statt sich zu kürzen */
 .panel-header select {
   max-width: 160px;
+  min-width: 0;
+}
+
+/* Parameter dürfen breiter: Summengrößen tragen die Ansicht im Namen
+   („Niederschlag Summe (mm)"), abgeschnitten wäre das nicht unterscheidbar */
+.panel-header select.panel-variable {
+  max-width: 210px;
 }
 
 .panel-body {
@@ -326,7 +401,8 @@ button:focus-visible {
   background: var(--bg-control);
   border: 1px solid var(--border);
   border-radius: 3px;
-  padding: 2px 6px;
+  font-size: 13.5px;
+  padding: 4px 8px;
   color: var(--ink-secondary);
   white-space: nowrap;
   user-select: none;
@@ -346,7 +422,8 @@ button:focus-visible {
   left: 0;
   z-index: 30;
   margin-top: 2px;
-  min-width: 250px;
+  font-size: 13.5px;
+  min-width: 270px;
   max-height: 320px;
   overflow-y: auto;
   background: var(--bg-control);
@@ -388,7 +465,8 @@ button:focus-visible {
 /* --- Sync-Toggle ---------------------------------------------------------- */
 
 .sync-toggle {
-  font-size: 10px;
+  font-size: 11.5px;
+  padding: 4px 7px;
   letter-spacing: 0.05em;
   color: var(--ink-muted);
   white-space: nowrap;
@@ -564,17 +642,27 @@ button:focus-visible {
   padding: 0 12px;
 }
 
+/* Ablesezeile des Ensembles — gleiche Logik wie die Meteogramm-Legende:
+   die Zahlen sind der Zweck, nicht Beiwerk. */
 .ens-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  align-items: baseline;
+  gap: 4px 12px;
   flex: 0 0 auto;
-  font-size: 11px;
+  padding: 2px 2px 1px;
+  font-size: 13.5px;
+  line-height: 1.25;
   color: var(--ink-secondary);
+}
+
+.ens-foot strong {
+  font-variant-numeric: tabular-nums;
 }
 
 .ens-readcap {
   color: var(--ink);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -718,24 +806,30 @@ button:focus-visible {
   color: var(--ink);
 }
 
+/* Ablesezeile unter dem Chart — das ist die Stelle, an der die Zahlen wirklich
+   gelesen werden. Deshalb größer als die übrige Panel-Chrome. */
 .meteogram-legend {
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 12px;
-  padding: 2px 8px 4px;
+  gap: 3px 14px;
+  padding: 4px 8px 6px;
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .legend-item {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .legend-chip {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 2px;
+  align-self: center;
+  flex: 0 0 auto;
 }
 
 .legend-label {
@@ -744,13 +838,15 @@ button:focus-visible {
 
 .legend-value {
   color: var(--ink);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-/* Neuester verfügbarer Lauf pro Modell (Meteogramm-Legende) */
+/* Neuester verfügbarer Lauf pro Modell (Meteogramm-Legende) — Nebeninfo,
+   bleibt deshalb deutlich kleiner als der Messwert daneben */
 .legend-run {
   color: var(--ink-muted);
-  font-size: 9px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
@@ -929,12 +1025,16 @@ button:focus-visible {
 
 /* --- Zeit-Scrubber --------------------------------------------------------- */
 
+/* Der Scrubber ist das meistbenutzte Bedienelement — bewusst großzügiger als
+   der Rest der Leiste, damit man ihn ohne Zielen trifft. Bahnhöhe (--track-h)
+   ist eine Variable, weil Schraffur und Daumen exakt darauf sitzen müssen. */
 .time-scrubber {
+  --track-h: 12px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 12px;
+  padding: 9px 12px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -942,11 +1042,14 @@ button:focus-visible {
 
 .scrubber-controls {
   display: flex;
-  gap: 3px;
+  gap: 4px;
 }
 
 .scrubber-controls button {
-  min-width: 28px;
+  min-width: 36px;
+  padding: 5px 8px;
+  font-size: 14px;
+  line-height: 1.1;
 }
 
 .play-button {
@@ -960,10 +1063,55 @@ button:focus-visible {
   align-items: center;
 }
 
+/* Eigene Bahn/Daumen statt accent-color: nur so lässt sich die Höhe steuern,
+   und die Schraffur muss deckungsgleich auf der Bahn liegen. */
 .scrubber-slider {
   flex: 1;
   width: 100%;
-  accent-color: var(--accent);
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.scrubber-slider::-webkit-slider-runnable-track {
+  height: var(--track-h);
+  border-radius: calc(var(--track-h) / 2);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+}
+
+.scrubber-slider::-moz-range-track {
+  height: var(--track-h);
+  border-radius: calc(var(--track-h) / 2);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+}
+
+.scrubber-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+  /* Daumen mittig auf der Bahn: (Bahnhöhe − Daumenhöhe) / 2, Rand eingerechnet */
+  margin-top: calc((var(--track-h) - 20px) / 2);
+}
+
+.scrubber-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+}
+
+.scrubber-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
 }
 
 /* Bereich jenseits des längsten Modellhorizonts: schraffiert, nicht klickblockierend */
@@ -972,8 +1120,8 @@ button:focus-visible {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  height: 8px;
-  border-radius: 0 4px 4px 0;
+  height: var(--track-h);
+  border-radius: 0 calc(var(--track-h) / 2) calc(var(--track-h) / 2) 0;
   background: repeating-linear-gradient(
     45deg,
     rgba(250, 178, 25, 0.3) 0 4px,
@@ -983,9 +1131,11 @@ button:focus-visible {
 }
 
 .scrubber-time {
+  font-size: 15px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  min-width: 150px;
+  min-width: 190px;
   text-align: right;
 }
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { accumulateMembers, percentileOf, plumeStats, readoutAt } from './plume'
+import {
+  accumulateMembers,
+  accumulateSeries,
+  bucketMembers,
+  percentileOf,
+  plumeStats,
+  readoutAt,
+} from './plume'
 
 describe('percentileOf', () => {
   it('trifft die Ränder', () => {
@@ -94,5 +101,59 @@ describe('readoutAt', () => {
     const s = plumeStats([[1, 2]])
     expect(readoutAt(s, -1)).toBeNull()
     expect(readoutAt(s, 5)).toBeNull()
+  })
+})
+
+describe('accumulateSeries', () => {
+  it('summiert auf und behandelt Lücken mitten drin als 0', () => {
+    expect(accumulateSeries([1, null, 2, 3])).toEqual([1, 1, 3, 6])
+  })
+
+  it('lässt den Schwanz nach dem letzten bekannten Wert null', () => {
+    // dort endet der Modellhorizont — eine waagrecht weiterlaufende Summe
+    // würde „ab hier trocken" behaupten, wo es keine Vorhersage mehr gibt
+    expect(accumulateSeries([1, 2, null, null])).toEqual([1, 3, null, null])
+  })
+
+  it('gibt bei durchweg null nur null zurück', () => {
+    expect(accumulateSeries([null, null])).toEqual([null, null])
+  })
+})
+
+describe('bucketMembers', () => {
+  const H = 3_600_000
+  // Raster ab einem UTC-Mitternachtszeitpunkt, 13 Stunden
+  const t0 = Date.UTC(2026, 0, 2)
+  const times = Array.from({ length: 13 }, (_, i) => t0 + i * H)
+
+  it('summiert je Mitglied die vorangegangenen 6 Stunden', () => {
+    const m = [Array.from({ length: 13 }, () => 1)]
+    const b = bucketMembers(times, m, 6)
+    // Stützstellen sind 06 und 12 UTC — 00 UTC fehlt, weil das Fenster davor läge
+    expect(b.times).toEqual([t0 + 6 * H, t0 + 12 * H])
+    expect(b.members[0]).toEqual([6, 6])
+  })
+
+  it('richtet die Stützstellen an UTC-Vielfachen aus, nicht am Datenbeginn', () => {
+    // Raster beginnt um 02 UTC → erste mögliche 6-h-Grenze ist 12 UTC
+    const shifted = Array.from({ length: 13 }, (_, i) => t0 + (2 + i) * H)
+    const b = bucketMembers(shifted, [Array.from({ length: 13 }, () => 2)], 6)
+    expect(b.times).toEqual([t0 + 12 * H])
+    expect(b.members[0]).toEqual([12])
+  })
+
+  it('lässt unvollständige Fenster leer statt eine Teilsumme zu zeigen', () => {
+    const m = [[1, 1, 1, 1, 1, 1, 1, null, 1, 1, 1, 1, 1]]
+    const b = bucketMembers(times, m, 6)
+    expect(b.members[0]).toEqual([6, null]) // 06 UTC vollständig, 12 UTC nicht
+  })
+
+  it('bündelt alle Reihen auf identische Stützstellen', () => {
+    const m = [Array.from({ length: 13 }, () => 1), Array.from({ length: 13 }, () => 3)]
+    const b = bucketMembers(times, m, 6)
+    expect(b.members).toEqual([
+      [6, 6],
+      [18, 18],
+    ])
   })
 })

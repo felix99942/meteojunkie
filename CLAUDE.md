@@ -38,7 +38,7 @@ npm run preview   # gebautes dist/ servieren
   `colors.ts` (Serienfarben), `colorscales.ts` (Karten-Farbskalen mit festen
   Wertebereichen), `time.ts` (gemeinsames Zeitraster).
 - `src/state/workbench.ts` — Zustand-Store: globaler Zeit-Cursor, Domain,
-  Location-Lock, Panel-Konfigurationen.
+  Location-Lock, Panel-Konfigurationen, **Layout** (SPEC §9).
 - `src/api/openmeteo.ts` — Fetch-Layer: Request-Batching für Punktserien
   (Meteogramme, Anfragen desselben Ticks → ein HTTP-Request pro Punkt, weiter
   DIREKT an Open-Meteo — billige Punktabfragen). **Kartengitter laufen dagegen
@@ -137,8 +137,16 @@ npm run preview   # gebautes dist/ servieren
 - **Ensemble-Modus** (`EnsemblePanel`, `config/ensemble.ts`, Kern `render/plume.ts`,
   Parsing `api/ensembleParse.ts`) — vierter Panel-Modus, **punktbasiert**.
   Eigener Endpunkt (`ensemble-api.open-meteo.com`), aber derselbe `apiGet`-Pfad
-  (mock-fähig, im Verbrauchszähler sichtbar). Nur ECMWF: `ecmwf_ifs025` und
-  `ecmwf_aifs025`, je 51 Mitglieder, 15 Tage. Die suffixlose Reihe der Antwort
+  (mock-fähig, im Verbrauchszähler sichtbar). Modelle: `ecmwf_ifs025` und
+  `ecmwf_aifs025` (je 51 Member, 15 Tage) plus `gfs_seamless` (NOAA GEFS,
+  31 Member, ~34 Tage — der einzige Weg über 15 Tage hinaus; bis +240 h 0,25°,
+  danach 0,5°, deshalb genau EIN GEFS-Eintrag statt gfs025/gfs05 daneben).
+  **Eine KI-Version des GFS gibt es nicht** — `gfs_graphcast025` liefert auf
+  beiden APIs durchgehend null, die übrigen Namen sind ungültige IDs; nicht
+  erneut aus der Doku übernehmen. **`deterministicDays` ist getrennt von
+  `forecastDays`**: die Forecast-API deckelt bei 16 Tagen, mit dem
+  Ensemble-Horizont (GEFS 35) scheitert der Hauptlauf-Abruf komplett.
+  Die suffixlose Reihe der Antwort
   ist der **Kontrolllauf**, NICHT der Hauptlauf — der kommt als eigener
   deterministischer Abruf dazu (1 Call). Eigene Modell- UND Variablenregistry
   (u.a. 850 hPa / 500 hPa), eigene Zeitachse über den vollen Horizont, Zoom per
@@ -148,7 +156,8 @@ npm run preview   # gebautes dist/ servieren
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
   dort befüllen (`builtin: true` = nicht löschbar), `schemaVersion` für
-  Migrationen. Zeiten werden bewusst NICHT gespeichert. Beim Laden wird
+  Migrationen. Zeiten werden bewusst NICHT gespeichert; das Layout schon
+  (`layout`, optionales Feld — ältere Presets laden als 6er). Beim Laden wird
   panel-weise validiert: Fehlendes wird nie still ersetzt, sondern als
   `presetWarning` im Panel angezeigt; ein ungültiges Panel bricht das Laden
   nicht ab. UI: `PresetBar` in der TopBar (Speichern mit Standort-Haken,
@@ -202,6 +211,50 @@ npm run preview   # gebautes dist/ servieren
   Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
   der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
   über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
+- **Vier Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
+  Meteogramm · Ensemble · Vertikalprofil · Österreich-Klima. Ensemble und Profil
+  waren früher Panel-MODI und sind jetzt eigene Bereiche — `PanelMode` kennt nur
+  noch `'meteogram' | 'map'`. Die drei Panel-Bereiche teilen sich DIESELBEN sechs
+  `PanelConfig`s: die Felder für Meteogramm (`models`/`variable`), Ensemble
+  (`ensembleModel`/`ensembleVariable`) und Profil (`models`) sind ohnehin
+  getrennt, ein Bereichswechsel verliert also nichts. Was gezeichnet wird,
+  entscheidet `Panel.tsx` am Bereich, nicht mehr am Modus. Ältere Presets mit
+  `mode: 'ensemble'|'profile'` werden NICHT verworfen: `restorePanel` lädt sie
+  als Meteogramm und sagt es im `presetWarning`.
+- **Layout 6/4/2/1 gilt JE BEREICH** (`layouts: Record<PanelSection, PanelLayout>`
+  im Store, Standard `DEFAULT_LAYOUT` = {workbench: 4, ensemble: 2, profile: 2} —
+  vier Ensembles kosten etwas ganz anderes als vier Meteogramme;
+  `LayoutPicker` in der TopBar, Rasterklassen `.panel-grid.layout-N`): reine ANZEIGEFRAGE — es gibt immer
+  sechs Panel-Configs, die reduzierten Layouts blenden aus statt zu löschen.
+  `visiblePanelIndices()` ist die einzige Quelle dafür, welche Panels gerendert
+  werden: immer die ERSTEN N. Bewusst ohne Auswahl, welche Config wohin kommt —
+  das stellt man im Panel selbst ein. Ausgeblendete Panels rendern nicht und
+  **fetchen nichts**, das ist Budget und kein Zufall. Wird die parsync-Quelle
+  ausgeblendet, schaltet parsync ab (`parSyncAfterLayout`), sonst blieben die
+  Parameter-Dropdowns der übrigen Panels für immer gesperrt. Getestet in
+  `state/workbench.test.ts`.
+- **Meteogramm-Default ist EIN Modell** (`DEFAULT_MODELS = ['ecmwf_ifs025']`):
+  IFS als Referenzlauf, weitere kommen per Modellwähler dazu. Nicht wieder auf
+  mehrere vorausgewählte Modelle stellen — das kostet beim Laden Budget für
+  Serien, die niemand angefordert hat.
+- **Summengrößen (Niederschlag/Schneefall) haben umschaltbare Darstellungen.**
+  Meteogramm (`accumView`, `config/variables.ts` → `accum`/`sumUnit`): Rate in
+  mm/h als **Stufen** (`uPlot.paths.stepped({align: -1})` + Füllung — der Wert
+  gilt für die VORANGEGANGENE Stunde) oder kumulierte Summe (`accumulateSeries`).
+  Ensemble (`ensembleAccumView`, `config/ensemble.ts`): kumulierte Summe oder
+  **6-h-Mengen je Mitglied** (`bucketMembers`, Stützstellen auf 00/06/12/18 UTC,
+  unvollständige Fenster → kein Punkt). Beide Felder sind panel-lokal und NICHT
+  an SYNC gekoppelt — zwei Sichten nebeneinander ist ein sinnvoller Vergleich.
+  **Die Ansicht wird über das Parameter-Dropdown gewählt**, nicht über einen
+  Umschalter daneben: `variableOptions()`/`ensembleVariableOptions()` erzeugen je
+  Summengröße zwei Einträge mit zusammengesetztem Wert `id:view`, zerlegt von
+  `parseVariableValue()`/`parseEnsembleVariableValue()`. Auf der Karte werden
+  KEINE Ansichten erzeugt (ein Zeitschritt hat keinen Summenzeitraum).
+  **Wichtig zum Verständnis der Daten:** Open-Meteo verteilt bei 3-stündlichen
+  Modellen (ECMWF IFS/AIFS) die 3-h-Summe GLEICHMÄSSIG AUF DREI STUNDEN (live
+  geprüft gegen `daily=precipitation_sum`). Die drei gleichen Werte sind je ein
+  Drittel — nicht dreimal derselbe Blockwert. Mengen sind deshalb vergleichbar,
+  Spitzenintensitäten nicht.
 - **parsync** (Parameter-Sync) ist davon getrennt und hat **Radio-Semantik**:
   `parSyncSource: number | null` im Store, KEIN Boolean pro Panel. Das
   Quellpanel spiegelt seinen Parameter live per Push in die übrigen Configs
@@ -234,6 +287,13 @@ npm run preview   # gebautes dist/ servieren
   leeren Arrays statt mit einem Fehler. Bereits live verifiziert:
   `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h) und `icon_eu`
   (120 h Horizont — nicht die ~78 h, die teils kursieren).
+- **KI-Modelle sind vollständig durchprobiert** (2026-08-17, 27 IDs gegen beide
+  APIs): es gibt genau ZWEI. `ecmwf_aifs025_single` auf der Forecast-API
+  (Meteogramm/Karte, ohne Böen und CAPE — beide durchgehend null) und
+  `ecmwf_aifs025` auf der Ensemble-API. Die IDs sind NICHT austauschbar: jede
+  liefert auf der jeweils anderen API nur null. `gfs_graphcast025` ist eine
+  gültige ID mit ausschließlich null (tot); Pangu, FuXi, Aurora, GenCast und
+  FourCastNet existieren unter keinem Namen. Nicht erneut aus der Doku ergänzen.
 - **Tarif-Entscheidung** (SPEC §5): Free Tier bleibt. API Standard wäre ein
   Rückschritt — Ensemble-, Historical- und Single-Runs-API fehlen dort, Phase 3
   braucht genau diese. Falls je Upgrade, dann Professional.
@@ -249,7 +309,15 @@ npm run preview   # gebautes dist/ servieren
   (best_match 384 h, ECMWF 360 h — die alten 168/240 waren deutlich zu klein),
   ebenso die Laufverzögerungen (UKMO global braucht ~13 h, nicht 7).
   Geprüft wird gegen die gültige Panel-Zeit (global bei Sync an, lokal bei
-  Sync aus). Jenseits davon: keine Extrapolation — Karte zeigt Meldung statt
+  Sync aus). **Der Zeit-Cursor reicht so weit wie das längste AKTIVE Modell**
+  (`activeHorizonEnd`/`cursorRangeEnd` in `state/workbench.ts`, nur sichtbare
+  Panels): Ensembles laufen über das deterministische 16-Tage-Raster hinaus
+  (GEFS ~34 Tage), die Forecast-API deckelt aber bei 16 — deshalb ist
+  `TIME_RANGE.end` NICHT die Cursor-Obergrenze. Store-Clamp, Scrubber-Regler,
+  Play-Schleife und der Zeitklick in der Plume müssen alle dieselbe Quelle
+  benutzen, sonst zeigt der Regler ein Ende, das der Cursor nicht annehmen
+  kann. Nach unten bleibt es immer bei mindestens `TIME_RANGE.end` — kürzere
+  Modelle werden schraffiert, nicht abgeschnitten. Jenseits davon: keine Extrapolation — Karte zeigt Meldung statt
   Feld, Meteogramm-Serien enden (Maskierung + Endlinien im Chart, Legende „—"),
   Scrubber schraffiert den Bereich hinter dem längsten aktiven Horizont.
 - **UI-Sprache ist Deutsch**, Code/Bezeichner Englisch. Dunkles Theme,

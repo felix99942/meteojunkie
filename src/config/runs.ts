@@ -28,6 +28,9 @@ const AVAILABILITY_LAG_H: Record<string, number> = {
   icon_eu: 4,
   icon_global: 5,
   ecmwf_ifs025: 7,
+  // AIFS teilt Takt und Bereitstellung mit dem IFS (gleicher Betreiber,
+  // gleiche 0,25°-Ausgabe) — bis die Laufauswahl kommt, derselbe Wert.
+  ecmwf_aifs025_single: 7,
   gfs_seamless: 4,
   gfs_global: 4,
   meteofrance_arpege_europe: 4,

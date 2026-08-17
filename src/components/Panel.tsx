@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { isPanelSection, useAppView } from '../state/appView'
 import { useEffectivePanel, useWorkbench } from '../state/workbench'
 import { PanelHeader } from './PanelHeader'
 import { Meteogram } from './Meteogram'
@@ -17,6 +18,10 @@ const MapPanel =
 export function Panel({ index }: { index: number }) {
   // sync-aktive Panels lesen Modelle/Kartenmodell aus dem gemeinsamen Zustand
   const panel = useEffectivePanel(index)
+  // Was gezeichnet wird, entscheidet der BEREICH — nur im Meteogramm-Bereich
+  // wählt das Panel selbst zwischen Zeitreihe und Karte (siehe appView.ts).
+  const view = useAppView((s) => s.view)
+  const section = isPanelSection(view) ? view : 'workbench'
   const parSyncSource = useWorkbench((s) => s.parSyncSource)
   const updatePanel = useWorkbench((s) => s.updatePanel)
 
@@ -45,8 +50,10 @@ export function Panel({ index }: { index: number }) {
         </div>
       )}
       <div className="panel-body">
-        {panel.mode === 'meteogram' ? (
-          <Meteogram panel={panel} />
+        {section === 'ensemble' ? (
+          <EnsemblePanel panel={panel} />
+        ) : section === 'profile' ? (
+          <SkewTPanel panel={panel} />
         ) : panel.mode === 'map' ? (
           MapPanel ? (
             <Suspense fallback={<div className="panel-placeholder">Lade Karte…</div>}>
@@ -54,16 +61,11 @@ export function Panel({ index }: { index: number }) {
             </Suspense>
           ) : (
             <div className="panel-placeholder">
-              Kartenansicht ist in dieser Version noch deaktiviert — Meteogramm oder
-              Vertikalprofil wählen
+              Kartenansicht ist in dieser Version noch deaktiviert — Meteogramm wählen
             </div>
           )
-        ) : panel.mode === 'profile' ? (
-          <SkewTPanel panel={panel} />
-        ) : panel.mode === 'ensemble' ? (
-          <EnsemblePanel panel={panel} />
         ) : (
-          <div className="panel-placeholder">Kommt in Phase 3</div>
+          <Meteogram panel={panel} />
         )}
       </div>
     </section>

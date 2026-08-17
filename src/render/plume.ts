@@ -69,13 +69,79 @@ export function plumeStats(members: (number | null)[][]): PlumeStats {
  * Variante ist.
  */
 export function accumulateMembers(members: (number | null)[][]): (number | null)[][] {
-  return members.map((m) => {
-    let sum = 0
-    return m.map((v) => {
-      if (v != null && Number.isFinite(v)) sum += v
-      return sum
-    })
+  return members.map((m) => accumulateSeries(m))
+}
+
+/**
+ * Eine Reihe zur Summenkurve aufaddieren. Lücken MITTEN in der Reihe zählen
+ * als 0 (die Kurve bleibt monoton — alles andere ist als Summe unlesbar),
+ * aber echte `null` am Ende bleiben `null`: dort endet der Modellhorizont, und
+ * eine waagrecht weiterlaufende Summenkurve würde „ab hier kein Niederschlag"
+ * behaupten, wo in Wahrheit keine Vorhersage mehr existiert.
+ */
+export function accumulateSeries(values: (number | null)[]): (number | null)[] {
+  let lastKnown = -1
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i] != null) {
+      lastKnown = i
+      break
+    }
+  }
+  let sum = 0
+  return values.map((v, i) => {
+    if (i > lastKnown) return null
+    if (v != null && Number.isFinite(v)) sum += v
+    return sum
   })
+}
+
+export interface BucketedMembers {
+  times: number[]
+  members: (number | null)[][]
+}
+
+/**
+ * Stundenwerte zu FESTEN Intervallsummen bündeln (Wetterzentrale-Manier):
+ * jeder Punkt gibt die Menge der vorangegangenen `hours` Stunden an. Das ist
+ * die klassische 6-h-Niederschlagsdarstellung — sie zeigt anders als die
+ * Summenkurve, WANN es fällt, und anders als Stundenwerte bleibt sie bei 51
+ * Mitgliedern lesbar.
+ *
+ * Die Stützstellen liegen auf UTC-Vielfachen der Intervalllänge (00/06/12/18
+ * bei 6 h), nicht auf dem Datenbeginn — sonst hinge das Raster daran, wann die
+ * Session geladen wurde, und zwei Panels wären nicht vergleichbar.
+ *
+ * Ein unvollständiges Fenster (Lücke, Modellhorizont mittendrin, Fenster ragt
+ * vor den Datenbeginn) ergibt KEINEN Punkt. Eine Teilsumme sähe aus wie wenig
+ * Niederschlag, statt wie fehlende Vorhersage.
+ */
+export function bucketMembers(
+  times: number[],
+  members: (number | null)[][],
+  hours: number,
+): BucketedMembers {
+  const windowMs = hours * 3_600_000
+  const idx: number[] = []
+  for (let i = hours; i < times.length; i++) {
+    if (times[i] % windowMs !== 0) continue
+    // lückenloses Stundenraster über das ganze Fenster verlangen
+    if (times[i] - times[i - hours] !== windowMs) continue
+    idx.push(i)
+  }
+  return {
+    times: idx.map((i) => times[i]),
+    members: members.map((m) =>
+      idx.map((i) => {
+        let sum = 0
+        for (let k = i - hours + 1; k <= i; k++) {
+          const v = m[k]
+          if (v == null || !Number.isFinite(v)) return null
+          sum += v
+        }
+        return sum
+      }),
+    ),
+  }
 }
 
 /** Kennzahlen an EINEM Zeitschritt — für die Ablesezeile am Cursor. */

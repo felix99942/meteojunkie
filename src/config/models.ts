@@ -122,6 +122,35 @@ export const MODELS: ModelInfo[] = [
     availableVariables: [...BASE_VARS, 'cape'],
   },
   {
+    // ECMWFs KI-Modell als deterministischer Einzellauf — das Gegenstück zum
+    // IFS im direkten Vergleich, und das EINZIGE KI-Modell, das die Forecast-API
+    // wirklich liefert (siehe Prüfprotokoll in config/ensemble.ts: GraphCast ist
+    // eine gültige ID mit ausschließlich null, Pangu/FuXi/Aurora/GenCast/
+    // FourCastNet existieren gar nicht). Als Ensemble läuft dasselbe Modell
+    // unter `ecmwf_aifs025` — auf der Forecast-API ist DIESE ID durchgehend
+    // null, die beiden sind nicht austauschbar.
+    id: 'ecmwf_aifs025_single',
+    label: 'ECMWF AIFS 0.25° (KI)',
+    provider: 'ECMWF',
+    resolutionKm: 25,
+    updateIntervalHours: 6,
+    // Wie beim IFS angesetzt: live gemessen (2026-08-17, 19:15 UTC) reichte
+    // AIFS 15 h WEITER als ecmwf_ifs025 im selben Moment (+365 h vs. +350 h ab
+    // Rasterbeginn), also sicher nicht kürzer. Die Init-Zeit ist über die freie
+    // API nicht beobachtbar; beide Werte gemeinsam nachschärfen, wenn die
+    // Laufauswahl über die Single-Runs-API kommt (SPEC §13).
+    forecastHours: 360,
+    coverage: 'global',
+    supportsBoundingBox: true, // live geprüft
+    // Live geprüft: Böen und CAPE liefert AIFS durchgehend null — NICHT aus der
+    // Doku ergänzen. Strahlung endet 2 h, Niederschlag/Schnee 5 h vor den
+    // übrigen Größen; das fängt die normale Horizontbehandlung ab.
+    availableVariables: [
+      ...BASE_VARS.filter((v) => v !== 'wind_gusts_10m'),
+      'shortwave_radiation',
+    ],
+  },
+  {
     id: 'gfs_seamless',
     label: 'GFS Seamless',
     provider: 'NOAA',

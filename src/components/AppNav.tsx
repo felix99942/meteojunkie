@@ -1,13 +1,28 @@
-// Oberste Bereichs-Navigation: Umschalter zwischen Meteogramm-Workbench und
-// Österreich-Klimakarte (siehe state/appView.ts). Der View-Key bleibt
-// 'workbench' (State/Presets hängen daran), nur die Beschriftung sagt
-// „Meteogramm" — darunter fallen Meteogramm, Karte, Profil und Ensemble.
+// Oberste Bereichs-Navigation (siehe state/appView.ts). Ensemble und
+// Vertikalprofil sind eigene Bereiche statt Panel-Modi — sie beantworten andere
+// Fragen als der Modellvergleich und waren im Modus-Dropdown zu gut versteckt.
+// Alle drei Panel-Bereiche teilen sich dieselben sechs Panel-Configs, es geht
+// beim Wechseln also nichts verloren.
 
 import { useAppView, type AppView } from '../state/appView'
 
-const TABS: { id: AppView; label: string }[] = [
-  { id: 'workbench', label: 'Meteogramm' },
-  { id: 'at-klima', label: 'Österreich-Klima' },
+const TABS: { id: AppView; label: string; title: string }[] = [
+  {
+    id: 'workbench',
+    label: 'Meteogramm',
+    title: 'Modellvergleich als Zeitreihe und Karte',
+  },
+  {
+    id: 'ensemble',
+    label: 'Ensemble',
+    title: 'Plume-Diagramme am Punkt — Streuung der Mitglieder',
+  },
+  {
+    id: 'profile',
+    label: 'Vertikalprofil',
+    title: 'Skew-T am Punkt — Schichtung der Atmosphäre',
+  },
+  { id: 'at-klima', label: 'Österreich-Klima', title: 'Klimakarte und MOS-Vorhersage' },
 ]
 
 export function AppNav() {
@@ -20,6 +35,8 @@ export function AppNav() {
           key={t.id}
           type="button"
           className={`appnav-tab${view === t.id ? ' is-active' : ''}`}
+          title={t.title}
+          aria-pressed={view === t.id}
           onClick={() => setView(t.id)}
         >
           {t.label}

@@ -2,9 +2,22 @@ import { useEffect, useRef } from 'react'
 import { getModel, isDomainInCoverage, isInCoverage, MODELS } from '../config/models'
 import { MAP_ENABLED } from '../config/features'
 import { getColorScale } from '../config/colorscales'
-import { getVariable, HOURLY_VARIABLES, type VariableInfo } from '../config/variables'
+import {
+  getVariable,
+  HOURLY_VARIABLES,
+  parseVariableValue,
+  variableOptions,
+  type VariableInfo,
+} from '../config/variables'
 import { MAX_MODELS_PER_PANEL, SERIES_COLORS } from '../config/colors'
-import { ENSEMBLE_MODELS, ENSEMBLE_VARIABLES, getEnsembleModel } from '../config/ensemble'
+import {
+  ENSEMBLE_MODELS,
+  ensembleVariableOptions,
+  getEnsembleModel,
+  getEnsembleVariable,
+  parseEnsembleVariableValue,
+} from '../config/ensemble'
+import { isPanelSection, useAppView } from '../state/appView'
 import { useWorkbench, type PanelConfig, type PanelMode } from '../state/workbench'
 
 // `panel` ist die EFFEKTIVE Config (bei aktivem Sync die gemeinsamen Werte).
@@ -46,13 +59,17 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
     }
   }, [])
 
-  const isMap = panel.mode === 'map'
-  // Profile haben keine Einzelvariable (alle Drucklevel-Größen zugleich) —
-  // Parameter-Dropdown und parsync entfallen; Modellauswahl bleibt.
-  const isProfile = panel.mode === 'profile'
-  // Ensemble hat eigene Modell-/Parameterwahl (eigene API-Registry) und kein
-  // parsync — der gespiegelte Parameter existiert dort oft gar nicht.
-  const isEnsemble = panel.mode === 'ensemble'
+  // Der BEREICH bestimmt, was der Kopf anbietet (siehe appView.ts):
+  //   ensemble → eigene Modell-/Parameterwahl (eigene API-Registry), kein
+  //     parsync — der gespiegelte Parameter existiert dort oft gar nicht
+  //   profile  → keine Einzelvariable (alle Drucklevel-Größen zugleich),
+  //     deshalb weder Parameter-Dropdown noch parsync; Modellauswahl bleibt
+  //   workbench → Modus-Dropdown Meteogramm ↔ Karte plus alles Übrige
+  const view = useAppView((s) => s.view)
+  const section = isPanelSection(view) ? view : 'workbench'
+  const isEnsemble = section === 'ensemble'
+  const isProfile = section === 'profile'
+  const isMap = section === 'workbench' && panel.mode === 'map'
 
   // Radio-Semantik: Button-Zustand ausschließlich aus parSyncSource ableiten —
   // Quelle (bedienbar) / deaktiviert (andere Quelle aktiv) / normal
@@ -80,23 +97,32 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
   if (!variables.some((v) => v.id === panel.variable)) {
     variables = [getVariable(panel.variable), ...variables]
   }
+  // Summengrößen erscheinen im Meteogramm als ZWEI Einträge (Rate/Summe); auf
+  // der Karte nicht — dort steht ein Zeitschritt, eine Summe hätte keinen
+  // Bezugszeitraum.
+  const options = variableOptions(variables, !isMap)
+  const selectedValue =
+    !isMap && getVariable(panel.variable).accum
+      ? `${panel.variable}:${panel.accumView}`
+      : panel.variable
 
   const atModelLimit = panel.models.length >= MAX_MODELS_PER_PANEL
 
   return (
     <div className="panel-header">
-      <select
-        className="panel-mode"
-        value={panel.mode}
-        onChange={(e) => updatePanel(index, { mode: e.target.value as PanelMode })}
-      >
-        <option value="meteogram">Meteogramm</option>
-        <option value="map" disabled={!MAP_ENABLED}>
-          Karte{MAP_ENABLED ? '' : ' (in dieser Version aus)'}
-        </option>
-        <option value="profile">Vertikalprofil</option>
-        <option value="ensemble">Ensemble</option>
-      </select>
+      {/* Nur im Meteogramm-Bereich: Ensemble und Profil sind eigene Bereiche */}
+      {section === 'workbench' && (
+        <select
+          className="panel-mode"
+          value={panel.mode}
+          onChange={(e) => updatePanel(index, { mode: e.target.value as PanelMode })}
+        >
+          <option value="meteogram">Meteogramm</option>
+          <option value="map" disabled={!MAP_ENABLED}>
+            Karte{MAP_ENABLED ? '' : ' (in dieser Version aus)'}
+          </option>
+        </select>
+      )}
 
       {isEnsemble ? (
         // Ensemble: eigenes Modell UND eigene Variable — die Ensemble-API führt
@@ -115,14 +141,23 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
               </option>
             ))}
           </select>
+          {/* Summengrößen stehen zweimal drin (Summe / 6 h) — die Darstellung
+              ist Teil der Auswahl, nicht ein Umschalter daneben. */}
           <select
             className="panel-variable"
-            value={panel.ensembleVariable}
-            onChange={(e) => updatePanel(index, { ensembleVariable: e.target.value })}
+            value={
+              getEnsembleVariable(panel.ensembleVariable).kind === 'accum'
+                ? `${panel.ensembleVariable}:${panel.ensembleAccumView}`
+                : panel.ensembleVariable
+            }
+            onChange={(e) => {
+              const { variable, view } = parseEnsembleVariableValue(e.target.value)
+              updatePanel(index, { ensembleVariable: variable, ensembleAccumView: view })
+            }}
           >
-            {ENSEMBLE_VARIABLES.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label} ({v.unit})
+            {ensembleVariableOptions().map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
               </option>
             ))}
           </select>
@@ -220,7 +255,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
         <>
           <select
             className="panel-variable"
-            value={panel.variable}
+            value={selectedValue}
             // Folge-Panels: Parameter-Dropdown gesperrt, solange parsync aktiv —
             // Modell, Modus und Zeit-Sync bleiben frei bedienbar
             disabled={parSyncBlocked}
@@ -229,11 +264,18 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
                 ? `Parameter wird von Panel ${(parSyncSource ?? 0) + 1} gespiegelt (parsync)`
                 : undefined
             }
-            onChange={(e) => setPanelVariable(index, e.target.value)}
+            onChange={(e) => {
+              const { variable, view } = parseVariableValue(e.target.value)
+              // Ansicht mitschreiben; setPanelVariable kümmert sich ums
+              // parsync-Spiegeln (gespiegelt wird der Parameter, nicht die
+              // Ansicht — die bleibt panel-lokal)
+              updatePanel(index, { accumView: view })
+              setPanelVariable(index, variable)
+            }}
           >
-            {variables.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label} ({v.unit})
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
               </option>
             ))}
           </select>

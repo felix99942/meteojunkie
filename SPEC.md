@@ -160,6 +160,14 @@ interface ModelInfo {
 }
 ```
 
+**KI-Modelle — abschließend geprüft (2026-08-17, 27 IDs gegen beide APIs).**
+Es gibt genau zwei, beide von ECMWF und nicht austauschbar: `ecmwf_aifs025_single`
+auf der Forecast-API (Meteogramm/Karte; **ohne Böen und CAPE**, die liefert AIFS
+durchgehend null) und `ecmwf_aifs025` auf der Ensemble-API. Jede ID liefert auf
+der jeweils anderen API nur null. `gfs_graphcast025` ist eine gültige ID mit
+ausschließlich null — praktisch tot. Pangu-Weather, FuXi, Aurora, GenCast und
+FourCastNet werden unter keinem Namen angeboten. Nicht aus der Doku nachpflegen.
+
 **Verfügbarkeit wird abgeleitet, nicht gepflegt:** Ein Modell ist für eine Domain
 wählbar, wenn `coverage` die Domain-BBox vollständig enthält. Globale Modelle
 sind immer wählbar. Damit verschwinden Lokalmodelle automatisch aus der
@@ -205,8 +213,43 @@ aktivem Sync, lokal sonst.
 
 ## 9. Panel-Struktur
 
-3×2-Grid. Kopfleiste je Panel: Modus, Modell (Mehrfachauswahl), Parameter,
-Sync-Toggle.
+Kopfleiste je Panel: Modus, Modell (Mehrfachauswahl), Parameter, Sync-Toggle.
+
+### Bereiche statt Panel-Modi
+
+Oberste Navigation: **Meteogramm · Ensemble · Vertikalprofil · Österreich-Klima.**
+Ensemble und Vertikalprofil waren früher Modi im Panel-Dropdown; als eigene
+Bereiche sind sie auffindbar, und der Modus-Dropdown bleibt auf die zwei Fälle
+beschränkt, zwischen denen man wirklich hin und her springt (Meteogramm ↔ Karte).
+
+Die drei Panel-Bereiche teilen sich **dieselben sechs Panel-Configs**. Das geht
+auf, weil `PanelConfig` die Einstellungen ohnehin getrennt führt — Meteogramm
+über `models`/`variable`, Ensemble über `ensembleModel`/`ensembleVariable`,
+Profil über `models`. Ein Bereichswechsel verliert deshalb nichts und kostet
+keinen Request. Zeit-Cursor, Standort und Modellauswahl bleiben durchgehend
+dieselben.
+
+Das Layout (§9 unten) gilt **je Bereich**: vier Ensembles kosten etwas ganz
+anderes als vier Meteogramme. Standard: Meteogramm 4, Ensemble 2, Profil 2.
+
+### Layout: 6er / 4er / 2er / 1er
+
+Umschalter in der TopBar. **Standard beim Laden ist das 4er (2×2)** — der
+Arbeitsalltag; das volle 3×2-Grid, der Zweiervergleich und die Einzelansicht
+sind je einen Klick entfernt. Sichtbar sind immer die **ersten N Panels** — bewusst ohne Auswahl, welche Config wohin kommt:
+Modus, Modell und Parameter stellt man im Panel selbst ein, ein zweiter Weg
+dahin in der TopBar wäre nur eine Bedienstelle mehr.
+
+**Es gibt immer sechs Panel-Configs.** Die reduzierten Layouts blenden aus, sie
+löschen nicht — zurückschalten stellt jede Config unverändert wieder her.
+
+Ausgeblendete Panels werden nicht gerendert und holen deshalb **keine Daten** —
+das 1er-Layout ist zugleich der sparsamste Modus (§1, §5).
+
+**parsync:** Verschwindet die Quelle hinter einem reduzierten Layout, wird
+parsync abgeschaltet (die Werte bleiben stehen, wie beim normalen Abschalten).
+Sonst blieben die Parameter-Dropdowns der übrigen Panels gesperrt — abschalten
+geht laut Radio-Semantik nur über die Quelle.
 
 ### Modus: Karte
 Feld zum aktuellen Zeitschritt als Canvas-Overlay auf MapLibre, eingehängt als
@@ -223,6 +266,23 @@ als Farbwert.
 ### Modus: Meteogramm
 Zeitreihe an einem Punkt, mehrere Modelle überlagert. Kern des Modellvergleichs.
 
+- **Default ist genau ein Modell: ECMWF IFS 0.25°** als Referenzlauf. Weitere
+  Modelle kommen per Modellwähler dazu. Vorausgewählte Vergleiche kosten schon
+  beim Laden Budget für Serien, die man vielleicht gar nicht sehen wollte (§1).
+- **Summengrößen stehen zweimal im Parameter-Dropdown** (Niederschlag,
+  Schneefall — `accum` in der Variablen-Registry): „Niederschlag (mm/h)" und
+  „Niederschlag Summe (mm)". Die Darstellung ist Teil der Auswahl, kein
+  separater Umschalter daneben — man sucht den Parameter ohnehin im Dropdown.
+  Auf der KARTE entfällt die Aufteilung: dort steht ein Zeitschritt, eine
+  kumulierte Summe hätte keinen Bezugszeitraum. In der Rate-Ansicht werden sie als STUFEN gezeichnet (Wert
+  gilt für die vorangegangene Stunde), nicht als interpolierte Linie — sonst
+  wird aus einem 3-h-Block eine schräge Treppe.
+
+  Hintergrund, live geprüft: Open-Meteo liefert für 3-stündliche Modelle
+  (ECMWF IFS/AIFS) die 3-h-Summe **gleichmäßig auf drei Stunden verteilt** —
+  die Tagessumme entspricht der Summe ALLER Stundenwerte, nicht jedes dritten.
+  Mengen sind damit modellübergreifend vergleichbar, **Spitzenintensitäten
+  nicht**: bei 3-h-Modellen ist der Schauer über drei Stunden verschmiert.
 - **Drag-Zoom ist deaktiviert** (`cursor.drag` komplett aus). Panel-lokaler Zoom
   widerspricht dem Sync-Konzept.
 - Klick setzt den Zeitpunkt. Gestrichelte vertikale Linie markiert die
@@ -235,15 +295,45 @@ Druckflächen-Variablen (`temperature_1000hPa`, `geopotential_height_500hPa`,
 `wind_speed_850hPa` …).
 
 ### Modus: Ensemble *(umgesetzt)*
-ECMWF-Ensemble am Punkt: Plume aus 51 Mitgliedern, P10–P90-Band, Median,
+Ensemble am Punkt: Plume über alle Mitglieder, P10–P90-Band, Median,
 Kontrolllauf und — als eigener Abruf — der deterministische Hauptlauf.
-Eigene 15-Tage-Achse, Mausrad-Zoom, Zeit-Cursor als Markerlinie.
+Eigene Zeitachse über den Modellhorizont, Mausrad-Zoom, Zeit-Cursor als
+Markerlinie.
+
+**Modelle (live geprüft):** `ecmwf_ifs025` und `ecmwf_aifs025` (je 51 Mitglieder,
+15 Tage) sowie `gfs_seamless` (NOAA GEFS, 31 Mitglieder, ~34 Tage). GEFS ist der
+einzige Weg über 15 Tage hinaus, mit deutlich kleinerem Ensemble; der seamless-
+Blend ist bis +240 h wertgleich mit `gfs025` (0,25°) und wechselt danach auf
+0,5°, dominiert also beide Einzeldomains.
+
+**Summengrößen: Summe ↔ 6 h.** Stundenwerte als 51 Spaghetti sind unlesbar,
+deshalb zwei Sichten — als zwei Einträge im Parameter-Dropdown, nicht als
+Umschalter daneben. `sum` = kumuliert ab
+Rasterbeginn (Gesamtmenge und Streuung). `6h` = Menge der vorangegangenen sechs
+Stunden **je Mitglied** (Wetterzentrale-Manier) — zeigt den zeitlichen Ablauf,
+den die Summenkurve verbirgt. Die Stützstellen liegen auf 00/06/12/18 UTC, nicht
+auf dem Datenbeginn: sonst hinge das Raster daran, wann die Session geladen
+wurde, und zwei Panels wären nicht vergleichbar. Unvollständige Fenster (Lücke,
+Horizontende, Fenster vor Datenbeginn) ergeben **keinen Punkt** — eine Teilsumme
+sähe aus wie wenig Niederschlag statt wie fehlende Vorhersage. Der Hauptlauf
+wird im selben Aufruf mitgebündelt, damit er garantiert auf denselben
+Stützstellen liegt.
+
+**Zwei Horizonte pro Ensemble.** Die Ensemble-API reicht bei GEFS bis 35 Tage,
+die normale Forecast-API deckelt hart bei 16 („Allowed range 0 to 16"). Der
+deterministische Hauptlauf hat deshalb ein eigenes `deterministicDays`; mit einem
+gemeinsamen Wert scheitert der Hauptlauf-Request komplett. Die kürzere Reihe
+endet dann einfach — keine Extrapolation (§8).
+
+**Keine KI-Version des GFS.** `gfs_graphcast025` wird als ID angenommen, liefert
+aber auf beiden APIs durchgehend null (der HTTP-200-mit-leeren-Arrays-Fall aus
+§6); `gencast025`, `graphcast025`, `gfs_aifs025`, `noaa_gefs_ai` sind keine
+gültigen IDs. KI-Ensemble gibt es nur als ECMWF AIFS.
 
 **Punktbasiert, bewusst ohne Kartenvariante.** Live gemessen: ein Punkt kostet
 ~5 gewichtete Locations (Mitglied ≈ Variable), ein Österreich-Gitter mit 480
 Punkten käme auf ~7.200 Calls = 72 % des Tagesbudgets pro Feld und würde das
-Minutenlimit sofort reißen. Verfügbar sind `ecmwf_ifs025` und `ecmwf_aifs025`
-(je 51 Mitglieder, 15 Tage); `ecmwf_ifs04` liefert nur noch ein Mitglied, die
+Minutenlimit sofort reißen. `ecmwf_ifs04` liefert nur noch ein Mitglied, die
 9-km-Europa-Ensembles der Doku sind über die freie API nicht erreichbar.
 
 ---
@@ -257,11 +347,22 @@ interface WorkbenchState {
   lockedLocation: LatLon | null;
   runInit: Date | null;
   panels: PanelConfig[];         // 6 Einträge, je mit localTime
+  layout: 6 | 4 | 2 | 1;         // sichtbare Panelzahl (erste N), Standard 4 — §9
 }
 ```
 
 Zeit-Scrubber unter dem Grid: Slider, Play/Pause, ±1h/±6h, Tastatur (←/→, Shift,
 Leertaste).
+
+**Reichweite des Cursors.** `TIME_RANGE` (16 Tage) ist das *deterministische*
+Raster — Meteogramm-Achse, Gitterindizes und Requests hängen daran, weil die
+Forecast-API nicht weiter geht. Der Zeit-Cursor darf trotzdem weiter: Ensembles
+laufen bis 35 Tage, und ein Regler, der mitten in der Plume endet, ist kaputt.
+Obergrenze ist deshalb `cursorRangeEnd` = längster Horizont der **sichtbaren**
+Panels, mindestens aber `TIME_RANGE.end`. Nach unten wird nie gekürzt — der
+Bereich hinter kürzeren Modellen wird schraffiert, sonst spränge die
+Reglerlänge bei jedem Modellwechsel. Store-Clamp, Slider, Play-Schleife und der
+Zeitklick im Ensemble-Panel lesen alle dieselbe Funktion.
 
 **Bekannte Einschränkung:** Das Zeitraster ist session-fixiert. Bleibt der Tab
 über Mitternacht UTC offen, passt das Fenster nicht mehr zum aktuellen Lauf.
