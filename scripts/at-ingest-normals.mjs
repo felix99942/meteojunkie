@@ -5,6 +5,12 @@
 //   - annual: Mittel der Jahres-Werte (Jahres-Wert = annualAgg über die 12
 //     Monate desselben Jahres) — so, wie die Karte den Jahreswert bildet, damit
 //     Anomalien konsistent sind.
+//   - seasonal[4]: dasselbe je meteorologischer Jahreszeit (DJF, MAM, JJA, SON;
+//     Saison-Wert = annualAgg über die 3 Monate). MUSS eigens gerechnet werden:
+//     bei Maximum-Parametern ist das Mittel der Saisonmaxima etwas anderes als
+//     das Maximum der Monatsnormale. Der DEZEMBER zählt zum Winter des
+//     FOLGEJAHRS — gleiche Konvention wie bei den Rekorden; deshalb beginnt der
+//     Abruf einen Monat VOR der Periode.
 //
 // MINDESTDECKUNG (WMO-Regel „mind. 80 % der Jahre"): ein Normal entsteht nur aus
 // >= MIN_YEARS der 30 Jahre, und ein Jahr zählt nur mit VOLLSTÄNDIGEN 12 Monaten.
@@ -80,6 +86,21 @@ const PARAMS = [
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'at')
 
+/** Reihenfolge wie SEASONS in src/api/atValues.ts — der Client indiziert danach. */
+const SEASONS = ['DJF', 'MAM', 'JJA', 'SON']
+
+/**
+ * Kalendermonat → Saison und deren Jahr. Dezember gehört zum Winter des
+ * Folgejahrs (Konvention aus at-ingest-records.mjs und api/atRecords.ts).
+ */
+function seasonOf(month, year) {
+  if (month === 12) return { season: 'DJF', year: year + 1 }
+  if (month <= 2) return { season: 'DJF', year }
+  if (month <= 5) return { season: 'MAM', year }
+  if (month <= 8) return { season: 'JJA', year }
+  return { season: 'SON', year }
+}
+
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null)
 const round2 = (v) => (v == null ? null : Math.round(v * 100) / 100)
 
@@ -103,7 +124,10 @@ async function main() {
     throw new Error(`Unbekannte Periode "${periodId}" — bekannt: ${Object.keys(PERIODS).join(', ')}`)
   }
   const [firstYear, lastYear] = years
-  const START = `${firstYear}-01-01`
+  // Ein Monat Vorlauf: der Winter des ersten Periodenjahrs braucht den Dezember
+  // davor. Für Monats-/Jahresnormale bleibt er wirkungslos (das Jahr firstYear-1
+  // hat dann nur einen Monat und fällt aus der Vollständigkeitsregel).
+  const START = `${firstYear - 1}-12-01`
   const END = `${lastYear}-12-01`
   const nYears = lastYear - firstYear + 1
 
@@ -157,6 +181,18 @@ async function main() {
           if (!byYear.has(y)) byYear.set(y, [])
           byYear.get(y).push(v)
         }
+        // Saison-Werte je Vorkommen sammeln (Schlüssel „DJF:1995").
+        const bySeason = new Map()
+        for (let k = 0; k < data.length; k++) {
+          const v = data[k]
+          if (v == null || !Number.isFinite(v) || (p.nonNeg && v < 0)) continue
+          const { season, year: sy } = seasonOf(months[k], yearOf[k])
+          if (sy < firstYear || sy > lastYear) continue
+          const key = `${season}:${sy}`
+          if (!bySeason.has(key)) bySeason.set(key, [])
+          bySeason.get(key).push(v)
+        }
+
         // Monats-Normal nur bei ausreichender Deckung DIESES Kalendermonats.
         const monthly = byMonth.map((vals) => (vals.length >= MIN_YEARS ? round2(mean(vals)) : null))
         // Jahres-Normal: nur VOLLSTÄNDIGE Jahre (12 Monate), davon mind. MIN_YEARS.
@@ -172,10 +208,24 @@ async function main() {
         // eine Station, die den Parameter nicht führt und statt null 0 meldet
         // (z. B. Wien Hohe Warte Hannhütte, 27 Jahre "0 mm"). Solche Reihen als
         // fehlend behandeln — sonst steht eine 0 mm auf der Jahreskarte.
+        // Saison-Normal: nur VOLLSTÄNDIGE Saisons (3 Monate), davon mind. MIN_YEARS.
+        const seasonal = SEASONS.map((season) => {
+          const vals = []
+          for (let y = firstYear; y <= lastYear; y++) {
+            const got = bySeason.get(`${season}:${y}`)
+            if (!got || got.length < 3) continue
+            const a = reduce(got, p.annual)
+            if (a != null) vals.push(a)
+          }
+          if (vals.length < MIN_YEARS) return null
+          const v = round2(mean(vals))
+          return p.nonNeg && v === 0 ? null : v
+        })
+
         if (p.nonNeg && annual === 0) annual = null
         if (p.nonNeg && monthly.every((m) => m == null || m === 0)) monthly.fill(null)
-        if (monthly.some((m) => m != null) || annual != null) {
-          perCode[p.code] = { monthly, annual, ny: complete }
+        if (monthly.some((m) => m != null) || annual != null || seasonal.some((v) => v != null)) {
+          perCode[p.code] = { monthly, seasonal, annual, ny: complete }
           any = true
         }
       }
@@ -201,7 +251,10 @@ async function main() {
           period: periodId,
           years: nYears,
           minYears: MIN_YEARS,
-          rule: 'Jahres-Normal nur aus vollständigen Jahren (12 Monate), Monats-Normal je Kalendermonat',
+          rule:
+            'Jahres-Normal nur aus vollständigen Jahren (12 Monate), Saison-Normal nur aus ' +
+            'vollständigen Saisons (3 Monate, Dezember zählt zum Winter des Folgejahrs), ' +
+            'Monats-Normal je Kalendermonat',
           license: 'CC BY 4.0',
         },
         normals,

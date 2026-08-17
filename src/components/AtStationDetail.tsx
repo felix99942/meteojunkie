@@ -37,6 +37,8 @@ import {
   type ExtremeDay,
 } from '../api/atRecords'
 import { getAtParameter } from '../config/atParameters'
+import { AtPeriodHistory } from './AtPeriodHistory'
+import type { HistoryScope } from './atHistory'
 
 const MONTH_ABBR = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 const MONTH_NAME = [
@@ -145,11 +147,25 @@ export function AtStationDetail({
   station,
   paramCode,
   day,
+  history,
   onClose,
 }: {
   station: AtStation
   paramCode: string
   day: string
+  /**
+   * Perioden-Historie statt Tagesreihe. Gesetzt, sobald die Karte NICHT auf
+   * „Tag" steht: bei „Niederschlagssumme, Sommer, Abweichung" beantworten
+   * Tagessummen keine Frage — die Reihe der Sommer beantwortet sie.
+   */
+  history?: {
+    scope: HistoryScope
+    firstYear: number
+    lastYear: number
+    normal: number | null
+    showAnomaly: boolean
+    refLabel: string
+  }
   onClose: () => void
 }) {
   const spec = getAtParameter(paramCode)
@@ -386,29 +402,47 @@ export function AtStationDetail({
         </div>
       </div>
       <div className="atdetail-sub">
-        {spec.label} ({spec.unit}) · Tageswerte der letzten 12 Monate bis {day}
+        {history
+          ? `${spec.label} — Reihe der Perioden`
+          : `${spec.label} (${spec.unit}) · Tageswerte der letzten 12 Monate bis ${day}`}
       </div>
       {maximized && <div className="atdetail-note">{spec.description}</div>}
 
       <div className={maximized ? 'atdetail-cols' : undefined}>
         <div className="atdetail-col">
-          {stats && (
-            <div className="atdetail-stats">
-              <span>Min <strong>{fmt(stats.min)}</strong></span>
-              <span>Mittel <strong>{fmt(stats.mean)}</strong></span>
-              <span>Max <strong>{fmt(stats.max)}</strong></span>
-              {(spec.agg === 'sum') && <span>Summe <strong>{fmt(stats.sum)}</strong></span>}
-              <span className="label-muted">{stats.n} Tage mit Wert</span>
-            </div>
+          {history ? (
+            <AtPeriodHistory
+              station={station}
+              spec={spec}
+              scope={history.scope}
+              firstYear={history.firstYear}
+              lastYear={history.lastYear}
+              normal={history.normal}
+              showAnomaly={history.showAnomaly}
+              refLabel={history.refLabel}
+              monthNames={MONTH_NAME}
+            />
+          ) : (
+            <>
+              {stats && (
+                <div className="atdetail-stats">
+                  <span>Min <strong>{fmt(stats.min)}</strong></span>
+                  <span>Mittel <strong>{fmt(stats.mean)}</strong></span>
+                  <span>Max <strong>{fmt(stats.max)}</strong></span>
+                  {(spec.agg === 'sum') && <span>Summe <strong>{fmt(stats.sum)}</strong></span>}
+                  <span className="label-muted">{stats.n} Tage mit Wert</span>
+                </div>
+              )}
+              <div className="atdetail-chart">
+                <div className="atdetail-plot" ref={containerRef} />
+                {loading && <div className="panel-placeholder atdetail-overlay">Lade Zeitreihe …</div>}
+                {error && <div className="panel-placeholder atdetail-overlay">{error}</div>}
+                {!loading && !error && !stats && (
+                  <div className="panel-placeholder atdetail-overlay">Keine Daten im Zeitraum</div>
+                )}
+              </div>
+            </>
           )}
-          <div className="atdetail-chart">
-            <div className="atdetail-plot" ref={containerRef} />
-            {loading && <div className="panel-placeholder atdetail-overlay">Lade Zeitreihe …</div>}
-            {error && <div className="panel-placeholder atdetail-overlay">{error}</div>}
-            {!loading && !error && !stats && (
-              <div className="panel-placeholder atdetail-overlay">Keine Daten im Zeitraum</div>
-            )}
-          </div>
           {maximized && (
             <div className="atdetail-note">
               Zeitreihe aus dem Tagesdatensatz klima-v2-1d. Der laufende Tag ist ein Zwischenstand

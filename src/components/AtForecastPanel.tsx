@@ -110,9 +110,10 @@ export function AtForecastPanel() {
         <label className="atclima-ctrl">
           <span className="label-muted">Parameter</span>
           <select value={paramKey} onChange={(e) => setParamKey(e.target.value)}>
+            {/* Einheit gehört an die Auswahl — sonst rät man sie aus dem Kartenbild */}
             {FORECAST_PARAMS.map((p) => (
               <option key={p.key} value={p.key}>
-                {p.label}
+                {p.label} ({p.unit})
               </option>
             ))}
           </select>
@@ -133,7 +134,7 @@ export function AtForecastPanel() {
             ? 'lädt …'
             : error
               ? `⚠ ${error}`
-              : `${covered} Stationen · ${spec.unit}${runLabel ? ` · Lauf ${runLabel}` : ''}`}
+              : `${covered} Stationen · Werte in ${spec.unit}${runLabel ? ` · Lauf ${runLabel}` : ''}`}
         </span>
       </div>
       <div className="atclima-body">

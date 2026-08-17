@@ -88,7 +88,18 @@ npm run preview   # gebautes dist/ servieren
   vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
   geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
   Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick
-  öffnet ihr Detail. Rangliste und Stationsdetail haben beide **zwei Größen**
+  öffnet ihr Detail. Der Einstieg ist ein prominenter Knopf **links oben IN der
+  Karte** (`.atmap-rankbtn`) — genau dort, wo die Liste danach aufgeht; er
+  verschwindet, solange sie offen ist (sie belegt denselben Platz und schließt
+  über ihr eigenes ✕). Das Suchfeld bekommt beim Öffnen den Fokus.
+  **Die Suche geht immer über die GANZE Reihung**
+  (`searchRanked`), nicht nur über die angezeigten Zeilen — sonst wäre eine
+  Station auf Rang 87 in der Schnellansicht unauffindbar, weil dort nur die
+  Extreme stehen; bei aktiver Suche treten die Extremlisten deshalb hinter die
+  Trefferliste zurück. Treffer OHNE Wert werden getrennt mit „—" gezeigt statt
+  verschwiegen („gibt es nicht" ist eine andere Aussage als „hat hier keinen
+  Wert"). Der Rang bleibt dabei immer der globale.
+  Rangliste und Stationsdetail haben beide **zwei Größen**
   (Schnellansicht in der Ecke ↔ maximiert über den Kartenbereich, CSS-Modifier
   `.is-max`): maximiert zeigt die Rangliste eine sortierbare Volltabelle
   (Rang bleibt IMMER global — Suche/Sortierung ändern nur die Anzeige) und das
@@ -99,7 +110,45 @@ npm run preview   # gebautes dist/ servieren
   gecacht). Bei Mittel-/Summenparametern gibt es bewusst KEINE Auflösung, dort
   existiert kein Rekordtag; `DAY_RESOLVABLE` ist die Whitelist. Absolute
   Rekorde lösen sich beim Öffnen auf, die übrigen 32 Zeilen erst auf Klick.
-  Parameter-Klartext steht als `description` in der Registry. Reine Rechenkerne
+  **Was die Karte zeigt, steht GROSS in der Karte** (`.atmap-headline`, zentral
+  unter der Werkzeugleiste, `pointer-events: none`) — Größe, Parameter,
+  Zeitbezug und im Abweichungsmodus die Lesart der Prozentwerte. Klein in der
+  Werkzeugleiste hat es niemand gelesen, und genau diese Zeile entscheidet, wie
+  die Farben zu deuten sind. Die Statuszeile trägt nur noch den Ladezustand.
+  **Laufende Zeiträume rechnen GLEITEND** (`PeriodCoverage` in `atValues.ts`):
+  der Monatsdatensatz aggregiert erst nach Monatsende, der laufende Monat wird
+  deshalb aus TAGESwerten zusammengefasst und mitgezählt. Entscheidend ist der
+  Bezug: die Abweichung geht gegen das Normal GENAU DIESES Zeitraums
+  (`partialNormal`) — abgeschlossene Monate voll, der laufende bei `sum`
+  anteilig nach Tagen, bei `mean` voll (ein Monatsmittel hat keine Tageszahl).
+  Bei `max`/`min` ist kein Teil-Normal ableitbar → keine Abweichung plus
+  Hinweis. **Ohne das war die Karte grob falsch**: Sommer 2026 im August zeigte
+  bei der Sonnenscheindauer 74–81 % vom Normal (zwei Monate Messung gegen drei
+  Monate Normal), richtig sind 113–124 %. Die Überschrift markiert laufende
+  Zeiträume mit „● läuft noch — bisher Jun + Jul + Aug 1.–17.".
+  **Klick auf eine Station zeigt die Perioden-Historie** statt der Tagesreihe,
+  sobald der Zeitbezug nicht „Tag" ist (`AtPeriodHistory` + Rechenkern
+  `atHistory.ts`): dieselbe Größe wie in der Karte über die letzten
+  `HISTORY_SPAN` (15) Perioden, im Abweichungsmodus als zweifarbige Balken um
+  die Neutrallinie (0 bzw. 100 %) gegen DASSELBE Normal wie die Karte. Bei der
+  Klimaperiode läuft die Reihe über die Periode selbst. Unvollständige Perioden
+  bleiben LEER (Saison = 3 Monate, Jahr = 12) — ein halber Sommer stünde sonst
+  als trockener Sommer im Diagramm. Ein Request je Station, gecacht.
+  Parameter-Klartext steht als `description` in der Registry; das Dropdown zeigt
+  `paramOptionLabel()` = „Kategorie – Kurzname (Einheit)" (`shortLabel` statt
+  `label`, sonst stünde dort „Temperatur – Temperatur Mittel"). **Der
+  Abweichungsmodus hat ZWEI Lesarten und muss sie beschriften** (`anomalyDisplay()`):
+  `delta` ist eine vorzeichenbehaftete Differenz („Δ +2,3 K"), `percent` dagegen
+  der ANTEIL am Normal („143 % vom Normal" = das 1,43-Fache, 100 % = Normal) —
+  Prozentwerte deshalb NIE mit Vorzeichen rendern, das läse sich als
+  Prozentpunkte über dem Normal. Die Rechnung dazu steht in `anomaly()`.
+  **Was in der Karte steht, sagt `valueCaption(spec, kind, normalMonth)`** —
+  Zeitbezug und Aggregat ergeben zusammen etwas anderes als der Parametername:
+  „Temperatur Maximum" + Klimaperiode + Jahr ist NICHT ein Höchstwert, sondern
+  das MITTEL der 30 Jahreshöchstwerte (Kette: Tageswerte → `agg` → Monatswert →
+  `annualAgg` → Jahreswert → Mittel über die Jahre). Der Text steht in der
+  Statuszeile und im Ranglisten-Titel; `periodLabel` benennt nur noch den
+  Zeitraum („Jahr 1991–2020"), nicht mehr die Größe. Reine Rechenkerne
   sind mit Vitest getestet (`*.test.ts`, `npm test`).
   **Klimaperioden** (`config/atNormals.ts`, `AT_NORMAL_PERIODS`): vierter
   Zeitbezug neben Tag/Monat/Jahr — das langjährige Mittel einer WMO-Normalperiode
@@ -376,7 +425,12 @@ npm run preview   # gebautes dist/ servieren
   Größenordnungen, mit einer Skala läge jede Jahreskarte im obersten Band —
   ebenfalls feste Bereiche, nur je Zeitbezug einer. Analog `anomalyScaleFor`: der
   Vergleich zweier Klimaperioden (~1 K, wenige %) braucht eine feinere Stufung
-  als eine Wetteranomalie (±12 K). Die
+  als eine Wetteranomalie (±12 K). **Die Anomaliefarbe muss zur GRÖSSE passen,
+  nicht nur zum `anomalyKind`**: Niederschlag nutzt BrBG (braun = trocken,
+  türkis = nass), Sonnenschein eine EIGENE Rampe (graublau = trüb → gelb →
+  orange, `SUN_ANOM_SCALE`/`SUN_CLIMATE_SCALE` über das Feld
+  `climateAnomalyScale`). Mit der gemeinsamen Prozentskala sah „viel Sonne" aus
+  wie „viel Regen". Die
   konkreten Bereiche/Schwellen sind laut SPEC §11 noch nicht final festgelegt —
   die Werte in `colorscales.ts` sind ein Arbeitsstand.
 - Die MapLibre-image-Source spannt Bilder linear im **Web-Mercator**-Raum auf;

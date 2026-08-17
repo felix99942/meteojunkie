@@ -39,6 +39,48 @@ export function extremes(
   }
 }
 
+/** Minimale Stationsform für die Suche — hält den Rechenkern frei von der API-Typik. */
+export interface RankStation {
+  name: string
+  state: string | null
+}
+
+export interface RankSearch {
+  /** Treffer MIT Wert, in Rangreihenfolge (Rang bleibt global). */
+  hits: RankEntry[]
+  /** Indizes gefundener Stationen OHNE Wert in dieser Auswahl. */
+  withoutValue: number[]
+}
+
+/**
+ * Stationen nach Name oder Bundesland suchen — über die GANZE Reihung, nicht
+ * nur über deren Enden. Ohne diese Trennung wäre eine Station auf Rang 87 in
+ * der Schnellansicht unauffindbar, weil dort nur die Extreme stehen.
+ *
+ * Treffer ohne Wert werden getrennt zurückgegeben statt verschwiegen: „Station
+ * gibt es, hat aber in diesem Zeitbezug keinen Wert" ist eine andere Aussage
+ * als „Station gibt es nicht" — und für den Nutzer die wichtigere.
+ */
+export function searchRanked(
+  stations: RankStation[],
+  ranked: RankEntry[],
+  query: string,
+): RankSearch {
+  const q = query.trim().toLowerCase()
+  if (!q) return { hits: ranked, withoutValue: [] }
+  const hit = (s: RankStation | undefined) =>
+    s !== undefined &&
+    (s.name.toLowerCase().includes(q) || (s.state?.toLowerCase().includes(q) ?? false))
+
+  const hits = ranked.filter((e) => hit(stations[e.idx]))
+  const ranged = new Set(ranked.map((e) => e.idx))
+  const withoutValue: number[] = []
+  for (let i = 0; i < stations.length; i++) {
+    if (!ranged.has(i) && hit(stations[i])) withoutValue.push(i)
+  }
+  return { hits, withoutValue }
+}
+
 export interface RankSummary {
   n: number
   min: number

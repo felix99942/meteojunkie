@@ -7,12 +7,18 @@
 //   SCHNELLANSICHT — Extreme (höchste/niedrigste 10) in der Kartenecke
 //   MAXIMIERT      — vollständige, sortierbare Tabelle über den Kartenbereich
 //
+// Die SUCHE geht in BEIDEN Größen über die ganze Reihung, nicht nur über die
+// angezeigten Zeilen: sonst wäre eine Station auf Rang 87 in der
+// Schnellansicht unauffindbar, weil dort nur die Extreme stehen. Sobald etwas
+// im Suchfeld steht, treten die Extremlisten deshalb hinter die Trefferliste
+// zurück. Die Rangzahl bleibt dabei immer die globale.
+//
 // Interaktion: Hover markiert die Station in der Karte, Klick öffnet ihr
-// Detailpanel, das Suchfeld filtert die Anzeige (nie die Rangzahl).
+// Detailpanel.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AtStation } from '../api/geosphere'
-import { extremes, rankAll, summarize, type RankEntry } from './atRank'
+import { extremes, rankAll, searchRanked, summarize, type RankEntry } from './atRank'
 
 /** Wert kompakt formatieren — gleiche Regel wie die Kartenbeschriftung. */
 const fmt = (v: number): string =>
@@ -49,24 +55,29 @@ export function AtRankList({
 }) {
   const [maximized, setMaximized] = useState(false)
   const [query, setQuery] = useState('')
+  // Die Liste wird über „Rangliste & Stationssuche" geöffnet — dann soll man
+  // sofort tippen können, ohne erst ins Feld zu klicken.
+  const searchRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    searchRef.current?.focus()
+  }, [])
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'rank', dir: 1 })
 
   const ranked = useMemo(() => rankAll(values), [values])
   const stats = useMemo(() => summarize(ranked), [ranked])
   const { top, bottom } = useMemo(() => extremes(ranked, count), [ranked, count])
 
-  const q = query.trim().toLowerCase()
-  const matches = (e: RankEntry) => {
-    if (!q) return true
-    const s = stations[e.idx]
-    return s.name.toLowerCase().includes(q) || (s.state?.toLowerCase().includes(q) ?? false)
-  }
+  const q = query.trim()
+  const searching = q.length > 0
+  // Suche über die GANZE Reihung — inklusive der Stationen ohne Wert, die sonst
+  // spurlos verschwänden ("gibt es nicht" statt "hat hier keinen Wert").
+  const search = useMemo(() => searchRanked(stations, ranked, q), [stations, ranked, q])
 
   const show = (v: number) => `${signed && v > 0 ? '+' : ''}${fmt(v)}`
 
   // Vollständige Tabelle (maximiert): Rang bleibt global, sortiert wird nur die Anzeige.
   const tableRows = useMemo(() => {
-    const rows = ranked.filter(matches)
+    const rows = search.hits
     const dir = sort.dir
     const cmp: Record<SortKey, (a: RankEntry, b: RankEntry) => number> = {
       rank: (a, b) => a.rank - b.rank,
@@ -77,7 +88,7 @@ export function AtRankList({
     return [...rows].sort((a, b) => cmp[sort.key](a, b) * dir)
     // stations/values ändern sich gemeinsam mit `ranked`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranked, sort, q, stations])
+  }, [search, sort, stations])
 
   const sortBtn = (key: SortKey, label: string) => (
     <th>
@@ -100,7 +111,7 @@ export function AtRankList({
   })
 
   const compactRows = (list: RankEntry[]) =>
-    list.filter(matches).map((e) => (
+    list.map((e) => (
       <button
         key={stations[e.idx].id}
         type="button"
@@ -119,7 +130,27 @@ export function AtRankList({
       </button>
     ))
 
-  const hiddenByQuery = q ? ranked.length - ranked.filter(matches).length : 0
+  /** Gefundene Stationen ohne Wert — als Zeilen mit „—" statt gar nicht. */
+  const noValueRows = search.withoutValue.map((idx) => (
+    <button
+      key={stations[idx].id}
+      type="button"
+      className="atrank-row is-novalue"
+      onFocus={() => onHover(idx)}
+      onBlur={() => onHover(null)}
+      onMouseEnter={() => onHover(idx)}
+      onMouseLeave={() => onHover(null)}
+      onClick={() => onSelect(idx)}
+      title={`${stations[idx].name} — kein Wert in dieser Auswahl, Detail öffnen`}
+    >
+      <span className="atrank-no">–</span>
+      <span className="atrank-val">—</span>
+      <span className="atrank-name">{stations[idx].name}</span>
+      <span className="atrank-meta">
+        {stations[idx].altitude != null ? `${Math.round(stations[idx].altitude as number)} m` : ''}
+      </span>
+    </button>
+  ))
 
   return (
     <div className={`atrank${maximized ? ' is-max' : ''}`}>
@@ -145,6 +176,7 @@ export function AtRankList({
       {maximized && description && <div className="atdetail-note">{description}</div>}
 
       <input
+        ref={searchRef}
         className="atrank-search"
         type="search"
         value={query}
@@ -174,6 +206,8 @@ export function AtRankList({
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Treffer ohne Wert stehen am Ende — mit „—" statt gar nicht,
+                      sonst wirkt die Station wie nicht vorhanden. */}
                   {tableRows.map((e) => (
                     <tr key={stations[e.idx].id} {...rowProps(e)} title="Detail öffnen">
                       <td className="atrank-no">{e.rank}</td>
@@ -185,8 +219,55 @@ export function AtRankList({
                       <td className="atrank-meta">{stations[e.idx].state ?? '—'}</td>
                     </tr>
                   ))}
+                  {search.withoutValue.map((idx) => (
+                    <tr
+                      key={`nv-${stations[idx].id}`}
+                      className="is-novalue"
+                      onMouseEnter={() => onHover(idx)}
+                      onMouseLeave={() => onHover(null)}
+                      onClick={() => onSelect(idx)}
+                      title="Kein Wert in dieser Auswahl — Detail öffnen"
+                    >
+                      <td className="atrank-no">–</td>
+                      <td className="atrank-val">—</td>
+                      <td className="atrank-name">{stations[idx].name}</td>
+                      <td className="atrank-meta">
+                        {stations[idx].altitude != null
+                          ? `${Math.round(stations[idx].altitude as number)} m`
+                          : '—'}
+                      </td>
+                      <td className="atrank-meta">{stations[idx].state ?? '—'}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
+            </div>
+          ) : searching ? (
+            // Suche schlägt die Extremlisten: gesucht wird über ALLE Ränge,
+            // sonst bliebe Rang 87 in der Schnellansicht unauffindbar.
+            <div className="atrank-results">
+              {search.hits.length === 0 && search.withoutValue.length === 0 ? (
+                <div className="atrank-empty label-muted">Keine Station gefunden</div>
+              ) : (
+                <>
+                  {search.hits.length > 0 && (
+                    <>
+                      <div className="atrank-cap">
+                        {search.hits.length} {search.hits.length === 1 ? 'Treffer' : 'Treffer'}
+                      </div>
+                      {compactRows(search.hits)}
+                    </>
+                  )}
+                  {search.withoutValue.length > 0 && (
+                    <>
+                      <div className="atrank-cap" title="Station existiert, hat in diesem Zeitbezug aber keinen Wert">
+                        Ohne Wert ({search.withoutValue.length})
+                      </div>
+                      {noValueRows}
+                    </>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -202,8 +283,12 @@ export function AtRankList({
           )}
 
           <div className="atrank-foot label-muted">
-            {stats.n} von {stations.length} Stationen haben einen Wert
-            {hiddenByQuery > 0 ? ` · ${hiddenByQuery} durch die Suche ausgeblendet` : ''}
+            {searching
+              ? `${search.hits.length} von ${stats.n} Stationen mit Wert passen zur Suche` +
+                (search.withoutValue.length > 0
+                  ? ` · ${search.withoutValue.length} weitere ohne Wert`
+                  : '')
+              : `${stats.n} von ${stations.length} Stationen haben einen Wert`}
             {maximized ? '' : ' · Klick öffnet das Detail, Hover markiert die Station in der Karte'}
           </div>
           {maximized && (

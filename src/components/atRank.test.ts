@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extremes, rankAll, summarize } from './atRank'
+import { extremes, rankAll, searchRanked, summarize, type RankStation } from './atRank'
 
 describe('rankAll', () => {
   it('reiht absteigend und vergibt Ränge ab 1', () => {
@@ -57,5 +57,54 @@ describe('summarize', () => {
 
   it('liefert null ohne Werte', () => {
     expect(summarize([])).toBeNull()
+  })
+})
+
+describe('searchRanked', () => {
+  // Rang: Sonnblick 1, Wien 2, Graz 3, Bregenz 4 — Innsbruck ohne Wert
+  const stations: RankStation[] = [
+    { name: 'Wien Hohe Warte', state: 'Wien' },
+    { name: 'Graz Universität', state: 'Steiermark' },
+    { name: 'Innsbruck Flughafen', state: 'Tirol' },
+    { name: 'Sonnblick', state: 'Salzburg' },
+    { name: 'Bregenz', state: 'Vorarlberg' },
+  ]
+  const values = [20, 18, null, 25, 15]
+  const ranked = rankAll(values)
+
+  it('findet eine Station auch weit außerhalb der Extreme', () => {
+    // Genau der Fall, für den die Suche da ist: Graz steht weder oben noch
+    // unten in einer Zehnerliste, muss aber auffindbar sein
+    const r = searchRanked(stations, ranked, 'graz')
+    expect(r.hits).toHaveLength(1)
+    expect(r.hits[0].idx).toBe(1)
+    expect(r.hits[0].value).toBe(18)
+  })
+
+  it('behält den GLOBALEN Rang im Treffer', () => {
+    const r = searchRanked(stations, ranked, 'bregenz')
+    expect(r.hits[0].rank).toBe(4) // nicht 1, obwohl es der einzige Treffer ist
+  })
+
+  it('sucht auch im Bundesland und liefert Rangreihenfolge', () => {
+    const r = searchRanked(stations, ranked, 'Steiermark')
+    expect(r.hits.map((e) => e.idx)).toEqual([1])
+  })
+
+  it('meldet Treffer OHNE Wert getrennt statt sie zu verschlucken', () => {
+    // „gibt es nicht" und „hat hier keinen Wert" sind verschiedene Aussagen
+    const r = searchRanked(stations, ranked, 'innsbruck')
+    expect(r.hits).toHaveLength(0)
+    expect(r.withoutValue).toEqual([2])
+  })
+
+  it('gibt ohne Suchbegriff die unveränderte Reihung zurück', () => {
+    const r = searchRanked(stations, ranked, '   ')
+    expect(r.hits).toBe(ranked)
+    expect(r.withoutValue).toEqual([])
+  })
+
+  it('ignoriert Groß-/Kleinschreibung und Teilwörter', () => {
+    expect(searchRanked(stations, ranked, 'HOHE').hits[0].idx).toBe(0)
   })
 })

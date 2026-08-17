@@ -15,10 +15,16 @@ import {
   isParamAvailable,
   loadNormals,
   normalFor,
+  SEASON_LABEL,
+  SEASONS,
+  seasonMonths,
+  seasonYearLabel,
   todayUtc,
   type NormalsMap,
   type Period,
+  type PeriodCoverage,
   type PeriodValues,
+  type Season,
 } from '../api/atValues'
 import {
   AT_NORMAL_PERIODS,
@@ -29,14 +35,19 @@ import {
 } from '../config/atNormals'
 import {
   anomaly,
+  anomalyDisplay,
   anomalyScaleFor,
   AT_PARAMETERS,
   getAtParameter,
+  paramOptionLabel,
   scaleFor,
+  valueCaption,
   type ValueSpan,
 } from '../config/atParameters'
 import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
+import { HISTORY_SPAN } from './AtPeriodHistory'
+import type { HistoryScope } from './atHistory'
 import { AtRankList } from './AtRankList'
 import { AtStationDetail } from './AtStationDetail'
 
@@ -56,6 +67,10 @@ const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
 const fmtMonthLabel = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long', year: 'numeric' })
 const fmtMonthName = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long' })
 const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => fmtMonthName.format(new Date(Date.UTC(2001, i, 15))))
+const fmtMonthShort = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'short' })
+const MONTH_SHORT = Array.from({ length: 12 }, (_, i) =>
+  fmtMonthShort.format(new Date(Date.UTC(2001, i, 15))).replace('.', ''),
+)
 
 const fmtClock = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'Europe/Vienna',
@@ -71,6 +86,12 @@ const fmtClock = new Intl.DateTimeFormat('de-AT', {
  * Periodenende aggregiert und der laufende Monat durchgehend null liefert.
  * Bewusst nicht memoisiert: über Mitternacht offene Tabs sollen weiterrücken.
  */
+/** „Dez–Feb", „Mär–Mai" … — macht die Monatszuordnung im Dropdown sichtbar. */
+function seasonMonthLabel(season: Season): string {
+  const m = seasonMonths(season)
+  return `${MONTH_SHORT[m[0].month - 1]}–${MONTH_SHORT[m[m.length - 1].month - 1]}`
+}
+
 function latestPeriods() {
   const day = todayUtc()
   const lastMonth = new Date()
@@ -78,7 +99,22 @@ function latestPeriods() {
   lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1)
   const monthStr = `${lastMonth.getUTCFullYear()}-${pad2(lastMonth.getUTCMonth() + 1)}`
   const year = new Date().getUTCFullYear() - 1
-  return { day, monthStr, year }
+  // Zuletzt ABGESCHLOSSENE Saison: der laufende Monat gehört zur aktuellen,
+  // die ist noch unvollständig — eine halbe Saisonsumme wäre irreführend.
+  const now = new Date()
+  const m = now.getUTCMonth() + 1 // 1..12
+  const y = now.getUTCFullYear()
+  const lastSeason: { season: Season; seasonYear: number } =
+    m === 12
+      ? { season: 'SON', seasonYear: y }
+      : m <= 2
+        ? { season: 'SON', seasonYear: y - 1 }
+        : m <= 5
+          ? { season: 'DJF', seasonYear: y }
+          : m <= 8
+            ? { season: 'MAM', seasonYear: y }
+            : { season: 'JJA', seasonYear: y }
+  return { day, monthStr, year, season: lastSeason.season, seasonYear: lastSeason.seasonYear }
 }
 
 export function AtClimatePanel() {
@@ -97,12 +133,18 @@ export function AtClimatePanel() {
   const [year, setYear] = useState(init.year)
   // Klimaperiode: welche Periode und welcher Ausschnitt (null = Jahresmittel).
   const [normPeriodId, setNormPeriodId] = useState<NormalPeriodId>(DEFAULT_NORMAL_PERIOD)
+  // Klimaperioden-Ausschnitt: Jahr (beides null), Kalendermonat ODER Saison.
   const [normMonth, setNormMonth] = useState<number | null>(null)
+  const [normSeason, setNormSeason] = useState<Season | null>(null)
+  // Saison-Zeitbezug: eigene Auswahl, damit der Jahr-Zeitbezug unberührt bleibt.
+  const [season, setSeason] = useState<Season>(init.season)
+  const [seasonYear, setSeasonYear] = useState(init.seasonYear)
   const [mode, setMode] = useState<'abs' | 'anom'>('abs')
 
   const [values, setValues] = useState<Record<number, number | null> | null>(null)
   const [source, setSource] = useState<PeriodValues['source'] | null>(null)
   const [asOf, setAsOf] = useState<string | null>(null)
+  const [coverage, setCoverage] = useState<PeriodCoverage | undefined>(undefined)
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
   // Normale je Klimaperiode — im Vergleichsmodus wird die Bezugsperiode geladen.
@@ -114,9 +156,11 @@ export function AtClimatePanel() {
       const [y, m] = monthStr.split('-').map(Number)
       return { kind: 'month', year: y, month: m }
     }
-    if (periodKind === 'normal') return { kind: 'normal', periodId: normPeriodId, month: normMonth }
+    if (periodKind === 'season') return { kind: 'season', year: seasonYear, season }
+    if (periodKind === 'normal')
+      return { kind: 'normal', periodId: normPeriodId, month: normMonth, season: normSeason }
     return { kind: 'year', year }
-  }, [periodKind, day, monthStr, year, normPeriodId, normMonth])
+  }, [periodKind, day, monthStr, year, normPeriodId, normMonth, normSeason, season, seasonYear])
 
   const spec = getAtParameter(paramCode)
   const anomActive = mode === 'anom' && periodKind !== 'day' && isParamAvailable(spec, period)
@@ -184,14 +228,19 @@ export function AtClimatePanel() {
       ? day >= latest.day
       : periodKind === 'month'
         ? monthStr === latest.monthStr
-        : periodKind === 'year'
-          ? year === latest.year
-          : true // Klimaperioden sind fest — es gibt nichts "Aktuelleres"
+        : periodKind === 'season'
+          ? season === latest.season && seasonYear === latest.seasonYear
+          : periodKind === 'year'
+            ? year === latest.year
+            : true // Klimaperioden sind fest — es gibt nichts "Aktuelleres"
   const goLatest = () => {
     const l = latestPeriods()
     if (periodKind === 'normal') return
     if (periodKind === 'month') setMonthStr(l.monthStr)
-    else if (periodKind === 'year') setYear(l.year)
+    else if (periodKind === 'season') {
+      setSeason(l.season)
+      setSeasonYear(l.seasonYear)
+    } else if (periodKind === 'year') setYear(l.year)
     else if (day < l.day) setDay(l.day)
     else setRefresh((r) => ({ n: r.n + 1, force: true }))
   }
@@ -208,9 +257,11 @@ export function AtClimatePanel() {
         setValues(r.byStation)
         setSource(r.source)
         setAsOf(r.asOf ?? null)
+        setCoverage(r.coverage)
       })
       .catch((err) => {
         if (!cancelled) {
+          setCoverage(undefined)
           setValues(null)
           setSource(null)
           setAsOf(null)
@@ -233,13 +284,46 @@ export function AtClimatePanel() {
       ? 'day'
       : period.kind === 'month'
         ? 'month'
-        : period.kind === 'year'
-          ? 'year'
-          : period.month != null
-            ? 'month'
-            : 'year'
+        : period.kind === 'season'
+          ? 'season'
+          : period.kind === 'year'
+            ? 'year'
+            : period.month != null
+              ? 'month'
+              : period.season
+                ? 'season'
+                : 'year'
   const scale = anomActive ? anomalyScaleFor(spec, climate) : scaleFor(spec, span)
-  const unit = anomActive ? spec.anomalyUnit : spec.unit
+  // Abweichungen brauchen eine eigene Beschriftung: eine Differenz (Δ K) und
+  // ein Anteil (% vom Normal) sehen als Zahl gleich aus, meinen aber etwas
+  // völlig anderes — siehe anomalyDisplay() in config/atParameters.ts.
+  const anom = anomalyDisplay(spec)
+  const unit = anomActive ? anom.short : spec.unit
+  // Welche Größe steht wirklich in der Karte? Zeitbezug und Aggregat ergeben
+  // zusammen etwas anderes als der Parametername: „Temperatur Maximum" plus
+  // Klimaperiode plus Jahr ist das MITTEL der Jahreshöchstwerte.
+  const normalScope: 'year' | 'month' | 'season' =
+    period.kind === 'normal' && period.month != null
+      ? 'month'
+      : period.kind === 'normal' && period.season
+        ? 'season'
+        : 'year'
+  const shownQuantity = valueCaption(spec, period.kind, normalScope)
+
+  /**
+   * Läuft der Zeitraum noch? Dann steht in der Karte ein Zwischenstand, und die
+   * Abweichung wird gegen das Normal DESSELBEN Zeitraums gerechnet. Das gehört
+   * in die Überschrift — sonst liest man einen halben Sommer als ganzen.
+   */
+  const running = useMemo(() => {
+    if (!coverage || (coverage.complete && !coverage.partial)) return null
+    const parts = [
+      ...coverage.months.map((m) => MONTH_SHORT[m.month - 1]),
+      ...(coverage.partial ? [`${MONTH_SHORT[coverage.partial.month - 1]} 1.–${coverage.partial.days}.`] : []),
+    ]
+    const canCompare = spec.annualAgg === 'sum' || spec.annualAgg === 'mean'
+    return { text: parts.join(' + '), canCompare, expected: coverage.expected }
+  }, [coverage, spec.annualAgg])
   const { displayValues, colors, covered } = useMemo(() => {
     const displayValues: (number | null)[] = new Array(shown.length).fill(null)
     const colors: (string | null)[] = new Array(shown.length).fill(null)
@@ -249,7 +333,7 @@ export function AtClimatePanel() {
       if (raw == null) continue
       let v: number | null = raw
       if (anomActive) {
-        const norm = refNormals ? normalFor(refNormals, spec, period, shown[i].id) : null
+        const norm = refNormals ? normalFor(refNormals, spec, period, shown[i].id, coverage) : null
         v = norm != null ? anomaly(raw, norm, spec.anomalyKind) : null
       }
       displayValues[i] = v
@@ -259,7 +343,7 @@ export function AtClimatePanel() {
       }
     }
     return { displayValues, colors, covered }
-  }, [values, refNormals, shown, spec, period, anomActive, scale])
+  }, [values, refNormals, shown, spec, period, anomActive, scale, coverage])
 
   const refDay = useMemo(() => {
     if (period.kind === 'day') return period.day
@@ -269,6 +353,12 @@ export function AtClimatePanel() {
     }
     // Klimaperiode: das Stationsdetail zeigt Tageswerte — sinnvoller Anker ist
     // das Ende der Periode, nicht heute.
+    if (period.kind === 'season') {
+      const months = seasonMonths(period.season)
+      const last = months[months.length - 1]
+      const end = new Date(Date.UTC(period.year + last.yearOffset, last.month, 0))
+      return isoDay(end > new Date() ? new Date() : end)
+    }
     const endYear = period.kind === 'year' ? period.year : normalPeriod(period.periodId).lastYear
     const dec = new Date(Date.UTC(endYear, 11, 31))
     return isoDay(dec > new Date() ? new Date() : dec)
@@ -285,9 +375,13 @@ export function AtClimatePanel() {
   const periodLabel = useMemo(() => {
     if (period.kind === 'day') return fmtDayLabel.format(new Date(`${period.day}T12:00:00Z`))
     if (period.kind === 'month') return fmtMonthLabel.format(new Date(Date.UTC(period.year, period.month - 1, 15)))
+    if (period.kind === 'season') return seasonYearLabel(period.season, period.year)
     if (period.kind === 'normal') {
+      // Nur den Zeitraum benennen — WAS gemittelt wurde, sagt `shownQuantity`.
+      // „Jahresmittel 1991–2020" wäre bei einem Maximum-Parameter irreführend.
       const label = normalPeriod(period.periodId).label
-      return period.month == null ? `Jahresmittel ${label}` : `${MONTH_NAMES[period.month - 1]} ${label}`
+      if (period.season) return `${SEASON_LABEL[period.season]} ${label}`
+      return period.month == null ? `Jahr ${label}` : `${MONTH_NAMES[period.month - 1]} ${label}`
     }
     return String(period.year)
   }, [period])
@@ -301,6 +395,36 @@ export function AtClimatePanel() {
         : `${covered}/${shown.length} Stationen`
 
   const refLabel = normalPeriod(refPeriodId).label
+
+  /**
+   * Perioden-Historie fürs Stationsdetail: dieselbe Größe wie in der Karte über
+   * die letzten Jahre. Nur außerhalb des Tag-Zeitbezugs — dort IST die
+   * Tagesreihe die passende Antwort. Bei der Klimaperiode wird die Reihe über
+   * die Periode selbst gezeigt (die 30 Sommer, aus denen das Normal entsteht).
+   */
+  const historyProps = useMemo(() => {
+    if (period.kind === 'day' || !selected) return undefined
+    const scope: HistoryScope =
+      period.kind === 'month'
+        ? { kind: 'month', month: period.month }
+        : period.kind === 'season'
+          ? { kind: 'season', season: period.season }
+          : period.kind === 'year'
+            ? { kind: 'year' }
+            : period.month != null
+              ? { kind: 'month', month: period.month }
+              : period.season
+                ? { kind: 'season', season: period.season }
+                : { kind: 'year' }
+    const [firstYear, lastYear] =
+      period.kind === 'normal'
+        ? [normalPeriod(period.periodId).firstYear, normalPeriod(period.periodId).lastYear]
+        : [period.year - HISTORY_SPAN + 1, period.year]
+    const normal =
+      anomActive && refNormals ? normalFor(refNormals, spec, period, selected.id, coverage) : null
+    return { scope, firstYear, lastYear, normal, showAnomaly: anomActive, refLabel }
+  }, [period, selected, anomActive, refNormals, spec, refLabel, coverage])
+
 
   // Live-Hinweis: der laufende Tag ist ein Zwischenstand aus 10-Minuten-Messwerten,
   // kein geprüftes Tagesaggregat — das muss an der Zahl dranstehen.
@@ -320,7 +444,7 @@ export function AtClimatePanel() {
           <select value={paramCode} onChange={(e) => setParamCode(e.target.value)} title={spec.description}>
             {AT_PARAMETERS.filter((p) => isParamAvailable(p, period)).map((p) => (
               <option key={p.code} value={p.code}>
-                {p.category} – {p.label}
+                {paramOptionLabel(p)}
               </option>
             ))}
           </select>
@@ -330,6 +454,7 @@ export function AtClimatePanel() {
           <select value={periodKind} onChange={(e) => setPeriodKind(e.target.value as Period['kind'])}>
             <option value="day">Tag</option>
             <option value="month">Monat</option>
+            <option value="season">Saison</option>
             <option value="year">Jahr</option>
             <option value="normal">Klimaperiode</option>
           </select>
@@ -339,6 +464,34 @@ export function AtClimatePanel() {
         )}
         {periodKind === 'month' && (
           <input type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
+        )}
+        {periodKind === 'season' && (
+          <>
+            <select
+              value={season}
+              onChange={(e) => setSeason(e.target.value as Season)}
+              title="Meteorologische Jahreszeit — der Dezember zählt zum Winter des FOLGEJAHRS"
+            >
+              {SEASONS.map((sid) => (
+                <option key={sid} value={sid}>
+                  {SEASON_LABEL[sid]} ({seasonMonthLabel(sid)})
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={seasonYear}
+              min={1991}
+              max={new Date().getUTCFullYear()}
+              onChange={(e) => setSeasonYear(Number(e.target.value))}
+              title={
+                season === 'DJF'
+                  ? 'Jahr von Januar und Februar — der Dezember stammt aus dem Vorjahr'
+                  : 'Jahr der Saison'
+              }
+              style={{ width: 70 }}
+            />
+          </>
         )}
         {periodKind === 'year' && (
           <input
@@ -364,16 +517,37 @@ export function AtClimatePanel() {
               ))}
             </select>
             <select
-              value={normMonth ?? 'year'}
-              onChange={(e) => setNormMonth(e.target.value === 'year' ? null : Number(e.target.value))}
-              title="Jahresmittel der Periode oder das Mittel eines einzelnen Kalendermonats"
+              value={normSeason ?? (normMonth ?? 'year')}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === 'year') {
+                  setNormMonth(null)
+                  setNormSeason(null)
+                } else if (SEASONS.includes(v as Season)) {
+                  setNormMonth(null)
+                  setNormSeason(v as Season)
+                } else {
+                  setNormSeason(null)
+                  setNormMonth(Number(v))
+                }
+              }}
+              title="Langjähriges Mittel: über das ganze Jahr, über eine Jahreszeit oder über einen einzelnen Kalendermonat"
             >
               <option value="year">Jahr</option>
-              {MONTH_NAMES.map((name, i) => (
-                <option key={name} value={i + 1}>
-                  {name}
-                </option>
-              ))}
+              <optgroup label="Jahreszeit">
+                {SEASONS.map((sid) => (
+                  <option key={sid} value={sid}>
+                    {SEASON_LABEL[sid]} ({seasonMonthLabel(sid)})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Kalendermonat">
+                {MONTH_NAMES.map((name, i) => (
+                  <option key={name} value={i + 1}>
+                    {name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </>
         )}
@@ -388,7 +562,9 @@ export function AtClimatePanel() {
               ? 'Zum heutigen Tag springen; ist er schon gewählt, die 10-Minuten-Messwerte sofort neu holen'
               : periodKind === 'month'
                 ? 'Zum letzten abgeschlossenen Monat springen (der laufende Monat wird erst nach Monatsende aggregiert)'
-                : 'Zum letzten abgeschlossenen Jahr springen'
+                : periodKind === 'season'
+                  ? 'Zur letzten abgeschlossenen Jahreszeit springen — die laufende ist noch unvollständig'
+                  : 'Zum letzten abgeschlossenen Jahr springen'
           }
         >
           {atLatest && periodKind === 'day' ? '↻ Aktuell' : 'Aktuell'}
@@ -420,8 +596,15 @@ export function AtClimatePanel() {
             Abweichung
           </button>
         </div>
-        <span className="atclima-sub">
-          {status} · {anomActive ? `Δ ${unit} vs. ${refLabel}` : unit}
+        <span
+          className="atclima-sub"
+          title={
+            anomActive
+              ? `Gezeigt wird die Abweichung von „${shownQuantity}" (${spec.label}) gegenüber ${refLabel}. ${anom.caption}.`
+              : `Gezeigt wird „${shownQuantity}" von ${spec.label}, in ${spec.unit}. ${spec.description}`
+          }
+        >
+          {status}
         </span>
         {periodKind === 'normal' && (
           <span
@@ -446,14 +629,6 @@ export function AtClimatePanel() {
             ● {liveNote}
           </span>
         )}
-        <button
-          type="button"
-          className={`atclima-now${showRank ? ' is-active' : ''}`}
-          onClick={() => setShowRank((v) => !v)}
-          title="Extremwerte der aktuellen Auswahl als Liste (Hover markiert die Station, Klick öffnet das Detail)"
-        >
-          Rangliste
-        </button>
         <label className="atclima-toggle" title="Auch stillgelegte historische Stationen zeigen">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           Historische
@@ -474,20 +649,63 @@ export function AtClimatePanel() {
               onSelect={(i) => setSelected(shown[i])}
               highlightIdx={rankHover ?? selectedIdx}
             />
+            {/* Was die Karte zeigt, gehört IN die Karte — groß und zentral.
+                Klein in der Werkzeugleiste hat es niemand gelesen, und genau
+                diese Zeile entscheidet, wie die Farben zu lesen sind. */}
+            <div className="atmap-headline">
+              <span className="atmap-headline-main">
+                {shownQuantity}
+                {anomActive ? ' — Abweichung' : ''}
+              </span>
+              <span className="atmap-headline-sub">
+                {spec.label} · {periodLabel} ·{' '}
+                {anomActive ? `${anom.caption} · ${anom.unit} vs. ${refLabel}` : spec.unit}
+              </span>
+              {running && (
+                <span
+                  className="atmap-headline-running"
+                  title={
+                    running.canCompare
+                      ? 'Der Zeitraum läuft noch. Verglichen wird mit dem Normal GENAU DIESES Zeitraums — der laufende Monat anteilig nach Tagen.'
+                      : 'Der Zeitraum läuft noch. Für Maximum-/Minimum-Parameter lässt sich kein Teil-Normal bilden, deshalb gibt es hier keine Abweichung.'
+                  }
+                >
+                  ● läuft noch — bisher {running.text}
+                  {anomActive && !running.canCompare
+                    ? ' · keine Abweichung möglich'
+                    : anomActive
+                      ? ' · Normal auf denselben Zeitraum gerechnet'
+                      : ''}
+                </span>
+              )}
+            </div>
+            {/* Einstieg dort, wo die Liste danach aufgeht — kein Suchen in der
+                Werkzeugleiste. Verschwindet, sobald die Liste offen ist: sie
+                belegt denselben Platz und schließt über ihr eigenes ✕. */}
+            {!showRank && (
+              <button
+                type="button"
+                className="atmap-rankbtn"
+                onClick={() => setShowRank(true)}
+                title="Alle Stationen durchsuchen und nach Wert reihen — Hover markiert die Station, Klick öffnet ihr Detail"
+              >
+                <span aria-hidden="true">🔍</span> Rangliste &amp; Stationssuche
+              </button>
+            )}
             {showRank && (
               <AtRankList
                 stations={shown}
                 values={displayValues}
-                unit={anomActive ? `Δ ${unit}` : unit}
-                title={`${spec.label}${anomActive ? ' — Abweichung' : ''} · ${periodLabel}`}
+                unit={anomActive ? anom.short : spec.unit}
+                title={`${shownQuantity}${anomActive ? ' — Abweichung' : ''} · ${periodLabel}`}
                 description={
                   anomActive
-                    ? `${spec.description} Gereiht wird hier die Abweichung vom Normal ${refLabel}.`
+                    ? `${spec.description} Gereiht wird die Abweichung von „${shownQuantity}" gegenüber ${refLabel} — ${anom.caption}.`
                     : period.kind === 'normal'
-                      ? `${spec.description} Gereiht wird das langjährige Mittel der Periode ${normalPeriod(period.periodId).label}.`
-                      : spec.description
+                      ? `${spec.description} Gereiht wird „${shownQuantity}" der Periode ${normalPeriod(period.periodId).label}.`
+                      : `${spec.description} Gereiht wird „${shownQuantity}".`
                 }
-                signed={anomActive}
+                signed={anomActive && anom.signed}
                 onSelect={(i) => setSelected(shown[i])}
                 onHover={setRankHover}
                 onClose={() => {
@@ -501,6 +719,7 @@ export function AtClimatePanel() {
                 station={selected}
                 paramCode={isParamAvailable(spec, period) ? paramCode : 'tl_mittel'}
                 day={refDay}
+                history={historyProps}
                 onClose={() => setSelected(null)}
               />
             )}

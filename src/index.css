@@ -1549,6 +1549,95 @@ button:focus-visible {
   border-radius: 3px;
 }
 
+/* Überschrift IN der Karte: sagt groß, welche Größe zu sehen ist und wie die
+   Farben zu lesen sind. Zentriert unter der Werkzeugleiste, klickdurchlässig —
+   sie liegt über der Karte, darf das Ziehen aber nicht blockieren. */
+.atmap-headline {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: min(70%, 720px);
+  padding: 6px 16px;
+  text-align: center;
+  pointer-events: none;
+  background: rgba(24, 25, 27, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  backdrop-filter: blur(2px);
+}
+
+.atmap-headline-main {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.atmap-headline-sub {
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+/* „läuft noch" ist keine Randnotiz: ohne sie liest man einen halben Sommer
+   als ganzen. Deshalb in Warnfarbe direkt unter der Überschrift. */
+.atmap-headline-running {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+/* Prominenter Einstieg in Rangliste/Stationssuche — sitzt genau dort, wo die
+   Liste danach aufgeht (links oben, deckungsgleich mit .atrank). Bewusst
+   kräftiger als die Werkzeugleiste: es ist der Haupteinstieg in die Karte. */
+.atmap-rankbtn {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.atmap-rankbtn:hover {
+  background: var(--bg-control-hover);
+}
+
+/* Trefferliste der Suche: kann lang werden, scrollt in der Schnellansicht */
+.atrank-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Gefunden, aber ohne Wert in dieser Auswahl — sichtbar, aber zurückgenommen */
+.atrank-row.is-novalue,
+.atrank-table tr.is-novalue {
+  opacity: 0.6;
+}
+
+.atrank-row.is-novalue .atrank-val,
+.atrank-table tr.is-novalue .atrank-val {
+  color: var(--ink-muted);
+}
+
 .atrank-stats {
   display: flex;
   flex-wrap: wrap;

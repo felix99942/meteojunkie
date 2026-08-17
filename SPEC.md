@@ -370,6 +370,80 @@ Bisher nicht behandelt.
 
 ---
 
+### Einheiten und Abweichungen (Österreich-Klimakarte)
+
+Die Einheit steht **an der Auswahl**, nicht nur im Kartenbild: das
+Parameter-Dropdown zeigt „Kategorie – Kurzname (Einheit)", die Statuszeile
+„Werte in °C". Die Kategorie wird im Namen nicht wiederholt.
+
+**Zeitbezüge:** Tag · Monat · **Saison** · Jahr · Klimaperiode. Die Saison ist
+die meteorologische Jahreszeit (DJF/MAM/JJA/SON); der **Dezember zählt zum
+Winter des Folgejahrs**, wie bei den Rekorden. Saison- und Jahreswert entstehen
+beide mit `annualAgg` aus Monatswerten. Die Klimaperiode kennt denselben
+Ausschnitt: Jahr, Jahreszeit oder Kalendermonat.
+
+Saison-Normale sind **vorberechnet** (`seasonal[4]` im Asset) und lassen sich
+nicht aus den Monatsnormalen ableiten — bei Maximum-Parametern ist das Mittel
+der Saisonmaxima etwas anderes als das Maximum der Monatsnormale (gemessen:
+31,0 °C vs. 30,1 °C für Wien im Sommer). Der Ingest lädt deshalb einen Monat
+vor der Periode und verlangt vollständige Saisons (3 Monate) in mindestens
+24 von 30 Jahren.
+
+**Welche Größe gezeigt wird, steht als große Überschrift IN der Karte**
+(`valueCaption()`), nicht klein in der Werkzeugleiste — diese Zeile entscheidet,
+wie die Farben zu lesen sind.
+
+**Laufende Zeiträume gleiten mit — und der Bezug gleitet mit.** Der
+Monatsdatensatz kennt den laufenden Monat nicht (er aggregiert erst nach
+Monatsende); er wird deshalb aus Tageswerten zusammengefasst und mitgezählt.
+Die Abweichung vergleicht dann mit dem Normal **genau dieses Zeitraums**:
+abgeschlossene Monate voll, der laufende bei Summenparametern anteilig nach
+Tagen, bei Mittelparametern voll. Für Maximum-/Minimum-Parameter lässt sich kein
+Teil-Normal bilden — dort gibt es im laufenden Zeitraum keine Abweichung, statt
+einer falschen. Die Karte markiert das als „läuft noch" samt Zeitraum.
+
+Ohne diese Regel war die Karte grob falsch: Sommer 2026, im August betrachtet,
+zeigte bei der Sonnenscheindauer 74–81 % vom Normal — zwei Monate Messung gegen
+drei Monate Normal kann rechnerisch nie über ~67 % hinaus. Richtig sind 113–124 %.
+
+**Stationsklick folgt dem Zeitbezug.** Außerhalb von „Tag" zeigt das
+Stationsdetail nicht die Tagesreihe, sondern dieselbe Größe über die letzten 15
+Perioden (bei der Klimaperiode über die Periode selbst) — im Abweichungsmodus
+als Balken um die Neutrallinie gegen dasselbe Normal wie die Karte. Wer
+„Niederschlagssumme, Sommer, Abweichung" anschaut, will die Sommer vergleichen;
+Tagessummen beantworten dort keine Frage. Unvollständige Perioden bleiben leer.
+
+Zum Aggregat: Zeitbezug und
+Aggregat ergeben zusammen etwas anderes als der Parametername vermuten lässt:
+
+| Parameter | Zeitbezug | Gezeigt wird |
+|-----------|-----------|--------------|
+| Temperatur Maximum | Tag | Tageshöchstwert |
+| Temperatur Maximum | Saison | höchster Tageswert der Saison |
+| Temperatur Maximum | Jahr | höchster Tageswert des Jahres |
+| Temperatur Maximum | Klimaperiode + Jahr | **Mittel der Jahreshöchstwerte** (30 Jahre) |
+| Temperatur Maximum | Klimaperiode + Saison | Mittel der Saisonhöchstwerte |
+| Niederschlag Summe | Klimaperiode + Jahr | mittlere Jahressumme |
+
+Die Kette: Tageswerte → `agg` → Monatswert → `annualAgg` → Jahreswert → Mittel
+über die Jahre der Periode → Normal. Ein Normal ist also **immer ein Mittel**,
+auch bei Maximum-Parametern — genau da entsteht sonst das Missverständnis.
+
+Der Abweichungsmodus kennt **zwei Lesarten**, die als Zahl gleich aussehen und
+Gegenteiliges bedeuten:
+
+| `anomalyKind` | Rechnung | Anzeige | Beispiel |
+|---------------|----------|---------|----------|
+| `delta` | Wert − Normal | `Δ K`, mit Vorzeichen | „Δ +2,3 K" = 2,3 K über dem Normal |
+| `percent` | 100 · Wert / Normal | `% vom Normal`, OHNE Vorzeichen | „143 % vom Normal" = das 1,43-Fache |
+
+Prozentwerte dürfen deshalb nie mit erzwungenem Vorzeichen gerendert werden —
+„+143 %" läse sich als 143 Prozentpunkte über dem Normal, also fast das
+Dreifache statt des Anderthalbfachen. Beschriftet wird das zentral über
+`anomalyDisplay()`; die Farbskala ist passend dazu um 100 % zentriert.
+
+---
+
 ## 11. Farbskalen
 
 `src/config/colorscales.ts`, pro Parameter definiert.
