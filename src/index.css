@@ -1505,6 +1505,51 @@ button:focus-visible {
   min-height: 88px;
 }
 
+/* Klassisches Meteogramm (ClassicMeteogram) — eigener, schlanker Bereich wie
+   .atsection/.atclima: TopBar-artige Leiste, darunter der Stapel. */
+.meteo {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+}
+
+.meteo-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Sicherheitsnetz bei sehr kleinen Fenstern — normalerweise füllen die
+     Zeilen die Höhe per Flex-Grow, ohne dass hier je gescrollt wird. */
+  overflow-y: auto;
+}
+
+/* Jede Zeile bekommt einen GLEICHEN Anteil der verfügbaren Höhe (flex: 1 1 0,
+   nicht 0 0 auto) — das ist der eigentliche Hebel für „vertikal strecken".
+   Eine feste Pixelhöhe hätte bei kleiner Fläche zu wenig Platz für die
+   y-Achse gelassen (uPlot reduziert die Ticks dann auf ein bis zwei Werte). */
+.meteo-row {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 190px;
+}
+
+.meteo-plotwrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.meteo-plotwrap .atfc-plot {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+}
+
 /* Rangliste — Gegenstück zum Detailpanel, deshalb auf der linken Seite. */
 .atrank {
   position: absolute;

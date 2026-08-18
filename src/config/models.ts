@@ -39,11 +39,15 @@ export interface ModelInfo {
 
 const BASE_VARS = [
   'temperature_2m',
+  'apparent_temperature',
   'dew_point_2m',
   'relative_humidity_2m',
   'precipitation',
   'snowfall',
   'cloud_cover',
+  'cloud_cover_low',
+  'cloud_cover_mid',
+  'cloud_cover_high',
   'pressure_msl',
   'wind_speed_10m',
   'wind_gusts_10m',

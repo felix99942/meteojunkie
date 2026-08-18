@@ -18,6 +18,7 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { fetchStationSeries, type AtStation } from '../api/geosphere'
 import {
+  clean,
   fetchLiveDayValues,
   loadNationalRecords,
   loadStationRecords,
@@ -57,6 +58,12 @@ const fmtRecordDay = new Intl.DateTimeFormat('de-AT', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
+})
+const fmtLiveTime = new Intl.DateTimeFormat('de-AT', {
+  timeZone: 'Europe/Vienna',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZoneName: 'short',
 })
 
 /** Rekorde gibt es nur für die vorberechneten Monatscodes. */
@@ -179,6 +186,8 @@ export function AtStationDetail({
   const [error, setError] = useState<string | null>(null)
   const [records, setRecords] = useState<StationRecords | null>(null)
   const [national, setNational] = useState<NationalRecords | null>(null)
+  /** Nur für abgeleitete Parameter (`spec.derived`) — kein Jahresverlauf möglich. */
+  const [liveOnly, setLiveOnly] = useState<{ value: number | null; asOf?: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -192,7 +201,24 @@ export function AtStationDetail({
     }
   }, [station.id])
 
+  // Abgeleitete Parameter (z. B. gefühlte Temperatur) haben kein GeoSphere-
+  // Feld für eine Jahresreihe — nur der laufende Tag lässt sich live abrufen.
   useEffect(() => {
+    if (!spec.derived) return
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    fetchLiveDayValues(spec, day, [station])
+      .then((r) => !cancelled && setLiveOnly({ value: r.byStation[station.id] ?? null, asOf: r.asOf }))
+      .catch((err) => !cancelled && setError(err?.message ?? 'Wert nicht ladbar'))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [station, spec, day])
+
+  useEffect(() => {
+    if (spec.derived) return
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -201,9 +227,7 @@ export function AtStationDetail({
         if (cancelled) return
         const xs = s.timestamps.map((t) => Date.parse(t) / 1000)
         const raw = s.byStation[station.id] ?? []
-        // GeoSphere nutzt bei rr/sh -1 (o.ä. < 0) als Fehlwert → als Lücke behandeln
-        const nonNeg = spec.category === 'Niederschlag' || spec.category === 'Schnee'
-        const ys = raw.map((v) => (v == null || (nonNeg && v < 0) ? null : v))
+        const ys = raw.map((v) => clean(spec, v))
         // Der laufende Tag fehlt im Tagesdatensatz — Zwischenstand aus den
         // 10-Minuten-Messwerten nachtragen, damit Chart und Karte übereinstimmen.
         const lastIdx = s.timestamps.length - 1
@@ -404,13 +428,30 @@ export function AtStationDetail({
       <div className="atdetail-sub">
         {history
           ? `${spec.label} — Reihe der Perioden`
-          : `${spec.label} (${spec.unit}) · Tageswerte der letzten 12 Monate bis ${day}`}
+          : spec.derived
+            ? `${spec.label} (${spec.unit}) · nur für den laufenden Tag`
+            : `${spec.label} (${spec.unit}) · Tageswerte der letzten 12 Monate bis ${day}`}
       </div>
       {maximized && <div className="atdetail-note">{spec.description}</div>}
 
       <div className={maximized ? 'atdetail-cols' : undefined}>
         <div className="atdetail-col">
-          {history ? (
+          {spec.derived ? (
+            <div className="atdetail-stats">
+              {loading ? (
+                <span className="label-muted">lädt …</span>
+              ) : error ? (
+                <span className="label-muted">{error}</span>
+              ) : liveOnly?.value != null ? (
+                <span>Jetzt <strong>{fmt(liveOnly.value)}</strong> {spec.unit}</span>
+              ) : (
+                <span className="label-muted">kein aktueller Wert</span>
+              )}
+              {liveOnly?.asOf && (
+                <span className="label-muted">Stand {fmtLiveTime.format(new Date(liveOnly.asOf))}</span>
+              )}
+            </div>
+          ) : history ? (
             <AtPeriodHistory
               station={station}
               spec={spec}
@@ -443,7 +484,7 @@ export function AtStationDetail({
               </div>
             </>
           )}
-          {maximized && (
+          {maximized && !spec.derived && (
             <div className="atdetail-note">
               Zeitreihe aus dem Tagesdatensatz klima-v2-1d. Der laufende Tag ist ein Zwischenstand
               aus den 10-Minuten-Messwerten und kann sich noch ändern.

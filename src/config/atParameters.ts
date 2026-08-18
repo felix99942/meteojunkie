@@ -82,6 +82,19 @@ export interface AtParameterSpec {
    * Stufung). Fehlt → die gemeinsame Standardskala je `anomalyKind`.
    */
   climateAnomalyScale?: ColorScale
+  /**
+   * Gesetzt, wenn der Parameter NICHT von GeoSphere kommt, sondern aus
+   * mehreren Rohgrößen berechnet wird (aktuell nur „gefühlte Temperatur").
+   * `code`/`agg`/`annualAgg` bleiben Pflichtfelder (Registry-Schlüssel bzw.
+   * Live-Reduktion), zeigen aber auf KEIN echtes GeoSphere-Feld — `code` ist
+   * hier nur ein eindeutiger Bezeichner, kein gültiger Parametercode.
+   * `isParamAvailable()` lässt einen abgeleiteten Parameter NUR am laufenden
+   * Tag zu: GeoSphere führt weder eine Monats-/Jahresgröße dafür (kein
+   * offizielles Produkt) noch einen Tagesdatensatz mit zeitgleichem
+   * Termin-Wind — nur der 10-Minuten-Datensatz liefert Temperatur, Feuchte
+   * und Wind zeitgleich (`fetchLiveApparentTemperature` in `atValues.ts`).
+   */
+  derived?: 'apparentTemperature'
 }
 
 // Divergierende Temperatur-Anomalie (K): blau (kalt) → neutral → rot (warm).
@@ -268,6 +281,7 @@ export const AT_PARAMETERS: AtParameterSpec[] = [
   { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', shortLabel: 'Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere Lufttemperatur in 2 m Höhe. Tageswert aus Termin- und Extremwerten; Monat und Jahr sind Mittelwerte daraus.' },
   { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', shortLabel: 'Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Höchste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der HÖCHSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
   { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', shortLabel: 'Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Tiefste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der TIEFSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
+  { code: 'gefuehlt', label: 'Gefühlte Temperatur', shortLabel: 'Gefühlt', unit: '°C', category: 'Temperatur', agg: 'last', annualAgg: 'last', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, derived: 'apparentTemperature', description: 'Berechnet aus Lufttemperatur, Wasserdampfdruck (aus rel. Feuchte) und Windgeschwindigkeit nach der AU-BOM/Steadman-Formel — derselben, die Open-Meteo für die Vorhersage nutzt. Nur für den LAUFENDEN Tag: GeoSphere führt weder eine historische noch eine Monats-/Jahresgröße dafür, und der Tagesdatensatz kennt keinen zeitgleichen Termin-Wind. Zeigt den aktuellsten Wert aus den 10-Minuten-Messwerten, nicht ein Tagesmittel.' },
   { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', shortLabel: 'Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, monthScale: PRECIP_MONTH_SCALE, seasonScale: PRECIP_SEASON_SCALE, yearScale: PRECIP_YEAR_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Niederschlagshöhe als 24-Stunden-Summe (Termin 6 UTC). Monat und Jahr sind Summen — der Rekord ist ein nasser Monat, kein einzelner Tag.' },
   { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', shortLabel: 'Sonnenscheindauer', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, monthScale: SUNSHINE_MONTH_SCALE, seasonScale: SUNSHINE_SEASON_SCALE, yearScale: SUNSHINE_YEAR_SCALE, anomalyScale: SUN_ANOM_SCALE, climateAnomalyScale: SUN_CLIMATE_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
   { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', shortLabel: 'Relative Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere relative Luftfeuchte. Im Tagesdatensatz aus dem Feuchtefühler (rfb_mittel), im Monatsdatensatz als rf_mittel geführt.' },
@@ -304,6 +318,20 @@ export function anomalyScaleFor(spec: AtParameterSpec, climate: boolean): ColorS
     spec.climateAnomalyScale ??
     (spec.anomalyKind === 'percent' ? CLIMATE_PERCENT_SCALE : CLIMATE_DELTA_SCALE)
   )
+}
+
+/**
+ * Zweifarbigkeit der Perioden-Historie (Balken über/unter der Neutrallinie).
+ * Muss dieselbe Lesart wie die divergierende Kartenskala treffen — sonst sagt
+ * der Balken „warm/kalt", wo die Karte „nass/trocken" zeigt. Niederschlag
+ * bekommt deshalb BrBG (braun = trocken, türkis = nass) statt Rot/Blau, Sonne
+ * ihre eigene Rampe (graublau = trüb, orange = sonnig); alles andere bleibt
+ * bei Rot/Blau (RdBu), wie es die Wetter-Anomalieskala schon nutzt.
+ */
+export function anomalyBarColors(spec: AtParameterSpec): { pos: string; neg: string } {
+  if (spec.category === 'Niederschlag') return { pos: '#35978f', neg: '#bf812d' }
+  if (spec.category === 'Sonne') return { pos: '#f2a01e', neg: '#4d6183' }
+  return { pos: '#d6604d', neg: '#4393c3' }
 }
 
 /**

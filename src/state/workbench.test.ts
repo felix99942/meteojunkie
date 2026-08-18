@@ -42,8 +42,9 @@ describe('visiblePanelIndices', () => {
 
   it('startet im Meteogramm-Bereich mit vier Panels', () => {
     expect(DEFAULT_LAYOUT.workbench).toBe(4)
-    // Ensemble und Profil starten kleiner: teuer bzw. datenschwer
-    expect(DEFAULT_LAYOUT.ensemble).toBe(2)
+    // Ensemble startet bei einem Panel (Plume-Diagramm braucht selbst schon
+    // viel Breite), Profil bei zwei (datenschwer, aber schmaler lesbar).
+    expect(DEFAULT_LAYOUT.ensemble).toBe(1)
     expect(DEFAULT_LAYOUT.profile).toBe(2)
   })
 })

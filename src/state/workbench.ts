@@ -78,10 +78,12 @@ export const PANEL_LAYOUTS: { value: PanelLayout; label: string; title: string }
  */
 export const DEFAULT_LAYOUT: Record<PanelSection, PanelLayout> = {
   workbench: 4,
-  // Ensembles und Profile sind teuer bzw. datenschwer: ein Punkt-Ensemble kostet
-  // ~5 gewichtete Locations, ein Profil ~100 Level-Variablen. Zwei Panels sind
-  // hier der sinnvolle Start — mehr ist einen Klick entfernt.
-  ensemble: 2,
+  // Profile sind datenschwer (~100 Level-Variablen je Panel) — zwei Panels
+  // sind hier der sinnvolle Start, mehr ist einen Klick entfernt. Ensemble
+  // startet bei EINEM Panel: das Plume-Diagramm braucht selbst schon viel
+  // Breite (51+ Member, mehrere Modelle) und ist bei zwei nebeneinander kaum
+  // lesbar — anders als bei den schmalen Meteogramm-Panels.
+  ensemble: 1,
   profile: 2,
 }
 

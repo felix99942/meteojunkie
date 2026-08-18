@@ -29,6 +29,13 @@ const SUN_MIN_SCALE: ColorScale = {
 
 export const FORECAST_PARAMS: ForecastSpec[] = [
   { key: 't2m', label: 'Temperatur 2 m', unit: '°C', kind: 'hourly', scale: COLOR_SCALES.temperature_2m },
+  {
+    key: 'feels',
+    label: 'Gefühlte Temperatur',
+    unit: '°C',
+    kind: 'hourly',
+    scale: COLOR_SCALES.temperature_2m,
+  },
   { key: 'tmax', label: 'Tagesmaximum', unit: '°C', kind: 'daily', scale: COLOR_SCALES.temperature_2m },
   { key: 'tmin', label: 'Tagesminimum', unit: '°C', kind: 'daily', scale: COLOR_SCALES.temperature_2m },
   { key: 'precip', label: 'Niederschlag (1 h)', unit: 'mm', kind: 'hourly', scale: COLOR_SCALES.precipitation },

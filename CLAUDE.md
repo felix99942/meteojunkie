@@ -83,9 +83,12 @@ npm run preview   # gebautes dist/ servieren
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
   Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). „Aktuell"-Knopf
-  springt auf den neuesten Stand (Tag = heute; Monat/Jahr = letzte
-  ABGESCHLOSSENE Periode) und holt den laufenden Tag mit `force` am TTL-Cache
-  vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
+  springt auf den neuesten Stand — Tag = heute; Monat/Saison = der LAUFENDE
+  Zeitraum als Teilsumme aus Tageswerten bis zum letzten abgeschlossenen Tag
+  (`fetchRunningMonthPartial`/`PeriodCoverage.partial`, s. u.); Jahr bleibt bei
+  der letzten ABGESCHLOSSENEN Periode (s. `latestPeriods()` in
+  `AtClimatePanel.tsx` für die Begründung) — und holt den laufenden Tag mit
+  `force` am TTL-Cache vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
   geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
   Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick
   öffnet ihr Detail. Der Einstieg ist ein prominenter Knopf **links oben IN der
@@ -117,7 +120,11 @@ npm run preview   # gebautes dist/ servieren
   die Farben zu deuten sind. Die Statuszeile trägt nur noch den Ladezustand.
   **Laufende Zeiträume rechnen GLEITEND** (`PeriodCoverage` in `atValues.ts`):
   der Monatsdatensatz aggregiert erst nach Monatsende, der laufende Monat wird
-  deshalb aus TAGESwerten zusammengefasst und mitgezählt. Entscheidend ist der
+  deshalb aus TAGESwerten zusammengefasst und mitgezählt — über den gemeinsamen
+  Kern `fetchRunningMonthPartial`, sowohl wenn Saison/Jahr ihn als Teil-Monat
+  mitzählen als auch bei DIREKTER Monatsauswahl (sonst zeigte z. B. „August"
+  bis zum Monatsende schlicht nichts, obwohl derselbe August in der
+  Sommer-Saison längst anteilig auftauchte). Entscheidend ist der
   Bezug: die Abweichung geht gegen das Normal GENAU DIESES Zeitraums
   (`partialNormal`) — abgeschlossene Monate voll, der laufende bei `sum`
   anteilig nach Tagen, bei `mean` voll (ein Monatsmittel hat keine Tageszahl).
@@ -164,6 +171,19 @@ npm run preview   # gebautes dist/ servieren
   mit 806 Stationen ist bewusst weg: die zusätzlichen Werte stammten aus
   Teilreihen. Für ältere Perioden zeigt erst der Haken „Historische" das volle
   Netz.
+  **Gefühlte Temperatur** (`config/apparentTemperature.ts`, AU-BOM/Steadman-
+  Formel, dieselbe wie Open-Meteos `apparent_temperature`) ist der erste
+  ABGELEITETE Parameter — kein GeoSphere-Feld, sondern aus Temperatur +
+  Wasserdampfdruck (aus rel. Feuchte) + Wind berechnet. `AtParameterSpec.
+  derived` markiert das; `isParamAvailable` lässt ihn NUR am laufenden Tag zu,
+  weil GeoSphere weder ein Monats-/Jahresprodukt dafür führt noch der
+  Tagesdatensatz einen zeitgleichen Termin-Wind hat (nur Tagesmittel) — einzig
+  der 10-Minuten-Datensatz liefert Temperatur/Feuchte/Wind zeitgleich
+  (`fetchLiveApparentTemperature` in `atValues.ts`, Multi-Parameter-Request
+  über `fetchStationSeriesMulti`). Zeigt den AKTUELLSTEN Wert (`agg:'last'`,
+  wie Schneehöhe), kein Tagesmittel. `AtStationDetail` zeigt für abgeleitete
+  Parameter keine Jahresreihe (die gäbe es nicht historisch) und keine
+  Perioden-Historie, nur den Live-Wert mit Messzeitpunkt.
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind
@@ -173,7 +193,14 @@ npm run preview   # gebautes dist/ servieren
   Paket) zu kompakten Pro-Parameter-JSONs (`public/mos/forecast/*.json`, **gitignored**,
   im Build erzeugt) verarbeitet; der Browser lädt sie same-origin (`api/mosApi.ts`).
   `deploy.yml` läuft dafür zusätzlich alle 3 h (Cron). T2m/Niederschlag/Sonne/
-  Bewölkung/Wind stündlich (+72 h, Zeitschieber), Tmin/Tmax täglich. Karte:
+  Bewölkung/Wind/**Gefühlte Temperatur** stündlich (+72 h, Zeitschieber),
+  Tmin/Tmax täglich. Gefühlte Temperatur wird BEIM INGEST berechnet (dieselbe
+  AU-BOM-Formel wie bei den Klimastationen, dupliziert in reinem JS im Skript
+  — kein TS-Cross-Import ins Node-Ingest, siehe Kommentar dort), aus `TTT` +
+  Taupunkt `Td` (Element klein geschrieben, GROSS `TD` liefert nichts — live
+  gegen die KML geprüft) + `FF` in m/s (nicht die schon nach km/h umgerechnete
+  Wind-Kopie). Anders als am Tagesdatensatz der Klimastationen sind hier alle
+  drei Rohgrößen stündlich ZEITGLEICH vorhanden, keine Näherung nötig. Karte:
   `AtClimateMap` mit `DACH_VIEW` + `europe.basemap` + Label-Ausdünnung. Registry
   `config/atForecast.ts`. Klick auf eine Station → `AtForecastDetail`:
   Punktvorhersage mit allen Parametern als uPlot-Stapel (T2m, Niederschlag als
@@ -201,6 +228,56 @@ npm run preview   # gebautes dist/ servieren
   (u.a. 850 hPa / 500 hPa), eigene Zeitachse über den vollen Horizont, Zoom per
   Mausrad. **Keine Kartenvariante**: ein Punkt kostet ~5 gewichtete Locations,
   ein AT-Gitter käme auf ~7.200 Calls pro Feld (Rechnung in `config/ensemble.ts`).
+- **Klassisches Meteogramm** (`ClassicMeteogram.tsx`, AppView `classic`) — der
+  „Meteogramm, wie man's kennt"-Bereich: EIN Ort (teilt sich `lockedLocation`
+  mit Punktprognosen/Ensemble/Profil), EIN wählbares Modell (Default
+  `ecmwf_ifs025`), Standardgrößen als Stapel: Temperatur + gefühlte Temperatur
+  (gestrichelt überlagert), Niederschlag (Balken), Bewölkung (%), Wind
+  (Geschwindigkeit + Richtungspfeile). Bewusst NICHT Teil des Panel-Rasters
+  (kein `PanelSection`) — ein gestapeltes Meteogramm mit mehreren Modellen
+  übereinander wäre visuell Chaos, deshalb ein eigenes schlankes Gerüst wie die
+  Klimakarte, kein Sync/Layout/Multi-Modell. Holt sechs Einzelserien (1 Modell
+  × Variable) über `useMeteogramSeries` — der Request-Batcher in `openmeteo.ts`
+  bündelt sie trotzdem zu einem Request pro Punkt, wie bei mehreren
+  gleichzeitig sichtbaren Punktprognosen-Panels. `apparent_temperature` ist
+  dafür neu in `HOURLY_VARIABLES`/`BASE_VARS` aufgenommen (live gegen mehrere
+  Modelle verifiziert, s. `config/variables.ts`/`config/models.ts`).
+  **`ChartStack.tsx`** (Komponente) + **`config/chartDef.ts`** (Typen/Helfer,
+  bewusst GETRENNT — eine Komponentendatei darf für React Fast Refresh nur
+  Komponenten exportieren) ist der gemeinsame Baustein für „Stapel aus kleinen
+  Zeitreihen-Diagrammen mit gemeinsamer Zeitachse", aus `AtForecastDetail.tsx`
+  herausgezogen (MOS-Punktvorhersage nutzt ihn jetzt auch). Enthält den
+  Cursor-Sync über mehrere `ChartRow`-Instanzen hinweg (`uPlot.sync`-Key als
+  Prop) — ein Hover in einer Zeile zeigt das Fadenkreuz in allen Zeilen des
+  Stapels. **Windpfeile** sind ein Canvas-Draw-Hook, kein uPlot-Seriencode:
+  Kurven mit gesetztem `direction`-Feld bekommen einen FESTEN Streifen am
+  oberen Rand des Diagramms mit großen, gefüllten Pfeilen (`windArrowStripPlugin`)
+  — bewusst NICHT entlang der schwankenden Geschwindigkeitslinie (bei Flaute
+  kaum lesbar, bei Sturm überdeckt von der Linie). Der Streifen deckt sich
+  dafür mit einer eigenen Fläche ab (`--bg-panel`-Farbe), damit die Linie nie
+  hindurchläuft; Dichte an der Breite orientiert, sonst Pfeilteppich bei
+  vielen Stunden. Drehwinkel = Richtung + 180°, weil `wind_direction_10m`
+  meteorologisch die Richtung ist, AUS der der Wind kommt — der Pfeil soll
+  dorthin zeigen, WOHIN er weht. **Zeitachse ist UTC, NICHT die Ortszeit des
+  gewählten Punkts** (steht auch so in der Kopfzeile) — `openmeteo.ts` fragt
+  überall explizit `timezone: 'UTC'` ab, eine echte Ortszeit bräuchte einen
+  zusätzlichen Zeitzonen-Lookup je Koordinate, den es im Projekt nicht gibt.
+  `ChartRow` bekommt dafür einen eigenen `formatTick`/`xSpace` (Stundenachse
+  zeigt nur noch „06"/„12" etc.) PLUS `dayRow` — eine echte ZWEITE x-Achse
+  (uPlot erlaubt mehrere Achsen zur selben Scale, hier zwei mit `scale:'x'`),
+  deren `filter` nur Tagesgrenzen (00 UTC) durchlässt: eigene Zeile mit
+  Wochentag+Datum UND eine durchgehende Trennlinie über die volle Höhe DIESER
+  Zeile (jede der vier Zeilen bekommt ihre eigene, da jede ein unabhängiges
+  uPlot-Canvas ist — dieselbe Wiederholung wie die Stundenachse schon hat).
+  **Bewölkung ist geschichtet, nicht als Summe** (`cloud_cover_low/mid/high`
+  statt `cloud_cover`) und wird NICHT als Linie gezeichnet, sondern als
+  Grauwert-Raster — `ChartDef.bands` statt `curves`, gerendert vom
+  `cloudBandsPlugin` (reiner Canvas-Draw-Hook, uPlot bekommt nur eine
+  ausgeblendete Dummy-Serie fürs x-Scale-Setup). Reihenfolge Hoch/Mittel/Tief
+  von oben nach unten wie am Himmel; HELL = klar, DUNKEL = bedeckt (übliche
+  Lesart). Die dunkle Seite bleibt bewusst deutlich über `--bg-page`
+  (#101113 ≈ rgb(16,17,19), Shade-Bereich ~65–205) — sonst verschwände „ganz
+  bedeckt" im dunklen Theme im Hintergrund statt aufzufallen.
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
@@ -260,10 +337,15 @@ npm run preview   # gebautes dist/ servieren
   Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
   der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
   über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
-- **Vier Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
-  Meteogramm · Ensemble · Vertikalprofil · Österreich-Klima. Ensemble und Profil
-  waren früher Panel-MODI und sind jetzt eigene Bereiche — `PanelMode` kennt nur
-  noch `'meteogram' | 'map'`. Die drei Panel-Bereiche teilen sich DIESELBEN sechs
+- **Fünf Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
+  Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
+  „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil ·
+  Österreich-Klima. Ensemble und Profil waren früher Panel-MODI und sind jetzt
+  eigene Bereiche — `PanelMode` kennt nur noch `'meteogram' | 'map'` (Panel
+  zeigt Linienchart vs. Feld-Karte — ACHTUNG, andere Bedeutung als die
+  AppView-Id `classic`; deshalb bewusst NICHT `'meteogram'` als AppView-Id
+  benutzt, das wäre mit `PanelMode` verwechselbar gewesen). Die drei
+  Panel-Bereiche teilen sich DIESELBEN sechs
   `PanelConfig`s: die Felder für Meteogramm (`models`/`variable`), Ensemble
   (`ensembleModel`/`ensembleVariable`) und Profil (`models`) sind ohnehin
   getrennt, ein Bereichswechsel verliert also nichts. Was gezeichnet wird,
@@ -271,8 +353,10 @@ npm run preview   # gebautes dist/ servieren
   `mode: 'ensemble'|'profile'` werden NICHT verworfen: `restorePanel` lädt sie
   als Meteogramm und sagt es im `presetWarning`.
 - **Layout 6/4/2/1 gilt JE BEREICH** (`layouts: Record<PanelSection, PanelLayout>`
-  im Store, Standard `DEFAULT_LAYOUT` = {workbench: 4, ensemble: 2, profile: 2} —
-  vier Ensembles kosten etwas ganz anderes als vier Meteogramme;
+  im Store, Standard `DEFAULT_LAYOUT` = {workbench: 4, ensemble: 1, profile: 2} —
+  vier Ensembles kosten etwas ganz anderes als vier Meteogramme, und ein
+  Plume-Diagramm braucht selbst schon viel Breite (51+ Member), zu zweit kaum
+  lesbar;
   `LayoutPicker` in der TopBar, Rasterklassen `.panel-grid.layout-N`): reine ANZEIGEFRAGE — es gibt immer
   sechs Panel-Configs, die reduzierten Layouts blenden aus statt zu löschen.
   `visiblePanelIndices()` ist die einzige Quelle dafür, welche Panels gerendert

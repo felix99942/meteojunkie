@@ -20,8 +20,10 @@ const L_URL = (id) =>
 const HOURLY_CAP = 72 // Stunden für die stündlichen Parameter (Zeitschieber)
 // TX/TN = MOSMIX-eigene 12-h-Extreme (synoptisch), NICHT aus stündlichem TTT
 // zusammengerechnet — der Punktforecast TTT unterschätzt den Tagesgang sonst um
-// 1–2 °C (gerade bei Hitze). Siehe dailyExtremes().
-const WANTED = new Set(['TTT', 'TX', 'TN', 'RR1c', 'SunD1', 'Neff', 'FF'])
+// 1–2 °C (gerade bei Hitze). Siehe dailyExtremes(). `Td` = Taupunkt (Kelvin,
+// wie TTT) — Element heißt in der MOSMIX-KML klein geschrieben `Td`, NICHT
+// `TD` (live gegen die KML geprüft: Groß-`TD` liefert nichts).
+const WANTED = new Set(['TTT', 'TX', 'TN', 'RR1c', 'SunD1', 'Neff', 'FF', 'Td'])
 const CONCURRENCY = 24
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'mos')
@@ -29,6 +31,19 @@ const outDir = join(dir, 'forecast')
 
 const K2C = (v) => (v == null ? null : Math.round((v - 273.15) * 10) / 10)
 const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
+
+// „Gefühlte Temperatur" — Duplikat der Formel aus src/config/apparentTemperature.ts
+// (Quelle der Wahrheit + Vitest-Tests dort). Dieses Skript ist bewusst reines
+// Node-ESM ohne TS-Toolchain, ein Cross-Import bräuchte eine eigene Build-
+// Pipeline nur fürs Ingest — bei Änderungen an der Formel BEIDE Stellen
+// synchron halten. AU-BOM/Steadman: AT = T + 0,33·e − 0,70·v − 4,00, e aus dem
+// Taupunkt (MOSMIX liefert `Td`, keine relative Feuchte).
+function saturationVaporPressure(tempC) {
+  return 6.105 * Math.exp((17.27 * tempC) / (237.7 + tempC))
+}
+function apparentTemperatureFromDewPoint(tempC, dewPointC, windMs) {
+  return tempC + 0.33 * saturationVaporPressure(dewPointC) - 0.7 * windMs - 4.0
+}
 
 async function fetchStation(id) {
   try {
@@ -87,6 +102,7 @@ async function main() {
   const sun = {}
   const cloud = {}
   const wind = {}
+  const feels = {}
   const tmax = {}
   const tmin = {}
   let dayLabels = null
@@ -111,6 +127,19 @@ async function main() {
       if (st.SunD1) sun[id] = cut(st.SunD1, (v) => (v == null ? null : Math.round(v / 60))) // s → min
       if (st.Neff) cloud[id] = cut(st.Neff, (v) => (v == null ? null : Math.round(v)))
       if (st.FF) wind[id] = cut(st.FF, (v) => (v == null ? null : Math.round(v * 3.6))) // m/s → km/h
+      // Gefühlte Temperatur braucht T/Taupunkt/Wind ZEITGLEICH je Stunde — im
+      // Gegensatz zum Tagesdatensatz der Klimastationen (nur Tagesmittel-Wind)
+      // liefert MOSMIX alle drei stündlich auf demselben Raster, keine Näherung
+      // nötig. Wind bewusst in m/s (roh aus `st.FF`), nicht die oben schon nach
+      // km/h umgerechnete Kopie — die Formel erwartet m/s.
+      if (st.TTT && st.Td && st.FF) {
+        feels[id] = st.TTT.slice(0, HOURLY_CAP).map((tK, i) => {
+          const tdK = st.Td[i]
+          const w = st.FF[i]
+          if (tK == null || tdK == null || w == null) return null
+          return r1(apparentTemperatureFromDewPoint(tK - 273.15, tdK - 273.15, w))
+        })
+      }
       const ext = dailyExtremes(steps, st.TTT, st.TX, st.TN)
       if (!dayLabels) dayLabels = ext.days
       // Werte an das kanonische Tagesraster ausrichten (Station könnte einzelne
@@ -137,6 +166,7 @@ async function main() {
     write('sun', { meta, param: 'Sonnenschein', unit: 'min', kind: 'hourly', timeSteps: hourlySteps, byStation: sun }),
     write('cloud', { meta, param: 'Bewölkung', unit: '%', kind: 'hourly', timeSteps: hourlySteps, byStation: cloud }),
     write('wind', { meta, param: 'Wind', unit: 'km/h', kind: 'hourly', timeSteps: hourlySteps, byStation: wind }),
+    write('feels', { meta, param: 'Gefühlte Temperatur', unit: '°C', kind: 'hourly', timeSteps: hourlySteps, byStation: feels }),
     write('tmax', { meta, param: 'Tagesmaximum', unit: '°C', kind: 'daily', days: dayLabels, byStation: tmax }),
     write('tmin', { meta, param: 'Tagesminimum', unit: '°C', kind: 'daily', days: dayLabels, byStation: tmin }),
   ])

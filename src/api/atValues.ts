@@ -14,9 +14,11 @@ import {
   DATASET_DAILY,
   DATASET_MONTHLY,
   fetchStationSeries,
+  fetchStationSeriesMulti,
   type AtStation,
 } from './geosphere'
 import { aggregate, type AtParameterSpec } from '../config/atParameters'
+import { apparentTemperature, vaporPressureFromRH } from '../config/apparentTemperature'
 import type { NormalPeriodId } from '../config/atNormals'
 
 export type Season = 'DJF' | 'MAM' | 'JJA' | 'SON'
@@ -88,15 +90,50 @@ const dayOffsetUtc = (day: string, n: number): string => {
  */
 const LIVE_TTL_MS = 5 * 60 * 1000
 
+/**
+ * klima-v2-1m aggregiert erst mit spürbarer Verzögerung nach Monatsende (QC),
+ * nicht sofort am 1. des Folgemonats. Ein Monat/Saison/Jahr, dessen Ende noch
+ * in dieses Fenster fällt, KANN beim Abruf serverseitig noch null sein, obwohl
+ * er kurz danach längst veröffentlicht ist — ohne TTL bliebe ein zu früh
+ * gecachtes `null` aber FÜR IMMER hängen (`atcache.ts` cached historische
+ * Abrufe standardmäßig ohne Ablauf). Innerhalb des Fensters deshalb eine kurze
+ * TTL, damit sich der Eintrag von selbst korrigiert; danach gilt der Zeitraum
+ * als endgültig und wird wie bisher für immer gecacht.
+ */
+const RECENT_PERIOD_GRACE_DAYS = 60
+const RECENT_PERIOD_TTL_MS = 24 * 60 * 60 * 1000
+
+/** TTL für einen Monats-/Saison-/Jahres-Abruf, dessen Ende `end` noch „frisch" ist. */
+export function recentPeriodTtl(end: string): number | undefined {
+  return end >= dayOffsetUtc(todayUtc(), -RECENT_PERIOD_GRACE_DAYS) ? RECENT_PERIOD_TTL_MS : undefined
+}
+
 /** Ob der Parameter im gewählten Zeitbezug überhaupt Werte hat. */
 export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean {
+  // Abgeleitete Parameter (aktuell nur „gefühlte Temperatur") haben KEIN
+  // GeoSphere-Feld und damit weder Tages- noch Monatsprodukt — nur der
+  // laufende Tag lässt sich aus den zeitgleichen 10-Minuten-Messwerten
+  // berechnen, ein vergangener Tag hätte nur einen Tagesmittel-Wind.
+  if (spec.derived) return period.kind === 'day' && period.day >= todayUtc()
   return period.kind === 'day' || spec.monthlyCode != null
 }
 
-/** Fehlwerte bereinigen: bei Niederschlag/Schnee sind negative Werte Sentinels. */
-function clean(spec: AtParameterSpec, v: number | null): number | null {
+/**
+ * Fehlwerte bereinigen. GeoSphere kodiert im TAGESdatensatz bei `rr`/`sh` NICHT
+ * fehlende, sondern echte Nullmessungen als -1 ("kein Niederschlag" bzw. "kein
+ * Schnee" laut Parameter-Metadata) — das ist ein gültiger Wert, keine Lücke,
+ * und wird deshalb zu 0. Nur echte Ausreißer jenseits davon (< -1, sollte laut
+ * Spezifikation nicht vorkommen) gelten weiter als Fehlwert. Vorher wurde JEDER
+ * trockene Tag als fehlend behandelt — bei genug -1-Tagen in einer Periode kam
+ * die Vollständigkeitsprüfung (`atHistory.ts`) nie auf ihre Sollzahl, und die
+ * ganze Periode blieb leer, obwohl die Daten da waren.
+ */
+export function clean(spec: AtParameterSpec, v: number | null): number | null {
   if (v == null || !Number.isFinite(v)) return null
-  if ((spec.category === 'Niederschlag' || spec.category === 'Schnee') && v < 0) return null
+  if (spec.category === 'Niederschlag' || spec.category === 'Schnee') {
+    if (v === -1) return 0
+    if (v < 0) return null
+  }
   return v
 }
 
@@ -141,6 +178,62 @@ export interface PeriodCoverage {
 const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate()
 
 /**
+ * „Gefühlte Temperatur" für den laufenden Tag. Temperatur, relative Feuchte
+ * und Windgeschwindigkeit sind im 10-Minuten-Datensatz zeitgleich vorhanden
+ * (anders als im Tagesdatensatz, der nur einen Tagesmittel-Wind kennt) — EIN
+ * Multi-Parameter-Request (`tl`,`rf`,`ff`), daraus je Zeitschritt die Formel,
+ * danach derselbe `last`-Reduktionspfad wie jeder andere Live-Parameter.
+ */
+async function fetchLiveApparentTemperature(
+  spec: AtParameterSpec,
+  day: string,
+  ids: number[],
+  force: boolean,
+): Promise<PeriodValues> {
+  const byStation: Record<number, number | null> = {}
+  const multi = await fetchStationSeriesMulti(
+    ['tl', 'rf', 'ff'],
+    `${day}T00:00`,
+    `${day}T23:50`,
+    ids,
+    DATASET_10MIN,
+    LIVE_TTL_MS,
+    force,
+  )
+  const { tl, rf, ff } = multi
+  const timestamps = tl?.timestamps ?? []
+  let lastIdx = -1
+  for (const id of ids) {
+    const tlData = tl?.byStation[id]
+    const rfData = rf?.byStation[id]
+    const ffData = ff?.byStation[id]
+    if (!tlData || !rfData || !ffData) {
+      byStation[id] = null
+      continue
+    }
+    const series = tlData.map((t, i) => {
+      const h = rfData[i]
+      const w = ffData[i]
+      if (t == null || h == null || w == null || !Number.isFinite(t + h + w)) return null
+      return apparentTemperature(t, vaporPressureFromRH(t, h), w)
+    })
+    for (let i = series.length - 1; i > lastIdx; i--) {
+      if (series[i] != null) {
+        lastIdx = i
+        break
+      }
+    }
+    byStation[id] = aggregate(series, spec.liveAgg ?? spec.agg)
+  }
+  return {
+    byStation,
+    unit: spec.unit,
+    source: 'live',
+    asOf: lastIdx >= 0 ? timestamps[lastIdx] : undefined,
+  }
+}
+
+/**
  * Tageswerte des LAUFENDEN Tages aus dem 10-Minuten-Datensatz zusammenfassen.
  * klima-v2-1d aggregiert erst nach Tagesende, deshalb gibt es „heute" nur so.
  * Ein Bulk-Request über alle Stationen, wie im historischen Pfad.
@@ -152,12 +245,16 @@ export async function fetchLiveDayValues(
   force = false,
 ): Promise<PeriodValues> {
   const byStation: Record<number, number | null> = {}
-  if (!spec.liveCode) return { byStation, unit: spec.unit, source: 'live' }
 
   // Nur Stationen, die der 10-Minuten-Datensatz kennt — unbekannte IDs lassen
   // den GESAMTEN Request mit HTTP 400 scheitern, nicht nur ihren Anteil.
   const ids = stations.filter((s) => s.has10min).map((s) => s.id)
   if (ids.length === 0) return { byStation, unit: spec.unit, source: 'live' }
+
+  if (spec.derived === 'apparentTemperature') {
+    return fetchLiveApparentTemperature(spec, day, ids, force)
+  }
+  if (!spec.liveCode) return { byStation, unit: spec.unit, source: 'live' }
 
   const s = await fetchStationSeries(
     spec.liveCode,
@@ -196,6 +293,34 @@ export async function fetchLiveDayValues(
 }
 
 /**
+ * Laufenden Monat aus TAGESwerten zusammenfassen — klima-v2-1m aggregiert erst
+ * nach Monatsende und liefert bis dahin überall null. Gemeinsamer Kern für die
+ * direkte Monatsauswahl UND für Saison/Jahr, die den laufenden Monat GLEITEND
+ * mitzählen (`coverage.partial`); `days` ist die höchste über alle Stationen
+ * beobachtete Tagesabdeckung, für den Tagesanteil am Monat in `partialNormal`.
+ */
+async function fetchRunningMonthPartial(
+  spec: AtParameterSpec,
+  year: number,
+  month: number,
+  ids: number[],
+): Promise<{ byStation: Record<number, number | null>; days: number } | null> {
+  const from = `${year}-${pad2(month)}-01`
+  const d = await fetchStationSeries(spec.code, from, todayUtc(), ids, DATASET_DAILY)
+  const byStation: Record<number, number | null> = {}
+  let days = 0
+  for (const id of ids) {
+    const raw = d.byStation[id]
+    if (!raw) continue
+    const vals = raw.map((v) => clean(spec, v))
+    const n = vals.filter((v) => v != null).length
+    if (n > days) days = n
+    byStation[id] = aggregate(vals, spec.agg)
+  }
+  return days > 0 ? { byStation, days } : null
+}
+
+/**
  * Kartenwerte für die Periode holen — ein Bulk-Request über alle Stationen.
  * `force` gilt nur dem laufenden Tag: dort umgeht es den TTL-Cache, damit der
  * „Aktuell"-Knopf wirklich den jüngsten Messpunkt holt. Historische Perioden
@@ -224,6 +349,10 @@ export async function fetchPeriodValues(
     // Laufender Tag: klima-v2-1d ist durchgehend null — direkt live holen.
     const today = todayUtc()
     if (period.day >= today) return fetchLiveDayValues(spec, period.day, stations, force)
+    // Abgeleitete Parameter (s. `isParamAvailable`) gibt es nur am laufenden
+    // Tag — `spec.code` ist bei ihnen kein echtes GeoSphere-Feld, ein Abruf
+    // dafür würde nur einen HTTP-Fehler produzieren.
+    if (spec.derived) return { byStation, unit: spec.unit, source: 'daily' }
 
     const s = await fetchStationSeries(spec.code, period.day, period.day, ids, DATASET_DAILY)
     let covered = 0
@@ -247,11 +376,9 @@ export async function fetchPeriodValues(
   if (!spec.monthlyCode) return { byStation, unit: spec.unit, source: 'monthly' }
   let start: string
   let end: string
-  let combine: boolean
   if (period.kind === 'month') {
     start = `${period.year}-${pad2(period.month)}-01`
     end = start
-    combine = false
   } else if (period.kind === 'season') {
     // Beim Winter liegt der erste Monat im VORJAHR (Dezember-Konvention).
     const months = seasonMonths(period.season)
@@ -259,18 +386,49 @@ export async function fetchPeriodValues(
     const last = months[months.length - 1]
     start = `${period.year + first.yearOffset}-${pad2(first.month)}-01`
     end = `${period.year + last.yearOffset}-${pad2(last.month)}-01`
-    combine = true
   } else {
     start = `${period.year}-01-01`
     end = `${period.year}-12-01`
-    combine = true
   }
 
-  const s = await fetchStationSeries(spec.monthlyCode, start, end, ids, DATASET_MONTHLY)
-  if (!combine) {
+  const s = await fetchStationSeries(spec.monthlyCode, start, end, ids, DATASET_MONTHLY, recentPeriodTtl(end))
+  if (period.kind === 'month') {
+    let hasAny = false
     for (const id of ids) {
       const data = s.byStation[id]?.map((v) => clean(spec, v))
-      byStation[id] = data ? (data[0] ?? null) : null
+      const v = data ? (data[0] ?? null) : null
+      byStation[id] = v
+      if (v != null) hasAny = true
+    }
+    // Laufender Monat: klima-v2-1m aggregiert erst nach Monatsende und liefert
+    // bis dahin überall null. Saison/Jahr zählen ihn weiter unten längst
+    // GLEITEND aus Tageswerten mit — eine direkte Monatsauswahl auf denselben
+    // laufenden Monat zeigte bisher trotzdem nichts. Dieselbe Quelle also auch
+    // hier anzapfen, statt bis Monatsende zu warten.
+    const today = todayUtc()
+    const isRunning =
+      period.year === Number(today.slice(0, 4)) && period.month === Number(today.slice(5, 7))
+    if (!hasAny && isRunning) {
+      const r = await fetchRunningMonthPartial(spec, period.year, period.month, ids)
+      if (r) {
+        for (const id of ids) byStation[id] = r.byStation[id] ?? null
+        return {
+          byStation,
+          unit: s.unit || spec.unit,
+          source: 'monthly',
+          coverage: {
+            months: [],
+            partial: {
+              year: period.year,
+              month: period.month,
+              days: r.days,
+              daysInMonth: daysInMonth(period.year, period.month),
+            },
+            expected: 1,
+            complete: false,
+          },
+        }
+      }
     }
     return { byStation, unit: s.unit || spec.unit, source: 'monthly' }
   }
@@ -305,22 +463,13 @@ export async function fetchPeriodValues(
   let partial: PeriodCoverage['partial']
   const partialByStation: Record<number, number | null> = {}
   if (running) {
-    const from = `${running.year}-${pad2(running.month)}-01`
-    const d = await fetchStationSeries(spec.code, from, today, ids, DATASET_DAILY)
-    let days = 0
-    for (const id of ids) {
-      const raw = d.byStation[id]
-      if (!raw) continue
-      const vals = raw.map((v) => clean(spec, v))
-      const n = vals.filter((v) => v != null).length
-      if (n > days) days = n
-      partialByStation[id] = aggregate(vals, spec.agg)
-    }
-    if (days > 0) {
+    const r = await fetchRunningMonthPartial(spec, running.year, running.month, ids)
+    if (r) {
+      for (const id of ids) partialByStation[id] = r.byStation[id] ?? null
       partial = {
         year: running.year,
         month: running.month,
-        days,
+        days: r.days,
         daysInMonth: daysInMonth(running.year, running.month),
       }
     }

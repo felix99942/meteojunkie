@@ -28,6 +28,7 @@ export interface VariableInfo {
 
 export const HOURLY_VARIABLES: VariableInfo[] = [
   { id: 'temperature_2m', label: 'Temperatur 2 m', unit: '°C', nonNegative: false },
+  { id: 'apparent_temperature', label: 'Gefühlte Temperatur', unit: '°C', nonNegative: false },
   { id: 'dew_point_2m', label: 'Taupunkt 2 m', unit: '°C', nonNegative: false },
   { id: 'relative_humidity_2m', label: 'Rel. Feuchte 2 m', unit: '%', nonNegative: true },
   {
@@ -40,6 +41,9 @@ export const HOURLY_VARIABLES: VariableInfo[] = [
   },
   { id: 'snowfall', label: 'Schneefall', unit: 'cm/h', nonNegative: true, accum: true, sumUnit: 'cm' },
   { id: 'cloud_cover', label: 'Bewölkung', unit: '%', nonNegative: true },
+  { id: 'cloud_cover_low', label: 'Bewölkung tief', unit: '%', nonNegative: true },
+  { id: 'cloud_cover_mid', label: 'Bewölkung mittel', unit: '%', nonNegative: true },
+  { id: 'cloud_cover_high', label: 'Bewölkung hoch', unit: '%', nonNegative: true },
   { id: 'pressure_msl', label: 'Luftdruck (MSL)', unit: 'hPa', nonNegative: false },
   { id: 'wind_speed_10m', label: 'Wind 10 m', unit: 'km/h', nonNegative: true },
   { id: 'wind_gusts_10m', label: 'Böen 10 m', unit: 'km/h', nonNegative: true },

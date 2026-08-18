@@ -107,6 +107,18 @@ export interface StationSeries {
 }
 
 /**
+ * Schema-Version des Cache-Schlüssels. Ohne TTL gecachte Einträge (die
+ * Mehrheit — historische Daten sind statisch) verfallen sonst NIE, auch wenn
+ * sich herausstellt, dass zu früh gecachte Werte falsch waren (siehe 2026-08:
+ * ein vor Veröffentlichung abgerufener Monat blieb als `null` für immer
+ * hängen). Hochzählen macht ALLE bestehenden Einträge in einem Schlag
+ * ungültig — jeder Client holt beim nächsten Laden automatisch frisch, ohne
+ * dass irgendwer manuell den Browser-Cache leeren muss. Nur bei einem
+ * konkreten Verdacht auf falsch gecachte Werte hochzählen, nicht routinemäßig.
+ */
+const CACHE_SCHEMA = 2
+
+/**
  * EINEN Parameter für einen Zeitraum über beliebig viele Stationen holen — ein
  * einziger Bulk-Request an GeoSphere (nicht pro Punkt). CORS ist offen, kein Key.
  * Ergebnis wird persistent gecacht (historische Daten sind statisch → für immer
@@ -129,7 +141,7 @@ export async function fetchStationSeries(
   force = false,
 ): Promise<StationSeries> {
   const ids = [...stationIds].sort((a, b) => a - b)
-  const key = `${dataset}|${parameter}|${start}|${end}|${ids.join(',')}`
+  const key = `${CACHE_SCHEMA}|${dataset}|${parameter}|${start}|${end}|${ids.join(',')}`
   const cached = force ? null : await cacheGet<StationSeries>(key)
   if (cached) return cached
 
@@ -154,6 +166,57 @@ export async function fetchStationSeries(
     if (!unit && p.unit) unit = p.unit
   }
   const result: StationSeries = { timestamps: geo.timestamps ?? [], byStation, unit }
+  await cacheSet(key, result, ttlMs)
+  return result
+}
+
+/**
+ * MEHRERE Parameter für einen Zeitraum in EINEM Bulk-Request holen (GeoSphere
+ * akzeptiert eine kommagetrennte Parameterliste) — für abgeleitete Größen wie
+ * „gefühlte Temperatur", die mehrere zeitgleiche Rohgrößen zusammen brauchen.
+ * Ein Request statt drei einzelner; Cache/TTL/`force` wie `fetchStationSeries`,
+ * nur ein gemeinsamer Eintrag für die ganze Parameterauswahl.
+ */
+export async function fetchStationSeriesMulti(
+  parameters: string[],
+  start: string,
+  end: string,
+  stationIds: number[],
+  dataset: string = DATASET_DAILY,
+  ttlMs?: number,
+  force = false,
+): Promise<Record<string, StationSeries>> {
+  const ids = [...stationIds].sort((a, b) => a - b)
+  const params = [...parameters].sort()
+  const key = `${CACHE_SCHEMA}|${dataset}|${params.join(',')}|${start}|${end}|${ids.join(',')}`
+  const cached = force ? null : await cacheGet<Record<string, StationSeries>>(key)
+  if (cached) return cached
+
+  const url =
+    `${GEOSPHERE_BASE}/${dataset}?parameters=${encodeURIComponent(params.join(','))}` +
+    `&start=${start}&end=${end}&station_ids=${ids.join(',')}&output_format=geojson`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`GeoSphere-Abruf fehlgeschlagen: HTTP ${res.status}`)
+  const geo = (await res.json()) as {
+    timestamps?: string[]
+    features?: {
+      properties: { station: number; parameters: Record<string, { unit?: string; data: (number | null)[] }> }
+    }[]
+  }
+  const timestamps = geo.timestamps ?? []
+
+  const result: Record<string, StationSeries> = {}
+  for (const param of params) {
+    const byStation: Record<number, (number | null)[]> = {}
+    let unit = ''
+    for (const f of geo.features ?? []) {
+      const p = f.properties.parameters?.[param]
+      if (!p) continue
+      byStation[f.properties.station] = p.data
+      if (!unit && p.unit) unit = p.unit
+    }
+    result[param] = { timestamps, byStation, unit }
+  }
   await cacheSet(key, result, ttlMs)
   return result
 }

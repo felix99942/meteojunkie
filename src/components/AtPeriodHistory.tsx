@@ -11,16 +11,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { DATASET_MONTHLY, fetchStationSeries, type AtStation } from '../api/geosphere'
-import { SEASON_LABEL, seasonYearLabel } from '../api/atValues'
-import { anomaly, anomalyDisplay, type AtParameterSpec } from '../config/atParameters'
+import { clean, recentPeriodTtl, SEASON_LABEL, seasonYearLabel } from '../api/atValues'
+import { anomaly, anomalyBarColors, anomalyDisplay, type AtParameterSpec } from '../config/atParameters'
 import { buildHistory, historyStart, historyStats, type HistoryScope } from './atHistory'
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
 const AXIS_FONT = '10px system-ui, sans-serif'
-// Über/unter dem Normal — dieselbe Lesart wie die divergierenden Kartenskalen.
-const BAR_POS = '#d6604d'
-const BAR_NEG = '#4393c3'
 const BAR_PLAIN = '#3987e5'
 
 /** Wie viele Perioden zurück. 15 zeigt einen Trend, ohne die Balken zu zerquetschen. */
@@ -79,7 +76,7 @@ export function AtPeriodHistory({
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchStationSeries(code, start, end, [station.id], DATASET_MONTHLY)
+    fetchStationSeries(code, start, end, [station.id], DATASET_MONTHLY, recentPeriodTtl(end))
       .then((s) => {
         if (cancelled) return
         setRaw({ timestamps: s.timestamps, values: s.byStation[station.id] ?? [] })
@@ -95,8 +92,7 @@ export function AtPeriodHistory({
   const points = useMemo(() => {
     if (!raw) return null
     const agg = scope.kind === 'month' ? spec.agg : spec.annualAgg
-    const nonNeg = spec.category === 'Niederschlag' || spec.category === 'Schnee'
-    const cleaned = raw.values.map((v) => (v != null && nonNeg && v < 0 ? null : v))
+    const cleaned = raw.values.map((v) => clean(spec, v))
     return buildHistory(raw.timestamps, cleaned, scope, firstYear, lastYear, agg)
   }, [raw, scope, firstYear, lastYear, spec])
 
@@ -134,6 +130,7 @@ export function AtPeriodHistory({
     const below = shown.map((p) => (p.value != null && p.value < baseline ? p.value : null))
     // Absolutwerte brauchen keine Zweifarbigkeit — dort ist alles „eine Richtung".
     const series: (number | null)[][] = asAnomaly ? [above, below] : [shown.map((p) => p.value)]
+    const barColors = anomalyBarColors(spec)
 
     const bars = uPlot.paths.bars?.({ size: [0.72, 24] })
     const opts: uPlot.Options = {
@@ -156,8 +153,8 @@ export function AtPeriodHistory({
         {},
         ...(asAnomaly
           ? [
-              { stroke: BAR_POS, fill: BAR_POS, paths: bars, points: { show: false } },
-              { stroke: BAR_NEG, fill: BAR_NEG, paths: bars, points: { show: false } },
+              { stroke: barColors.pos, fill: barColors.pos, paths: bars, points: { show: false } },
+              { stroke: barColors.neg, fill: barColors.neg, paths: bars, points: { show: false } },
             ]
           : [{ stroke: BAR_PLAIN, fill: BAR_PLAIN, paths: bars, points: { show: false } }]),
       ],
@@ -212,7 +209,7 @@ export function AtPeriodHistory({
       u.destroy()
       plotRef.current = null
     }
-  }, [shown, asAnomaly, baseline])
+  }, [shown, asAnomaly, baseline, spec])
 
   if (!code) {
     return (

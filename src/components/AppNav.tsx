@@ -8,9 +8,14 @@ import { useAppView, type AppView } from '../state/appView'
 
 const TABS: { id: AppView; label: string; title: string }[] = [
   {
-    id: 'workbench',
+    id: 'classic',
     label: 'Meteogramm',
-    title: 'Modellvergleich als Zeitreihe und Karte',
+    title: 'Klassisches Meteogramm — Temperatur, Niederschlag, Wolken, Wind auf einen Blick',
+  },
+  {
+    id: 'workbench',
+    label: 'Punktprognosen',
+    title: 'Modellvergleich als Zeitreihe und Karte, frei wählbare Variablen',
   },
   {
     id: 'ensemble',

@@ -51,7 +51,6 @@ import type { HistoryScope } from './atHistory'
 import { AtRankList } from './AtRankList'
 import { AtStationDetail } from './AtStationDetail'
 
-const pad2 = (n: number) => String(n).padStart(2, '0')
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 
 // Live-Werte des laufenden Tages ticken alle 10 min weiter — solange „heute"
@@ -81,10 +80,18 @@ const fmtClock = new Intl.DateTimeFormat('de-AT', {
 
 /**
  * Neuester sinnvoll darstellbarer Stand je Zeitbezug — zugleich Startwert und
- * Ziel des „Aktuell"-Knopfs. Tag = heute (Live-Werte aus klima-v2-10min);
- * Monat/Jahr = letzte ABGESCHLOSSENE Periode, weil klima-v2-1m erst nach
- * Periodenende aggregiert und der laufende Monat durchgehend null liefert.
- * Bewusst nicht memoisiert: über Mitternacht offene Tabs sollen weiterrücken.
+ * Ziel des „Aktuell"-Knopfs. Tag = heute (Live-Werte aus klima-v2-10min); Monat
+ * UND Saison sind der LAUFENDE Zeitraum — klima-v2-1m liefert ihn erst nach
+ * Periodenende, `fetchPeriodValues` füllt ihn bis dahin als Teilsumme aus
+ * Tageswerten (`fetchRunningMonthPartial`/`PeriodCoverage.partial`, Stand =
+ * letzter vollständiger Vortag). Eine Saison-Abweichung gegen das Normal
+ * NUR der bisherigen Monate wäre sonst systematisch zu groß — ein halber
+ * Sommer sieht gegen ein Drei-Monats-Normal viel zu trocken/nass aus. Jahr
+ * bleibt bei der letzten ABGESCHLOSSENEN Periode: eine Jahressumme aus nur
+ * wenigen Monaten wäre selten die Frage, die „Aktuell" beantworten soll — wer
+ * das Jahr bis dato sehen will, wählt es explizit im Dropdown (auch dafür
+ * rechnet `PeriodCoverage` gleitend). Bewusst nicht memoisiert: über
+ * Mitternacht offene Tabs sollen weiterrücken.
  */
 /** „Dez–Feb", „Mär–Mai" … — macht die Monatszuordnung im Dropdown sichtbar. */
 function seasonMonthLabel(season: Season): string {
@@ -94,27 +101,25 @@ function seasonMonthLabel(season: Season): string {
 
 function latestPeriods() {
   const day = todayUtc()
-  const lastMonth = new Date()
-  lastMonth.setUTCDate(1)
-  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1)
-  const monthStr = `${lastMonth.getUTCFullYear()}-${pad2(lastMonth.getUTCMonth() + 1)}`
+  const monthStr = day.slice(0, 7)
   const year = new Date().getUTCFullYear() - 1
-  // Zuletzt ABGESCHLOSSENE Saison: der laufende Monat gehört zur aktuellen,
-  // die ist noch unvollständig — eine halbe Saisonsumme wäre irreführend.
+  // Laufende Saison — dieselbe Dezember-Konvention wie `seasonMonths` (der
+  // Dezember gehört zum Winter des FOLGEJAHRS, `seasonYear` ist das Jahr von
+  // Jan/Feb).
   const now = new Date()
   const m = now.getUTCMonth() + 1 // 1..12
   const y = now.getUTCFullYear()
-  const lastSeason: { season: Season; seasonYear: number } =
+  const currentSeason: { season: Season; seasonYear: number } =
     m === 12
-      ? { season: 'SON', seasonYear: y }
+      ? { season: 'DJF', seasonYear: y + 1 }
       : m <= 2
-        ? { season: 'SON', seasonYear: y - 1 }
+        ? { season: 'DJF', seasonYear: y }
         : m <= 5
-          ? { season: 'DJF', seasonYear: y }
+          ? { season: 'MAM', seasonYear: y }
           : m <= 8
-            ? { season: 'MAM', seasonYear: y }
-            : { season: 'JJA', seasonYear: y }
-  return { day, monthStr, year, season: lastSeason.season, seasonYear: lastSeason.seasonYear }
+            ? { season: 'JJA', seasonYear: y }
+            : { season: 'SON', seasonYear: y }
+  return { day, monthStr, year, season: currentSeason.season, seasonYear: currentSeason.seasonYear }
 }
 
 export function AtClimatePanel() {
@@ -561,9 +566,9 @@ export function AtClimatePanel() {
             periodKind === 'day'
               ? 'Zum heutigen Tag springen; ist er schon gewählt, die 10-Minuten-Messwerte sofort neu holen'
               : periodKind === 'month'
-                ? 'Zum letzten abgeschlossenen Monat springen (der laufende Monat wird erst nach Monatsende aggregiert)'
+                ? 'Zum laufenden Monat springen — als Teilsumme bis zum letzten abgeschlossenen Tag, das amtliche Monatsende folgt erst nach Monatsende'
                 : periodKind === 'season'
-                  ? 'Zur letzten abgeschlossenen Jahreszeit springen — die laufende ist noch unvollständig'
+                  ? 'Zur laufenden Jahreszeit springen — als Teilsumme aus den bisherigen Monaten plus dem laufenden bis zum letzten abgeschlossenen Tag'
                   : 'Zum letzten abgeschlossenen Jahr springen'
           }
         >
