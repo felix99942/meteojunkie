@@ -40,12 +40,15 @@ export interface ModelInfo {
    * Karte). Der Eintrag bleibt in der Registry, damit gespeicherte Presets ihn
    * weiter auflösen können und das Wiedereinschalten ein Wort ist.
    *
-   * Aktuell abgeschaltet: die beiden kleinsten Regionalmodelle. Sie LIEFERN
-   * Daten (live geprüft 2026-08-31: AROME Austria in Wien 79 h, UKMO-UK in
-   * London 73 h), taugen im Meteogramm aber nicht als Auswahl: ihr Horizont
-   * füllt nur rund ein Fünftel der 16-Tage-Achse, der Rest bleibt leer und
-   * sieht aus wie ein Fehler — und außerhalb ihres Gebiets scheitert der
-   * Request komplett (UKMO-UK antwortet in Österreich nicht einmal mit JSON).
+   * Aktuell abgeschaltet: `ukmo_uk_deterministic_2km`. Es LIEFERT Daten (live
+   * geprüft 2026-08-31: London 73 h), scheitert außerhalb Großbritanniens aber
+   * komplett — in Österreich antwortet der Request nicht einmal mit JSON, und
+   * für diese Workbench liegt jeder interessante Punkt dort.
+   *
+   * `geosphere_arome_austria` ist bewusst NICHT abgeschaltet: es ist das
+   * einzige 2,5-km-Modell über Österreich. Sein kurzer Horizont ist kein
+   * Grund mehr, es zu verstecken, seit die Zeitachse des klassischen
+   * Meteogramms dem Horizont des gewählten Modells folgt.
    */
   selectable?: false
 }
@@ -238,7 +241,6 @@ export const MODELS: ModelInfo[] = [
     coverage: { latMin: 43.0, lonMin: 5.5, latMax: 51.8, lonMax: 22.1 },
     supportsBoundingBox: true,
     availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
-    selectable: false,
   },
   {
     id: 'ukmo_global_deterministic_10km',

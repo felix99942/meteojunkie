@@ -355,6 +355,15 @@ npm run preview   # gebautes dist/ servieren
   Achsenbreite** (`Y_AXIS_SIZE`/`RIGHT_AXIS_SIZE`, blind beschriftet, wo nichts
   steht) — Achsen einfach auszublenden (`show: false`) hat die Zeitachsen der
   Zeilen gegeneinander verschoben, und ein Meteogramm liest man senkrecht.
+  **Die Zeitachse endet am Horizont des GEWÄHLTEN Modells**, nicht am
+  16-Tage-Raster (`gridMs` filtert auf `modelHorizonEnd(model)`): das
+  klassische Meteogramm zeigt genau EIN Modell, und eine Achse, die vier
+  Fünftel leer bleibt, weil AROME nach 60 h endet, sieht aus wie ein Fehler und
+  drückt die interessanten zweieinhalb Tage in einen schmalen Streifen links.
+  In den Punktprognosen ist das bewusst ANDERS — dort liegen mehrere Modelle
+  übereinander, die gemeinsame Achse muss das längste tragen und die kürzeren
+  werden schraffiert. Die Kopfzeile nennt den Horizont in Stunden, damit die
+  unterschiedliche Achsenlänge erklärt ist.
   Die **Datumskennzeichnung steht unter JEDER Zeile** (`dayRow`, gezeichnet
   vom `dayMarkPlugin`): der Trennstrich bei 00 UTC läuft durch die
   Diagrammfläche UND weiter bis in den Datumsstreifen darunter, das Datum
@@ -559,18 +568,15 @@ npm run preview   # gebautes dist/ servieren
 - **`selectable: false` blendet ein Modell aus ALLEN Auswahlen aus**
   (`SELECTABLE_MODELS`), ohne es aus der Registry zu nehmen — gespeicherte
   Presets lösen die ID weiter auf (`modelExists` prüft gegen `MODELS`, nicht
-  gegen die Auswahlliste), und das Wiedereinschalten ist ein Wort. Aktuell
-  abgeschaltet: `geosphere_arome_austria` und `ukmo_uk_deterministic_2km`. Sie
-  LIEFERN Daten (live geprüft 2026-08-31: Wien 79 h, London 73 h), taugen als
-  Auswahl aber nicht: ihr Horizont füllt nur rund ein Fünftel der
-  16-Tage-Achse — der Rest bleibt leer und sieht aus wie ein Fehler —, und
-  außerhalb ihres Gebiets scheitert der Request komplett (UKMO-UK antwortet in
-  Österreich nicht einmal mit JSON).
+  gegen die Auswahlliste), und das Wiedereinschalten ist ein Wort. Abgeschaltet
+  ist nur `ukmo_uk_deterministic_2km`: es LIEFERT Daten (live geprüft
+  2026-08-31, London 73 h), scheitert außerhalb Großbritanniens aber komplett —
+  in Österreich antwortet der Request nicht einmal mit JSON, und für diese
+  Workbench liegt jeder interessante Punkt dort.
 - **Neue Modelle/Variablen IMMER live gegen die API verifizieren, nie nur aus
   der Doku übernehmen** (SPEC §6): Open-Meteo antwortet teils mit HTTP 200 und
   leeren Arrays statt mit einem Fehler. Bereits live verifiziert:
-  `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h — derzeit
-  `selectable: false`, s. o.) und `icon_eu`
+  `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h) und `icon_eu`
   (120 h Horizont — nicht die ~78 h, die teils kursieren).
 - **KI-Modelle sind vollständig durchprobiert** (2026-08-17, 27 IDs gegen beide
   APIs): es gibt genau ZWEI. `ecmwf_aifs025_single` auf der Forecast-API

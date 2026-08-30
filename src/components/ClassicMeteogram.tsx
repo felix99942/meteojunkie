@@ -222,7 +222,15 @@ export function ClassicMeteogram() {
     setReadoutMs(ms)
   }, [])
 
-  const gridMs = useMemo(() => timeGridMs(), [])
+  // Die Zeitachse endet am Horizont des GEWÄHLTEN Modells, nicht am
+  // 16-Tage-Raster. Das klassische Meteogramm zeigt genau EIN Modell — eine
+  // Achse, die vier Fünftel leer bleibt, weil AROME nach 78 Stunden endet,
+  // sieht aus wie ein Fehler und drückt die interessanten drei Tage in einen
+  // schmalen Streifen links. (In den Punktprognosen ist das anders: dort
+  // liegen mehrere Modelle übereinander, die gemeinsame Achse muss das
+  // längste tragen und die kürzeren werden schraffiert.)
+  const horizon = modelHorizonEnd(model)
+  const gridMs = useMemo(() => timeGridMs().filter((t) => t <= horizon), [horizon])
   const xs = useMemo(() => gridMs.map((t) => t / 1000), [gridMs])
 
   // Einzelabrufe (1 Modell × 1 Variable) — der Batcher in openmeteo.ts bündelt
@@ -260,9 +268,8 @@ export function ClassicMeteogram() {
     .join('')
 
   const charts = useMemo<ChartDef[]>(() => {
-    const horizon = modelHorizonEnd(model)
-    // Serie endet am Registry-Horizont — keine Extrapolation darüber hinaus,
-    // wie im Meteogramm der Punktprognosen.
+    // Sicherheitsnetz: das Raster ist bereits am Horizont beschnitten, aber
+    // liefert ein Modell früher nichts mehr, wird hier nicht extrapoliert.
     const mask = (vals: (number | null)[]) => vals.map((v, i) => (gridMs[i] > horizon ? null : v))
     const g = (q: { data?: HourlySeries }) => mask(alignToGrid(gridMs, q.data))
 
@@ -433,7 +440,7 @@ export function ClassicMeteogram() {
     // auf `loadedKey` (geladen ja/nein je Serie) keyen wie im Meteogramm der
     // Punktprognosen, sonst rechnet der Memo bei jedem Render neu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, gridMs, model])
+  }, [loadedKey, gridMs, horizon])
 
   const syncKey = 'classic-meteogram'
   // Die Zeitleiste zwischen Bewölkung und Temperatur trägt den Zeitpunkt —
@@ -468,6 +475,12 @@ export function ClassicMeteogram() {
           </select>
         </label>
         <span className="label-muted">Lauf {formatRun(run)}</span>
+        <span
+          className="label-muted"
+          title="Vorhersagehorizont des gewählten Modells — so weit reicht die Zeitachse."
+        >
+          Horizont +{Math.round((horizon - Date.now()) / 3_600_000)} h
+        </span>
         <span className="label-muted" title="Zeitachse in UTC, nicht in der Ortszeit des gewählten Punkts. Die Nachtschattierung kommt dagegen ortsgenau aus dem Modell.">
           Zeiten in UTC
         </span>
