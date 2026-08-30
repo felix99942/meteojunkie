@@ -35,6 +35,16 @@ function alignToGrid(gridMs: number[], series: HourlySeries): (number | null)[] 
   return gridMs.map((t) => byTime.get(t) ?? null)
 }
 
+/** Zeitangabe der Legende — Wochentag, Datum, Stunde in UTC. */
+const legendFmt = new Intl.DateTimeFormat('de-DE', {
+  timeZone: 'Etc/UTC',
+  weekday: 'short',
+  day: 'numeric',
+  month: 'numeric',
+  hour: '2-digit',
+  hourCycle: 'h23',
+})
+
 export function Meteogram({ panel }: { panel: PanelConfig }) {
   const location = useWorkbench((s) => s.lockedLocation)
   const cursorTime = useWorkbench((s) => s.cursorTime)
@@ -275,6 +285,13 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
     <div className="meteogram">
       <div ref={containerRef} className="meteogram-plot" />
       <div className="meteogram-legend">
+        {/* Ohne die Zeit sagen die Werte nicht, WOFÜR sie gelten — beim Lesen
+            mit der Maus ist das die halbe Information. Am Zeiger wird es
+            ausdrücklich markiert, sonst gilt die Panel-Zeit vom Schieber. */}
+        <span className={`legend-time${hoverIdx != null ? ' is-hover' : ''}`}>
+          {legendFmt.format(new Date(legendTime))} UTC
+          {hoverIdx != null && <span className="label-muted"> (Zeiger)</span>}
+        </span>
         {panel.models.map((id, i) => {
           const r = results[i]
           const supported = getModel(id).availableVariables.includes(panel.variable)

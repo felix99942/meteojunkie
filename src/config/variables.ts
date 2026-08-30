@@ -24,6 +24,14 @@ export interface VariableInfo {
    */
   accum?: true
   sumUnit?: string
+  /**
+   * Nur als Bestandteil eines fertigen Diagramms sinnvoll, NICHT als frei
+   * wählbarer Parameter: Wettercode und Tag/Nacht-Flag sind kategoriale
+   * Größen — als Linienchart über der Zeit wären sie sinnlos, im klassischen
+   * Meteogramm liefern sie Symbolzeile und Nachtschattierung. Bleiben deshalb
+   * aus den Parameter-Dropdowns draußen.
+   */
+  chartOnly?: true
 }
 
 export const HOURLY_VARIABLES: VariableInfo[] = [
@@ -40,6 +48,12 @@ export const HOURLY_VARIABLES: VariableInfo[] = [
     sumUnit: 'mm',
   },
   { id: 'snowfall', label: 'Schneefall', unit: 'cm/h', nonNegative: true, accum: true, sumUnit: 'cm' },
+  {
+    id: 'precipitation_probability',
+    label: 'Niederschlagswahrscheinlichkeit',
+    unit: '%',
+    nonNegative: true,
+  },
   { id: 'cloud_cover', label: 'Bewölkung', unit: '%', nonNegative: true },
   { id: 'cloud_cover_low', label: 'Bewölkung tief', unit: '%', nonNegative: true },
   { id: 'cloud_cover_mid', label: 'Bewölkung mittel', unit: '%', nonNegative: true },
@@ -50,6 +64,9 @@ export const HOURLY_VARIABLES: VariableInfo[] = [
   { id: 'wind_direction_10m', label: 'Windrichtung 10 m', unit: '°', nonNegative: true },
   { id: 'cape', label: 'CAPE', unit: 'J/kg', nonNegative: true },
   { id: 'shortwave_radiation', label: 'Globalstrahlung', unit: 'W/m²', nonNegative: true },
+  // Nur fürs klassische Meteogramm (Symbolzeile bzw. Nachtschattierung):
+  { id: 'weather_code', label: 'Wettercode (WMO)', unit: '', nonNegative: true, chartOnly: true },
+  { id: 'is_day', label: 'Tag/Nacht', unit: '', nonNegative: true, chartOnly: true },
 ]
 
 const byId = new Map(HOURLY_VARIABLES.map((v) => [v.id, v]))

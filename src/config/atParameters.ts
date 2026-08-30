@@ -10,7 +10,22 @@
 import { COLOR_SCALES, type ColorScale } from './colorscales'
 
 /** Wie eine Reihe täglicher Werte auf EINEN Kartenwert reduziert wird. */
-export type AggMode = 'mean' | 'sum' | 'max' | 'min' | 'last'
+export type AggMode = 'mean' | 'sum' | 'max' | 'min' | 'last' | 'count'
+
+/**
+ * Schwellenregel eines KENNTAGS: zählt die Tage, die sie erfüllen (Sommertag =
+ * Tagesmaximum ≥ 25 °C). Nötig ist sie nur für den LAUFENDEN Monat — für
+ * abgeschlossene Monate liefert GeoSphere die fertige Zahl (`tage_sommer` …),
+ * der laufende Monat muss sie aus den Tageswerten selbst zählen, damit ein
+ * angefangener August nicht leer bleibt (dieselbe Logik wie bei den Summen,
+ * siehe `fetchRunningMonthPartial`).
+ */
+export interface CountRule {
+  /** Tagesparameter, auf den die Schwelle angewandt wird (z. B. `tlmax`). */
+  source: string
+  op: '>=' | '<'
+  value: number
+}
 
 /**
  * Größenordnung des gezeigten Werts. Summenparameter wachsen mit dem Zeitbezug
@@ -53,7 +68,7 @@ export interface AtParameterSpec {
    * Rekord zu lesen ist.
    */
   description: string
-  category: 'Temperatur' | 'Niederschlag' | 'Sonne' | 'Schnee' | 'Feuchte' | 'Wind'
+  category: 'Temperatur' | 'Niederschlag' | 'Sonne' | 'Schnee' | 'Feuchte' | 'Wind' | 'Kenntage'
   /** Reduktion täglicher Werte auf einen Wert (Tag/Monat-Aggregat der Rohreihe). */
   agg: AggMode
   /** Reduktion der 12 Monatswerte auf den Jahreswert. */
@@ -95,6 +110,13 @@ export interface AtParameterSpec {
    * und Wind zeitgleich (`fetchLiveApparentTemperature` in `atValues.ts`).
    */
   derived?: 'apparentTemperature'
+  /**
+   * Gesetzt → KENNTAG: die Größe ist eine Anzahl von Tagen. `isParamAvailable()`
+   * sperrt sie im Tag-Modus (ein Kenntag für EINEN Tag wäre 0 oder 1 und als
+   * Karte sinnlos), und `agg: 'count'` zählt damit den laufenden Monat aus den
+   * Tageswerten von `source`.
+   */
+  countRule?: CountRule
 }
 
 // Divergierende Temperatur-Anomalie (K): blau (kalt) → neutral → rot (warm).
@@ -165,6 +187,50 @@ const SNOW_DEPTH_SCALE: ColorScale = {
     { value: 120, color: '#cbc4f7' },
     { value: 200, color: '#e0dcfb' },
     { value: 300, color: '#f2f0fe' },
+  ],
+}
+
+/**
+ * Farbskala für KENNTAGE (Anzahl Tage). Die Obergrenze muss je Parameter UND
+ * Zeitbezug gesetzt werden: Frosttage erreichen im Jahr 250, Gewittertage 50 —
+ * mit einer gemeinsamen Skala läge die eine Karte durchgehend im obersten, die
+ * andere im untersten Band. Deshalb ein Generator statt fester Skalen; die
+ * Bereiche bleiben damit trotzdem FEST (kein Auto-Scaling, SPEC §8).
+ */
+function countScale(max: number, ramp: string[]): ColorScale {
+  return {
+    kind: 'stepped',
+    belowMin: 'clamp',
+    stops: ramp.map((color, i) => ({ value: Math.round((i * max) / ramp.length), color })),
+  }
+}
+
+// Wärme-Kenntage: dunkel (nie) → hell/heiß (oft). Dieselbe Leserichtung wie
+// die Sonnenscheinskala — im dunklen Theme heißt „mehr" heller.
+const HOT_RAMP = ['#2e2417', '#5c3a10', '#8a4f10', '#b3611a', '#d2762a', '#e59444', '#f0b473', '#f8d7a8']
+// Kälte-Kenntage (Frost, Eis, Schneedecke): dunkel → hellblau.
+const COLD_RAMP = ['#16202e', '#1d3350', '#254a76', '#2f6398', '#4a83b8', '#78a8d0', '#a9c9e4', '#d6e6f4']
+// Ereignis-Kenntage (Gewitter, Nebel): eigene Rampe, damit sie nicht mit
+// Wärme oder Kälte verwechselt werden.
+const EVENT_RAMP = ['#2a2333', '#3f3054', '#584078', '#71559a', '#8d74b6', '#a998cc', '#c5bcdf', '#e0dbef']
+
+/**
+ * Abweichung einer TAGESANZAHL (Δ Tage). Eine Skala für Monat und Jahr ist ein
+ * Kompromiss — ein Monat schwankt um wenige Tage, ein Jahr um Dutzende —,
+ * deckt aber beide Enden ab, weil die Stufen nach außen gröber werden.
+ */
+const DAYS_ANOM_SCALE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: [
+    { value: -30, color: '#2166ac' },
+    { value: -15, color: '#4393c3' },
+    { value: -7, color: '#92c5de' },
+    { value: -2, color: '#d1e5f0' },
+    { value: 2, color: '#fddbc7' },
+    { value: 7, color: '#f4a582' },
+    { value: 15, color: '#d6604d' },
+    { value: 30, color: '#b2182b' },
   ],
 }
 
@@ -286,6 +352,23 @@ export const AT_PARAMETERS: AtParameterSpec[] = [
   { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', shortLabel: 'Sonnenscheindauer', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, monthScale: SUNSHINE_MONTH_SCALE, seasonScale: SUNSHINE_SEASON_SCALE, yearScale: SUNSHINE_YEAR_SCALE, anomalyScale: SUN_ANOM_SCALE, climateAnomalyScale: SUN_CLIMATE_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
   { code: 'rfb_mittel', monthlyCode: 'rf_mittel', liveCode: 'rf', liveAgg: 'mean', label: 'Rel. Feuchte', shortLabel: 'Relative Feuchte', unit: '%', category: 'Feuchte', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: '%-Pkt', scale: COLOR_SCALES.relative_humidity_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere relative Luftfeuchte. Im Tagesdatensatz aus dem Feuchtefühler (rfb_mittel), im Monatsdatensatz als rf_mittel geführt.' },
   { code: 'sh', liveCode: 'sh', liveAgg: 'last', label: 'Schneehöhe (nur Tag)', shortLabel: 'Schneehöhe (nur Tag)', unit: 'cm', category: 'Schnee', agg: 'last', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'cm', scale: SNOW_DEPTH_SCALE, anomalyScale: TEMP_ANOM_SCALE, description: 'Gesamtschneehöhe zum Beobachtungstermin. Nur im Tag-Modus verfügbar — der Monatsdatensatz führt keine Schneehöhe, deshalb gibt es dafür weder Normale noch Rekorde.' },
+  // --- Kenntage -------------------------------------------------------------
+  // Anzahl von Tagen, die eine Schwelle erfüllen — die klassische Währung der
+  // Klimatologie: „+12 Sommertage gegenüber 1991–2020" sagt mehr als +1,3 K.
+  // GeoSphere liefert sie FERTIG im Monatsdatensatz (462 Stationen, live
+  // geprüft 2026-08-31); der laufende Monat wird über `countRule` aus den
+  // Tageswerten selbst gezählt. Im Tag-Modus gesperrt: ein Kenntag für EINEN
+  // Tag wäre 0 oder 1 und als Karte sinnlos.
+  //
+  // ACHTUNG: `code` ist der IDENTITÄTSSCHLÜSSEL der Registry (Dropdown-Wert,
+  // `getAtParameter`, gespeicherter Zustand) — Kenntage tragen deshalb ihren
+  // MONATScode als `code` und nennen den Tagesrohwert nur in `countRule.source`.
+  // Mit `code: 'tlmax'` hätten sie den echten Temperaturparameter verdeckt.
+  { code: 'tage_sommer', monthlyCode: 'tage_sommer', label: 'Sommertage', shortLabel: 'Sommertage', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '>=', value: 25 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, HOT_RAMP), monthScale: countScale(31, HOT_RAMP), seasonScale: countScale(80, HOT_RAMP), yearScale: countScale(120, HOT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesmaximum von mindestens 25 °C. Monat und Jahr sind ANZAHLEN — der Rekord ist ein sommertagreicher Monat, kein einzelner Tag.' },
+  { code: 'tage_tropen', monthlyCode: 'tage_tropen', label: 'Hitzetage', shortLabel: 'Hitzetage (≥ 30 °C)', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '>=', value: 30 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(20, HOT_RAMP), monthScale: countScale(20, HOT_RAMP), seasonScale: countScale(45, HOT_RAMP), yearScale: countScale(60, HOT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesmaximum von mindestens 30 °C (GeoSphere führt sie als „Tropentage"). Monat und Jahr sind Anzahlen.' },
+  { code: 'tage_frost', monthlyCode: 'tage_frost', label: 'Frosttage', shortLabel: 'Frosttage', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmin', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(250, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesminimum unter 0 °C. Monat und Jahr sind Anzahlen.' },
+  { code: 'tage_eis', monthlyCode: 'tage_eis', label: 'Eistage', shortLabel: 'Eistage (Dauerfrost)', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(180, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage, an denen auch das Tagesmaximum unter 0 °C bleibt (Dauerfrost). Monat und Jahr sind Anzahlen.' },
+  { code: 'tage_rr_1', monthlyCode: 'tage_rr_1', label: 'Niederschlagstage', shortLabel: 'Tage ≥ 1 mm', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'rr', op: '>=', value: 1 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, EVENT_RAMP), monthScale: countScale(31, EVENT_RAMP), seasonScale: countScale(70, EVENT_RAMP), yearScale: countScale(200, EVENT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit mindestens 1 mm Niederschlag. Sagt etwas anderes als die Niederschlagssumme: viele kleine Regentage oder wenige große.' },
 ]
 
 const byCode = new Map(AT_PARAMETERS.map((p) => [p.code, p]))
@@ -392,6 +475,9 @@ export function valueCaption(
     min: 'Tagestiefstwert',
     sum: 'Tagessumme',
     last: 'Wert zum Beobachtungstermin',
+    // Kenntage sind im Tag-Modus gesperrt (isParamAvailable) — der Eintrag
+    // hält nur die Tabelle vollständig.
+    count: 'Kenntag (trifft zu / trifft nicht zu)',
   }
   const month: Record<AggMode, string> = {
     mean: 'Monatsmittel',
@@ -399,6 +485,7 @@ export function valueCaption(
     min: 'tiefster Tageswert des Monats',
     sum: 'Monatssumme',
     last: 'letzter Wert des Monats',
+    count: 'Anzahl im Monat',
   }
   const season: Record<AggMode, string> = {
     mean: 'Saisonmittel',
@@ -406,6 +493,7 @@ export function valueCaption(
     min: 'tiefster Tageswert der Saison',
     sum: 'Saisonsumme',
     last: 'letzter Wert der Saison',
+    count: 'Anzahl in der Saison',
   }
   const year: Record<AggMode, string> = {
     mean: 'Jahresmittel',
@@ -413,6 +501,7 @@ export function valueCaption(
     min: 'tiefster Tageswert des Jahres',
     sum: 'Jahressumme',
     last: 'letzter Wert des Jahres',
+    count: 'Anzahl im Jahr',
   }
   // Normale sind IMMER ein Mittel über die Jahre der Periode — auch bei
   // Maximum-Parametern. Genau hier entsteht das Missverständnis.
@@ -422,6 +511,7 @@ export function valueCaption(
     min: 'Mittel der Monatstiefstwerte',
     sum: 'mittlere Monatssumme',
     last: 'Mittel der Monatsendwerte',
+    count: 'mittlere Anzahl je Monat',
   }
   const normalSeasonal: Record<AggMode, string> = {
     mean: 'langjähriges Saisonmittel',
@@ -429,6 +519,7 @@ export function valueCaption(
     min: 'Mittel der Saisontiefstwerte',
     sum: 'mittlere Saisonsumme',
     last: 'Mittel der Saisonendwerte',
+    count: 'mittlere Anzahl je Saison',
   }
   const normalAnnual: Record<AggMode, string> = {
     mean: 'langjähriges Jahresmittel',
@@ -436,6 +527,7 @@ export function valueCaption(
     min: 'Mittel der Jahrestiefstwerte',
     sum: 'mittlere Jahressumme',
     last: 'Mittel der Jahresendwerte',
+    count: 'mittlere Anzahl je Jahr',
   }
   switch (kind) {
     case 'day':
@@ -465,10 +557,19 @@ export function anomaly(value: number, normal: number, kind: AnomalyKind): numbe
 }
 
 /** Reihe (mit möglichen null-Lücken) gemäß Aggregat auf einen Wert reduzieren. */
-export function aggregate(values: (number | null)[], mode: AggMode): number | null {
+export function aggregate(
+  values: (number | null)[],
+  mode: AggMode,
+  rule?: CountRule,
+): number | null {
   const nums = values.filter((v): v is number => v != null && Number.isFinite(v))
   if (nums.length === 0) return null
   switch (mode) {
+    case 'count':
+      // Ohne Regel ist eine Anzahl nicht bestimmbar — lieber kein Wert als eine
+      // stillschweigend falsche Null.
+      if (!rule) return null
+      return nums.filter((v) => (rule.op === '>=' ? v >= rule.value : v < rule.value)).length
     case 'mean':
       return nums.reduce((a, b) => a + b, 0) / nums.length
     case 'sum':

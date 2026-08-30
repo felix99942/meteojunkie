@@ -1515,10 +1515,27 @@ button:focus-visible {
   gap: 10px;
 }
 
+/* Zeitangabe der Meteogramm-Legende (Punktprognosen): trägt die Werte
+   daneben — deshalb hervorgehoben und am Zeiger zusätzlich markiert. */
+.legend-time {
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.legend-time.is-hover {
+  color: var(--ink);
+}
+
 .meteo-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* Eng gesetzt: die Zeilen eines Meteogramms werden senkrecht miteinander
+     gelesen, große Abstände zerlegen den Stapel optisch in Einzelbilder. */
+  gap: 4px;
   flex: 1 1 auto;
   min-height: 0;
   /* Sicherheitsnetz bei sehr kleinen Fenstern — normalerweise füllen die
@@ -1526,15 +1543,52 @@ button:focus-visible {
   overflow-y: auto;
 }
 
-/* Jede Zeile bekommt einen GLEICHEN Anteil der verfügbaren Höhe (flex: 1 1 0,
-   nicht 0 0 auto) — das ist der eigentliche Hebel für „vertikal strecken".
-   Eine feste Pixelhöhe hätte bei kleiner Fläche zu wenig Platz für die
-   y-Achse gelassen (uPlot reduziert die Ticks dann auf ein bis zwei Werte). */
+/* Jede Zeile bekommt einen Anteil der verfügbaren Höhe (flex-basis 0, nicht
+   0 0 auto) — das ist der eigentliche Hebel für „vertikal strecken". Eine
+   feste Pixelhöhe hätte bei kleiner Fläche zu wenig Platz für die y-Achse
+   gelassen (uPlot reduziert die Ticks dann auf ein bis zwei Werte). Der
+   GEWICHTUNG kommt inline aus `ChartDef.flex`: die Wettersymbolzeile braucht
+   wenig, Temperatur und Niederschlag viel — sechs gleich hohe Zeilen wären
+   Platzverschwendung oben und Enge in der Mitte. */
+/* Große Modellzeit zwischen Bewölkung und Temperatur: sie gilt für ALLE
+   Zeilen, deshalb steht sie einmal in der Mitte des Stapels statt klein in
+   jeder Zeile — und an der Zeigerposition, damit man beim Ablesen nicht
+   zwischen Kurve und Bildschirmecke hin- und herspringt. Die Achsenbreiten
+   links/rechts sind dieselben wie in den Diagrammen (chartDef.ts). */
+.meteo-timebar {
+  position: relative;
+  height: 26px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.meteo-timebar-value {
+  position: absolute;
+  top: 1px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #f0c04a;
+  pointer-events: none;
+}
+
+.meteo-timebar-idle {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
 .meteo-row {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
-  min-height: 190px;
+  min-height: 120px;
 }
 
 .meteo-plotwrap {

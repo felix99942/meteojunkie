@@ -82,6 +82,14 @@ const PARAMS = [
   { code: 'rr', annual: 'sum', nonNeg: true },
   { code: 'so_h', annual: 'sum', nonNeg: true },
   { code: 'rf_mittel', annual: 'mean', nonNeg: false },
+  // Kenntage: GeoSphere liefert die fertigen Anzahlen im Monatsdatensatz, das
+  // Jahr ist ihre SUMME. Ohne diese Einträge gäbe es die Parameter zwar in der
+  // Karte, aber ohne Normal und damit ohne Abweichungsmodus.
+  { code: 'tage_sommer', annual: 'sum', nonNeg: true },
+  { code: 'tage_tropen', annual: 'sum', nonNeg: true },
+  { code: 'tage_frost', annual: 'sum', nonNeg: true },
+  { code: 'tage_eis', annual: 'sum', nonNeg: true },
+  { code: 'tage_rr_1', annual: 'sum', nonNeg: true },
 ]
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'at')

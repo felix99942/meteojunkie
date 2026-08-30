@@ -157,6 +157,26 @@ npm run preview   # gebautes dist/ servieren
   Statuszeile und im Ranglisten-Titel; `periodLabel` benennt nur noch den
   Zeitraum („Jahr 1991–2020"), nicht mehr die Größe. Reine Rechenkerne
   sind mit Vitest getestet (`*.test.ts`, `npm test`).
+  **Kenntage** (`countRule`, Kategorie „Kenntage"): Anzahl von Tagen, die eine
+  Schwelle erfüllen — Sommertage (Tmax ≥ 25), Hitzetage (≥ 30), Frosttage
+  (Tmin < 0), Eistage (Tmax < 0), Niederschlagstage (≥ 1 mm). GeoSphere liefert
+  sie FERTIG im Monatsdatensatz (`tage_sommer` …, 462 Stationen — die beste
+  Abdeckung aller Kandidaten, weil aus der Temperatur abgeleitet); der LAUFENDE
+  Monat zählt sie über `agg: 'count'` selbst aus den Tageswerten von
+  `countRule.source`, sonst bliebe ein angefangener August leer. **Im Tag-Modus
+  gesperrt** (`isParamAvailable`): ein Kenntag für EINEN Tag wäre 0 oder 1 und
+  als Karte sinnlos. **`code` ist der Identitätsschlüssel der Registry**
+  (Dropdown-Wert, `getAtParameter`, gespeicherter Zustand) — Kenntage tragen
+  deshalb ihren MONATScode als `code` und nennen den Tagesrohwert nur in
+  `countRule.source`; mit `code: 'tlmax'` verdeckten sie still den echten
+  Temperaturparameter (ein Test hält die Codes eindeutig). Farbskalen kommen aus
+  `countScale(max, ramp)` statt fester Konstanten: Frosttage erreichen im Jahr
+  250, Gewittertage 50 — mit einer gemeinsamen Skala läge die eine Karte
+  durchgehend im obersten, die andere im untersten Band; die Bereiche bleiben
+  trotzdem fest. Rekorde gibt es dafür (noch) nicht, die Assets führen die
+  `tage_*`-Codes nicht — das Detail sagt es. Plausibilitätsprobe der Normale
+  1991–2020 gegen 1961–1990: Median +15 Sommertage, +7 Hitzetage,
+  −15 Frosttage, −7 Eistage.
   **Klimaperioden** (`config/atNormals.ts`, `AT_NORMAL_PERIODS`): vierter
   Zeitbezug neben Tag/Monat/Jahr — das langjährige Mittel einer WMO-Normalperiode
   (1991–2020, 1961–1990), wahlweise Jahresmittel oder ein Kalendermonat (z. B.
@@ -167,7 +187,7 @@ npm run preview   # gebautes dist/ servieren
   (`comparePeriod`, Bezug = nächstältere Periode) statt Wetter gegen Normal.
   **Deckungsregel**: ein Normal entsteht nur aus ≥ 24 der 30 Jahre und ein Jahr
   zählt nur mit allen 12 Monaten — deshalb hat lange nicht jede Station eines
-  (1991–2020: 300, 1961–1990: 280 Stationen), und die alte Datei `normals.json`
+  (1991–2020: 301, 1961–1990: 282 Stationen), und die alte Datei `normals.json`
   mit 806 Stationen ist bewusst weg: die zusätzlichen Werte stammten aus
   Teilreihen. Für ältere Perioden zeigt erst der Haken „Historische" das volle
   Netz.
@@ -210,8 +230,22 @@ npm run preview   # gebautes dist/ servieren
   modulweit). Die Reihen werden über ihre TERMINE ausgerichtet
   (`alignSeries`), nicht über den Index. Klimadaten bleiben davon unberührt
   (Österreich/TAWES).
+- **Mit der Maus ablesen, mit dem Klick navigieren** — gilt in Punktprognosen
+  (`Meteogram.tsx`) UND Ensemble (`EnsemblePanel.tsx`): ein `setCursor`-Hook
+  führt `hoverIdx`, Legende bzw. Ablesezeile zeigen den ÜBERFAHRENEN
+  Zeitschritt und fallen beim Verlassen auf die Panel-/Cursor-Zeit zurück; der
+  KLICK setzt weiterhin `cursorTime`. Lesen und Navigieren sind bewusst zwei
+  Handgriffe — sonst verstellte jedes Überfahren den globalen Zeit-Cursor und
+  damit alle synchronisierten Panels. Beide Anzeigen nennen die ZEIT, zu der
+  die Werte gehören, und markieren sie als „(Zeiger)", wenn sie am Mauszeiger
+  hängt: ohne die Zeitangabe sagt ein Wert nicht, wofür er gilt.
 - **Ensemble-Modus** (`EnsemblePanel`, `config/ensemble.ts`, Kern `render/plume.ts`,
   Parsing `api/ensembleParse.ts`) — vierter Panel-Modus, **punktbasiert**.
+  **Startparameter ist `temperature_850hPa`, nicht T2m** (`DEFAULT_ENSEMBLE_
+  VARIABLE`): die Plume ist ein synoptisches Werkzeug, auf 850 hPa liegt das
+  Signal des Luftmassenwechsels — T2m wird von der bodennahen Grenzschicht
+  (Inversion, Schneedecke, Modellorografie) überlagert, die Streuung zeigt dort
+  eher Modellrauschen als Wetterlage.
   Eigener Endpunkt (`ensemble-api.open-meteo.com`), aber derselbe `apiGet`-Pfad
   (mock-fähig, im Verbrauchszähler sichtbar). Modelle: `ecmwf_ifs025` und
   `ecmwf_aifs025` (je 51 Member, 15 Tage) plus `gfs_seamless` (NOAA GEFS,
@@ -231,15 +265,65 @@ npm run preview   # gebautes dist/ servieren
 - **Klassisches Meteogramm** (`ClassicMeteogram.tsx`, AppView `classic`) — der
   „Meteogramm, wie man's kennt"-Bereich: EIN Ort (teilt sich `lockedLocation`
   mit Punktprognosen/Ensemble/Profil), EIN wählbares Modell (Default
-  `ecmwf_ifs025`), Standardgrößen als Stapel: Temperatur + gefühlte Temperatur
-  (gestrichelt überlagert), Niederschlag (Balken), Bewölkung (%), Wind
-  (Geschwindigkeit + Richtungspfeile). Bewusst NICHT Teil des Panel-Rasters
+  `ecmwf_ifs025`), Aufbau nach dem **etablierten Schema der Wetterdienste**
+  (DWD/ZAMG/ECMWF-Meteogramm), von oben nach unten: **Wettersymbole**
+  (WMO-`weather_code`) · **Bewölkung in ACHTELN** (WMO-Stationskreis 0/8–8/8,
+  je Zeitschritt ein Kreis, vier Zeilen untereinander: Gesamt/Hoch/Mittel/Tief)
+  · Temperatur + **Taupunkt** +
+  gefühlte Temperatur mit markierter **0-°C-Linie** und beschrifteten
+  **Tagesmaxima und -minima** (`ChartDef.marks` = Sätze von Punktmarken, Punkt
+  + Zahl; Maximum in der Kurvenfarbe über dem Punkt, Minimum blau darunter —
+  `MarkSet.place`, gespiegelt wenn dort kein Platz ist; angeschnittene Fenster
+  werden verworfen — am Modellhorizont wäre das „Maximum" der letzten paar
+  Stunden sonst eine falsche Aussage). **Die beiden haben VERSCHIEDENE
+  Suchfenster** (`ExtremeWindow`): das Maximum den Kalendertag 00–00 UTC —
+  dort schneidet die Tagesgrenze durch kein Extremum, und bei INVERSEM
+  Tagesgang kann der Höchstwert überall im Tag liegen, auch nachts. Das
+  Minimum dagegen die **synoptische Nacht 18–06 UTC**: über den Kalendertag
+  gerechnet stand vor UND nach Mitternacht je ein Minimum, obwohl es eine
+  Nacht mit einem Minimum ist — die Tagesgrenze schneidet genau durch den
+  Tiefpunkt. Nicht auf ein gemeinsames Fenster zurückdrehen. Der Punkt sitzt
+  exakt auf dem Zeitpunkt, nur die ZAHL wird über
+  `PointMark.spanStart/spanEnd` in ihr Fenster hineingezogen, damit sie nicht
+  über dessen Rand steht und dem Nachbarfenster zugeordnet wird. Die y-Achse
+  läuft über `yStep: 5` in **5-K-Schritten** (5/10/15/20 …): feste `incrs` plus
+  auf Vielfache aufgezogene Skala, sonst lägen die Ticks auf krummen Werten
+  wie 3,7/8,7. Dazu MUSS `ySpace` klein genug sein (16 statt 30) — uPlot nimmt
+  die nächstgröbere erlaubte Schrittweite, sobald zwei Ticks enger als `space`
+  beieinanderlägen, und die Achse sprang bei üblicher Zeilenhöhe auf 10-K-
+  Schritte zurück; beim Wind aus demselben Grund 18 · Niederschlag getrennt
+  nach **Regen/Schnee** plus **Wahrscheinlichkeit** auf eigener rechter Achse ·
+  Wind mit **Windfiedern** (Windbarbs in Knoten) + Böen · **Luftdruck (MSL)**.
+  Über allen Zeilen liegt die **Tag/Nacht-Schattierung** aus dem Modellfeld
+  `is_day` (ortsgenau — die Achse selbst bleibt UTC). Diese Zeilen sind bewusst
+  NICHT konfigurierbar: das ist der erwartete Kanon, freie Parameterwahl gibt
+  es im Bereich „Punktprognosen". Zeilenhöhen über `ChartDef.flex` gewichtet
+  (Symbolzeile ganz schmal, Temperatur/Niederschlag breit). Die
+  **Symbolzeile trägt weder Stundenachse noch Datumsstreifen
+  (`ChartDef.hideXAxis`) noch Kopfzeile**: die Uhrzeiten stehen unter jedem
+  anderen Parameter ohnehin, und „Wetter" über einer Reihe Wettersymbole sagt
+  nichts — beides fraß nur die Höhe, die die Parameter darunter besser
+  brauchen. Die Tagesgrenz-Linie bleibt. Symbolabstände (Wettersymbole, Achtel-Kreise, Windfiedern) rasten
+  über `symbolStep()` auf RUNDE Stundenvielfache (1/2/3/6/12/24) statt auf
+  einen aus der Breite gerechneten krummen Schritt — sonst wanderten die
+  Symbole über die Uhrzeiten und stünden zwischen den Zeilen senkrecht
+  versetzt. Symbolzeichnung:
+  `render/wxsymbols.ts` (Wettersymbole, Achtel-Kreis, Windfiedern — reine
+  Canvas-Primitive, weil ein DOM-Overlay beim Resize nie deckungsgleich mit der
+  Zeitachse bliebe), Code→Klasse/Klartext: `config/wmo.ts`. `weather_code` und
+  `is_day` stehen als `chartOnly` in `config/variables.ts` — sie sind
+  Diagrammbausteine, keine wählbaren Parameter, und werden aus den
+  Dropdowns gefiltert. **`precipitation_probability` gibt es NICHT überall**
+  (live geprüft 2026-08-30: ARPEGE, AROME FR/AT, UKMO global/UK und AIFS
+  liefern durchgehend null) — deshalb pro Modell gepflegt (`PROB_VAR`), nicht
+  in `BASE_VARS`. Bewusst NICHT Teil des Panel-Rasters
   (kein `PanelSection`) — ein gestapeltes Meteogramm mit mehreren Modellen
   übereinander wäre visuell Chaos, deshalb ein eigenes schlankes Gerüst wie die
-  Klimakarte, kein Sync/Layout/Multi-Modell. Holt sechs Einzelserien (1 Modell
+  Klimakarte, kein Sync/Layout/Multi-Modell. Holt 16 Einzelserien (1 Modell
   × Variable) über `useMeteogramSeries` — der Request-Batcher in `openmeteo.ts`
-  bündelt sie trotzdem zu einem Request pro Punkt, wie bei mehreren
-  gleichzeitig sichtbaren Punktprognosen-Panels. `apparent_temperature` ist
+  bündelt sie trotzdem zu EINEM Request pro Punkt, wie bei mehreren
+  gleichzeitig sichtbaren Punktprognosen-Panels; der Stapel kostet also einen
+  Abruf, nicht sechzehn. `apparent_temperature` ist
   dafür neu in `HOURLY_VARIABLES`/`BASE_VARS` aufgenommen (live gegen mehrere
   Modelle verifiziert, s. `config/variables.ts`/`config/models.ts`).
   **`ChartStack.tsx`** (Komponente) + **`config/chartDef.ts`** (Typen/Helfer,
@@ -249,16 +333,59 @@ npm run preview   # gebautes dist/ servieren
   herausgezogen (MOS-Punktvorhersage nutzt ihn jetzt auch). Enthält den
   Cursor-Sync über mehrere `ChartRow`-Instanzen hinweg (`uPlot.sync`-Key als
   Prop) — ein Hover in einer Zeile zeigt das Fadenkreuz in allen Zeilen des
-  Stapels. **Windpfeile** sind ein Canvas-Draw-Hook, kein uPlot-Seriencode:
+  Stapels. **Windfiedern** (Windbarbs) sind ein Canvas-Draw-Hook, kein uPlot-Seriencode:
   Kurven mit gesetztem `direction`-Feld bekommen einen FESTEN Streifen am
-  oberen Rand des Diagramms mit großen, gefüllten Pfeilen (`windArrowStripPlugin`)
+  oberen Rand des Diagramms (`windBarbStripPlugin` → `drawWindBarb`)
   — bewusst NICHT entlang der schwankenden Geschwindigkeitslinie (bei Flaute
   kaum lesbar, bei Sturm überdeckt von der Linie). Der Streifen deckt sich
   dafür mit einer eigenen Fläche ab (`--bg-panel`-Farbe), damit die Linie nie
-  hindurchläuft; Dichte an der Breite orientiert, sonst Pfeilteppich bei
-  vielen Stunden. Drehwinkel = Richtung + 180°, weil `wind_direction_10m`
-  meteorologisch die Richtung ist, AUS der der Wind kommt — der Pfeil soll
-  dorthin zeigen, WOHIN er weht. **Zeitachse ist UTC, NICHT die Ortszeit des
+  hindurchläuft; Dichte an der Breite orientiert, sonst Symbolteppich bei
+  vielen Stunden. Die Fieder ersetzt den früheren Richtungspfeil, weil sie
+  Richtung UND Stärke in einem Symbol trägt: Schaft in die Richtung, AUS der
+  der Wind kommt (`wind_direction_10m` ist meteorologisch genau diese
+  Herkunftsrichtung — hier also KEIN +180° wie beim alten Pfeil), Fahnen im
+  Uhrzeigersinn zum Schaft (Nordhalbkugel-Konvention), Wimpel = 50 kt, ganze
+  Fieder = 10 kt, halbe = 5 kt, gerundet auf 5 kt, < 2,5 kt = Kreis
+  (Windstille); Umrechnung km/h → kt im Zeichner. **uPlot lässt das
+  Strichmuster der zuletzt gezeichneten Serie im Canvas-Kontext stehen** — die
+  gestrichelten Böen färbten damit die Fiedern gestrichelt ein. Jeder eigene
+  Draw-Hook setzt deshalb als Erstes `ctx.setLineDash([])`; das gilt für alle
+  Zeichner in `render/wxsymbols.ts` und die Plugins in `ChartStack.tsx`.
+  **Alle Zeilen eines Stapels reservieren links UND rechts dieselbe
+  Achsenbreite** (`Y_AXIS_SIZE`/`RIGHT_AXIS_SIZE`, blind beschriftet, wo nichts
+  steht) — Achsen einfach auszublenden (`show: false`) hat die Zeitachsen der
+  Zeilen gegeneinander verschoben, und ein Meteogramm liest man senkrecht.
+  Die **Datumskennzeichnung steht unter JEDER Zeile** (`dayRow`, gezeichnet
+  vom `dayMarkPlugin`): der Trennstrich bei 00 UTC läuft durch die
+  Diagrammfläche UND weiter bis in den Datumsstreifen darunter, das Datum
+  steht links daneben — also am Anfang des Tages, den es benennt. Nur unter
+  der untersten Zeile war es unübersichtlich: wer die Windzeile liest, müsste
+  über vier Diagramme hinweg nach unten suchen, welcher Tag gilt. Bewusst ein
+  PLUGIN und keine Achsenbeschriftung — uPlot zentriert Achsentexte auf dem
+  Tick, das Datum soll aber am Strich anliegen; die Achse reserviert nur die
+  Höhe (`DAY_STRIP_H`). Die Tagesgrenzen werden EINMAL beim Plot-Aufbau aus
+  dem Zeitraster bestimmt (`dayMarks`) — die Stunde je Punkt über `Intl` zu
+  prüfen kostete bei jedem Neuzeichnen tausende Formatierungen. Schrift hell
+  und fett (`DAY_FONT`, 13 px), bei schmalem Fenster fällt sie auf den
+  Wochentag allein zurück (Breite je Tag aus `u.bbox`/`u.scales.x`). Gezeichnet
+  wird im `drawAxes`-Hook, damit der Strich UNTER den Kurven liegt.
+  Die **Nachtschattierung** ist kräftig und leicht ins Blaue gezogen
+  (`NIGHT_FILL`) — der Farbstich unterscheidet schneller als reines
+  Abdunkeln — und bekommt an den Wechseln eine feine Kantenlinie
+  (`NIGHT_EDGE`), sonst liegt der Übergang unscharf im Verlauf.
+  **Die y-Skalen sind DYNAMISCH, aber nach unten gedeckelt**
+  (`ChartDef.minTop` bei `zeroBased`-Zeilen, Niederschlag 2 mm/h, Wind
+  25 km/h): ein Starkregenereignis zieht die Achse frei mit, ohne den Boden
+  liefe sie aber bei 0,2 mm/h Nieselregen bis 0,22 und ein Hauch Sprühregen
+  sähe aus wie ein Wolkenbruch.
+  Weitere Bausteine in `ChartDef`: `night` (Tag/Nacht-Fläche, `drawClear` —
+  also unter Gitter und Kurven), `refLines` (0-°C-Linie, Standarddruck
+  1013,25 hPa; `drawAxes`), `minSpan`/`ySpace` (Mindestspanne und Tickdichte
+  der y-Achse — der Luftdruck schwankt über Tage um wenige hPa, uPlot legte
+  dafür eine Achse mit einer EINZIGEN Beschriftung an),
+  `rightAxis` + `Curve.rightAxis` (zweite Größe mit eigener Einheit, z. B.
+  Niederschlagswahrscheinlichkeit in % neben mm/h), `symbols` (Wettersymbol-
+  zeile), `Bands.octas` (Achtel-Kopfzeile). **Zeitachse ist UTC, NICHT die Ortszeit des
   gewählten Punkts** (steht auch so in der Kopfzeile) — `openmeteo.ts` fragt
   überall explizit `timezone: 'UTC'` ab, eine echte Ortszeit bräuchte einen
   zusätzlichen Zeitzonen-Lookup je Koordinate, den es im Projekt nicht gibt.
@@ -267,17 +394,31 @@ npm run preview   # gebautes dist/ servieren
   (uPlot erlaubt mehrere Achsen zur selben Scale, hier zwei mit `scale:'x'`),
   deren `filter` nur Tagesgrenzen (00 UTC) durchlässt: eigene Zeile mit
   Wochentag+Datum UND eine durchgehende Trennlinie über die volle Höhe DIESER
-  Zeile (jede der vier Zeilen bekommt ihre eigene, da jede ein unabhängiges
-  uPlot-Canvas ist — dieselbe Wiederholung wie die Stundenachse schon hat).
+  Zeile (jede Zeile bekommt ihre eigene, da jede ein unabhängiges
+  uPlot-Canvas ist — dieselbe Wiederholung wie die Stundenachse schon hat;
+  beschriftet wird über `dayRow`/`dayGrid` aber nur die unterste).
   **Bewölkung ist geschichtet, nicht als Summe** (`cloud_cover_low/mid/high`
-  statt `cloud_cover`) und wird NICHT als Linie gezeichnet, sondern als
-  Grauwert-Raster — `ChartDef.bands` statt `curves`, gerendert vom
-  `cloudBandsPlugin` (reiner Canvas-Draw-Hook, uPlot bekommt nur eine
-  ausgeblendete Dummy-Serie fürs x-Scale-Setup). Reihenfolge Hoch/Mittel/Tief
-  von oben nach unten wie am Himmel; HELL = klar, DUNKEL = bedeckt (übliche
-  Lesart). Die dunkle Seite bleibt bewusst deutlich über `--bg-page`
-  (#101113 ≈ rgb(16,17,19), Shade-Bereich ~65–205) — sonst verschwände „ganz
-  bedeckt" im dunklen Theme im Hintergrund statt aufzufallen.
+  plus die Gesamtbedeckung `cloud_cover`) und wird NICHT als Linie gezeichnet,
+  sondern als ZWEI Ebenen übereinander (`ChartDef.octaRows` statt `curves`,
+  gerendert vom `octaRowsPlugin` — reiner Canvas-Draw-Hook, uPlot bekommt nur
+  eine leere Dummy-Serie fürs x-Scale-Setup): darunter die **Schattierung je
+  Stunde und Höhenniveau** (lückenloser Verlauf, zeigt WO die Bewölkung
+  sitzt), darüber in gröberem Abstand der **Achtel-Kreis** (sagt „5 von 8"
+  genau, wo die Fläche nur „ungefähr" sagt). Vier Zeilen von oben
+  nach unten: Gesamt, dann Hoch/Mittel/Tief in der Reihenfolge, in der die
+  Schichten am Himmel stehen. **Helligkeitsrichtung ist umgekehrt zum
+  gedruckten Meteogramm**: leer = wolkenlos, HELL = bedeckt (`CLOUD_SHADE_MIN/
+  MAX`, 26 → 112) — auf weißem Papier ist „klar" das unbedruckte Blatt, im
+  dunklen Theme die unbemalte Panelfläche. Damit deckt sich die Fläche mit dem
+  Symbol darüber (leerer Kreis = klar, voller = bedeckt), und die HELLEN
+  Symbole bleiben auf jeder Stufe lesbar — bei umgekehrter Richtung
+  verschwänden sie über „klar". Die Achtel-ZAHL steht nur
+  in der Gesamtzeile (`withNumber`) — viermal beziffert wäre die Fläche wieder
+  zugestellt. Die **Zeilenbeschriftung kommt aus der linken y-Achse** (Splits
+  auf den Zeilenmitten, y-Range = Zeilenanzahl), nicht aus dem Plugin: so steht
+  sie außerhalb der Fläche und verdeckt keine Symbole. Symboldichte an der
+  Breite orientiert (~30 px Mindestabstand), Radius zusätzlich am Abstand
+  gedeckelt, damit sich die Kreise nie berühren.
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
@@ -415,10 +556,21 @@ npm run preview   # gebautes dist/ servieren
   neue Farben erfinden. Slots werden pro Panel beim Hinzufügen vergeben und
   bleiben beim Abwählen anderer Modelle stabil (Farbe folgt dem Modell, nicht
   dem Rang). Max. 8 Modelle pro Panel.
+- **`selectable: false` blendet ein Modell aus ALLEN Auswahlen aus**
+  (`SELECTABLE_MODELS`), ohne es aus der Registry zu nehmen — gespeicherte
+  Presets lösen die ID weiter auf (`modelExists` prüft gegen `MODELS`, nicht
+  gegen die Auswahlliste), und das Wiedereinschalten ist ein Wort. Aktuell
+  abgeschaltet: `geosphere_arome_austria` und `ukmo_uk_deterministic_2km`. Sie
+  LIEFERN Daten (live geprüft 2026-08-31: Wien 79 h, London 73 h), taugen als
+  Auswahl aber nicht: ihr Horizont füllt nur rund ein Fünftel der
+  16-Tage-Achse — der Rest bleibt leer und sieht aus wie ein Fehler —, und
+  außerhalb ihres Gebiets scheitert der Request komplett (UKMO-UK antwortet in
+  Österreich nicht einmal mit JSON).
 - **Neue Modelle/Variablen IMMER live gegen die API verifizieren, nie nur aus
   der Doku übernehmen** (SPEC §6): Open-Meteo antwortet teils mit HTTP 200 und
   leeren Arrays statt mit einem Fehler. Bereits live verifiziert:
-  `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h) und `icon_eu`
+  `geosphere_arome_austria` (ID, alle Variablen, 60 h/3 h — derzeit
+  `selectable: false`, s. o.) und `icon_eu`
   (120 h Horizont — nicht die ~78 h, die teils kursieren).
 - **KI-Modelle sind vollständig durchprobiert** (2026-08-17, 27 IDs gegen beide
   APIs): es gibt genau ZWEI. `ecmwf_aifs025_single` auf der Forecast-API

@@ -496,8 +496,10 @@ export function AtStationDetail({
           {recCode && !rec && <div className="atdetail-records-empty label-muted">Lade Rekorde …</div>}
           {!recCode && (
             <div className="atdetail-note">
-              Für {spec.label} gibt es keine vorberechneten Rekorde — sie stammen aus dem
-              Monatsdatensatz, den dieser Parameter nicht führt.
+              Für {spec.label} gibt es keine vorberechneten Rekorde —{' '}
+              {spec.monthlyCode
+                ? 'die Rekord-Assets führen diesen Parameter nicht.'
+                : 'sie stammen aus dem Monatsdatensatz, den dieser Parameter nicht führt.'}
             </div>
           )}
 

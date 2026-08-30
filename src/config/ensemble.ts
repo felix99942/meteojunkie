@@ -135,7 +135,15 @@ export const ENSEMBLE_VARIABLES: EnsembleVariableInfo[] = [
   { id: 'geopotential_height_500hPa', label: 'Geopotential 500 hPa', unit: 'gpm', kind: 'instant' },
 ]
 
-export const DEFAULT_ENSEMBLE_VARIABLE = 'temperature_2m'
+/**
+ * Startparameter des Ensemble-Bereichs: **850 hPa**, nicht 2 m. Die
+ * Plume-Darstellung ist ein synoptisches Werkzeug — auf 850 hPa liegt das
+ * Signal des Luftmassenwechsels, während T2m stark von der bodennahen
+ * Grenzschicht (Inversion, Schneedecke, Modellorografie) überlagert wird und
+ * die Streuung dort eher Modellrauschen als Wetterlage zeigt. T2m bleibt
+ * einen Klick entfernt im Parameter-Dropdown.
+ */
+export const DEFAULT_ENSEMBLE_VARIABLE = 'temperature_850hPa'
 
 /**
  * Darstellung von Summengrößen im Ensemble. `sum` = kumuliert ab Rasterbeginn,

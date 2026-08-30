@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { getModel, isDomainInCoverage, isInCoverage, MODELS } from '../config/models'
+import { getModel, isDomainInCoverage, isInCoverage, SELECTABLE_MODELS } from '../config/models'
 import { MAP_ENABLED } from '../config/features'
 import { getColorScale } from '../config/colorscales'
 import {
@@ -79,21 +79,25 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
   // Parameter-Dropdown anhand der Registry filtern (SPEC §7): nur Variablen,
   // die die gewählten Modelle liefern — im Kartenmodus zusätzlich nur solche
   // mit definierter Farbskala. Die aktuell gewählte bleibt sichtbar.
+  // `chartOnly`-Variablen (Wettercode, Tag/Nacht) sind Bausteine des
+  // klassischen Meteogramms, keine frei wählbaren Parameter — als Kurve über
+  // der Zeit wären sie sinnlos.
+  const pickable = HOURLY_VARIABLES.filter((v) => !v.chartOnly)
   let variables: VariableInfo[]
   if (isMap) {
     const mapModel = getModel(panel.mapModel)
-    variables = HOURLY_VARIABLES.filter(
+    variables = pickable.filter(
       (v) => getColorScale(v.id) !== undefined && mapModel.availableVariables.includes(v.id),
     )
   } else {
     const selectedModels = panel.models.map(getModel)
-    variables = HOURLY_VARIABLES.filter(
+    variables = pickable.filter(
       (v) =>
         selectedModels.length === 0 ||
         selectedModels.every((m) => m.availableVariables.includes(v.id)),
     )
   }
-  if (variables.length === 0) variables = HOURLY_VARIABLES
+  if (variables.length === 0) variables = pickable
   if (!variables.some((v) => v.id === panel.variable)) {
     variables = [getVariable(panel.variable), ...variables]
   }
@@ -167,7 +171,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
         // Domain gepflegt: wählbar, wenn die coverage die Domain-BBox
         // vollständig enthält. Empfohlene Modelle der Domain zuerst.
         (() => {
-          const eligible = MODELS.filter((m) => isDomainInCoverage(m, domain.bbox))
+          const eligible = SELECTABLE_MODELS.filter((m) => isDomainInCoverage(m, domain.bbox))
           const recommended = domain.recommendedModels
             .map((id) => eligible.find((m) => m.id === id))
             .filter((m) => m !== undefined)
@@ -211,7 +215,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
             {panel.models.length} {panel.models.length === 1 ? 'Modell' : 'Modelle'} ▾
           </summary>
           <div className="model-picker-list">
-            {MODELS.map((m) => {
+            {SELECTABLE_MODELS.map((m) => {
               const selected = panel.models.includes(m.id)
               const outside = location !== null && !isInCoverage(m, location.lat, location.lon)
               return (

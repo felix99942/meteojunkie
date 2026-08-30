@@ -305,6 +305,40 @@ function mockValue(variable: string, model: string, lat: number, lon: number, t:
       return round1(
         clamp(120 * fbm(lon + t * 0.2, lat + t * 0.05, modelSeed(model, 4), 4) - 10, 0, 100),
       )
+    // Schichten mit eigenen Seeds: sonst lägen tief/mittel/hoch deckungsgleich
+    // übereinander und das Schichtenraster des Meteogramms wäre nicht prüfbar.
+    case 'cloud_cover_low':
+      return round1(clamp(130 * fbm(lon + t * 0.25, lat, modelSeed(model, 5), 3) - 25, 0, 100))
+    case 'cloud_cover_mid':
+      return round1(clamp(130 * fbm(lon + t * 0.18, lat + 7, modelSeed(model, 6), 3) - 20, 0, 100))
+    case 'cloud_cover_high':
+      return round1(clamp(130 * fbm(lon + t * 0.12, lat - 7, modelSeed(model, 7), 3) - 15, 0, 100))
+    case 'precipitation_probability':
+      return Math.round(clamp(mockValue('precipitation', model, lat, lon, t) * 120, 0, 100))
+    // Tag/Nacht aus der SONNENZEIT am Längengrad (nicht aus UTC): sonst läge
+    // die Nachtschattierung im Meteogramm überall auf der Welt gleich.
+    case 'is_day': {
+      const solar = (((t + lon / 15) % 24) + 24) % 24
+      return solar >= 6 && solar < 18 ? 1 : 0
+    }
+    // WMO-Code plausibel aus Bewölkung/Niederschlag/Phase ableiten — der Mock
+    // soll die Symbolzeile durchspielen, nicht nur eine Konstante liefern.
+    case 'weather_code': {
+      const pr = mockValue('precipitation', model, lat, lon, t)
+      const sn = mockValue('snowfall', model, lat, lon, t)
+      const cc = mockValue('cloud_cover', model, lat, lon, t)
+      if (pr > 0.05) {
+        if (sn > 0.05) return pr > 0.8 ? 75 : 71
+        if (mockValue('cape', model, lat, lon, t) > 900) return 95
+        if (pr > 1.5) return 82
+        if (pr > 0.6) return 63
+        return 51
+      }
+      if (cc > 85) return 3
+      if (cc > 50) return 2
+      if (cc > 20) return 1
+      return 0
+    }
     case 'pressure_msl':
       return round1(1013 + 14 * Math.sin(lon / 10 - t / 40 + phase) - (lat - 50) * 0.3)
     case 'wind_speed_10m':
@@ -332,6 +366,12 @@ const UNITS: Record<string, string> = {
   precipitation: 'mm',
   snowfall: 'cm',
   cloud_cover: '%',
+  cloud_cover_low: '%',
+  cloud_cover_mid: '%',
+  cloud_cover_high: '%',
+  precipitation_probability: '%',
+  weather_code: 'wmo code',
+  is_day: '',
   pressure_msl: 'hPa',
   wind_speed_10m: 'km/h',
   wind_gusts_10m: 'km/h',

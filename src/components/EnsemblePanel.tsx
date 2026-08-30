@@ -54,6 +54,11 @@ const fmtFull = new Intl.DateTimeFormat('de-DE', {
 export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const location = useWorkbench((s) => s.lockedLocation)
   const cursorTime = useWorkbench((s) => s.cursorTime)
+  // Mit der Maus lesen, nicht nur mit dem Zeitschieber: der überfahrene
+  // Zeitschritt gewinnt gegenüber dem Zeit-Cursor, beim Verlassen fällt die
+  // Ablesezeile auf den Cursor zurück. Der Klick setzt den Cursor weiterhin —
+  // Lesen und Navigieren sind zwei verschiedene Handgriffe.
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const setCursorTime = useWorkbench((s) => s.setCursorTime)
   const setLockedLocation = useWorkbench((s) => s.setLockedLocation)
 
@@ -120,15 +125,19 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   // Ablesezeile am Zeit-Cursor.
   const readout = useMemo(() => {
     if (!prepared) return null
-    const i = prepared.times.findIndex((t) => t >= cursorTime)
+    const i =
+      hoverIdx != null && hoverIdx < prepared.times.length
+        ? hoverIdx
+        : prepared.times.findIndex((t) => t >= cursorTime)
     if (i < 0) return null
     return {
       at: prepared.times[i],
+      hovered: hoverIdx != null,
       r: readoutAt(prepared.stats, i),
       hres: prepared.deterministic?.[i] ?? null,
       control: prepared.members[0]?.[i] ?? null,
     }
-  }, [prepared, cursorTime])
+  }, [prepared, cursorTime, hoverIdx])
 
   // Cursorlinie nur neu ZEICHNEN, nicht den Plot neu bauen.
   useEffect(() => {
@@ -186,6 +195,10 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       // aufzuziehen trifft den gewünschten Ausschnitt nie beim ersten Versuch.
       cursor: { y: false, drag: { x: false, y: false, setScale: false } },
       plugins: [cursorPlugin],
+      hooks: {
+        // Überfahrener Zeitschritt für die Ablesezeile; `null` beim Verlassen.
+        setCursor: [(u: uPlot) => setHoverIdx(u.cursor.idx ?? null)],
+      },
       scales: variable.zeroBased
         ? { y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.05 : 1] } }
         : {},
@@ -382,7 +395,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           </span>
         )}
         <span className="ens-hint label-muted">
-          Rad = Zoom · Ziehen = Verschieben · Doppelklick = Reset · Klick = Zeit
+          Maus = ablesen · Klick = Zeit setzen · Rad = Zoom · Ziehen = Verschieben · Doppelklick = Reset
         </span>
       </div>
 
@@ -408,6 +421,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           <>
             <span className="ens-readcap">
               {fmtFull.format(new Date(readout.at))} UTC
+              {readout.hovered && <span className="label-muted"> (Zeiger)</span>}
             </span>
             <span style={{ color: HRES_LINE }}>
               Hauptlauf{' '}

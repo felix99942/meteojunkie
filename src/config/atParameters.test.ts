@@ -233,3 +233,52 @@ describe('Anomalie-Farbskala Sonnenschein', () => {
     expect(rgb(c).r).toBeGreaterThan(rgb(c).b)
   })
 })
+
+describe('aggregate — Kenntage', () => {
+  const summer = { source: 'tlmax', op: '>=' as const, value: 25 }
+  const frost = { source: 'tlmin', op: '<' as const, value: 0 }
+
+  it('zählt die Tage, die die Schwelle erfüllen', () => {
+    expect(aggregate([24.9, 25, 25.1, 30], 'count', summer)).toBe(3)
+  })
+
+  it('behandelt „<" als echt kleiner, „>=" als einschließend', () => {
+    // Ein Tagesminimum von genau 0 °C ist KEIN Frosttag.
+    expect(aggregate([0, -0.1, -5], 'count', frost)).toBe(2)
+    // Genau 25 °C IST ein Sommertag.
+    expect(aggregate([25], 'count', summer)).toBe(1)
+  })
+
+  it('überspringt Lücken, statt sie als nicht erfüllt zu zählen', () => {
+    expect(aggregate([30, null, 30], 'count', summer)).toBe(2)
+  })
+
+  it('gibt null statt einer Zahl zurück, wenn die Regel fehlt', () => {
+    // Eine Anzahl ohne Vergleich ist nicht bestimmbar — eine stillschweigende
+    // 0 wäre die gefährlichere Antwort.
+    expect(aggregate([30, 30], 'count')).toBeNull()
+  })
+
+  it('gibt bei ausschließlich Lücken null zurück, nicht 0', () => {
+    expect(aggregate([null, null], 'count', summer)).toBeNull()
+  })
+})
+
+describe('Registry-Identität', () => {
+  it('vergibt jeden Parametercode genau einmal', () => {
+    // `code` ist der Schlüssel für `getAtParameter`, den Dropdown-Wert und den
+    // gespeicherten Zustand. Ein doppelter Code verdeckt still den anderen
+    // Parameter — genau das passierte, als die Kenntage ihren Tagesrohwert
+    // (`tlmax`) als Code trugen.
+    const codes = AT_PARAMETERS.map((p) => p.code)
+    expect(new Set(codes).size).toBe(codes.length)
+  })
+
+  it('nennt bei Kenntagen die Tagesquelle getrennt vom Code', () => {
+    for (const p of AT_PARAMETERS.filter((p) => p.countRule)) {
+      expect(p.agg).toBe('count')
+      expect(p.monthlyCode).toBe(p.code)
+      expect(p.countRule?.source).not.toBe(p.code)
+    }
+  })
+})

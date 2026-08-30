@@ -35,6 +35,19 @@ export interface ModelInfo {
   /** false für best_match / Seamless — die Single-Runs-BBox-API kann nur konkrete Domains. */
   supportsBoundingBox: boolean
   availableVariables: string[]
+  /**
+   * false → taucht in KEINER Modellauswahl auf (Meteogramm, Punktprognosen,
+   * Karte). Der Eintrag bleibt in der Registry, damit gespeicherte Presets ihn
+   * weiter auflösen können und das Wiedereinschalten ein Wort ist.
+   *
+   * Aktuell abgeschaltet: die beiden kleinsten Regionalmodelle. Sie LIEFERN
+   * Daten (live geprüft 2026-08-31: AROME Austria in Wien 79 h, UKMO-UK in
+   * London 73 h), taugen im Meteogramm aber nicht als Auswahl: ihr Horizont
+   * füllt nur rund ein Fünftel der 16-Tage-Achse, der Rest bleibt leer und
+   * sieht aus wie ein Fehler — und außerhalb ihres Gebiets scheitert der
+   * Request komplett (UKMO-UK antwortet in Österreich nicht einmal mit JSON).
+   */
+  selectable?: false
 }
 
 const BASE_VARS = [
@@ -52,7 +65,20 @@ const BASE_VARS = [
   'wind_speed_10m',
   'wind_gusts_10m',
   'wind_direction_10m',
+  // Für die Symbolzeile und die Tag/Nacht-Schattierung des klassischen
+  // Meteogramms — live gegen alle Modelle der Registry geprüft, überall
+  // vorhanden (2026-08-30).
+  'weather_code',
+  'is_day',
 ]
+
+/**
+ * Niederschlagswahrscheinlichkeit gibt es NICHT überall: live geprüft
+ * (2026-08-30) liefern ARPEGE, AROME (FR/AT), UKMO (global/UK) und
+ * ECMWF AIFS durchgehend null — HTTP 200 mit leeren Werten, kein Fehler.
+ * Deshalb pro Modell gepflegt und nicht in BASE_VARS.
+ */
+const PROB_VAR = ['precipitation_probability']
 
 const CONVECTION_VARS = ['cape', 'shortwave_radiation']
 
@@ -66,7 +92,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 384,
     coverage: 'global',
     supportsBoundingBox: false,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'icon_seamless',
@@ -77,7 +103,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 180,
     coverage: 'global',
     supportsBoundingBox: false,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'icon_d2',
@@ -88,7 +114,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 48,
     coverage: { latMin: 43.18, lonMin: -3.94, latMax: 58.08, lonMax: 20.34 },
     supportsBoundingBox: true,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'icon_eu',
@@ -101,7 +127,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 120,
     coverage: { latMin: 29.5, lonMin: -23.5, latMax: 70.5, lonMax: 45.0 },
     supportsBoundingBox: true,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'icon_global',
@@ -112,7 +138,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 180,
     coverage: 'global',
     supportsBoundingBox: true,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'ecmwf_ifs025',
@@ -123,7 +149,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 360,
     coverage: 'global',
     supportsBoundingBox: true,
-    availableVariables: [...BASE_VARS, 'cape'],
+    availableVariables: [...BASE_VARS, 'cape', ...PROB_VAR],
   },
   {
     // ECMWFs KI-Modell als deterministischer Einzellauf — das Gegenstück zum
@@ -163,7 +189,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 384,
     coverage: 'global',
     supportsBoundingBox: false,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'gfs_global',
@@ -174,7 +200,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 384,
     coverage: 'global',
     supportsBoundingBox: true,
-    availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'meteofrance_arpege_europe',
@@ -212,6 +238,7 @@ export const MODELS: ModelInfo[] = [
     coverage: { latMin: 43.0, lonMin: 5.5, latMax: 51.8, lonMax: 22.1 },
     supportsBoundingBox: true,
     availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    selectable: false,
   },
   {
     id: 'ukmo_global_deterministic_10km',
@@ -234,8 +261,12 @@ export const MODELS: ModelInfo[] = [
     coverage: { latMin: 44.9, lonMin: -13.9, latMax: 60.9, lonMax: 6.6 },
     supportsBoundingBox: true,
     availableVariables: BASE_VARS,
+    selectable: false,
   },
 ]
+
+/** Modelle, die in Auswahlen angeboten werden (siehe `selectable`). */
+export const SELECTABLE_MODELS = MODELS.filter((m) => m.selectable !== false)
 
 const byId = new Map(MODELS.map((m) => [m.id, m]))
 

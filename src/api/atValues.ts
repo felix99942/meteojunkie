@@ -115,6 +115,9 @@ export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean
   // laufende Tag lässt sich aus den zeitgleichen 10-Minuten-Messwerten
   // berechnen, ein vergangener Tag hätte nur einen Tagesmittel-Wind.
   if (spec.derived) return period.kind === 'day' && period.day >= todayUtc()
+  // Kenntage sind ANZAHLEN von Tagen — für einen einzelnen Tag wäre das 0
+  // oder 1 und als Karte sinnlos. Sie gibt es deshalb erst ab Monat.
+  if (spec.countRule) return period.kind !== 'day'
   return period.kind === 'day' || spec.monthlyCode != null
 }
 
@@ -130,6 +133,11 @@ export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean
  */
 export function clean(spec: AtParameterSpec, v: number | null): number | null {
   if (v == null || !Number.isFinite(v)) return null
+  // Kenntage zählen auf einer ROHQUELLE (rr/tlmax/tlmin); bei rr kodiert
+  // GeoSphere den trockenen Tag als -1. Ohne diese Zeile zählte er als
+  // gültiger Wert mit — als Niederschlagstag zwar nicht (−1 < 1), aber die
+  // Vollständigkeitsrechnung stimmte nicht mehr.
+  if (spec.countRule && v === -1) return 0
   if (spec.category === 'Niederschlag' || spec.category === 'Schnee') {
     if (v === -1) return 0
     if (v < 0) return null
@@ -223,7 +231,7 @@ async function fetchLiveApparentTemperature(
         break
       }
     }
-    byStation[id] = aggregate(series, spec.liveAgg ?? spec.agg)
+    byStation[id] = aggregate(series, spec.liveAgg ?? spec.agg, spec.countRule)
   }
   return {
     byStation,
@@ -306,7 +314,10 @@ async function fetchRunningMonthPartial(
   ids: number[],
 ): Promise<{ byStation: Record<number, number | null>; days: number } | null> {
   const from = `${year}-${pad2(month)}-01`
-  const d = await fetchStationSeries(spec.code, from, todayUtc(), ids, DATASET_DAILY)
+  // Bei Kenntagen ist die Tagesquelle der Rohparameter (tlmax/tlmin/rr), aus
+  // dem die Schwelle zählt — `spec.code` zeigt schon darauf, die Regel nennt
+  // ihn nur noch einmal ausdrücklich.
+  const d = await fetchStationSeries(spec.countRule?.source ?? spec.code, from, todayUtc(), ids, DATASET_DAILY)
   const byStation: Record<number, number | null> = {}
   let days = 0
   for (const id of ids) {
@@ -315,7 +326,9 @@ async function fetchRunningMonthPartial(
     const vals = raw.map((v) => clean(spec, v))
     const n = vals.filter((v) => v != null).length
     if (n > days) days = n
-    byStation[id] = aggregate(vals, spec.agg)
+    // Kenntage zählen hier die Tage selbst — die Schwellenregel muss deshalb
+    // mit, sonst käme `count` ohne Vergleich nicht zu einer Zahl.
+    byStation[id] = aggregate(vals, spec.agg, spec.countRule)
   }
   return days > 0 ? { byStation, days } : null
 }
@@ -358,7 +371,7 @@ export async function fetchPeriodValues(
     let covered = 0
     for (const id of ids) {
       const data = s.byStation[id]
-      const v = data ? aggregate(data.map((x) => clean(spec, x)), spec.agg) : null
+      const v = data ? aggregate(data.map((x) => clean(spec, x)), spec.agg, spec.countRule) : null
       byStation[id] = v
       if (v != null) covered++
     }

@@ -66,6 +66,7 @@ const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
 const fmtMonthLabel = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long', year: 'numeric' })
 const fmtMonthName = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'long' })
 const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => fmtMonthName.format(new Date(Date.UTC(2001, i, 15))))
+const pad2 = (n: number) => String(n).padStart(2, '0')
 const fmtMonthShort = new Intl.DateTimeFormat('de-AT', { timeZone: 'UTC', month: 'short' })
 const MONTH_SHORT = Array.from({ length: 12 }, (_, i) =>
   fmtMonthShort.format(new Date(Date.UTC(2001, i, 15))).replace('.', ''),
@@ -135,6 +136,9 @@ export function AtClimatePanel() {
   const [periodKind, setPeriodKind] = useState<Period['kind']>('day')
   const [day, setDay] = useState(init.day)
   const [monthStr, setMonthStr] = useState(init.monthStr)
+  // Gespeichert bleibt „YYYY-MM"; die beiden Bedienelemente arbeiten auf den
+  // zerlegten Teilen, damit der Rest des Panels unverändert weiterrechnet.
+  const [monthYear, monthNum] = monthStr.split('-').map(Number)
   const [year, setYear] = useState(init.year)
   // Klimaperiode: welche Periode und welcher Ausschnitt (null = Jahresmittel).
   const [normPeriodId, setNormPeriodId] = useState<NormalPeriodId>(DEFAULT_NORMAL_PERIOD)
@@ -467,8 +471,38 @@ export function AtClimatePanel() {
         {periodKind === 'day' && (
           <input type="date" value={day} max={isoDay(new Date())} onChange={(e) => setDay(e.target.value)} />
         )}
+        {/* Monat als AUSWAHL statt als Zahl: `input type="month"` verlangt je
+            nach Browser die Eingabe „2026-08" oder ein Spinner-Feld — der
+            Monatsname ist die Form, in der man den Zeitraum denkt. Aufbau wie
+            bei der Saison daneben (Name + Jahr), damit beide gleich bedient
+            werden. `monthStr` bleibt das gespeicherte Format (YYYY-MM). */}
         {periodKind === 'month' && (
-          <input type="month" value={monthStr} onChange={(e) => setMonthStr(e.target.value)} />
+          <>
+            <select
+              value={monthNum}
+              onChange={(e) => setMonthStr(`${monthYear}-${pad2(Number(e.target.value))}`)}
+            >
+              {MONTH_NAMES.map((name, i) => (
+                <option key={name} value={i + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={monthYear}
+              min={1991}
+              max={new Date().getUTCFullYear()}
+              onChange={(e) => {
+                // Halb getippte Jahreszahlen ("20") würden sonst als Jahr 20
+                // durchgereicht und den Abruf ins Leere schicken.
+                const y = Number(e.target.value)
+                if (Number.isFinite(y) && y >= 1000) setMonthStr(`${y}-${pad2(monthNum)}`)
+              }}
+              title="Jahr des Monats"
+              style={{ width: 70 }}
+            />
+          </>
         )}
         {periodKind === 'season' && (
           <>
