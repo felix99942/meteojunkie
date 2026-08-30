@@ -1604,35 +1604,12 @@ button:focus-visible {
   min-height: 0;
 }
 
-/* Frage ans Klimaarchiv: Einstieg und Fenster unten links — dort liegt nichts
-   anderes (Rangliste oben links, Stationsdetail rechts). */
-.atmap-askbtn {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--bg-panel);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-}
-
-.atmap-askbtn:hover {
-  background: var(--bg-control-hover);
-}
-
+/* Frage ans Klimaarchiv: Fenster oben links, dort wo der Einstiegsknopf
+   stand — wie die Rangliste, mit der es sich den Platz teilt. */
 .atask {
   position: absolute;
   left: 10px;
-  bottom: 10px;
+  top: 10px;
   z-index: 6;
   width: 400px;
   max-width: calc(100% - 20px);
@@ -1834,11 +1811,17 @@ button:focus-visible {
 /* Prominenter Einstieg in Rangliste/Stationssuche — sitzt genau dort, wo die
    Liste danach aufgeht (links oben, deckungsgleich mit .atrank). Bewusst
    kräftiger als die Werkzeugleiste: es ist der Haupteinstieg in die Karte. */
-.atmap-rankbtn {
+.atmap-tools {
   position: absolute;
   left: 10px;
   top: 10px;
   z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.atmap-toolbtn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1850,9 +1833,10 @@ button:focus-visible {
   border: 1px solid var(--accent);
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
 }
 
-.atmap-rankbtn:hover {
+.atmap-toolbtn:hover {
   background: var(--bg-control-hover);
 }
 

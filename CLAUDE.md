@@ -89,8 +89,12 @@ npm run preview   # gebautes dist/ servieren
   der letzten ABGESCHLOSSENEN Periode (s. `latestPeriods()` in
   `AtClimatePanel.tsx` für die Begründung) — und holt den laufenden Tag mit
   `force` am TTL-Cache vorbei.
-  **Frage ans Klimaarchiv** (`AtAskBox` + Rechenkern `climateAsk.ts`, Knopf
-  unten links in der Karte): eine Frage in Alltagssprache („was war das
+  **Frage ans Klimaarchiv** (`AtAskBox` + Rechenkern `climateAsk.ts`,
+  Einstieg gleichrangig NEBEN „Rangliste & Stationssuche" links oben in der
+  Karte, gemeinsame Reihe `.atmap-tools`): die Rangliste beantwortet „welche
+  Station", das Archiv „welcher Wert" — beide gehören nebeneinander. Beide
+  Fenster gehen an derselben Stelle auf und schließen sich gegenseitig aus, wie
+  bisher schon Knopf und Rangliste denselben Platz belegen: eine Frage in Alltagssprache („was war das
   tagesmaximum im juli seit messbeginn in salzburg?") wird in
   {Station, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
   beantwortet — Rekorde (`records/<id>.json`) bzw. Normale. **Kostet keinen

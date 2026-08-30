@@ -720,18 +720,31 @@ export function AtClimatePanel() {
                 </span>
               )}
             </div>
-            {/* Einstieg dort, wo die Liste danach aufgeht — kein Suchen in der
-                Werkzeugleiste. Verschwindet, sobald die Liste offen ist: sie
-                belegt denselben Platz und schließt über ihr eigenes ✕. */}
-            {!showRank && (
-              <button
-                type="button"
-                className="atmap-rankbtn"
-                onClick={() => setShowRank(true)}
-                title="Alle Stationen durchsuchen und nach Wert reihen — Hover markiert die Station, Klick öffnet ihr Detail"
-              >
-                <span aria-hidden="true">🔍</span> Rangliste &amp; Stationssuche
-              </button>
+            {/* Beide Einstiege nebeneinander und dort, wo das Fenster danach
+                aufgeht — kein Suchen in der Werkzeugleiste. Die Reihe
+                verschwindet, sobald eines offen ist: sie belegen denselben
+                Platz und schließen über ihr eigenes ✕. Die Rangliste beantwortet
+                „welche Station", das Archiv „welcher Wert" — sie gehören
+                gleichrangig nebeneinander. */}
+            {!showRank && !showAsk && (
+              <div className="atmap-tools">
+                <button
+                  type="button"
+                  className="atmap-toolbtn"
+                  onClick={() => setShowRank(true)}
+                  title="Alle Stationen durchsuchen und nach Wert reihen — Hover markiert die Station, Klick öffnet ihr Detail"
+                >
+                  <span aria-hidden="true">🔍</span> Rangliste &amp; Stationssuche
+                </button>
+                <button
+                  type="button"
+                  className="atmap-toolbtn"
+                  onClick={() => setShowAsk(true)}
+                  title="Frage in Alltagssprache stellen — beantwortet aus den Rekord- und Normalwerten, ohne Abruf"
+                >
+                  <span aria-hidden="true">💬</span> Frage ans Klimaarchiv
+                </button>
+              </div>
             )}
             {showRank && (
               <AtRankList
@@ -754,17 +767,6 @@ export function AtClimatePanel() {
                   setRankHover(null)
                 }}
               />
-            )}
-            {/* Frage ans Archiv — unten links, wo nichts anderes liegt. */}
-            {!showAsk && (
-              <button
-                type="button"
-                className="atmap-askbtn"
-                onClick={() => setShowAsk(true)}
-                title="Frage in Alltagssprache stellen — beantwortet aus den Rekord- und Normalwerten, ohne Abruf"
-              >
-                <span aria-hidden="true">💬</span> Frage ans Klimaarchiv
-              </button>
             )}
             {showAsk && stations && (
               <AtAskBox
