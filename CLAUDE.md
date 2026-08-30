@@ -88,7 +88,34 @@ npm run preview   # gebautes dist/ servieren
   (`fetchRunningMonthPartial`/`PeriodCoverage.partial`, s. u.); Jahr bleibt bei
   der letzten ABGESCHLOSSENEN Periode (s. `latestPeriods()` in
   `AtClimatePanel.tsx` für die Begründung) — und holt den laufenden Tag mit
-  `force` am TTL-Cache vorbei. **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
+  `force` am TTL-Cache vorbei.
+  **Frage ans Klimaarchiv** (`AtAskBox` + Rechenkern `climateAsk.ts`, Knopf
+  unten links in der Karte): eine Frage in Alltagssprache („was war das
+  tagesmaximum im juli seit messbeginn in salzburg?") wird in
+  {Station, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
+  beantwortet — Rekorde (`records/<id>.json`) bzw. Normale. **Kostet keinen
+  Request.** Bewusst OHNE Sprachmodell: die Seite ist statisch (GitHub Pages),
+  ein API-Key wäre im Frontend öffentlich, und ein Modell, das aus eigenem
+  Wissen antwortet, erfindet bei genau solchen Fragen selbstbewusst Zahlen —
+  gebraucht wird kein Sprachverständnis, sondern Wissen über DIESE Registry.
+  Das Fenster zeigt das Verstandene als ÄNDERBARE Auswahl statt als Fließtext:
+  „Salzburg" heißen acht Stationen, „Temperatur" kann Mittel, Maximum oder
+  Minimum sein; ein Fehlgriff soll einen Klick kosten, keine falsche Zahl.
+  **Die Fallen sind alle kurze Wörter im unscharfen Vergleich** (jede als Test
+  festgehalten): „seit" liegt einen Tippfehler von „sept" entfernt, „Linz" von
+  „Lenz", und ein einzelnes „war" traf über den Namensanfang die Station
+  „Warth" — daher Stoppwortliste, Präfix-Vergleich für kurze Tokens,
+  Ähnlichkeitsschwelle 0,80 und keine Ein-Wort-Fenster in der Stationssuche.
+  Distanzmaß ist DAMERAU-Levenshtein: vertauschte Nachbarn („salzbrug") sind
+  der häufigste Tippfehler und kosten sonst zwei Fehler. **Stillgelegte
+  Stationen werden abgewertet, und das ist Korrektheit, keine Kosmetik**: die
+  Station namens „Salzburg" maß 1874–1903, ihr Allzeitmaximum sind 34,8 °C von
+  1900 — richtig sind 37,7 °C (Flughafen, der die Reihe fortführt). Bei gleich
+  gutem Namenstreffer gewinnt die LÄNGERE Messreihe. „In der Karte zeigen"
+  springt auf den Zeitraum DER ANTWORT (Rekordjahr und -monat), nicht auf das
+  laufende Jahr. Gegen die echte Stationsliste gemessen: 14 von 14
+  Beispielfragen richtig.
+  **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
   geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
   Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick
   öffnet ihr Detail. Der Einstieg ist ein prominenter Knopf **links oben IN der

@@ -48,6 +48,7 @@ import { colorForValue } from '../config/colorscales'
 import { AtClimateMap } from './AtClimateMap'
 import { HISTORY_SPAN } from './AtPeriodHistory'
 import type { HistoryScope } from './atHistory'
+import { AtAskBox } from './AtAskBox'
 import { AtRankList } from './AtRankList'
 import { AtStationDetail } from './AtStationDetail'
 
@@ -130,6 +131,7 @@ export function AtClimatePanel() {
   const [paramCode, setParamCode] = useState('tl_mittel')
   const [selected, setSelected] = useState<AtStation | null>(null)
   const [showRank, setShowRank] = useState(false)
+  const [showAsk, setShowAsk] = useState(false)
   const [rankHover, setRankHover] = useState<number | null>(null)
 
   const init = useMemo(latestPeriods, [])
@@ -750,6 +752,42 @@ export function AtClimatePanel() {
                 onClose={() => {
                   setShowRank(false)
                   setRankHover(null)
+                }}
+              />
+            )}
+            {/* Frage ans Archiv — unten links, wo nichts anderes liegt. */}
+            {!showAsk && (
+              <button
+                type="button"
+                className="atmap-askbtn"
+                onClick={() => setShowAsk(true)}
+                title="Frage in Alltagssprache stellen — beantwortet aus den Rekord- und Normalwerten, ohne Abruf"
+              >
+                <span aria-hidden="true">💬</span> Frage ans Klimaarchiv
+              </button>
+            )}
+            {showAsk && stations && (
+              <AtAskBox
+                stations={stations}
+                onClose={() => setShowAsk(false)}
+                onShow={(st, code, month, seasonId, year) => {
+                  // Auf den ZEITRAUM DER ANTWORT springen: bei einem Rekord
+                  // ist das sein Jahr, nicht das laufende — sonst zeigte die
+                  // Karte den richtigen Monat im falschen Jahr.
+                  setParamCode(code)
+                  if (month != null) {
+                    setPeriodKind('month')
+                    setMonthStr(`${year ?? monthYear}-${pad2(month)}`)
+                  } else if (seasonId != null) {
+                    setPeriodKind('season')
+                    setSeason(seasonId)
+                    if (year != null) setSeasonYear(year)
+                  } else {
+                    setPeriodKind('year')
+                    if (year != null) setYear(year)
+                  }
+                  setSelected(st)
+                  setShowAsk(false)
                 }}
               />
             )}
