@@ -461,6 +461,15 @@ npm run preview   # gebautes dist/ servieren
 - `src/components/` — `Panel`/`PanelHeader` (Grid-Zelle mit Modus/Modell/
   Parameter/Sync), `Meteogram` (uPlot), `MapPanel` (MapLibre, per React.lazy
   code-gesplittet), `TimeScrubber`, `TopBar`/`LocationPicker`.
+  Die **Ortssuche sucht BEIM TIPPEN** (`LocationPicker`, 250 ms entprellt, ab
+  zwei Zeichen): das Geocoding liefert schon für Präfixe brauchbare Treffer
+  („salzb" → Salzburg), Enter übernimmt nur noch den obersten. Zwei Fallen
+  sind dabei behandelt: eine laufende Nummer verwirft ÜBERHOLTE Antworten
+  (beim Tippen überholen sich Requests regelmäßig, sonst überschreibt die
+  langsame ältere Antwort die neuere Liste), und Eingaben, die mit einer Ziffer
+  beginnen, werden gar nicht erst geokodiert — eine halb getippte Koordinate
+  ist kein Ortsname. Geocoding läuft über plain `fetch`, NICHT über `apiGet`:
+  es zählt nicht ins Forecast-Budget.
 - **Basemap ist komplett lokal** — bewusst KEIN externer Tile-Dienst (kein
   API-Key, kein Fremd-Rate-Limit; MapLibres `load`-Event hinge sonst an
   fremden Tile-Requests, an denen das ganze Panel gegated ist).
