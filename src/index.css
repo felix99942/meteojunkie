@@ -2383,6 +2383,25 @@ button:focus-visible {
   cursor: help;
 }
 
+/* Tabelle links, Abweichungsdiagramm rechts. Umbricht auf schmalen Fenstern,
+   statt die Tabelle zusammenzuquetschen. */
+.verify-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+
 .verify-chart {
+  flex: 1 1 420px;
+  min-width: 340px;
   min-height: 240px;
+}
+
+/* Farbmarke im Spaltenkopf = Kurvenfarbe im Diagramm daneben. */
+.verify-swatch {
+  display: block;
+  height: 3px;
+  margin: 3px -13px -2px;
+  border-radius: 2px;
 }

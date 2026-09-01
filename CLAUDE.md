@@ -765,8 +765,15 @@ npm run preview   # gebautes dist/ servieren
   auf **0,59 K** statt 1,16 K des besten Einzelmodells — eine Zahl, die niemand
   im Voraus hätte haben können. `best_match` (Open-Meteos eigene Mischung) ist
   als Bezug voreingestellt und lag dort NICHT vorn (1,33 K gegen 1,16 K von
-  GFS). Das Diagramm erscheint erst ab 8 Tagen —
-  fünf Punkte sagen nichts, was die Tabelle nicht schon zeigt.
+  GFS). **Rechts neben der Tabelle die ABWEICHUNGEN als
+  Kurven** (nicht die Absolutwerte — die stehen in der Tabelle): was man dort
+  nicht sieht, ist der Verlauf. Ob ein Modell durchgehend zu warm liegt, ob
+  alle am selben Tag danebenlagen (dann war die LAGE schwierig, nicht das
+  Modell) oder ob eines ausreißt. Nulllinie als Bezug, Mindestspanne 6 K, sonst
+  sähen Zehntelkelvin wie Ausreißer aus. Die Kurven tragen die Farben der
+  Spaltenköpfe (Farbmarke unter dem Modellnamen) — deshalb braucht das
+  Diagramm keine eigene Legende und die Tabelle keine zweite Spalte. Umbricht
+  auf schmalen Fenstern unter die Tabelle, statt sie zusammenzuquetschen.
   Die Stationsauswahl ist ein **Suchfeld mit `datalist`**, kein Dropdown: 290
   Stationen findet man scrollend nicht, und die native Variante filtert beim
   Tippen ohne eigenes Widget. Beim TIPPEN greift nur der exakte Name (so

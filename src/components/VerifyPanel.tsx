@@ -305,33 +305,36 @@ export function VerifyPanel() {
   const days = useMemo(() => dayRange(start, end), [start, end])
   const xs = useMemo(() => days.map((d) => Date.parse(`${d}T12:00:00Z`)), [days])
 
-  /** Diagramm: Messung dick, je Modell die Vorhersage beim gewählten Vorlauf. */
+  /**
+   * Diagramm rechts: die ABWEICHUNGEN je Modell über den Zeitraum, nicht die
+   * Absolutwerte. Die stehen in der Tabelle daneben; was man dort NICHT sieht,
+   * ist der Verlauf — ob ein Modell durchgehend zu warm liegt, ob alle am
+   * selben Tag danebenlagen (dann war die Lage schwierig, nicht das Modell),
+   * oder ob eines ausreißt. Die Nulllinie ist der Bezug: darüber zu warm
+   * vorhergesagt, darunter zu kalt.
+   */
   const chart = useMemo(() => {
-    const obs = days.map((d) => observed?.get(d) ?? null)
-    const curves = [
-      {
-        label: 'Messung',
-        color: '#e8e8e8',
-        type: 'line' as const,
-        values: obs,
-        width: 2.5,
-      },
-      ...table.map((row, i) => ({
-        label: row.model.label,
-        color: SERIES_COLORS[i % SERIES_COLORS.length],
-        type: 'line' as const,
-        values: days.map((d) => row.cells.get(lead)?.daily.get(d) ?? null),
-        width: 1.4,
-        dash: [4, 3],
-      })),
-    ]
+    const curves = table.map((row, i) => ({
+      label: row.model.label,
+      color: SERIES_COLORS[i % SERIES_COLORS.length],
+      type: 'line' as const,
+      values: days.map((d) => {
+        const fc = row.cells.get(lead)?.daily.get(d)
+        const obs = observed?.get(d)
+        return fc != null && obs != null ? fc - obs : null
+      }),
+      width: 1.8,
+    }))
     return {
-      title: `${TARGETS[target].label} · ${leadLabel(lead)}`,
-      unit: '°C',
+      title: `Abweichung von der Messung · ${leadLabel(lead)}`,
+      unit: 'K',
       curves,
+      // Ohne Mindestspanne staucht ein ruhiger Zeitraum die Nulllinie an den
+      // Rand und lässt Zehntelkelvin wie Ausreißer aussehen.
       minSpan: 6,
+      refLines: [{ value: 0, color: '#8a8a8a' }],
     }
-  }, [days, observed, table, lead, target])
+  }, [days, observed, table, lead])
 
   const availableLeads = useMemo(() => {
     const s = new Set<number>()
@@ -549,6 +552,7 @@ export function VerifyPanel() {
               </strong>{' '}
               ({obsCount} Messtage).
             </div>
+            <div className="verify-main">
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
                 Fehlermaßen bräuchte Wochen, um überhaupt etwas zu sagen. */}
@@ -560,7 +564,7 @@ export function VerifyPanel() {
                     Messung
                     <span className="verify-err">00–24 UTC</span>
                   </th>
-                  {table.map((row) => (
+                  {table.map((row, i) => (
                     <th
                       key={row.model.id}
                       title={
@@ -571,6 +575,13 @@ export function VerifyPanel() {
                     >
                       {row.model.label}
                       <span className="verify-err">Wert / Δ</span>
+                      {/* Farbmarke = Kurvenfarbe im Diagramm daneben. Erspart
+                          dem Diagramm eine eigene Legende und der Tabelle eine
+                          zweite Spalte. */}
+                      <span
+                        className="verify-swatch"
+                        style={{ background: SERIES_COLORS[i % SERIES_COLORS.length] }}
+                      />
                     </th>
                   ))}
                 </tr>
@@ -665,23 +676,18 @@ export function VerifyPanel() {
                 </tr>
               </tfoot>
             </table>
-            {/* Bei fünf Tagen sagt die Tabelle alles, was fünf Punkte im
-                Diagramm sagen könnten — dann bleibt es weg. Über längere
-                Reihen ist der Verlauf dagegen die eigentliche Information. */}
-            {days.length >= 8 && (
-              <div className="verify-chart">
-                {/* Keine Tagesleiste: sie ist für STÜNDLICHE Reihen gedacht und
-                    sagt bei Tageswerten nichts, was die Achse nicht schon zeigt.
-                    Stattdessen echte Datums-Ticks. */}
-                <ChartRow
-                  xs={xs}
-                  chart={chart}
-                  height={240}
-                  formatTick={(ts) => fmtShort.format(new Date(ts * 1000))}
-                  xSpace={64}
-                />
-              </div>
-            )}
+            {/* Die Kurven tragen die Modellfarben der Spaltenköpfe — dadurch
+                braucht das Diagramm keine eigene Legende. */}
+            <div className="verify-chart">
+              <ChartRow
+                xs={xs}
+                chart={chart}
+                height={Math.max(240, Math.min(days.length * 22 + 90, 520))}
+                formatTick={(ts) => fmtShort.format(new Date(ts * 1000))}
+                xSpace={58}
+              />
+            </div>
+            </div>
           </>
         )}
       </div>
