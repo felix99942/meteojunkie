@@ -38,6 +38,7 @@ import { formatRun, latestRun } from '../config/runs'
 import { timeGridMs } from '../config/time'
 import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
+import { OpenMeteoAttribution } from './Attribution'
 
 const DEFAULT_MODEL = 'ecmwf_ifs025'
 // UTC, wie der Rest der App intern durchgehend rechnet (siehe CLAUDE.md) — der
@@ -576,6 +577,7 @@ export function ClassicMeteogram() {
           ))}
         </div>
       )}
+      <OpenMeteoAttribution className="app-attribution" />
     </div>
   )
 }

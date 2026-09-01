@@ -4,6 +4,7 @@ import { TimeScrubber } from './components/TimeScrubber'
 import { AppNav } from './components/AppNav'
 import { AtSection } from './components/AtSection'
 import { ClassicMeteogram } from './components/ClassicMeteogram'
+import { OpenMeteoAttribution } from './components/Attribution'
 import { isPanelSection, useAppView } from './state/appView'
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
@@ -21,6 +22,7 @@ export default function App() {
           <TopBar />
           <PanelGrid />
           <TimeScrubber />
+          <OpenMeteoAttribution className="app-attribution" />
         </>
       ) : view === 'classic' ? (
         <ClassicMeteogram />

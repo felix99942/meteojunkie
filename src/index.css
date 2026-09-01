@@ -1268,10 +1268,37 @@ button:focus-visible {
   overflow: hidden;
 }
 
-.atclima-attribution {
-  flex: 0 0 auto;
+/* Quellenangabe — Lizenzbedingung (CC BY), deshalb in JEDEM Bereich. Die
+   Klasse trägt nur das Aussehen; die Platzierung machen die Bereichsklassen. */
+.attribution {
   color: var(--ink-muted);
   font-size: 10px;
+}
+
+/* Quellen-Links bleiben in der Zeile unauffällig, aber erkennbar anklickbar. */
+.attribution a {
+  color: var(--ink-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.attribution a:hover {
+  color: var(--ink);
+}
+
+/* Erläuterungen im Tooltip (HISTALP-Hinweis u. a.) — das muss man sehen. */
+.attribution span[title] {
+  border-bottom: 1px dotted var(--ink-muted);
+  cursor: help;
+}
+
+.atclima-attribution {
+  flex: 0 0 auto;
+}
+
+/* Vorhersagebereiche: eine Zeile am unteren Rand, außerhalb des Rasters. */
+.app-attribution {
+  padding: 2px 10px 6px;
 }
 
 .atmap {
