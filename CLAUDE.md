@@ -703,10 +703,19 @@ npm run preview   # gebautes dist/ servieren
   +1 Tag mit 0,95 K, wie man es vom Lokalmodell erwartet). Die tägliche Frage
   ist aber „wie lief es diese Woche", und darauf antworten die konkreten Tage
   nebeneinander: Messung, Vorhersage je Modell, Differenz — Fehlermaße nur als
-  eine Fußzeile. Zwei Zeiträume mit verschiedenem ZWECK statt Abstufungen
-  desselben: **5 Tage** (Voreinstellung, der Blick zurück) und **30 Tage**
-  (lang genug zum Reihen); unter `RELIABLE_DAYS` sagt die Legende ausdrücklich,
-  dass das kein Modellvergleich ist. Das Diagramm erscheint erst ab 8 Tagen —
+  eine Fußzeile. Drei Zeiträume, 5 (Voreinstellung) / 10 / 20 Tage,
+  nach oben bewusst gedeckelt: ein belastbarer Vergleich bräuchte Monate, und
+  die Legende stuft das ab (unter `ROUGH_DAYS` „kein Modellvergleich", darüber
+  „grobe Reihung"). Bei 20 Zeilen klebt der Tabellenkopf (Modellnamen dürfen
+  umbrechen statt die Spalte breitzuziehen) und die Fehler-Fußzeile mit; die
+  Tabelle scrollt in sich, nie die Seite.
+  **Markiert wird das beste Modell ÜBER DEN ZEITRAUM, nie je Tag.** Je Tag das
+  im Nachhinein nächstliegende Modell zu zeigen ist kein Vergleich, sondern
+  Rosinenpicken: gemessen (Wien Hohe Warte, 20 Tage, Vorlauf 1) käme man damit
+  auf **0,59 K** statt 1,16 K des besten Einzelmodells — eine Zahl, die niemand
+  im Voraus hätte haben können. `best_match` (Open-Meteos eigene Mischung) ist
+  als Bezug voreingestellt und lag dort NICHT vorn (1,33 K gegen 1,16 K von
+  GFS). Das Diagramm erscheint erst ab 8 Tagen —
   fünf Punkte sagen nichts, was die Tabelle nicht schon zeigt.
   Die Stationsauswahl ist ein **Suchfeld mit `datalist`**, kein Dropdown: 290
   Stationen findet man scrollend nicht, und die native Variante filtert beim

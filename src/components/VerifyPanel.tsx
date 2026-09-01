@@ -34,25 +34,39 @@ import { ChartRow } from './ChartStack'
 import { OpenMeteoAttribution } from './Attribution'
 import { dailyExtremes, dayRange, leadsFor, score, type DailyMode, type Scores } from './verify'
 
-/** Voreingestellte Modelle: je ein Vertreter der interessanten Klassen. */
-const DEFAULT_MODELS = ['ecmwf_ifs025', 'icon_eu', 'gfs_seamless', 'geosphere_arome_austria']
+/**
+ * Voreingestellte Modelle: je ein Vertreter der interessanten Klassen, dazu
+ * „Best Match" — Open-Meteos eigene Mischung ist der natürliche Bezug, gegen
+ * den sich die Einzelmodelle behaupten müssen. (Am Testpunkt lag sie NICHT
+ * vorn: über 20 Tage 1,33 K gegen 1,16 K von GFS.)
+ */
+const DEFAULT_MODELS = [
+  'best_match',
+  'ecmwf_ifs025',
+  'icon_eu',
+  'gfs_seamless',
+  'geosphere_arome_austria',
+]
 /** Voreingestellte Station: lange Reihe, zentral, jedem ein Begriff. */
 const DEFAULT_STATION = 105 // Wien Hohe Warte
 
 /**
- * Zwei Zeiträume mit VERSCHIEDENEM Zweck, nicht drei Abstufungen desselben:
- * 5 Tage beantworten „wie lief es diese Woche" (die tägliche Frage), 30 Tage
- * „welches Modell liegt hier meist näher". Ein Modellvergleich über 5 Tage
- * wäre Rauschen — über 14 Tage sank der IFS-Fehler mit LÄNGEREM Vorlauf
- * (2,01 K bei +1 d, 1,84 K bei +5 d), über 90 Tage wächst er bei jedem Modell
- * monoton. Die Fehlerzeile sagt es dazu, statt die kurze Reihe zu verschweigen.
+ * Drei Zeiträume, aufsteigend vergleichbar. 5 Tage beantworten „wie lief es
+ * diese Woche", 20 Tage lassen die Modelle grob gegeneinander antreten.
+ *
+ * Nach oben bewusst gedeckelt: ein belastbarer Modellvergleich bräuchte
+ * Monate. Live gemessen — über 14 Tage SANK der IFS-Fehler mit LÄNGEREM
+ * Vorlauf (2,01 K bei +1 d, 1,84 K bei +5 d), reines Rauschen; erst über 90
+ * Tage wächst er bei jedem Modell monoton. 20 Tage sind also ein Kompromiss
+ * und kein Urteil, und die Fehlerzeile sagt das je nach Länge auch.
  */
 const SPANS: { days: number; label: string; hint: string }[] = [
-  { days: 5, label: 'letzte 5 Tage', hint: 'Blick auf die vergangenen Tage — zu kurz für einen Modellvergleich' },
-  { days: 30, label: 'letzte 30 Tage', hint: 'lang genug, dass die Fehlermaße die Modelle sinnvoll reihen' },
+  { days: 5, label: '5 Tage', hint: 'Blick auf die vergangenen Tage — zu kurz für einen Modellvergleich' },
+  { days: 10, label: '10 Tage', hint: 'erste Tendenz, welches Modell hier näher liegt — noch stark vom Zufall geprägt' },
+  { days: 20, label: '20 Tage', hint: 'grober Modellvergleich; belastbar würde er erst über Monate' },
 ]
-/** Ab wie vielen Tagen die Fehlerzeile als Vergleich taugt. */
-const RELIABLE_DAYS = 20
+/** Ab hier taugt die Fehlerzeile wenigstens als grobe Reihung. */
+const ROUGH_DAYS = 10
 
 /** Was verglichen wird: Messgröße ↔ Vorhersagevariable ↔ Tagesreduktion. */
 const TARGETS = {
@@ -251,6 +265,14 @@ export function VerifyPanel() {
   }, [availableLeads, lead])
 
   const obsCount = observed ? days.filter((d) => observed.has(d)).length : 0
+  /** Kleinster mittlerer Fehler über den ganzen Zeitraum — nur zum Markieren. */
+  const bestMae = useMemo(() => {
+    const vals = table
+      .map((r) => r.cells.get(lead)?.scores)
+      .filter((s): s is Scores => s != null && s.n > 0)
+      .map((s) => s.mae)
+    return vals.length ? Math.min(...vals) : null
+  }, [table, lead])
 
   return (
     <div className="meteo">
@@ -372,6 +394,7 @@ export function VerifyPanel() {
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
                 Fehlermaßen bräuchte Wochen, um überhaupt etwas zu sagen. */}
+            <div className="verify-scroll">
             <table className="verify-table">
               <thead>
                 <tr>
@@ -433,12 +456,19 @@ export function VerifyPanel() {
                   <td className="verify-empty">—</td>
                   {table.map((row) => {
                     const sc = row.cells.get(lead)?.scores
+                    // Bestes Modell ÜBER DEN ZEITRAUM markieren — nicht je Tag.
+                    // Je Tag das nächstliegende Modell zu nehmen wäre kein
+                    // Vergleich, sondern Rosinenpicken im Nachhinein (siehe
+                    // Legende).
+                    const isBest = sc != null && sc.n > 0 && bestMae != null && sc.mae === bestMae
                     return (
                       <td
                         key={row.model.id}
+                        className={isBest ? 'verify-best' : undefined}
                         title={
                           sc && sc.n
-                            ? `${sc.n} Tage · mittlerer absoluter Fehler ${fmt1(sc.mae)} K · Bias ${fmtSigned(sc.bias)} K · RMSE ${fmt1(sc.rmse)} K`
+                            ? `${sc.n} Tage · mittlerer absoluter Fehler ${fmt1(sc.mae)} K · Bias ${fmtSigned(sc.bias)} K · RMSE ${fmt1(sc.rmse)} K` +
+                              (isBest ? '\nKleinster Fehler über den gezeigten Zeitraum.' : '')
                             : 'Keine gemeinsamen Tage.'
                         }
                       >
@@ -456,20 +486,30 @@ export function VerifyPanel() {
                 </tr>
               </tfoot>
             </table>
+            </div>
             <div className="verify-legend label-muted">
               Große Zahl: was das Modell {lead} Tag{lead > 1 ? 'e' : ''} vorher für diesen Tag
               vorhergesagt hat. Kleine Zahl darunter: Abweichung von der Messung, Vorzeichen und
               Größe. In der letzten Zeile der mittlere Fehlerbetrag über alle gezeigten Tage und
               daneben die systematische Schieflage — ein Modell mit +2 K Schieflage liegt immer
               zu warm und ist korrigierbar, eines mit 0 K streut nur. Darin steckt auch der
-              Unterschied zwischen Modellgitterzelle und Messplatz.
-              {span < RELIABLE_DAYS && (
+              Unterschied zwischen Modellgitterzelle und Messplatz. Hervorgehoben ist das
+              Modell mit dem kleinsten Fehler ÜBER DEN GANZEN ZEITRAUM. Je Tag das jeweils
+              nächstliegende Modell zu zeigen wäre kein Vergleich, sondern Rosinenpicken im
+              Nachhinein: an diesem Punkt gemessen käme man damit auf 0,59 K statt 1,16 K des
+              besten Einzelmodells — eine Zahl, die niemand im Voraus hätte haben können.
+              {' '}
+              {span < ROUGH_DAYS ? (
                 <>
-                  {' '}
-                  <strong>
-                    Über {span} Tage ist das kein Modellvergleich — dafür auf 30 Tage stellen.
-                  </strong>{' '}
-                  Bei so kurzen Reihen entscheidet der Zufall, welches Modell vorn liegt.
+                  <strong>Über {span} Tage ist das kein Modellvergleich.</strong> Bei so kurzen
+                  Reihen entscheidet der Zufall, welches Modell vorn liegt — für eine grobe
+                  Reihung auf 20 Tage stellen.
+                </>
+              ) : (
+                <>
+                  <strong>Über {span} Tage ist die Reihung grob.</strong> Ein belastbarer
+                  Modellvergleich bräuchte Monate; hier gemessen kippt die Ordnung noch bei
+                  Unterschieden von einigen Zehntel Kelvin.
                 </>
               )}
             </div>

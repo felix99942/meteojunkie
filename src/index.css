@@ -2227,7 +2227,7 @@ button:focus-visible {
 
 
 /* --- Verifikation ---------------------------------------------------------
-   Eigenes, schlankes Gerüst wie Klimakarte und klassisches Meteogramm: eine
+   Eigenes, schlankes Geruest wie Klimakarte und klassisches Meteogramm: eine
    Werkzeugleiste, eine Tabelle, ein Diagramm. Kein Panel-Raster. */
 
 .verify-models {
@@ -2257,23 +2257,65 @@ button:focus-visible {
   overflow: auto;
 }
 
+/* Breite oder lange Tabellen scrollen in SICH, nie die Seite. */
+.verify-scroll {
+  overflow: auto;
+  max-height: 62vh;
+  align-self: flex-start;
+  max-width: 100%;
+}
+
 .verify-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
+/* Ränder je nur rechts/unten: mit border-collapse käme der klebende Kopf
+   ohne seine Linien aus, deshalb hier von Hand. */
 .verify-table th,
 .verify-table td {
-  border: 1px solid var(--border);
-  padding: 3px 8px;
+  border-color: var(--border);
+  border-style: solid;
+  border-width: 0 1px 1px 0;
+  padding: 2px 7px;
   text-align: center;
+}
+
+.verify-table tr > *:first-child {
+  border-left-width: 1px;
+}
+
+.verify-table thead tr > * {
+  border-top-width: 1px;
 }
 
 .verify-table thead th,
 .verify-table tbody th {
   color: var(--ink-muted);
   font-weight: 500;
+}
+
+/* Modellnamen duerfen UMBRECHEN statt die Spalte breitzuziehen: „ECMWF AIFS
+   0.25 Grad (KI)" in einer Zeile macht aus sechs Modellen eine Tabelle, die
+   niemand mehr auf einen Blick liest. Und der Kopf bleibt beim Scrollen
+   stehen — bei 20 Tagen weiss man in Zeile 18 sonst nicht mehr, welche
+   Spalte welches Modell ist. */
+.verify-table thead th {
+  max-width: 7.5rem;
+  line-height: 1.15;
+  vertical-align: bottom;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+}
+
+.verify-table tbody th,
+.verify-table tbody td,
+.verify-table tfoot th,
+.verify-table tfoot td {
   white-space: nowrap;
 }
 
@@ -2281,8 +2323,8 @@ button:focus-visible {
   text-align: left;
 }
 
-/* Vorhersagewert groß, Abweichung klein darunter — zwei Zahlen, eine Zelle:
-   sie gehören zusammen gelesen und fielen in zwei Tabellen auseinander. */
+/* Vorhersagewert gross, Abweichung klein darunter — zwei Zahlen, eine Zelle:
+   sie gehoeren zusammen gelesen und fielen in zwei Tabellen auseinander. */
 .verify-fc {
   display: block;
   font-weight: 600;
@@ -2297,12 +2339,22 @@ button:focus-visible {
 /* Die Messung ist der Bezug, auf den alles andere zeigt. */
 .verify-obs {
   font-weight: 600;
-  white-space: nowrap;
 }
 
+/* Fusszeile mit den Fehlermassen klebt unten mit, solange gescrollt wird. */
 .verify-table tfoot th,
 .verify-table tfoot td {
-  border-top: 2px solid var(--border);
+  border-top-width: 2px;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-panel);
+}
+
+/* Bestes Modell der Periode — Rahmen statt Farbe, damit es sich nicht mit
+   der Fehlereinfaerbung der Tageszellen beisst. */
+.verify-best {
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
 }
 
 .verify-empty {
@@ -2311,7 +2363,7 @@ button:focus-visible {
 }
 
 .verify-legend {
-  max-width: 70ch;
+  max-width: 78ch;
   font-size: 11px;
   line-height: 1.45;
 }
