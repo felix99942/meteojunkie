@@ -715,9 +715,19 @@ npm run preview   # gebautes dist/ servieren
   eine Fußzeile. Drei Zeiträume, 5 (Voreinstellung) / 10 / 20 Tage,
   nach oben bewusst gedeckelt: ein belastbarer Vergleich bräuchte Monate, und
   die Legende stuft das ab (unter `ROUGH_DAYS` „kein Modellvergleich", darüber
-  „grobe Reihung"). Bei 20 Zeilen klebt der Tabellenkopf (Modellnamen dürfen
-  umbrechen statt die Spalte breitzuziehen) und die Fehler-Fußzeile mit; die
-  Tabelle scrollt in sich, nie die Seite.
+  „grobe Reihung"). Bei 20 Zeilen klebt der Tabellenkopf mit (Modellnamen
+  dürfen umbrechen statt die Spalte breitzuziehen). **GENAU EIN
+  Scroll-Container**, nämlich `.verify-body`: ein zweiter, geschachtelter mit
+  eigener `max-height` verschluckte bei 20 Tagen die untersten Zeilen, und die
+  klebende Fußzeile legte sich zusätzlich darüber — sie klebt deshalb nicht
+  mehr. Die Tabelle ist inhaltsbreit (`align-self: flex-start`), nicht über die
+  Seite gezogen.
+  **Über der Tabelle steht in einem Satz, WAS gemessen wurde**: Größe, Station
+  samt Seehöhe, das Zeitfenster (00–24 UTC), der Zeitraum mit Jahr und die
+  Zahl der Messtage — eine Zahlenmatrix ohne diesen Bezug ist nicht lesbar. Die
+  Tagesspalte trägt das volle Datum inklusive Jahr. Das Diagramm hat KEINE
+  Tagesleiste: die ist für stündliche Reihen gedacht und sagt bei Tageswerten
+  nichts, was die Datums-Ticks nicht schon zeigen.
   **Markiert wird das beste Modell ÜBER DEN ZEITRAUM, nie je Tag.** Je Tag das
   im Nachhinein nächstliegende Modell zu zeigen ist kein Vergleich, sondern
   Rosinenpicken: gemessen (Wien Hohe Warte, 20 Tage, Vorlauf 1) käme man damit

@@ -90,11 +90,22 @@ const fmtSigned = (v: number) =>
 const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'UTC',
   weekday: 'short',
-  day: 'numeric',
-  month: 'numeric',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
 })
-/** „Mi, 27.8." — Wochentag dazu, weil man Wetter in Wochentagen erinnert. */
+/**
+ * „Mi, 27.08.2026" — Wochentag dazu, weil man Wetter in Wochentagen erinnert;
+ * das Jahr dazu, weil eine Tabelle ohne Jahresangabe nicht sagt, WANN gemessen
+ * wurde.
+ */
 const fmtDay = (day: string) => fmtDayLabel.format(new Date(`${day}T12:00:00Z`))
+/** Kurzform für Achsenticks und Fließtext. */
+const fmtShort = new Intl.DateTimeFormat('de-AT', {
+  timeZone: 'UTC',
+  day: '2-digit',
+  month: '2-digit',
+})
 
 /**
  * Beschriftung einer Vorlaufzeit. „+1 Tag" wäre zu grob und im Kern falsch:
@@ -411,15 +422,32 @@ export function VerifyPanel() {
           <div className="panel-placeholder">Lade Stationen …</div>
         ) : (
           <>
+            {/* Was hier verglichen wird, in einem Satz. Eine Zahlenmatrix ohne
+                Größe, Ort, Zeitfenster und Zeitraum ist nicht lesbar. */}
+            <div className="verify-what">
+              <strong>{TARGETS[target].label}</strong> an der Station{' '}
+              <strong>{station.name}</strong>
+              {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als
+              Tagesextrem über <strong>00–24 UTC</strong> aus dem geprüften Klimatagesdatensatz.
+              Zeitraum{' '}
+              <strong>
+                {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}
+              </strong>{' '}
+              ({obsCount} Messtage). Verglichen wird der{' '}
+              <strong>{leadLabel(lead).toLowerCase()}</strong> ({leadRange(lead)} Vorlauf), auf
+              denselben UTC-Tag gerechnet.
+            </div>
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
                 Fehlermaßen bräuchte Wochen, um überhaupt etwas zu sagen. */}
-            <div className="verify-scroll">
             <table className="verify-table">
               <thead>
                 <tr>
                   <th>Tag</th>
-                  <th title="Gemessener Wert der Station (GeoSphere klima-v2-1d)">Messung</th>
+                  <th title="Gemessener Wert der Station — Tagesextrem über 00–24 UTC aus dem geprüften Klimatagesdatensatz (GeoSphere klima-v2-1d)">
+                    Messung
+                    <span className="verify-err">00–24 UTC</span>
+                  </th>
                   {table.map((row) => (
                     <th
                       key={row.model.id}
@@ -506,7 +534,6 @@ export function VerifyPanel() {
                 </tr>
               </tfoot>
             </table>
-            </div>
             <div className="verify-legend label-muted">
               Große Zahl: was der {leadLabel(lead).toLowerCase()} für diesen Tag vorhergesagt
               hat — der Vorlauf wächst über den Tag hinweg von {lead * 24} auf {lead * 24 + 23}
@@ -539,7 +566,16 @@ export function VerifyPanel() {
                 Reihen ist der Verlauf dagegen die eigentliche Information. */}
             {days.length >= 8 && (
               <div className="verify-chart">
-                <ChartRow xs={xs} chart={chart} height={220} dayRow formatTick={() => ''} xSpace={80} />
+                {/* Keine Tagesleiste: sie ist für STÜNDLICHE Reihen gedacht und
+                    sagt bei Tageswerten nichts, was die Achse nicht schon zeigt.
+                    Stattdessen echte Datums-Ticks. */}
+                <ChartRow
+                  xs={xs}
+                  chart={chart}
+                  height={240}
+                  formatTick={(ts) => fmtShort.format(new Date(ts * 1000))}
+                  xSpace={64}
+                />
               </div>
             )}
           </>

@@ -2257,18 +2257,19 @@ button:focus-visible {
   overflow: auto;
 }
 
-/* Breite oder lange Tabellen scrollen in SICH, nie die Seite. */
-.verify-scroll {
-  overflow: auto;
-  max-height: 62vh;
-  align-self: flex-start;
-  max-width: 100%;
-}
-
+/* GENAU EIN Scroll-Container: .verify-body. Ein zweiter, geschachtelter mit
+   eigener max-height hat die untersten Zeilen verschluckt — und der klebende
+   Fuss legte sich zusaetzlich darueber. Der Tabellenkopf klebt jetzt am
+   Body-Scroll, das reicht. */
+/* Kompakt, aber gut lesbar: rund doppelt so gross wie die erste Fassung
+   (12 px / 3 px Innenabstand), NICHT ueber die ganze Seitenbreite gezogen —
+   die Tabelle bleibt so breit wie ihr Inhalt. */
 .verify-table {
+  align-self: flex-start;
+  width: auto;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 12px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2279,7 +2280,7 @@ button:focus-visible {
   border-color: var(--border);
   border-style: solid;
   border-width: 0 1px 1px 0;
-  padding: 2px 7px;
+  padding: 7px 13px;
   text-align: center;
 }
 
@@ -2303,8 +2304,9 @@ button:focus-visible {
    stehen — bei 20 Tagen weiss man in Zeile 18 sonst nicht mehr, welche
    Spalte welches Modell ist. */
 .verify-table thead th {
-  max-width: 7.5rem;
-  line-height: 1.15;
+  max-width: 8rem;
+  line-height: 1.2;
+  font-size: 13px;
   vertical-align: bottom;
   position: sticky;
   top: 0;
@@ -2328,25 +2330,27 @@ button:focus-visible {
 .verify-fc {
   display: block;
   font-weight: 600;
+  font-size: 17px;
+  line-height: 1.25;
 }
 
 .verify-err {
   display: block;
-  font-size: 10px;
-  opacity: 0.75;
+  font-size: 12px;
+  opacity: 0.78;
 }
 
 /* Die Messung ist der Bezug, auf den alles andere zeigt. */
 .verify-obs {
   font-weight: 600;
+  font-size: 17px;
 }
 
-/* Fusszeile mit den Fehlermassen klebt unten mit, solange gescrollt wird. */
+/* Fusszeile mit den Fehlermassen: abgesetzt, aber NICHT klebend — klebend
+   legte sie sich ueber die letzten Tageszeilen. */
 .verify-table tfoot th,
 .verify-table tfoot td {
   border-top-width: 2px;
-  position: sticky;
-  bottom: 0;
   background: var(--bg-panel);
 }
 
@@ -2360,6 +2364,18 @@ button:focus-visible {
 .verify-empty {
   color: var(--ink-muted);
   opacity: 0.5;
+}
+
+/* Was verglichen wird, in einem Satz ueber der Tabelle — Groesse, Ort,
+   Zeitfenster und Zeitraum. Ohne das steht eine Zahlenmatrix ohne Bezug da. */
+.verify-what {
+  max-width: 92ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.verify-what strong {
+  color: var(--ink);
 }
 
 .verify-legend {
