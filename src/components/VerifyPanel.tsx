@@ -449,6 +449,21 @@ export function VerifyPanel() {
         <span className="atclima-sub">
           {error ? `⚠ ${error}` : loading ? 'lädt …' : `${obsCount} Messtage`}
         </span>
+        {/* Die Warnung als Merker in der Leiste statt als Textblock unter der
+            Tabelle: dass eine Fünf-Tage-Reihe die Modelle nicht reiht, muss
+            sichtbar sein, aber es braucht dafür keinen Absatz. */}
+        {span < ROUGH_DAYS && (
+          <span
+            className="atclima-hint"
+            title={
+              `Über ${span} Tage entscheidet der Zufall, welches Modell vorn liegt. Die ` +
+              'Fehlerzeile taugt so als Blick zurück, nicht als Reihung — dafür auf 20 Tage ' +
+              'stellen, und belastbar würde sie erst über Monate.'
+            }
+          >
+            ⚠ kein Modellvergleich
+          </span>
+        )}
         <span
           className="atclima-hint"
           title={
@@ -500,30 +515,39 @@ export function VerifyPanel() {
               <strong>{TARGETS[target].label}</strong> an der Station{' '}
               <strong>{station.name}</strong>
               {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als
-              Tagesextrem über <strong>00–24 UTC</strong> aus dem geprüften Klimatagesdatensatz.
-              Verglichen mit der <strong>deterministischen Punktprognose</strong>{' '}
+              Tagesextrem über <strong>00–24 UTC</strong>. Verglichen mit der{' '}
               <span
                 title={
-                  'Rohe Modellausgabe, auf den Punkt interpoliert — KEIN MOS. Statistisch ' +
-                  'korrigierte Punktvorhersagen (Model Output Statistics) stehen im Bereich ' +
-                  '„Österreich-Klima → Vorhersage" als DWD MOSMIX; die lassen sich hier nicht ' +
-                  'verifizieren, weil MOSMIX kein öffentliches Archiv vergangener Läufe hat. ' +
-                  'Open-Meteo rechnet die Temperatur auf die angegebene Seehöhe herunter — ' +
-                  'deshalb wird die Stationshöhe mitgegeben: ohne sie nimmt die API die Höhe ' +
-                  'ihres Geländemodells, am Sonnblick 2962 statt 3109 m, was rund 1 K als ' +
-                  'vermeintlichen Modellfehler erzeugt.'
+                  'Rohe Modellausgabe, auf den Punkt und auf die Stationshöhe gerechnet — KEIN ' +
+                  'MOS. Statistisch korrigierte Punktvorhersagen führt die Seite als DWD MOSMIX ' +
+                  'unter „Österreich-Klima → Vorhersage"; die lassen sich hier nicht verifizieren, ' +
+                  'weil MOSMIX kein öffentliches Archiv vergangener Läufe hat.'
                 }
               >
-                (kein MOS, auf die Stationshöhe gerechnet)
+                deterministischen Punktprognose
+              </span>{' '}
+              bei <strong>{leadLabel(lead)}</strong>{' '}
+              <span
+                title={
+                  'GLEITENDER Vorlauf als Referenz: für jede Stunde des Tages der Stand, den die ' +
+                  'Vorhersage ' + lead * 24 + ' Stunden davor hatte. Das ist NICHT ein fester ' +
+                  'Modelllauf — je nach Zeitpunkt und Modell stammt der Stand aus einem anderen ' +
+                  'Lauf, und die Modelle laufen unterschiedlich oft: AROME Austria und ICON-D2 ' +
+                  'alle 3 Stunden, IFS alle 6, andere alle 12. Ein fester Lauf wäre über die API ' +
+                  'ohnehin nicht zu bekommen (geprüft) — und er hätte einen Nachteil: er mischt ' +
+                  'über den Tag hinweg ' + lead * 24 + ' bis ' + (lead * 24 + 23) + ' Stunden ' +
+                  'Vorlauf, während der gleitende jeden Tag beim GLEICHEN Vorhersagealter ' +
+                  'vergleicht. Gemessen: die Reihe springt an der Tagesgrenze nicht und der ' +
+                  'Fehler wächst über den Tag nicht an — beides wäre bei einem festen Lauf anders.'
+                }
+              >
+                (gleitend, kein fester Lauf)
               </span>
-              .
-              Zeitraum{' '}
+              . Zeitraum{' '}
               <strong>
                 {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}
               </strong>{' '}
-              ({obsCount} Messtage). Verglichen wird der{' '}
-              <strong>{leadLabel(lead)}</strong> — also die Vorhersage, wie sie{' '}
-              {lead * 24} Stunden vor dem jeweiligen Zeitpunkt stand.
+              ({obsCount} Messtage).
             </div>
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
@@ -539,9 +563,14 @@ export function VerifyPanel() {
                   {table.map((row) => (
                     <th
                       key={row.model.id}
-                      title={`${row.model.provider} · Horizont ${row.model.forecastHours} h`}
+                      title={
+                        `${row.model.label} · ${row.model.provider} · Horizont ` +
+                        `${row.model.forecastHours} h · neuer Lauf alle ${row.model.updateIntervalHours} h\n` +
+                        'Obere Zahl: Vorhersagewert. Untere: Abweichung von der Messung.'
+                      }
                     >
                       {row.model.label}
+                      <span className="verify-err">Wert / Δ</span>
                     </th>
                   ))}
                 </tr>
@@ -586,8 +615,22 @@ export function VerifyPanel() {
               </tbody>
               <tfoot>
                 <tr>
-                  <th title="Mittlerer absoluter Fehler und systematische Schieflage über die gezeigten Tage">
+                  <th
+                    title={
+                      'Über die gezeigten Tage: oben der mittlere Fehlerbetrag, unten die ' +
+                      'systematische Schieflage. Ein Modell mit +2 K Schieflage liegt immer zu ' +
+                      'warm und ist korrigierbar, eines mit 0 K streut nur; darin steckt auch der ' +
+                      'Unterschied zwischen Modellgitterzelle und Messplatz. Markiert ist das ' +
+                      'beste Modell ÜBER DEN ZEITRAUM — je Tag das nächstliegende zu zeigen wäre ' +
+                      'Rosinenpicken im Nachhinein (gemessen 0,59 K statt 1,16 K des besten ' +
+                      'Einzelmodells).' +
+                      (span < ROUGH_DAYS
+                        ? `\n\nACHTUNG: über ${span} Tage ist das kein Modellvergleich — bei so kurzen Reihen entscheidet der Zufall, welches Modell vorn liegt.`
+                        : `\n\nÜber ${span} Tage ist die Reihung grob; belastbar würde sie erst über Monate.`)
+                    }
+                  >
                     Ø Fehler
+                    <span className="verify-err">{obsCount} Tage</span>
                   </th>
                   <td className="verify-empty">—</td>
                   {table.map((row) => {
@@ -622,33 +665,6 @@ export function VerifyPanel() {
                 </tr>
               </tfoot>
             </table>
-            <div className="verify-legend label-muted">
-              Große Zahl: was für diesen Tag vorhergesagt war, als die Vorhersage{' '}
-              {lead * 24} Stunden alt war — für jede Stunde des Tages der Stand von {lead * 24} h
-              davor, nicht ein fester Modelllauf. Kleine Zahl darunter: Abweichung von der Messung, Vorzeichen und
-              Größe. In der letzten Zeile der mittlere Fehlerbetrag über alle gezeigten Tage und
-              daneben die systematische Schieflage — ein Modell mit +2 K Schieflage liegt immer
-              zu warm und ist korrigierbar, eines mit 0 K streut nur. Darin steckt auch der
-              Unterschied zwischen Modellgitterzelle und Messplatz. Hervorgehoben ist das
-              Modell mit dem kleinsten Fehler ÜBER DEN GANZEN ZEITRAUM. Je Tag das jeweils
-              nächstliegende Modell zu zeigen wäre kein Vergleich, sondern Rosinenpicken im
-              Nachhinein: an diesem Punkt gemessen käme man damit auf 0,59 K statt 1,16 K des
-              besten Einzelmodells — eine Zahl, die niemand im Voraus hätte haben können.
-              {' '}
-              {span < ROUGH_DAYS ? (
-                <>
-                  <strong>Über {span} Tage ist das kein Modellvergleich.</strong> Bei so kurzen
-                  Reihen entscheidet der Zufall, welches Modell vorn liegt — für eine grobe
-                  Reihung auf 20 Tage stellen.
-                </>
-              ) : (
-                <>
-                  <strong>Über {span} Tage ist die Reihung grob.</strong> Ein belastbarer
-                  Modellvergleich bräuchte Monate; hier gemessen kippt die Ordnung noch bei
-                  Unterschieden von einigen Zehntel Kelvin.
-                </>
-              )}
-            </div>
             {/* Bei fünf Tagen sagt die Tabelle alles, was fünf Punkte im
                 Diagramm sagen könnten — dann bleibt es weg. Über längere
                 Reihen ist der Verlauf dagegen die eigentliche Information. */}

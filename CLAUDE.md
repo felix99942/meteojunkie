@@ -689,7 +689,11 @@ npm run preview   # gebautes dist/ servieren
   **WAS `previous_dayN` ist, wurde gemessen — und die erste Herleitung war
   falsch.** Es ist der Stand, den die Vorhersage **n·24 Stunden VOR dem
   jeweiligen Zeitpunkt** hatte: ein GLEITENDER Vorlauf, kein fester Modelllauf.
-  Zwei unabhängige Messungen: die Reihe springt an der Tagesgrenze nicht
+  **Gleitender Vorlauf als Referenz** — und je nach Zeitpunkt und Modell steckt
+  dahinter ein ANDERER Lauf, denn die Modelle laufen unterschiedlich oft (AROME
+  Austria und ICON-D2 alle 3 h, IFS alle 6 h, andere alle 12 h; die Registry
+  führt das als `updateIntervalHours`). Zwei unabhängige Messungen: die Reihe
+  springt an der Tagesgrenze nicht
   (Stundenänderung über 00 UTC 0,69 K gegen 0,92 K sonst — genau wie die
   durchgehende Reihe), und der Fehler ist über den Tagesverlauf flach
   (0,82/0,83/0,81/0,90 K je Sechs-Stunden-Block). Ein fester 00-UTC-Lauf müsste
@@ -775,6 +779,12 @@ npm run preview   # gebautes dist/ servieren
   Die Modell-Auswahlliste zeigt nur Modelle, die den gewählten Vorlauf tragen
   können — bei +3 Tagen fallen AROME Austria und ICON-D2 heraus, statt als
   leere Spalten zum Fehlschluss einzuladen.
+  **Unter der Tabelle steht kein Fließtext mehr.** Was die Zahlen bedeuten,
+  steht dort, wo sie stehen: die Spaltenköpfe tragen „Wert / Δ", die
+  Fußzeile ihre Tageszahl, die Erklärungen samt Warnung zur Reihenlänge sitzen
+  in den Tooltips, und ein Merker in der Werkzeugleiste („⚠ kein
+  Modellvergleich") warnt bei kurzen Reihen sichtbar. Ein Absatz Erklärung
+  unter einer Tabelle wird nicht gelesen.
   Der **Bias** steht klein unter jedem Wert: derselbe Fehlerbetrag bedeutet bei
   +2 K Schieflage etwas anderes (systematisch, korrigierbar) als bei 0 K (streut
   nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und

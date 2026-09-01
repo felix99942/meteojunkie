@@ -2383,12 +2383,6 @@ button:focus-visible {
   cursor: help;
 }
 
-.verify-legend {
-  max-width: 78ch;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
 .verify-chart {
   min-height: 240px;
 }
