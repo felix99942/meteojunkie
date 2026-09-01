@@ -686,11 +686,20 @@ npm run preview   # gebautes dist/ servieren
   selben Zeitpunkt, keine Zeitverschiebung** — gemessen: RMS gegen den besten
   Wert 0,98 K (N=1) bzw. 1,52 K (N=2) beim selben Zeitstempel, gegen den um
   24 h verschobenen 2,99 K.
-  **Der Vorlauf ist am Modellhorizont gedeckelt** (`leadsFor`): ein
-  Tagesmaximum braucht den ganzen Zieltag, also `forecastHours ≥ n·24 + 24`.
-  Live gemessen und exakt getroffen: ICON-D2 (48 h) → Vorlauf 1, AROME Austria
-  (60 h) → 1, ICON-EU (120 h) → 1–4, IFS (360 h) → 1–7. Leere Spalten werden
-  gar nicht erst geholt.
+  **WELCHER Lauf verglichen wird, ist live ermittelt und steht in der UI**:
+  `previous_dayN` ist der Lauf von **00 UTC des Tages n Tage vor dem Zieltag** —
+  der Vorlauf wächst über den Zieltag hinweg von 24·n auf 24·n+23 Stunden. Es
+  ist ausdrücklich NICHT der frischeste Lauf vor dem Tag (18 UTC des Vortags);
+  einzelne Läufe bräuchten die Single-Runs-API. Der Beweis steckt in den
+  Horizonten: bei KONSTANTEM Vorlauf 48 h müsste AROME Austria (60 h)
+  `previous_day2` liefern — die Spalte ist vollständig leer; mit 24·n +
+  Tagesstunde bräuchte sie 71 h. Dieselbe Rechnung trifft alle gemessenen
+  Fälle exakt (ICON-D2 48 h → nur n=1; ICON-EU 120 h → bis n=4, n=5 bräuchte
+  143 h; IFS 360 h → alle sieben), und eine Reihe wird nur ausgeliefert, wenn
+  der GANZE Zieltag abgedeckt ist — Teilspalten gibt es nicht. Daraus folgt
+  `leadsFor`: `forecastHours ≥ n·24 + 24`. Leere Spalten werden gar nicht erst
+  geholt, und die Beschriftung sagt „Lauf vom Vortag, 00 UTC · +24–47 h" statt
+  des zu groben „+1 Tag".
   **Der Tag ist 00–24 UTC auf BEIDEN Seiten** (GeoSphere-Klimatag, Open-Meteo
   überall mit `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
   Verschiebung. Ein Tag zählt nur mit ≥ 20 Stundenwerten; angeschnittene Ränder

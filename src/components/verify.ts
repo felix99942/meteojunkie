@@ -91,11 +91,23 @@ export function score(
 }
 
 /**
- * Welche Vorlaufzeiten ein Modell überhaupt tragen kann. Eine drei Tage alte
- * Vorhersage für heute setzt voraus, dass das Modell 72 h weit rechnet —
- * AROME Austria (60 h) und ICON-D2 (48 h) können das nicht, die API liefert
- * dort leere Spalten. Gerechnet wird gegen das ENDE des Zieltages: ein
- * Tagesmaximum braucht den ganzen Tag, nicht nur dessen Beginn.
+ * Welche Vorlaufzeiten ein Modell überhaupt tragen kann.
+ *
+ * WELCHER LAUF steckt hinter `previous_dayN`? Live ermittelt (2026-09-01),
+ * weil es die Auswertung bestimmt: es ist der Lauf von **00 UTC des Tages
+ * N Tage vor dem Zieltag** — der Vorlauf wächst also über den Zieltag hinweg
+ * von 24·N Stunden (00 UTC) auf 24·N + 23 (23 UTC). Es ist NICHT der
+ * jeweils frischeste Lauf vor dem Zieltag.
+ *
+ * Der Beweis steckt in den Horizonten: bei KONSTANTEM Vorlauf 48 h müsste
+ * AROME Austria (60 h) `previous_day2` liefern — die Spalte ist aber
+ * vollständig leer. Mit 24·N + Tagesstunde bräuchte sie bis zu 71 h, und
+ * dieselbe Rechnung trifft alle gemessenen Fälle exakt: ICON-D2 (48 h) nur
+ * N=1 (braucht 47 h), ICON-EU (120 h) bis N=4 (119 h, N=5 bräuchte 143),
+ * IFS (360 h) alle sieben. Eine Reihe wird offenbar nur ausgeliefert, wenn
+ * der GANZE Zieltag abgedeckt ist — Teilspalten gibt es nicht.
+ *
+ * Daraus folgt die Bedingung: `forecastHours ≥ n·24 + 24`.
  */
 export function leadsFor(forecastHours: number, maxLead: number): number[] {
   const out: number[] = []

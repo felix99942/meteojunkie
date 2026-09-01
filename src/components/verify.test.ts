@@ -119,6 +119,19 @@ describe('score', () => {
 })
 
 describe('leadsFor', () => {
+  it('folgt dem tatsächlichen Lauf: 00 UTC, Vorlauf 24·n bis 24·n+23', () => {
+    // WELCHER Lauf hinter `previous_dayN` steckt, ist live ermittelt: der von
+    // 00 UTC des Tages n Tage vorher. Beweis über die Horizonte — bei
+    // KONSTANTEM Vorlauf 48 h müsste AROME Austria (60 h) `previous_day2`
+    // liefern, die Spalte ist aber vollständig leer. Mit 24·n + Tagesstunde
+    // bräuchte sie 71 h.
+    expect(leadsFor(60, 7)).not.toContain(2)
+    // ICON-EU (120 h) trägt n=4 (braucht 119 h), aber nicht n=5 (143 h) —
+    // bei konstantem Vorlauf hätte n=5 mit genau 120 h noch gepasst.
+    expect(leadsFor(120, 7)).toContain(4)
+    expect(leadsFor(120, 7)).not.toContain(5)
+  })
+
   it('deckelt den Vorlauf am Modellhorizont', () => {
     // Ein Tagesmaximum braucht den GANZEN Zieltag: für Vorlauf 1 muss das
     // Modell 48 h weit rechnen, für Vorlauf 4 volle 120 h. Die Erwartungen
