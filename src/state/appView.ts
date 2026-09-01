@@ -1,11 +1,12 @@
 // Oberste Ansichts-Navigation der Website. Bewusst ein eigener, minimaler Store
 // (kein react-router, keine Kopplung an den komplexen Workbench-State).
 //
-// Fünf Bereiche: das klassische Meteogramm (EIN Ort, EIN Modell, gestapelte
+// Sechs Bereiche: das klassische Meteogramm (EIN Ort, EIN Modell, gestapelte
 // Standardgrößen — `ClassicMeteogram`), Punktprognosen (der frühere
 // „Meteogramm"-Bereich: freie Variable/Modellwahl, Karte, bis zu 6 Panels —
 // intern weiter `workbench`, nur umbenannt), Ensemble, Vertikalprofil und die
-// Österreich-Klimakarte. Ensemble und Profil waren früher Panel-MODI innerhalb
+// Österreich-Klimakarte und die Verifikation (Vorhersage gegen Messung).
+// Ensemble und Profil waren früher Panel-MODI innerhalb
 // der Workbench; als eigene Bereiche sind sie leichter zu finden und der
 // Modus-Dropdown im Panel-Kopf bleibt auf die zwei Fälle beschränkt, zwischen
 // denen man wirklich hin und her springt (Punktprognosen ↔ Karte).
@@ -22,7 +23,19 @@ import { create } from 'zustand'
 // 'classic' statt 'meteogram': PanelConfig.mode kennt bereits ein 'meteogram'
 // (Panel-MODUS: Linienchart vs. Karte, siehe workbench.ts) — ein zweites,
 // andersartiges 'meteogram' als AppView-Id wäre verwechselbar.
-export type AppView = 'classic' | 'workbench' | 'ensemble' | 'profile' | 'at-klima'
+export type AppView =
+  | 'classic'
+  | 'workbench'
+  | 'ensemble'
+  | 'profile'
+  | 'at-klima'
+  /**
+   * Verifikation: was wurde vorhergesagt, was ist eingetroffen. Eigener
+   * Bereich, weil er als einziger BEIDE Welten der Seite zusammenbringt —
+   * Open-Meteo-Modellläufe und gemessene GeoSphere-Stationswerte — und weil er
+   * rückwärts blickt, während alles andere nach vorn schaut.
+   */
+  | 'verify'
 
 /** Bereiche, die das Panel-Raster benutzen (Klimakarte UND klassisches Meteogramm nicht). */
 export type PanelSection = 'workbench' | 'ensemble' | 'profile'

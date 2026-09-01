@@ -588,6 +588,107 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
 // `hourly.<var>_member01…member50`. Nur EIN Modell pro Request — sonst kämen
 // zusätzlich Modell-Suffixe wie bei der Forecast-API dazu.
 
+// --- Verifikation: was WURDE vorhergesagt? ---------------------------------
+//
+// Eigener Endpunkt (historical-forecast-api.open-meteo.com), wieder derselbe
+// apiGet-Pfad (mock-fähig, im Verbrauchszähler sichtbar).
+//
+// Der Kniff sind die Variablen-Suffixe `_previous_dayN`: zu einem vergangenen
+// Zeitpunkt liefert die API nicht nur den besten (jüngsten) Wert, sondern auch
+// das, was N Tage FRÜHER für denselben Zeitpunkt vorhergesagt worden war. Damit
+// braucht die Verifikation KEIN eigenes Archiv — was sonst hieße, jede
+// Modellausgabe selbst wegzuschreiben und für immer aufzubewahren.
+//
+// Live geprüft (2026-09-01):
+//   • `_previous_dayN` gibt es NUR stündlich. `temperature_2m_max_previous_day1`
+//     wird mit HTTP 400 abgelehnt — Tagesextreme rechnet `verify.ts` selbst.
+//   • N = 1…7 liefert Werte, N = 8 durchgehend null (Obergrenze 7 Tage).
+//   • Auf der NORMALEN Forecast-API liefern dieselben Suffixe HTTP 200 mit
+//     lauter null — die bekannte Falle (SPEC §6). Nur der historische Endpunkt
+//     trägt sie.
+//   • Der Vorlauf ist am Modellhorizont gedeckelt: AROME Austria (60 h) und
+//     ICON-D2 (48 h) liefern `previous_day1`, aber `previous_day3` leer — eine
+//     drei Tage alte Vorhersage für heute kann es dort nicht geben. Die UI
+//     gattet das über `forecastHours`, statt leere Spalten zu zeigen.
+//   • Das Archiv reicht mindestens bis Mitte 2024 zurück (2023 leer).
+
+const HISTORICAL_URL = 'https://historical-forecast-api.open-meteo.com/v1/forecast'
+
+/** Größter von der API getragener Vorlauf in Tagen. */
+export const MAX_LEAD_DAYS = 7
+
+export interface PastRunSeries {
+  /** Zeitachse in Epoch-ms (UTC), stündlich. */
+  timeMs: number[]
+  /** Bester verfügbarer Wert je Zeitpunkt — die jüngste Vorhersage. */
+  best: (number | null)[]
+  /** Vorlauf in Tagen → Werte, die damals für denselben Zeitpunkt galten. */
+  byLead: Map<number, (number | null)[]>
+}
+
+/**
+ * Vergangene Läufe EINES Modells an EINEM Punkt. `leads` sind Vorlaufzeiten in
+ * Tagen (1…7); der Aufrufer gattet sie am Modellhorizont.
+ */
+export async function fetchPastRuns(
+  lat: number,
+  lon: number,
+  model: string,
+  variable: string,
+  startDate: string,
+  endDate: string,
+  leads: number[],
+): Promise<PastRunSeries> {
+  const wanted = leads.filter((n) => n >= 1 && n <= MAX_LEAD_DAYS)
+  const vars = [variable, ...wanted.map((n) => `${variable}_previous_day${n}`)]
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly: vars.join(','),
+    models: model,
+    start_date: startDate,
+    end_date: endDate,
+    timezone: 'UTC',
+    timeformat: 'unixtime',
+  })
+  const days = Math.max(
+    1,
+    Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1,
+  )
+  const res = await apiGet(
+    `${HISTORICAL_URL}?${params}`,
+    estimateWeight(1, vars.length, days),
+    'point',
+  )
+  if (!res.ok) {
+    let reason = `HTTP ${res.status}`
+    try {
+      const body = JSON.parse(res.text) as { reason?: string }
+      if (body.reason) reason = body.reason
+    } catch {
+      // Status reicht
+    }
+    if (isRateLimited(res.status, reason)) throw new RateLimitError(reason)
+    throw new Error(`Open-Meteo Verifikation: ${reason}`)
+  }
+  const body = JSON.parse(res.text) as { hourly?: Record<string, (number | null)[] | number[]> }
+  const hourly = body.hourly ?? {}
+  const timeMs = ((hourly.time as number[] | undefined) ?? []).map((t) => t * 1000)
+  const byLead = new Map<number, (number | null)[]>()
+  for (const n of wanted) {
+    const series = hourly[`${variable}_previous_day${n}`] as (number | null)[] | undefined
+    // Ein Modell, dessen Horizont kürzer als der Vorlauf ist, liefert die
+    // Spalte leer statt zu scheitern — die verschweigen wir hier, statt sie
+    // als Reihe aus lauter Lücken durchzureichen.
+    if (series && series.some((v) => v != null)) byLead.set(n, series)
+  }
+  return {
+    timeMs,
+    best: ((hourly[variable] as (number | null)[] | undefined) ?? []).slice(),
+    byLead,
+  }
+}
+
 const ENSEMBLE_URL = 'https://ensemble-api.open-meteo.com/v1/ensemble'
 
 export type EnsembleSeries = ParsedEnsemble

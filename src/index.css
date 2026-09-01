@@ -2224,3 +2224,98 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
 }
+
+
+/* --- Verifikation ---------------------------------------------------------
+   Eigenes, schlankes Gerüst wie Klimakarte und klassisches Meteogramm: eine
+   Werkzeugleiste, eine Tabelle, ein Diagramm. Kein Panel-Raster. */
+
+.verify-models {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.verify-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.verify-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.verify-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-table th,
+.verify-table td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: center;
+}
+
+.verify-table thead th,
+.verify-table tbody th {
+  color: var(--ink-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.verify-table tbody th {
+  text-align: left;
+}
+
+/* Vorhersagewert groß, Abweichung klein darunter — zwei Zahlen, eine Zelle:
+   sie gehören zusammen gelesen und fielen in zwei Tabellen auseinander. */
+.verify-fc {
+  display: block;
+  font-weight: 600;
+}
+
+.verify-err {
+  display: block;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* Die Messung ist der Bezug, auf den alles andere zeigt. */
+.verify-obs {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verify-table tfoot th,
+.verify-table tfoot td {
+  border-top: 2px solid var(--border);
+}
+
+.verify-empty {
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
+.verify-legend {
+  max-width: 70ch;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.verify-chart {
+  min-height: 240px;
+}

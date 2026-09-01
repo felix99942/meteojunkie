@@ -28,6 +28,12 @@ const TABS: { id: AppView; label: string; title: string }[] = [
     title: 'Skew-T am Punkt — Schichtung der Atmosphäre',
   },
   { id: 'at-klima', label: 'Österreich-Klima', title: 'Klimakarte und MOS-Vorhersage' },
+  {
+    id: 'verify',
+    label: 'Verifikation',
+    title:
+      'Wie gut war die Vorhersage? Vergangene Modellläufe gegen die gemessenen Stationswerte',
+  },
 ]
 
 export function AppNav() {
