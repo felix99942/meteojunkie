@@ -164,7 +164,26 @@ export function AtForecastPanel() {
           </>
         )}
       </div>
-      <span className="atclima-attribution">Datenquelle: DWD MOSMIX (GeoNutzV) · MOS-Vorhersage</span>
+      <span className="attribution atclima-attribution">
+        Datenquelle:{' '}
+        <a
+          href="https://www.dwd.de/DE/leistungen/opendata/opendata.html"
+          target="_blank"
+          rel="noreferrer"
+          title="MOSMIX: statistisch optimierte Punktvorhersagen des Deutschen Wetterdienstes (Model Output Statistics), 3060 Stationen im DACH-Raum, alle 3 h neu"
+        >
+          DWD Open Data
+        </a>
+        {' '}— MOSMIX-Punktvorhersagen (Model Output Statistics), Nutzung nach{' '}
+        <a
+          href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GeoNutzV
+        </a>
+        .
+      </span>
     </div>
   )
 }

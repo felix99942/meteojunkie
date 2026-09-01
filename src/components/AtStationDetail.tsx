@@ -20,6 +20,7 @@ import { fetchStationSeries, type AtStation } from '../api/geosphere'
 import {
   clean,
   fetchLiveDayValues,
+  hasRecords,
   loadNationalRecords,
   loadStationRecords,
   SEASON_LABEL,
@@ -65,9 +66,6 @@ const fmtLiveTime = new Intl.DateTimeFormat('de-AT', {
   minute: '2-digit',
   timeZoneName: 'short',
 })
-
-/** Rekorde gibt es nur für die vorberechneten Monatscodes. */
-const REC_CODES = new Set(['tl_mittel', 'tlmax', 'tlmin', 'rr', 'so_h'])
 
 /** YYYY-MM-DD (UTC) n Tage vor `iso`. */
 function daysBefore(iso: string, n: number): string {
@@ -310,9 +308,14 @@ export function AtStationDetail({
 
   const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1))
 
-  const recCode = spec.monthlyCode && REC_CODES.has(spec.monthlyCode) ? spec.monthlyCode : null
+  // Welche Codes Rekorde haben, steht an EINER Stelle (api/atValues) — der
+  // Zeitbezug „Allzeit" in der Karte fragt dieselbe Liste ab.
+  const recCode = hasRecords(spec) ? (spec.monthlyCode ?? null) : null
   const rec = recCode && records ? records[recCode] : undefined
-  const natRec = recCode && national ? national[recCode] : undefined
+  // Die nationalen Rekorde führen jetzt alle drei Ebenen (fürs Klimaarchiv);
+  // hier gezeigt wird weiter nur die absolute — die Zeile vergleicht die
+  // Station mit dem Landesrekord, nicht mit zwölf Monatsrekorden.
+  const natRec = recCode && national ? national[recCode]?.abs : undefined
   const u = spec.unit
   // Nur wo der Monatswert ein Tagesextrem IST, gibt es einen Rekordtag.
   const dayResolvable = recCode ? DAY_RESOLVABLE[recCode] != null : false
@@ -410,6 +413,25 @@ export function AtStationDetail({
           <strong>{station.name}</strong>
           {station.altitude != null && <span className="label-muted"> · {Math.round(station.altitude)} m</span>}
           {station.state && <span className="label-muted"> · {station.state}</span>}
+          {/* Zusammengeführte Reihe: die Standorte dazuschreiben. Ohne das
+              sieht „Salzburg Flughafen, Reihenbeginn 1874" nach einem
+              Datenfehler aus — Flughäfen gab es 1874 keine. Die Reihe führt
+              drei Standorte fort, und genau das steht hier. */}
+          {station.sites && station.sites.length > 1 && (
+            <span
+              className="label-muted"
+              title={
+                'GeoSphere führt diese Messreihe über mehrere Standorte fort; die Karte zeigt ' +
+                'sie als EINE Station an der heutigen Position. Die Einzelstandorte stehen ' +
+                'nicht extra in der Liste — ihre Werte stecken vollständig in dieser Reihe.\n\n' +
+                station.sites
+                  .map((x) => `${x.name}: ${x.from ?? '?'} bis ${x.to ?? 'heute'}`)
+                  .join('\n')
+              }
+            >
+              {' '}· Reihe über {station.sites.length} Standorte
+            </span>
+          )}
         </div>
         <div className="atdetail-headbtns">
           <button

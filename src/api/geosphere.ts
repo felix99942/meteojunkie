@@ -29,6 +29,16 @@ export interface AtStation {
   hasRadiation: boolean
   /** Station liefert auch 10-Minuten-Messwerte (klima-v2-10min) — Basis der Tagesaktualität. */
   has10min: boolean
+  /**
+   * Standortgeschichte einer ZUSAMMENGEFÜHRTEN Reihe, chronologisch. GeoSphere
+   * führt jede verlegte Station doppelt: als Einzelstandort (`INDIVIDUAL`) und
+   * als fortgeführte Reihe (`COMBINED`) — der Ingest behält nur die Reihe und
+   * hängt ihre Standorte hier an. Nur dann gesetzt; eine Station, die nie
+   * verlegt wurde, hat kein `sites`. Erklärt den frühen Reihenbeginn:
+   * „Salzburg Flughafen seit 1874" stimmt nur, weil die Reihe bei der Station
+   * „Salzburg" (1874–1903) beginnt.
+   */
+  sites?: { id: number; name: string; from: string | null; to: string | null }[]
 }
 
 /** Eine verfügbare Messgröße (Qualitätsflags sind beim Ingest bereits entfernt). */

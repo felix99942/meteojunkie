@@ -72,6 +72,30 @@ export type Period =
    * gesetzt: `month` (Kalendermonat) oder `season`; beide null → Jahreswert.
    */
   | { kind: 'normal'; periodId: NormalPeriodId; month: number | null; season?: Season | null }
+  /**
+   * ALLZEIT — der Stationsrekord über die gesamte Messreihe. Anders als jeder
+   * andere Zeitbezug benennt er keinen Zeitraum, sondern ein EREIGNIS: nicht
+   * „wie warm war der Juli 2025", sondern „wie warm war es im Juli je". Deshalb
+   * braucht er die Richtung explizit (`extreme`) — die höchste je gemessene
+   * Temperatur und die tiefste sind zwei verschiedene Karten desselben
+   * Parameters, während Monat/Jahr immer nur EINEN Wert kennen.
+   *
+   * Der Ausschnitt ist derselbe wie bei der Klimaperiode: `month` (nur Juli-
+   * Werte), `season` oder beides null = über alle Monate. Die Werte stammen aus
+   * den vorberechneten Rekord-Assets — KEIN Request.
+   */
+  | {
+      kind: 'record'
+      extreme: 'max' | 'min'
+      month: number | null
+      season?: Season | null
+      /**
+       * Jahreswerte statt Monatswerte. „Seit Messbeginn" allein ist zweideutig:
+       * der nasseste MONAT und das nasseste JAHR sind zwei verschiedene
+       * Rekorde, und bei Summen unterscheiden sie sich um eine Größenordnung.
+       */
+      annual?: boolean
+    }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
@@ -115,6 +139,9 @@ export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean
   // laufende Tag lässt sich aus den zeitgleichen 10-Minuten-Messwerten
   // berechnen, ein vergangener Tag hätte nur einen Tagesmittel-Wind.
   if (spec.derived) return period.kind === 'day' && period.day >= todayUtc()
+  // „Allzeit" liest ausschließlich die vorberechneten Rekord-Assets — ein
+  // Parameter ohne Rekorde (Schneehöhe: kein Monatsdatensatz) hat dort nichts.
+  if (period.kind === 'record') return hasRecords(spec)
   // Kenntage sind ANZAHLEN von Tagen — für einen einzelnen Tag wäre das 0
   // oder 1 und als Karte sinnlos. Sie gibt es deshalb erst ab Monat.
   if (spec.countRule) return period.kind !== 'day'
@@ -152,9 +179,10 @@ export interface PeriodValues {
   /**
    * `live` = aus 10-Minuten-Messwerten des laufenden Tages zusammengefasst
    * (vorläufig, ungeprüft); `daily`/`monthly` = fertiges Klima-Aggregat;
-   * `normal` = vorberechnetes 30-Jahres-Mittel aus dem Asset.
+   * `normal` = vorberechnetes 30-Jahres-Mittel aus dem Asset;
+   * `record` = vorberechneter Allzeit-Rekord aus dem Rekord-Asset.
    */
-  source: 'daily' | 'monthly' | 'live' | 'normal'
+  source: 'daily' | 'monthly' | 'live' | 'normal' | 'record'
   /** Nur bei `live`: Zeitstempel des jüngsten verwendeten Messwerts (ISO). */
   asOf?: string
   /**
@@ -347,6 +375,20 @@ export async function fetchPeriodValues(
 ): Promise<PeriodValues> {
   const ids = stations.map((s) => s.id)
   const byStation: Record<number, number | null> = {}
+
+  // Allzeit: die Rekorde sind vorberechnet — kein GeoSphere-Abruf.
+  if (period.kind === 'record') {
+    if (!hasRecords(spec) || !spec.monthlyCode) return { byStation, unit: spec.unit, source: 'record' }
+    const idx = await loadRecordIndex(spec.monthlyCode)
+    const level = recordLevel(idx, period)
+    for (let i = 0; i < idx.ids.length; i++) byStation[idx.ids[i]] = level.v[i] ?? null
+    // Stationen ohne Rekorde stehen nicht im Index — ausdrücklich auf null
+    // setzen, statt sie zu übergehen: ein fehlender Schlüssel und ein
+    // fehlender Wert sind für die Karte dasselbe, aber nur so ist die
+    // Deckungszählung ehrlich.
+    for (const id of ids) if (!(id in byStation)) byStation[id] = null
+    return { byStation, unit: spec.unit, source: 'record' }
+  }
 
   // Klimaperiode: die Normale sind vorberechnet — kein GeoSphere-Abruf.
   if (period.kind === 'normal') {
@@ -600,6 +642,64 @@ function partialNormal(
   return aggregate(vals, spec.annualAgg)
 }
 
+// --- HISTALP: homogenisierte Jahresreihen für den Periodenvergleich ---------
+//
+// Der Abweichungsmodus im Zeitbezug „Klimaperiode" stellt zwei 30-Jahres-
+// Perioden gegenüber — eine TRENDaussage. Genau die verfälschen inhomogene
+// Reihen: klima-v2 ist qualitätsgeprüft, aber nicht bruchbereinigt, ein
+// Standortwechsel ins Grüne erzeugt einen künstlichen Abkühlungssprung.
+// Gemessen liegt klima-v2 deshalb im Median 0,1 K unter HISTALP, an einzelnen
+// Stationen bis 0,6 K (Rauris +0,96 K statt +1,55 K). Die ABSOLUTwerte stimmen
+// dagegen überein (0,003 K) — deshalb wechselt NUR der Periodenvergleich die
+// Quelle, alles andere bleibt bei klima-v2.
+//
+// Preis dafür ist die Abdeckung: HISTALP liegt jährlich vor, mit zwei Größen,
+// und die meisten österreichischen Temperaturreihen enden zwischen 2001 und
+// 2012 — für den Vergleich 1961–1990 ↔ 1991–2020 bleiben 34 Temperatur- und
+// 40 Niederschlagsstationen statt 207. Deshalb ist die Quelle umschaltbar und
+// steht beschriftet in der Karte.
+
+/** klimaId → Registry-Code → Periodenmittel. */
+export type HistalpPeriodValues = Record<number, Record<string, number>>
+export interface HistalpNormals {
+  periods: Record<NormalPeriodId, HistalpPeriodValues>
+  /** Welche HISTALP-Reihe hinter einer Klimastation steckt (Nachvollziehbarkeit). */
+  sources: Record<number, { histName: string; klimaName: string; km: number; dh: number }>
+}
+
+/** Registry-Codes, die HISTALP führt. Alles andere bleibt bei klima-v2. */
+export const HISTALP_CODES = new Set(['tl_mittel', 'rr'])
+
+let histalpPromise: Promise<HistalpNormals> | null = null
+
+/** Homogenisierte Periodenmittel laden (einmal, prozessweit geteilt). */
+export function loadHistalpNormals(): Promise<HistalpNormals> {
+  if (!histalpPromise) {
+    histalpPromise = fetch(`${import.meta.env.BASE_URL}at/histalp-normals.json`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HISTALP-Normale nicht ladbar: HTTP ${r.status}`)
+        return r.json() as Promise<HistalpNormals>
+      })
+      .catch((err) => {
+        histalpPromise = null
+        throw err
+      })
+    }
+  return histalpPromise
+}
+
+/**
+ * Deckt HISTALP diesen Kartenzustand ab? Nur der Periodenvergleich, nur der
+ * JAHRES-Ausschnitt (der Datensatz ist jährlich — für einen Kalendermonat oder
+ * eine Saison gibt es dort schlicht nichts) und nur Temperaturmittel bzw.
+ * Niederschlagssumme.
+ */
+export function histalpCovers(spec: AtParameterSpec, period: Period): boolean {
+  if (period.kind !== 'normal') return false
+  if (period.month != null || period.season) return false
+  return spec.monthlyCode != null && HISTALP_CODES.has(spec.monthlyCode)
+}
+
 // --- Rekorde (vorberechnet, public/at/records/<id>.json + _national.json) --
 //
 // Drei Ebenen je Parameter: abs (absoluter Stationsrekord), mon[12]
@@ -619,14 +719,29 @@ export interface MaxMin {
   min: Extreme
 }
 export interface ParamRecords {
+  /** Bester EINZELMONAT der Reihe — NICHT das beste Jahr (siehe `ann`). */
   abs: MaxMin
   mon: MaxMin[] // 12, Jänner … Dezember
   sea: Record<Season, MaxMin>
+  /**
+   * JAHRESrekord: das Extremum über die Jahreswerte (12 Monate zusammengefasst,
+   * nur vollständige Jahre). Etwas fundamental anderes als `abs`, sobald die
+   * Größe eine Summe oder ein Mittel ist: der nasseste MONAT der Salzburger
+   * Reihe hat 404 mm, das nasseste JAHR über 1.500 mm. Bei Maximum-/Minimum-
+   * Größen fallen beide zusammen. Optional, weil Assets von vor der
+   * Jahres-Erweiterung die Ebene nicht führen.
+   */
+  ann?: MaxMin
 }
 /** code → Rekorde einer Station. */
 export type StationRecords = Record<string, ParamRecords>
-/** code → absolute nationale Rekorde. */
-export type NationalRecords = Record<string, MaxMin>
+/**
+ * code → österreichweite Rekorde. Gleiche Form wie die Stationsrekorde
+ * (`abs`/`mon`/`sea`), jeder Extremwert trägt zusätzlich `s`/`n`: die Station,
+ * die den Rekord hält. Dadurch beantwortet derselbe Auswertungspfad
+ * (`answerFromRecords`) Stations- UND Österreich-Fragen.
+ */
+export type NationalRecords = Record<string, ParamRecords>
 
 const stationRecordsCache = new Map<number, Promise<StationRecords | null>>()
 let nationalPromise: Promise<NationalRecords> | null = null
@@ -641,6 +756,95 @@ export function loadStationRecords(id: number): Promise<StationRecords | null> {
     stationRecordsCache.set(id, p)
   }
   return p
+}
+
+/**
+ * Monatscodes, für die es vorberechnete Rekorde gibt — Registry-Wahrheit für
+ * Stationsdetail UND den Zeitbezug „Allzeit". Deckungsgleich mit `CODES` in
+ * scripts/at-ingest-records.mjs; wer dort einen Code ergänzt, ergänzt ihn hier.
+ * Nicht dabei ist einzig die Schneehöhe: sie hat gar keinen Monatsdatensatz.
+ */
+export const RECORD_CODES = new Set([
+  'tl_mittel',
+  'tlmax',
+  'tlmin',
+  'rr',
+  'so_h',
+  'rf_mittel',
+  'tage_sommer',
+  'tage_tropen',
+  'tage_frost',
+  'tage_eis',
+  'tage_rr_1',
+])
+
+/** Ob der Parameter Rekorde hat (Zeitbezug „Allzeit", Rekordtabelle im Detail). */
+export function hasRecords(spec: AtParameterSpec): boolean {
+  return spec.monthlyCode != null && RECORD_CODES.has(spec.monthlyCode)
+}
+
+/**
+ * Rekord-INDEX eines Parameters über ALLE Stationen (public/at/records/
+ * _map-<code>.json). Gegenstück zu den Stationsdateien: dort alle Parameter
+ * EINER Station, hier eine Größe über alle Stationen — genau die Richtung, die
+ * eine Karte braucht. Parallel-Arrays über `ids`, und bewusst NUR Werte: das
+ * Datum eines Rekords zeigt das Stationsdetail (dort sogar tagesgenau
+ * aufgelöst), in der Karte steht ohnehin nur die Zahl.
+ */
+export interface RecordLevel {
+  v: (number | null)[]
+}
+export interface RecordIndex {
+  code: string
+  ids: number[]
+  /** Bester EINZELMONAT der Reihe. */
+  abs: { max: RecordLevel; min: RecordLevel }
+  /** Bester JAHRESwert der Reihe (nur vollständige Jahre). */
+  ann: { max: RecordLevel; min: RecordLevel }
+  mon: { max: RecordLevel; min: RecordLevel }[] // 12, Jänner … Dezember
+  sea: Record<Season, { max: RecordLevel; min: RecordLevel }>
+}
+
+const recordIndexPromises = new Map<string, Promise<RecordIndex>>()
+
+/** Rekord-Index EINES Parameters laden (je Code einmal, prozessweit geteilt). */
+export function loadRecordIndex(code: string): Promise<RecordIndex> {
+  let p = recordIndexPromises.get(code)
+  if (!p) {
+    p = fetch(`${import.meta.env.BASE_URL}at/records/_map-${code}.json`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Rekorde für ${code} nicht ladbar: HTTP ${r.status}`)
+        return r.json() as Promise<RecordIndex>
+      })
+      .catch((err) => {
+        recordIndexPromises.delete(code)
+        throw err
+      })
+    recordIndexPromises.set(code, p)
+  }
+  return p
+}
+
+/**
+ * Die im Index gewählte Ebene: Kalendermonat, Saison oder — beides null — der
+ * absolute Rekord über alle Monate. Dieselbe Ausschnittslogik wie beim
+ * Klimaperioden-Normal (`normalValue`), damit sich beide Zeitbezüge gleich
+ * bedienen lassen.
+ */
+export function recordLevel(
+  idx: RecordIndex,
+  period: {
+    extreme: 'max' | 'min'
+    month: number | null
+    season?: Season | null
+    /** Jahreswerte statt Monatswerte — „nassestes Jahr" statt „nassester Monat". */
+    annual?: boolean
+  },
+): RecordLevel {
+  if (period.season) return idx.sea[period.season][period.extreme]
+  if (period.month != null) return idx.mon[period.month - 1][period.extreme]
+  if (period.annual) return idx.ann[period.extreme]
+  return idx.abs[period.extreme]
 }
 
 /** Österreichweite absolute Rekorde laden (einmal). */
@@ -678,7 +882,9 @@ export function normalFor(
    */
   coverage?: PeriodCoverage,
 ): number | null {
-  if (period.kind === 'day' || !spec.monthlyCode) return null
+  // Tag und Allzeit haben kein Normal: der eine ist zu kurz für ein
+  // Monatsnormal, der andere ist ein Einzelereignis und kein Mittelwert.
+  if (period.kind === 'day' || period.kind === 'record' || !spec.monthlyCode) return null
   // Bezugsgröße muss zum Zeitbezug passen: eine Saisonsumme gegen das
   // JAHRESnormal wäre keine Abweichung, sondern ein Größenordnungsfehler.
   const month =

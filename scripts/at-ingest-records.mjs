@@ -1,14 +1,36 @@
 // Ingest der Rekorde aus dem Monatsdatensatz klima-v2-1m
 // (Österreich-Klimakarte, Schritt 5b, erweitert).
 //
-// Je Station und Parameter drei Rekord-Ebenen:
-//   abs — absoluter Stationsrekord (höchster/niedrigster Monatswert überhaupt)
+// Je Station und Parameter vier Rekord-Ebenen:
+//   abs — absoluter Stationsrekord (höchster/niedrigster MONATSwert überhaupt)
 //   mon — Monatsrekorde je Kalendermonat (z.B. wärmster Juli, kältester Jänner)
 //   sea — Saisonrekorde je Jahreszeit (DJF/MAM/JJA/SON; Winter = Dez+Jän+Feb)
-// plus österreichweite absolute Rekorde (national).
+//   ann — JAHRESrekorde (nassestes Jahr, wärmstes Jahr) — etwas anderes als
+//         `abs`, und genau daran ging die Frage „höchster Jahresniederschlag"
+//         vorbei: `abs` ist der beste EINZELMONAT (404 mm im Juli 1954), der
+//         Jahresrekord die beste JAHRESSUMME. Bei Maximum-/Minimum-Größen
+//         fallen beide zusammen (das höchste Jahresmaximum IST das absolute
+//         Maximum), bei Summen und Mitteln unterscheiden sie sich fundamental.
+//         Nur VOLLSTÄNDIGE Jahre (alle 12 Monatswerte vorhanden) zählen —
+//         dieselbe Regel wie beim Normal-Ingest; eine Jahressumme aus acht
+//         Monaten wäre keine.
+// plus österreichweite Rekorde (national) — auf denselben drei Ebenen,
+// jeder Eintrag mit der Station, die ihn hält.
 //
-// Ausgabe: EINE kleine Datei je Station unter public/at/records/<id>.json
-// (nur die angeklickte Station wird im Browser geladen) + _national.json.
+// Ausgabe:
+//   <id>.json      — EINE kleine Datei je Station (nur die angeklickte wird
+//                    im Browser geladen), alle drei Ebenen samt Datum
+//   _national.json — österreichweite Rekorde, abs/mon/sea wie oben, je
+//                    Eintrag zusätzlich `s`/`n` (Station, die ihn hält)
+//   _map-<code>.json — Rekord-INDEX über ALLE Stationen für EINEN Parameter,
+//                    Grundlage des Karten-Zeitbezugs "Allzeit". Bewusst nur
+//                    WERTE, keine Daten: die Karte beschriftet Zahlen, das
+//                    Datum steht (tagesgenau aufgelöst) im Stationsdetail,
+//                    das ohnehin die Stationsdatei lädt. Mit Datum wäre die
+//                    Datei doppelt so groß für eine Angabe, die niemand in
+//                    der Karte sieht. Parallel-Arrays statt Objekte je Station
+//                    aus demselben Grund (~halbe Größe).
+//
 // Aus Monatswerten, ab 1900. Keine echten Einzeltag-Rekorde.
 //
 //   node scripts/at-ingest-records.mjs
@@ -20,18 +42,50 @@ import { fileURLToPath } from 'node:url'
 const BASE = 'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1m'
 const META = `${BASE}/metadata`
 const START = '1900-01-01'
-const END = '2026-07-01'
-const CHUNK = 80
+// Bis zum letzten ABGESCHLOSSENEN Monat: klima-v2-1m aggregiert den laufenden
+// Monat noch nicht, ein fixes Enddatum veraltet dagegen bei jedem Lauf.
+const END = (() => {
+  const d = new Date()
+  d.setUTCDate(1)
+  d.setUTCMonth(d.getUTCMonth() - 1)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`
+})()
 const DELAY_MS = 400
 
-// code + Saison-/Fehlwert-Semantik: seasonAgg = wie 3 Monate zu einem
-// Saisonwert werden, nonNeg = negative Werte sind Fehlwerte.
+/**
+ * GeoSphere deckelt eine Anfrage bei 1.000.000 Datenpunkten
+ * (Stationen × Parameter × Zeitschritte) und antwortet sonst mit HTTP 400
+ * „data slice too large". Die Stationszahl je Chunk muss deshalb aus der Zahl
+ * der Parameter UND der Länge der Reihe folgen — eine feste 80 hielt nur,
+ * solange fünf Codes abgefragt wurden, und riss beim elften Code sofort.
+ */
+const POINT_LIMIT = 1_000_000
+const monthsBetween = (a, b) => {
+  const [ay, am] = a.split('-').map(Number)
+  const [by, bm] = b.split('-').map(Number)
+  return (by - ay) * 12 + (bm - am) + 1
+}
+
+// code + Aggregations-/Fehlwert-Semantik: seasonAgg = wie MEHRERE Monatswerte
+// zu einem Wert werden — für die Saison (3 Monate) wie fürs Jahr (12), die
+// Regel ist dieselbe; nonNeg = negative Werte sind Fehlwerte.
+// Die Liste MUSS die Monatscodes der Registry (src/config/atParameters.ts,
+// `monthlyCode`) spiegeln — sonst hat ein wählbarer Parameter im Zeitbezug
+// "Allzeit" keine Rekorde. Einzige Ausnahme ist die Schneehöhe: der
+// Monatsdatensatz führt sie gar nicht.
 const CODES = [
   { code: 'tl_mittel', seasonAgg: 'mean', nonNeg: false },
   { code: 'tlmax', seasonAgg: 'max', nonNeg: false },
   { code: 'tlmin', seasonAgg: 'min', nonNeg: false },
   { code: 'rr', seasonAgg: 'sum', nonNeg: true },
   { code: 'so_h', seasonAgg: 'sum', nonNeg: true },
+  { code: 'rf_mittel', seasonAgg: 'mean', nonNeg: true },
+  // Kenntage: eine Saison ist die SUMME der drei Monatsanzahlen.
+  { code: 'tage_sommer', seasonAgg: 'sum', nonNeg: true },
+  { code: 'tage_tropen', seasonAgg: 'sum', nonNeg: true },
+  { code: 'tage_frost', seasonAgg: 'sum', nonNeg: true },
+  { code: 'tage_eis', seasonAgg: 'sum', nonNeg: true },
+  { code: 'tage_rr_1', seasonAgg: 'sum', nonNeg: true },
 ]
 
 // Monat (1..12) → Saison + Saison-Jahr-Versatz (Dez zählt zum Winter des Folgejahrs).
@@ -94,7 +148,12 @@ async function main() {
   const ids = stationsRaw.stations.map((s) => s.id).filter((id) => monthlyIds.has(id))
 
   const codesStr = CODES.map((c) => c.code).join(',')
+  // 5 % Marge, damit ein zusätzlicher Monat nicht sofort ins Limit läuft.
+  const CHUNK = Math.max(1, Math.floor((POINT_LIMIT * 0.95) / (CODES.length * monthsBetween(START, END))))
   const national = {}
+  // Rekord-Index für die Karte: code → stationId → { abs, mon, sea } (nur Werte).
+  // Wird am Ende zu Parallel-Arrays je Code umgeschrieben.
+  const mapIdx = new Map(CODES.map((c) => [c.code, new Map()]))
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
   let written = 0
@@ -114,6 +173,7 @@ async function main() {
         const abs = { max: null, min: null }
         const mon = Array.from({ length: 12 }, () => ({ max: null, min: null }))
         const seasonBuckets = new Map() // "SEASON|year" → [values]
+        const yearBuckets = new Map() // year → [values]
 
         for (let k = 0; k < data.length; k++) {
           const v = data[k]
@@ -126,6 +186,8 @@ async function main() {
           const skey = `${season}|${y + off}`
           if (!seasonBuckets.has(skey)) seasonBuckets.set(skey, [])
           seasonBuckets.get(skey).push(v)
+          if (!yearBuckets.has(y)) yearBuckets.set(y, [])
+          yearBuckets.get(y).push(v)
         }
 
         // Saisonwerte je Jahr aggregieren (nur vollständige Saisons mit 3 Monaten)
@@ -136,11 +198,35 @@ async function main() {
           bump(sea[season], reduce(vals, c.seasonAgg), { y: Number(y) })
         }
 
+        // Jahreswerte — nur aus VOLLSTÄNDIGEN Jahren (12 Monatswerte).
+        const ann = { max: null, min: null }
+        for (const [y, vals] of yearBuckets) {
+          if (vals.length !== 12) continue
+          bump(ann, reduce(vals, c.seasonAgg), { y })
+        }
+
         if (abs.max && abs.min) {
-          perCode[c.code] = { abs, mon, sea }
-          const nat = (national[c.code] ??= { max: null, min: null })
-          if (!nat.max || abs.max.v > nat.max.v) nat.max = { ...abs.max, s: id, n: nameById.get(id) ?? String(id) }
-          if (!nat.min || abs.min.v < nat.min.v) nat.min = { ...abs.min, s: id, n: nameById.get(id) ?? String(id) }
+          perCode[c.code] = { abs, mon, sea, ann }
+          mapIdx.get(c.code).set(id, { abs, mon, sea, ann })
+          // Nationale Rekorde auf ALLEN drei Ebenen — nicht nur absolut.
+          // „Wärmster Juli, den Österreich je hatte" ist die häufigere Frage
+          // als der Allzeit-Rekord, und ohne mon/sea könnte das Klimaarchiv
+          // sie nicht beantworten, obwohl die Zahl hier ohnehin durchläuft.
+          const nat = (national[c.code] ??= {
+            abs: { max: null, min: null },
+            mon: Array.from({ length: 12 }, () => ({ max: null, min: null })),
+            sea: { DJF: { max: null, min: null }, MAM: { max: null, min: null }, JJA: { max: null, min: null }, SON: { max: null, min: null } },
+            ann: { max: null, min: null },
+          })
+          const who = { s: id, n: nameById.get(id) ?? String(id) }
+          const lift = (target, src) => {
+            if (src.max && (!target.max || src.max.v > target.max.v)) target.max = { ...src.max, ...who }
+            if (src.min && (!target.min || src.min.v < target.min.v)) target.min = { ...src.min, ...who }
+          }
+          lift(nat.abs, abs)
+          lift(nat.ann, ann)
+          for (let m = 0; m < 12; m++) lift(nat.mon[m], mon[m])
+          for (const sid of ['DJF', 'MAM', 'JJA', 'SON']) lift(nat.sea[sid], sea[sid])
         }
       }
       if (Object.keys(perCode).length) {
@@ -156,7 +242,45 @@ async function main() {
     join(outDir, '_national.json'),
     JSON.stringify({ meta: { source: BASE, since: START, note: 'Monatsextreme, keine Einzeltag-Rekorde' }, national }),
   )
-  process.stdout.write(`Geschrieben: public/at/records/*.json (${written} Stationen) + _national.json\n`)
+
+  // --- Karten-Index je Parameter --------------------------------------------
+  // EINE Datei je Parameter, damit die Karte nur den GEWÄHLTEN lädt. Aufbau als
+  // Parallel-Arrays über `ids`: dieselbe Information wie die Stationsdateien,
+  // aber ohne 34-mal wiederholte Schlüsselnamen je Station.
+  for (const c of CODES) {
+    const entries = mapIdx.get(c.code)
+    if (!entries.size) continue
+    const idList = [...entries.keys()].sort((a, b) => a - b)
+    const level = (pick) => ({ v: idList.map((id) => pick(entries.get(id))) })
+    const out = {
+      meta: { source: BASE, since: START, until: END, note: 'Monatsextreme, keine Einzeltag-Rekorde' },
+      code: c.code,
+      ids: idList,
+      abs: {
+        max: level((e) => e.abs.max?.v ?? null),
+        min: level((e) => e.abs.min?.v ?? null),
+      },
+      ann: {
+        max: level((e) => e.ann.max?.v ?? null),
+        min: level((e) => e.ann.min?.v ?? null),
+      },
+      mon: Array.from({ length: 12 }, (_, m) => ({
+        max: level((e) => e.mon[m].max?.v ?? null),
+        min: level((e) => e.mon[m].min?.v ?? null),
+      })),
+      sea: Object.fromEntries(
+        ['DJF', 'MAM', 'JJA', 'SON'].map((sid) => [
+          sid,
+          { max: level((e) => e.sea[sid].max?.v ?? null), min: level((e) => e.sea[sid].min?.v ?? null) },
+        ]),
+      ),
+    }
+    await writeFile(join(outDir, `_map-${c.code}.json`), JSON.stringify(out))
+  }
+
+  process.stdout.write(
+    `Geschrieben: public/at/records/*.json (${written} Stationen) + _national.json + ${CODES.length} Karten-Indizes\n`,
+  )
 }
 
 main().catch((err) => {

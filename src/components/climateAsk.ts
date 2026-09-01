@@ -1,5 +1,11 @@
 // Frageerkennung fürs Klima-Suchfenster: „was war das tagesmaximum im juli
-// seit messbeginn in salzburg?" → { Station, Parameter, Zeitraum, Extremum }.
+// seit messbeginn in salzburg?" → { Gebiet, Parameter, Zeitraum, Extremum }.
+//
+// Gebiet ist entweder EINE Station oder GANZ ÖSTERREICH („höchste je gemessene
+// temperatur in österreich"). Beide Fälle laufen durch denselben
+// Auswertungspfad: die nationalen Rekorde (`_national.json`) haben dieselbe
+// Form wie die Stationsrekorde, nur trägt dort jeder Extremwert die Station,
+// die ihn hält.
 //
 // BEWUSST ohne Sprachmodell. Die Antwort steckt in den bereits vorhandenen
 // Assets (public/at/records, public/at/normals-*), und ein Modell, das aus
@@ -15,7 +21,7 @@
 
 import type { AtStation } from '../api/geosphere'
 import type { Season } from '../api/atValues'
-import type { Extreme, NormalsEntry, ParamRecords } from '../api/atValues'
+import type { Extreme, MaxMin, NormalsEntry, NormalsMap, ParamRecords } from '../api/atValues'
 import { getAtParameter, type AtParameterSpec } from '../config/atParameters'
 
 /** Umlaute falten, Kleinschreibung, Satzzeichen weg — Tippfehler bleiben übrig. */
@@ -133,6 +139,37 @@ const SUPER_MIN = ['tiefste', 'tiefster', 'tiefstes', 'minimum', 'min', 'kaltest
 /** Zeit-Marker, KEINE Richtung: „Rekord" sagt „seit jeher", nicht „am höchsten". */
 const ALLTIME = ['messbeginn', 'jemals', 'je', 'allzeit', 'aufzeichnung', 'aufzeichnungen',
   'rekord', 'rekorde', 'immer', 'bisher']
+/**
+ * Marker für den JAHRESwert. Deutsche Fragen tragen ihn als Vorsilbe:
+ * „Jahresniederschlag", „Jahresmitteltemperatur", „Jahressumme" — auch getrennt
+ * geschrieben („höchster jahres niederschlag"), deshalb der Präfixtest auf
+ * `jahres` statt einer Wortliste. Das bloße „Jahr" reicht NICHT: „im Jahr 1954"
+ * meint einen Zeitpunkt, nicht die Jahressumme (es steht ohnehin in den
+ * Stoppwörtern).
+ */
+const ANNUAL_PREFIX = 'jahres'
+const ANNUAL_WORDS = ['jahrlich', 'jahrliche', 'jahrlicher', 'jahrliches']
+
+/**
+ * Das BLOSSE „Jahr" zählt auch — „wärmstes Jahr" ist die häufigste Form der
+ * Frage. Es steht als Funktionswort auf der Stoppwortliste und fehlt deshalb
+ * in `content`; geprüft wird hier auf der vollen Tokenliste. Ausgenommen ist
+ * „im Jahr 1954": folgt eine Jahreszahl, benennt das Wort einen ZEITPUNKT und
+ * keine Jahressumme.
+ */
+function mentionsYearPeriod(tokens: string[]): boolean {
+  return tokens.some(
+    (t, i) => (t === 'jahr' || t === 'jahres') && !/^(19|20)\d\d$/.test(tokens[i + 1] ?? ''),
+  )
+}
+
+/**
+ * Wörter, die die Frage auf GANZ ÖSTERREICH beziehen. „at" ist bewusst NICHT
+ * dabei: zwei Zeichen treffen im unscharfen Vergleich alles.
+ */
+const AUSTRIA_WORDS = ['osterreich', 'osterreichs', 'osterreichweit', 'osterreichweite',
+  'bundesweit', 'landesweit', 'gesamtosterreich', 'austria']
+
 /** Frage nach dem langjährigen Mittel statt nach einem Extrem. */
 const NORMAL_WORDS = ['normal', 'normalwert', 'durchschnitt', 'durchschnittlich', 'mittel',
   'ublich', 'ublicherweise', 'normalerweise', 'schnitt']
@@ -268,15 +305,88 @@ export function matchStations(query: string, stations: AtStation[], limit = 6): 
   return out.sort((a, b) => b.score - a.score).slice(0, limit)
 }
 
+/**
+ * Ort zum besten Stationstreffer bestimmen. Entscheidend ist, WIE VIEL vom
+ * Stationsnamen die Frage genannt hat: „Wien Hohe Warte" nennt ihn vollständig
+ * und meint genau diese Station, „Wien" nennt nur den Ort und meint alle.
+ * Gezählt werden deshalb die FÜHRENDEN Namenswörter, die in der Frage
+ * vorkommen; der Rest des Namens macht die Frage stationsgenau.
+ *
+ * Der Vergleich läuft über den Namensanfang plus Leerzeichen, nicht über einen
+ * blossen Präfix: „Wiener Neustadt" und „Wiener Neudorf" sind eigene Orte und
+ * dürfen nicht unter „Wien" fallen (`'wiener neustadt'.startsWith('wien ')` ist
+ * falsch, `startsWith('wien')` wäre wahr — genau daran hängt es).
+ */
+export function resolvePlace(
+  question: string,
+  best: StationMatch,
+  stations: AtStation[],
+): AskPlace | null {
+  const tokens = normalize(question).split(' ').filter(Boolean)
+  const rawParts = best.name.split(/\s+/)
+  const parts = normalize(best.name).split(' ')
+  const inQuestion = (p: string) =>
+    tokens.some((t) => (t.length <= 3 || p.length <= 3 ? t === p : similarity(t, p) >= 0.85))
+  let covered = 0
+  while (covered < parts.length && inQuestion(parts[covered])) covered++
+  // Der ganze Name genannt → die Frage meint diese Station.
+  if (covered === 0 || covered >= parts.length) return null
+  const key = parts.slice(0, covered).join(' ')
+  const ids = stations
+    .filter((st) => {
+      const n = normalize(st.name)
+      return n === key || n.startsWith(`${key} `)
+    })
+    .map((st) => st.id)
+  if (ids.length <= 1) return null
+  return { key, label: rawParts.slice(0, covered).join(' '), ids }
+}
+
 export type AskScope = 'record' | 'normal'
 
+/**
+ * Bezugsgebiet der Frage: eine einzelne Station, ein ORT (alle Stationen, die
+ * seinen Namen tragen) oder das ganze Land. Der Ort ist der Normalfall einer
+ * Frage in Alltagssprache: „höchste Temperatur in Wien" meint Wien, nicht eine
+ * bestimmte der zwölf Wiener Stationen — und je nach Station lägen zwischen
+ * den Antworten fast 5 K (Kahlenberg 37,4 °C ↔ Stammersdorf 41,0 °C).
+ */
+export type AskArea = 'station' | 'place' | 'austria'
+
+/** Ein Ort als Stationsmenge: alle Stationen, deren Name mit `key` beginnt. */
+export interface AskPlace {
+  /** Normalisierter Namensanfang, z. B. `wien`. */
+  key: string
+  /** Anzeigename in Originalschreibung, z. B. „Wien". */
+  label: string
+  ids: number[]
+}
+
 export interface AskQuery {
+  /**
+   * `austria` = die Frage gilt dem ganzen Land. Sie wird gesetzt, wenn die
+   * Frage Österreich NENNT — und auch dann, wenn sie GAR KEINEN Ort nennt:
+   * „höchste je gemessene temperatur" ohne Ortsangabe ist eine Frage ans Land,
+   * nicht eine Frage ohne Antwort. `station` bleibt dabei besetzt, falls doch
+   * einer erkannt wurde, damit das Umschalten in der UI einen Klick kostet.
+   */
+  area: AskArea
+  /** Gesetzt, sobald der Ortsname mehr als eine Station trägt. */
+  place: AskPlace | null
   station: StationMatch | null
   /** Weitere plausible Stationen — „Salzburg" heißen acht. */
   alternatives: StationMatch[]
   param: string
   month: number | null
   season: Season | null
+  /**
+   * JAHRESwert statt Monatswert — nur gültig, wenn weder `month` noch `season`
+   * gesetzt ist. Ohne diese Unterscheidung beantwortete „höchster
+   * Jahresniederschlag" den nassesten MONAT (404 mm, Juli 1954) statt der
+   * nassesten Jahressumme: die Rekord-Assets kannten überhaupt keine
+   * Jahresebene. Bei Maximum-/Minimum-Größen ist beides derselbe Wert.
+   */
+  annual: boolean
   extreme: 'max' | 'min'
   scope: AskScope
   /** Jahreszahl in der Frage — dafür gibt es (noch) keine Antwort aus den Assets. */
@@ -297,13 +407,22 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   let param = 'tlmax'
   let dir: 'max' | 'min' | null = null
   let generic = false
+  /** Stand überhaupt ein Größenwort in der Frage? Sonst gilt oben die Vorgabe. */
+  let paramFound = false
   outer: for (const t of content) {
     for (const entry of PARAM_WORDS) {
       for (const w of entry.words) {
-        if (t.length <= 3 ? t === w : similarity(t, w) >= 0.84) {
+        // Deutsche KOMPOSITA: „jahresniederschlag" ist das normale Wort für
+        // die Frage und liegt vom Eintrag „niederschlag" sechs Zeichen
+        // entfernt — unscharfer Vergleich (0,67) erreicht das nie. Ein
+        // enthaltenes Wort zählt deshalb als Treffer, aber erst ab sechs
+        // Zeichen: kürzere Fragmente stecken zufällig in vielen Wörtern.
+        const compound = w.length >= 6 && t.length > w.length && t.includes(w)
+        if (compound || (t.length <= 3 ? t === w : similarity(t, w) >= 0.84)) {
           param = entry.code
           dir = entry.dir ?? null
           generic = entry.generic ?? false
+          paramFound = true
           break outer
         }
       }
@@ -326,13 +445,44 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   const yearTok = tokens.find((t) => /^(19|20)\d\d$/.test(t))
   const year = yearTok ? Number(yearTok) : null
   const scope: AskScope = hasAny(tokens, NORMAL_WORDS) && !hasAny(tokens, ALLTIME) ? 'normal' : 'record'
+  // „in österreich" schlägt jeden Stationstreffer; ohne erkannten Ort ist die
+  // Frage ebenfalls eine Landesfrage.
+  const best = matches[0] ?? null
+  const place = best ? resolvePlace(question, best, stations) : null
+  const area: AskArea =
+    hasAny(content, AUSTRIA_WORDS) || matches.length === 0
+      ? 'austria'
+      : place
+        ? 'place'
+        : 'station'
+  // Jahreswert nur, wenn kein engerer Zeitraum genannt ist: „nassester Juli"
+  // bleibt eine Monatsfrage, auch wenn irgendwo „Jahr" fällt.
+  const annual =
+    month == null &&
+    season == null &&
+    (content.some((t) => t.startsWith(ANNUAL_PREFIX)) ||
+      hasAny(content, ANNUAL_WORDS) ||
+      mentionsYearPeriod(tokens))
+
+  // „Wärmstes Jahr", „kältester Winter", „wärmster Juli" — nennt die Frage
+  // KEINE Größe, sondern nur einen Superlativ über einen ganzen Zeitraum, dann
+  // ist das MITTEL gemeint, nicht der Extremwert eines einzelnen Tages. Das
+  // wärmste Jahr Österreichs ist 2024 mit 14,3 °C Jahresmittel — nicht 2013,
+  // weil damals an einem Augusttag 40,5 °C gemessen wurden. Nennt die Frage
+  // dagegen ausdrücklich eine Größe („höchste TEMPERATUR im Juli",
+  // „Tagesmaximum"), bleibt es dabei: dann ist der Extremwert gefragt.
+  const periodGiven = annual || season != null || month != null
+  if (!paramFound && periodGiven && (param === 'tlmax' || param === 'tlmin')) param = 'tl_mittel'
 
   return {
-    station: matches[0] ?? null,
+    area,
+    place,
+    station: best,
     alternatives: matches.slice(1),
     param,
     month,
     season,
+    annual,
     extreme,
     scope,
     year,
@@ -354,6 +504,20 @@ export interface AskAnswer {
   what: string
   /** Monat des absoluten Rekords (die Frage nannte keinen). */
   recordMonth?: number
+  /**
+   * WO der Wert gemessen wurde. Nur bei Österreich-Fragen gefüllt: dort ist
+   * die Station Teil der ANTWORT („41,2 °C — Bad Deutsch-Altenburg"), während
+   * sie bei einer Stationsfrage schon in der Frage steht.
+   */
+  where?: string
+  /** Stations-ID dazu — „In der Karte zeigen" springt genau dorthin. */
+  whereId?: number
+  /**
+   * Einordnung, die zur Zahl gehört. Trägt bei österreichweiten Normalen die
+   * Spanne über die Stationen samt dem Hinweis, dass ein Flächenmittel daraus
+   * nicht folgt.
+   */
+  note?: string
 }
 
 const MONTH_NAMES = [
@@ -366,9 +530,65 @@ const SEASON_NAMES: Record<Season, string> = {
 
 function extremeOf(rec: ParamRecords, q: AskQuery): Extreme | null {
   const slot =
-    q.month != null ? rec.mon?.[q.month - 1] : q.season != null ? rec.sea?.[q.season] : rec.abs
+    q.month != null
+      ? rec.mon?.[q.month - 1]
+      : q.season != null
+        ? rec.sea?.[q.season]
+        : q.annual
+          ? rec.ann
+          : rec.abs
   if (!slot) return null
   return slot[q.extreme] ?? null
+}
+
+/** Zeitraum-Text der Antwort — er muss die Ebene benennen, sonst liest sich ein
+ *  Jahresrekord wie ein Monatsrekord. */
+function periodText(q: AskQuery): string {
+  if (q.month != null) return MONTH_NAMES[q.month - 1]
+  if (q.season != null) return SEASON_NAMES[q.season]
+  return q.annual ? 'ganzes Jahr' : 'einzelner Monat, aller Zeiten'
+}
+
+/**
+ * Rekorde MEHRERER Stationen zu einem Ortsrekord verschmelzen: je Ebene und
+ * Richtung gewinnt der beste Wert, und die Station, die ihn hält, wandert als
+ * `s`/`n` mit — dieselbe Form, die die österreichweiten Rekorde schon haben,
+ * damit `answerFromRecords` unverändert weiterläuft und das WO zur Antwort
+ * gehört. Genau darum geht es: „höchste Temperatur in Wien" ist keine Frage an
+ * die Hohe Warte, sondern an Wien.
+ */
+export function mergeRecords(
+  entries: { id: number; name: string; rec: ParamRecords | undefined }[],
+): ParamRecords | null {
+  const have = entries.filter((e) => e.rec != null) as { id: number; name: string; rec: ParamRecords }[]
+  if (have.length === 0) return null
+
+  const pick = (get: (r: ParamRecords) => MaxMin | undefined, kind: 'max' | 'min'): Extreme => {
+    let bestE: Extreme | null = null
+    for (const e of have) {
+      const x = get(e.rec)?.[kind]
+      if (!x || x.v == null || !Number.isFinite(x.v)) continue
+      if (!bestE || (kind === 'max' ? x.v > bestE.v : x.v < bestE.v)) {
+        bestE = { ...x, s: e.id, n: e.name }
+      }
+    }
+    // Leere Ebene: ein Extremwert ohne Wert ist für `answerFromRecords` dasselbe
+    // wie „gibt es nicht" (es prüft `e.v == null`).
+    return bestE ?? ({ v: null } as unknown as Extreme)
+  }
+  const both = (get: (r: ParamRecords) => MaxMin | undefined): MaxMin => ({
+    max: pick(get, 'max'),
+    min: pick(get, 'min'),
+  })
+
+  return {
+    abs: both((r) => r.abs),
+    ann: both((r) => r.ann),
+    mon: Array.from({ length: 12 }, (_, m) => both((r) => r.mon?.[m])),
+    sea: Object.fromEntries(
+      (['DJF', 'MAM', 'JJA', 'SON'] as Season[]).map((sid) => [sid, both((r) => r.sea?.[sid])]),
+    ) as Record<Season, MaxMin>,
+  }
 }
 
 /**
@@ -381,8 +601,7 @@ export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): A
   const e = extremeOf(rec, q)
   if (!e || e.v == null) return null
   const spec: AtParameterSpec = getAtParameter(q.param)
-  const period =
-    q.month != null ? MONTH_NAMES[q.month - 1] : q.season != null ? SEASON_NAMES[q.season] : 'aller Zeiten'
+  const period = periodText(q)
   const richtung = q.extreme === 'max' ? 'höchster' : 'tiefster'
   // `d` steht nur beim absoluten Rekord (YYYY-MM), sonst gibt es das Jahr.
   const year = e.y ?? (e.d ? Number(e.d.slice(0, 4)) : undefined)
@@ -390,7 +609,16 @@ export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): A
     value: e.v,
     unit: spec.unit,
     when: e.d ? formatYearMonth(e.d) : e.y != null ? String(e.y) : null,
-    what: `${richtung} ${spec.label} – ${period}`,
+    // `n`/`s` tragen nur die NATIONALEN Rekorde: dort gehört die Station zur
+    // Antwort, bei einer Stationsfrage stünde sie doppelt da.
+    ...(e.n ? { where: e.n } : {}),
+    ...(e.s != null ? { whereId: e.s } : {}),
+    what:
+      q.area === 'austria'
+        ? `${richtung} ${spec.label} in Österreich – ${period}`
+        : q.area === 'place' && q.place
+          ? `${richtung} ${spec.label} in ${q.place.label} – ${period}`
+          : `${richtung} ${spec.label} – ${period}`,
     year: Number.isFinite(year) ? year : undefined,
     // Beim ABSOLUTEN Rekord steckt im Datum auch der Monat — den will die
     // Karte kennen, sonst zeigt sie das richtige Jahr im falschen Monat.
@@ -429,6 +657,71 @@ export function answerFromNormals(
     unit: spec.unit,
     when: periodLabel,
     what: `langjähriges Mittel ${spec.label} – ${period}`,
+  }
+}
+
+
+/**
+ * Langjähriges Mittel über eine STATIONSMENGE (ganz Österreich oder ein Ort) —
+ * und als EINE Zahl gibt es das nicht. Ein Flächenmittel ist eine räumliche
+ * Größe; die Stationen sind weder gleichmäßig verteilt noch gleich hoch
+ * gelegen, ein ungewichteter Mittelwert über 300 Stationen wäre von den
+ * Bergstationen dominiert und schlicht falsch. Deshalb wird hier die SPANNE
+ * beantwortet: der Extremwert in der gefragten Richtung samt Station, dazu als
+ * Notiz das andere Ende und die Zahl der Stationen. Das ist eine Aussage, die
+ * die Daten hergeben. Beim Ort ist sie sogar die interessantere: Wien reicht im
+ * Jahresmittel vom Kahlenberg bis zur Inneren Stadt.
+ */
+export function answerFromNormalsRange(
+  q: AskQuery,
+  normals: NormalsMap | null,
+  assetCode: string,
+  stationName: (id: number) => string,
+  periodLabel: string,
+  /** Auf diese Stationen einschränken (Ort); fehlt → ganz Österreich. */
+  onlyIds?: number[],
+): AskAnswer | null {
+  if (!normals) return null
+  const allow = onlyIds ? new Set(onlyIds) : null
+  const spec: AtParameterSpec = getAtParameter(q.param)
+  let hi: { v: number; id: number } | null = null
+  let lo: { v: number; id: number } | null = null
+  let n = 0
+  for (const [key, byCode] of Object.entries(normals)) {
+    const entry = byCode[assetCode]
+    if (!entry) continue
+    const v =
+      q.month != null
+        ? entry.monthly?.[q.month - 1]
+        : q.season != null
+          ? entry.seasonal?.[SEASON_ORDER.indexOf(q.season)]
+          : entry.annual
+    if (v == null || !Number.isFinite(v)) continue
+    const id = Number(key)
+    if (allow && !allow.has(id)) continue
+    n++
+    if (!hi || v > hi.v) hi = { v, id }
+    if (!lo || v < lo.v) lo = { v, id }
+  }
+  if (!hi || !lo || n === 0) return null
+  const pick = q.extreme === 'max' ? hi : lo
+  const other = q.extreme === 'max' ? lo : hi
+  const period =
+    q.month != null ? MONTH_NAMES[q.month - 1] : q.season != null ? SEASON_NAMES[q.season] : 'Jahr'
+  const fmt = (v: number) => v.toFixed(1).replace('.', ',')
+  const where = onlyIds && q.place ? q.place.label : 'Österreich'
+  return {
+    value: pick.v,
+    unit: spec.unit,
+    when: periodLabel,
+    where: stationName(pick.id),
+    whereId: pick.id,
+    what: `${q.extreme === 'max' ? 'höchstes' : 'tiefstes'} langjähriges Mittel in ${where} – ${period}`,
+    note:
+      `Spanne über ${n} Stationen mit Normal: bis ${fmt(other.v)} ${spec.unit} ` +
+      `(${stationName(other.id)}). Ein Flächenmittel für ${where} lässt sich aus ` +
+      `Stationswerten nicht bilden — die Stationen sind weder gleichmäßig verteilt noch ` +
+      `gleich hoch gelegen.`,
   }
 }
 

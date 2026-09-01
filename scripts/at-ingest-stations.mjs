@@ -3,6 +3,24 @@
 // Zieht die Metadaten des Datensatzes `klima-v2-1d` (Stations-Stammdaten +
 // verfügbare Parameter) EINMAL vom GeoSphere Data Hub und legt zwei statische
 // Assets unter public/at/ ab:
+//
+// WICHTIG — GeoSphere führt jede Messreihe DOPPELT: einmal als `INDIVIDUAL`
+// (ein physischer Standort) und einmal als `COMBINED` (die fortgeführte Reihe
+// über alle Standorte hinweg, `group_id` verweist von Kind auf Elternteil).
+// Ohne Filter stand jede verlegte Station zweimal in der Karte — „Salzburg
+// Flughafen" als Standort ab 1939 UND als Reihe ab 1874, mit identischen
+// aktuellen Werten. Hier bleibt deshalb je Gruppe NUR die COMBINED-Reihe; ihre
+// Standortgeschichte wandert als `sites` in den Eintrag, sonst sähe „Salzburg
+// Flughafen seit 1874" nach einem Datenfehler aus (Flughäfen gab es 1874
+// nicht). Stationen ohne Gruppe bleiben unverändert.
+//
+// Geprüft (2026-09-01): 216 COMBINED + 298 gruppenlose INDIVIDUAL = 514 statt
+// 1100 Einträge; die 587 gruppierten Standorte sind echte Dubletten. KEIN
+// Verlust an Live-Abdeckung: jeder gruppierte Standort mit 10-Minuten-Daten
+// hat einen Elternteil, der sie ebenfalls hat (240 → 0 Verluste). Die
+// Verlegungen sind klein genug, dass die eine Koordinate der COMBINED-Reihe
+// trägt: Median 1,0 km / 11 m Höhenunterschied, p90 3,1 km / 58 m, Maximum
+// 6,2 km (Wien Hohe Warte) bzw. 346 m.
 //   - stations.json    kuratierte Stationsliste (id, name, state, lat, lon,
 //                       höhe, zeitraum, is_active, has_sunshine/-radiation)
 //   - parameters.json   alle „echten" Parameter (ohne *_flag-Qualitätsflags),
@@ -48,7 +66,26 @@ async function main() {
   // Stationen kuratieren. GeoSphere liefert Koordinaten als [lat, lon] — hier
   // in benannte Felder überführen, damit im Frontend keine Reihenfolge-Verwechslung
   // (GeoJSON wäre [lon, lat]) passieren kann.
+  // Standortgeschichte je COMBINED-Reihe: die Kinder ihrer Gruppe, chronologisch.
+  // `to: null` = läuft weiter (GeoSphere kodiert das als 2100-12-31).
+  const sitesByGroup = new Map()
+  for (const s of rawStations) {
+    if (s.type !== 'INDIVIDUAL' || s.group_id == null) continue
+    if (!sitesByGroup.has(s.group_id)) sitesByGroup.set(s.group_id, [])
+    sitesByGroup.get(s.group_id).push({
+      id: s.id,
+      name: s.name,
+      from: s.valid_from ? s.valid_from.slice(0, 7) : null,
+      to: s.valid_to && !s.valid_to.startsWith('2100') ? s.valid_to.slice(0, 7) : null,
+    })
+  }
+  for (const list of sitesByGroup.values()) list.sort((a, b) => String(a.from).localeCompare(String(b.from)))
+
   const stations = rawStations
+    // Gruppierte Einzelstandorte fallen weg — ihre Daten stecken vollständig
+    // in der COMBINED-Reihe derselben Gruppe (live gegen klima-v2-1m geprüft:
+    // identische Werte, die Reihe reicht nur weiter zurück).
+    .filter((s) => !(s.type === 'INDIVIDUAL' && s.group_id != null))
     .map((s) => ({
       id: s.id,
       name: s.name,
@@ -62,6 +99,9 @@ async function main() {
       hasSunshine: Boolean(s.has_sunshine),
       hasRadiation: Boolean(s.has_global_radiation),
       has10min: ids10min.has(s.id),
+      // Nur bei zusammengeführten Reihen gesetzt: die Standorte, die sie
+      // fortführt. Erklärt den frühen Reihenbeginn und gehört ins Detail.
+      ...(sitesByGroup.has(s.id) ? { sites: sitesByGroup.get(s.id) } : {}),
     }))
     .filter((s) => typeof s.lat === 'number' && typeof s.lon === 'number')
 
@@ -74,7 +114,7 @@ async function main() {
       unit: p.unit ?? '',
     }))
 
-  // Plausibilitätsprüfung (MD Schritt 1: ~250–280 erwartet — real 1100/492 aktiv).
+  // Plausibilitätsprüfung (nach der Zusammenführung: 514 Einträge, ~290 aktiv).
   const active = stations.filter((s) => s.isActive)
   const outOfBox = stations.filter(
     (s) =>
@@ -84,11 +124,37 @@ async function main() {
       s.lon > AT_BBOX.lonMax,
   )
   const live = active.filter((s) => s.has10min)
+  const merged = stations.filter((s) => s.sites)
   process.stdout.write(
     `Stationen: ${stations.length} gesamt, ${active.length} aktiv ` +
       `(davon ${live.length} mit 10-Minuten-Daten) · ` +
+      `${merged.length} zusammengeführte Reihen über ` +
+      `${merged.reduce((n, s) => n + s.sites.length, 0)} Standorte · ` +
       `Parameter (ohne Flags): ${parameters.length}\n`,
   )
+  // Dublettenprobe — der Grund, aus dem hier überhaupt gefiltert wird. Zwei
+  // Einträge mit gleichem Namen an derselben Stelle sind fast immer ein nicht
+  // erkanntes COMBINED/INDIVIDUAL-Paar. Bekannt und in Ordnung sind zwei
+  // Fälle, die GeoSphere NICHT gruppiert: reine Niederschlagsmessstellen neben
+  // der Klimastation (live geprüft — sie liefern nur `rr`). Sie zu verwerfen
+  // hieße, eine eigene Messreihe wegzuwerfen, nur weil sie am selben Ort steht.
+  const KNOWN_SAME_SITE = new Set(['Dornbirn', 'Hochfilzen'])
+  const seen = new Map()
+  for (const s of stations) {
+    const key = `${s.name}|${s.lat.toFixed(4)}|${s.lon.toFixed(4)}`
+    seen.set(key, (seen.get(key) ?? 0) + 1)
+  }
+  const dups = [...seen]
+    .filter(([, n]) => n > 1)
+    .map(([k]) => k.split('|')[0])
+    .filter((n) => !KNOWN_SAME_SITE.has(n))
+  if (dups.length > 0) {
+    process.stdout.write(
+      `Warnung: ${dups.length} Station(en) doppelt an derselben Stelle — ` +
+        `vermutlich ein nicht gefiltertes COMBINED/INDIVIDUAL-Paar: ${dups.join(', ')}\n`,
+    )
+  }
+
   if (outOfBox.length > 0) {
     process.stdout.write(
       `Warnung: ${outOfBox.length} Station(en) außerhalb der AT-Bounding-Box, z.B. ` +

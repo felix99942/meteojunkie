@@ -7,6 +7,7 @@ import {
   anomalyDisplay,
   anomalyScaleFor,
   AT_PARAMETERS,
+  defaultRecordExtreme,
   getAtParameter,
   paramOptionLabel,
   scaleFor,
@@ -156,10 +157,53 @@ describe('valueCaption', () => {
     expect(valueCaption(rr, 'normal', 'season')).toBe('mittlere Saisonsumme')
   })
 
+  it('unterscheidet beim Allzeit-Rekord die beiden RICHTUNGEN', () => {
+    // Der Kern des Zeitbezugs „Allzeit": bei „Temperatur Maximum" ist das
+    // Maximum über alle Monatsmaxima der höchste je gemessene Tageswert — das
+    // MINIMUM derselben Reihe aber der kühlste Monatshöchstwert. Beides ist
+    // ein Rekord, und nur der Text hält sie auseinander.
+    expect(valueCaption(tmax, 'record', 'series', 'max')).toBe('höchster je gemessener Tageswert')
+    expect(valueCaption(tmax, 'record', 'series', 'min')).toBe('tiefster Monatshöchstwert der Messreihe')
+    const tmin = getAtParameter('tlmin')
+    expect(valueCaption(tmin, 'record', 'series', 'min')).toBe('tiefster je gemessener Tageswert')
+    expect(valueCaption(tmin, 'record', 'series', 'max')).toBe('höchster Monatstiefstwert der Messreihe')
+  })
+
+  it('trennt beim Allzeit-Rekord den besten EINZELMONAT vom JAHRESwert', () => {
+    // Der Fehler, der das ausgelöst hat: „höchster Jahresniederschlag" wurde
+    // mit dem nassesten Monat beantwortet (404 mm statt 1.835 mm). Bei Summen
+    // liegen die Ebenen um eine Größenordnung auseinander, der Text muss sie
+    // benennen.
+    expect(valueCaption(rr, 'record', 'series', 'max')).toBe('höchste Monatssumme der Messreihe')
+    expect(valueCaption(rr, 'record', 'year', 'max')).toBe('höchste Jahressumme der Messreihe')
+    expect(valueCaption(rr, 'record', 'month', 'max')).toBe('höchste Monatssumme der Messreihe')
+    expect(valueCaption(rr, 'record', 'season', 'max')).toBe('höchste Saisonsumme der Messreihe')
+  })
+
+  it('lässt bei Maximum-Größen Jahres- und Reihenrekord zusammenfallen', () => {
+    // Das höchste JAHRESmaximum IST das absolute Maximum — anders als bei
+    // Summen gibt es hier keinen Unterschied, und der Text darf keinen
+    // behaupten.
+    expect(valueCaption(tmax, 'record', 'year', 'max')).toBe(
+      valueCaption(tmax, 'record', 'series', 'max'),
+    )
+  })
+
+  it('setzt die Richtung je Parameter sinnvoll vor', () => {
+    expect(defaultRecordExtreme(getAtParameter('tlmin'))).toBe('min')
+    expect(defaultRecordExtreme(tmax)).toBe('max')
+    expect(defaultRecordExtreme(rr)).toBe('max')
+  })
+
   it('liefert für jeden Parameter und Zeitbezug einen Text', () => {
     for (const p of AT_PARAMETERS) {
       for (const kind of ['day', 'month', 'season', 'year', 'normal'] as const) {
         expect(valueCaption(p, kind).length).toBeGreaterThan(0)
+      }
+      for (const scope of ['year', 'month', 'season', 'series'] as const) {
+        for (const extreme of ['max', 'min'] as const) {
+          expect(valueCaption(p, 'record', scope, extreme).length).toBeGreaterThan(0)
+        }
       }
     }
   })

@@ -466,8 +466,17 @@ export function anomalyDisplay(spec: AtParameterSpec): AnomalyDisplay {
  */
 export function valueCaption(
   spec: AtParameterSpec,
-  kind: 'day' | 'month' | 'season' | 'year' | 'normal',
-  normalScope: 'year' | 'month' | 'season' = 'year',
+  kind: 'day' | 'month' | 'season' | 'year' | 'normal' | 'record',
+  /**
+   * Ausschnitt. `series` gibt es nur bei `record`: das Extremum über alle
+   * MONATSwerte der Reihe — der beste Einzelmonat, im Unterschied zu `year`
+   * (bester Jahreswert). Bei Summen liegen die beiden um eine Größenordnung
+   * auseinander, und genau diese Verwechslung machte aus dem höchsten
+   * Jahresniederschlag den nassesten Juli.
+   */
+  normalScope: 'year' | 'month' | 'season' | 'series' = 'year',
+  /** Nur bei `record`: Richtung des Rekords (Höchst- oder Tiefstwert). */
+  extreme: 'max' | 'min' = 'max',
 ): string {
   const day: Record<AggMode, string> = {
     mean: 'Tagesmittel',
@@ -529,6 +538,36 @@ export function valueCaption(
     last: 'Mittel der Jahresendwerte',
     count: 'mittlere Anzahl je Jahr',
   }
+  // Allzeit-Rekorde. Die Grundeinheit ist ein MONATSwert (bzw. bei Saison-
+  // Ausschnitt ein Saisonwert) — daraus folgt, dass „Höchstwert" je nach
+  // Parameter etwas anderes meint: bei „Temperatur Maximum" ist das Maximum
+  // über alle Monatsmaxima der höchste je gemessene Tageswert, das MINIMUM
+  // derselben Reihe aber der kühlste Monatshöchstwert. Beides ist ein
+  // sinnvoller Rekord, und nur der Text unterscheidet sie.
+  const recordMonthly: Record<AggMode, { max: string; min: string }> = {
+    mean: { max: 'höchstes Monatsmittel der Messreihe', min: 'tiefstes Monatsmittel der Messreihe' },
+    max: { max: 'höchster je gemessener Tageswert', min: 'tiefster Monatshöchstwert der Messreihe' },
+    min: { max: 'höchster Monatstiefstwert der Messreihe', min: 'tiefster je gemessener Tageswert' },
+    sum: { max: 'höchste Monatssumme der Messreihe', min: 'niedrigste Monatssumme der Messreihe' },
+    last: { max: 'höchster Monatsendwert der Messreihe', min: 'tiefster Monatsendwert der Messreihe' },
+    count: { max: 'höchste Anzahl in einem Monat', min: 'niedrigste Anzahl in einem Monat' },
+  }
+  const recordAnnual: Record<AggMode, { max: string; min: string }> = {
+    mean: { max: 'höchstes Jahresmittel der Messreihe', min: 'tiefstes Jahresmittel der Messreihe' },
+    max: { max: 'höchster je gemessener Tageswert', min: 'tiefster Jahreshöchstwert der Messreihe' },
+    min: { max: 'höchster Jahrestiefstwert der Messreihe', min: 'tiefster je gemessener Tageswert' },
+    sum: { max: 'höchste Jahressumme der Messreihe', min: 'niedrigste Jahressumme der Messreihe' },
+    last: { max: 'höchster Jahresendwert der Messreihe', min: 'tiefster Jahresendwert der Messreihe' },
+    count: { max: 'höchste Anzahl in einem Jahr', min: 'niedrigste Anzahl in einem Jahr' },
+  }
+  const recordSeasonal: Record<AggMode, { max: string; min: string }> = {
+    mean: { max: 'höchstes Saisonmittel der Messreihe', min: 'tiefstes Saisonmittel der Messreihe' },
+    max: { max: 'höchster je gemessener Tageswert', min: 'tiefster Saisonhöchstwert der Messreihe' },
+    min: { max: 'höchster Saisontiefstwert der Messreihe', min: 'tiefster je gemessener Tageswert' },
+    sum: { max: 'höchste Saisonsumme der Messreihe', min: 'niedrigste Saisonsumme der Messreihe' },
+    last: { max: 'höchster Saisonendwert der Messreihe', min: 'tiefster Saisonendwert der Messreihe' },
+    count: { max: 'höchste Anzahl in einer Saison', min: 'niedrigste Anzahl in einer Saison' },
+  }
   switch (kind) {
     case 'day':
       return day[spec.agg]
@@ -542,7 +581,24 @@ export function valueCaption(
       if (normalScope === 'month') return normalMonthly[spec.agg]
       if (normalScope === 'season') return normalSeasonal[spec.annualAgg]
       return normalAnnual[spec.annualAgg]
+    case 'record':
+      // Der Ausschnitt „Kalendermonat" liest dieselbe Monatsreihe wie `series`,
+      // nur auf einen Monat gefiltert — die Größe bleibt ein Monatswert. `year`
+      // dagegen fasst zwölf Monate zu einem Jahreswert zusammen.
+      if (normalScope === 'season') return recordSeasonal[spec.annualAgg][extreme]
+      if (normalScope === 'year') return recordAnnual[spec.annualAgg][extreme]
+      return recordMonthly[spec.agg][extreme]
   }
+}
+
+/**
+ * Voreingestellte Richtung des Allzeit-Rekords. Bei „Temperatur Minimum" ist
+ * der Tiefstwert die Frage, die man stellt (die kälteste je gemessene Nacht),
+ * bei allem anderen der Höchstwert. Beides bleibt umschaltbar — nur der erste
+ * Klick soll schon die übliche Antwort zeigen.
+ */
+export function defaultRecordExtreme(spec: AtParameterSpec): 'max' | 'min' {
+  return spec.agg === 'min' ? 'min' : 'max'
 }
 
 /** Dropdown-Text: Kategorie, Kurzname und Einheit — die Einheit gehört an die Auswahl. */
