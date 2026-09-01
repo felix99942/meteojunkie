@@ -686,20 +686,32 @@ npm run preview   # gebautes dist/ servieren
   selben Zeitpunkt, keine Zeitverschiebung** — gemessen: RMS gegen den besten
   Wert 0,98 K (N=1) bzw. 1,52 K (N=2) beim selben Zeitstempel, gegen den um
   24 h verschobenen 2,99 K.
-  **WELCHER Lauf verglichen wird, ist live ermittelt und steht in der UI**:
-  `previous_dayN` ist der Lauf von **00 UTC des Tages n Tage vor dem Zieltag** —
-  der Vorlauf wächst über den Zieltag hinweg von 24·n auf 24·n+23 Stunden. Es
-  ist ausdrücklich NICHT der frischeste Lauf vor dem Tag (18 UTC des Vortags);
-  einzelne Läufe bräuchten die Single-Runs-API. Der Beweis steckt in den
-  Horizonten: bei KONSTANTEM Vorlauf 48 h müsste AROME Austria (60 h)
-  `previous_day2` liefern — die Spalte ist vollständig leer; mit 24·n +
-  Tagesstunde bräuchte sie 71 h. Dieselbe Rechnung trifft alle gemessenen
-  Fälle exakt (ICON-D2 48 h → nur n=1; ICON-EU 120 h → bis n=4, n=5 bräuchte
-  143 h; IFS 360 h → alle sieben), und eine Reihe wird nur ausgeliefert, wenn
-  der GANZE Zieltag abgedeckt ist — Teilspalten gibt es nicht. Daraus folgt
-  `leadsFor`: `forecastHours ≥ n·24 + 24`. Leere Spalten werden gar nicht erst
-  geholt, und die Beschriftung sagt „Lauf vom Vortag, 00 UTC · +24–47 h" statt
-  des zu groben „+1 Tag".
+  **WAS `previous_dayN` ist, wurde gemessen — und die erste Herleitung war
+  falsch.** Es ist der Stand, den die Vorhersage **n·24 Stunden VOR dem
+  jeweiligen Zeitpunkt** hatte: ein GLEITENDER Vorlauf, kein fester Modelllauf.
+  Zwei unabhängige Messungen: die Reihe springt an der Tagesgrenze nicht
+  (Stundenänderung über 00 UTC 0,69 K gegen 0,92 K sonst — genau wie die
+  durchgehende Reihe), und der Fehler ist über den Tagesverlauf flach
+  (0,82/0,83/0,81/0,90 K je Sechs-Stunden-Block). Ein fester 00-UTC-Lauf müsste
+  beides zeigen: Sprung um Mitternacht, über den Tag wachsender Fehler. Die
+  frühere Deutung („Lauf von 00 UTC des Vortags, +24–47 h") war allein aus den
+  Modellhorizonten hergeleitet und hielt der direkten Messung nicht stand. Aus
+  WELCHEM konkreten Lauf (00/06/12/18 UTC) der Stand stammt, gibt die API nicht
+  preis, und ein bestimmter Lauf lässt sich auch nicht anfordern: `run` wird
+  auf allen drei Endpunkten mit HTTP 400 abgelehnt, `model_run` wird STILL
+  IGNORIERT (zwei sehr verschiedene Läufe liefern identische Daten — wieder die
+  Falle aus SPEC §6). Der gleitende Vorlauf hat dafür einen methodischen
+  Vorzug: jeder Tag wird beim GLEICHEN Vorhersagealter verglichen, während ein
+  fester 00-UTC-Lauf über den Tag hinweg 24 bis 47 Stunden Vorlauf mischt.
+  **Welche n es gibt, ist davon getrennt** und folgt empirisch
+  `forecastHours ≥ n·24 + 24` (`leadsFor`): AROME Austria (60 h) und ICON-D2
+  (48 h) nur n=1, ICON-EU (120 h) n=1–4, IFS (360 h) und GFS (384 h) n=1–7 —
+  immer vollständig oder gar nicht, nie teilweise. Das ist eine
+  Verfügbarkeitsregel der API und lässt sich aus dem gleitenden Vorlauf NICHT
+  herleiten (bei 48 h Vorlauf läge AROME mit 60 h Horizont im Rahmen) — deshalb
+  als gemessene Regel geführt. Leere Spalten werden gar nicht erst geholt, und
+  die Beschriftung sagt „Stand 24 h vorher" statt des irreführenden
+  „Lauf vom Vortag".
   **Verglichen wird die DETERMINISTISCHE Punktprognose, kein MOS.** Rohe
   Modellausgabe, auf den Punkt interpoliert. Statistisch korrigierte
   Punktvorhersagen führt die Seite zwar (DWD MOSMIX im Bereich

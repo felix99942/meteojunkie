@@ -119,15 +119,14 @@ describe('score', () => {
 })
 
 describe('leadsFor', () => {
-  it('folgt dem tatsächlichen Lauf: 00 UTC, Vorlauf 24·n bis 24·n+23', () => {
-    // WELCHER Lauf hinter `previous_dayN` steckt, ist live ermittelt: der von
-    // 00 UTC des Tages n Tage vorher. Beweis über die Horizonte — bei
-    // KONSTANTEM Vorlauf 48 h müsste AROME Austria (60 h) `previous_day2`
-    // liefern, die Spalte ist aber vollständig leer. Mit 24·n + Tagesstunde
-    // bräuchte sie 71 h.
+  it('bildet die GEMESSENE Verfügbarkeit der API ab', () => {
+    // Diese Erwartungen sind abgelesen, nicht hergeleitet (2026-09-01, alle
+    // Reihen vollstaendig oder gar nicht, nie teilweise): AROME Austria 60 h
+    // und ICON-D2 48 h bieten nur n=1, ICON-EU 120 h bietet n=1-4, IFS 360 h
+    // alle sieben. Die Regel forecastHours >= n*24+24 trifft das exakt.
+    // Sie folgt NICHT aus dem gleitenden Vorlauf - bei 48 h Vorlauf laege
+    // AROME mit 60 h Horizont im Rahmen, die Reihe fehlt trotzdem.
     expect(leadsFor(60, 7)).not.toContain(2)
-    // ICON-EU (120 h) trägt n=4 (braucht 119 h), aber nicht n=5 (143 h) —
-    // bei konstantem Vorlauf hätte n=5 mit genau 120 h noch gepasst.
     expect(leadsFor(120, 7)).toContain(4)
     expect(leadsFor(120, 7)).not.toContain(5)
   })

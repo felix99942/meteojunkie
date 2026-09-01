@@ -606,10 +606,14 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
 //   • Auf der NORMALEN Forecast-API liefern dieselben Suffixe HTTP 200 mit
 //     lauter null — die bekannte Falle (SPEC §6). Nur der historische Endpunkt
 //     trägt sie.
-//   • Der Vorlauf ist am Modellhorizont gedeckelt: AROME Austria (60 h) und
-//     ICON-D2 (48 h) liefern `previous_day1`, aber `previous_day3` leer — eine
-//     drei Tage alte Vorhersage für heute kann es dort nicht geben. Die UI
-//     gattet das über `forecastHours`, statt leere Spalten zu zeigen.
+//   • `previous_dayN` ist der Stand n·24 h VOR dem jeweiligen Zeitpunkt — ein
+//     GLEITENDER Vorlauf, kein fester Lauf: die Reihe springt an der
+//     Tagesgrenze nicht, und der Fehler wächst über den Tag nicht an (beides
+//     gemessen, siehe `verify.ts`).
+//   • Welche n es gibt, folgt empirisch `forecastHours ≥ n·24 + 24`: AROME
+//     Austria (60 h) und ICON-D2 (48 h) nur n=1, ICON-EU (120 h) n=1–4, IFS
+//     und GFS n=1–7 — immer vollständig oder gar nicht. Die UI gattet danach,
+//     statt leere Spalten zu holen.
 //   • Das Archiv reicht mindestens bis Mitte 2024 zurück (2023 leer).
 
 const HISTORICAL_URL = 'https://historical-forecast-api.open-meteo.com/v1/forecast'

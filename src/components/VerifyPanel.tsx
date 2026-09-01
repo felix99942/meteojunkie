@@ -108,15 +108,22 @@ const fmtShort = new Intl.DateTimeFormat('de-AT', {
 })
 
 /**
- * Beschriftung einer Vorlaufzeit. „+1 Tag" wäre zu grob und im Kern falsch:
- * hinter `previous_day1` steckt der Lauf von 00 UTC des VORTAGS, der Vorlauf
- * läuft über den Zieltag hinweg von 24 auf 47 Stunden. Der frischeste Lauf vor
- * dem Tag (18 UTC des Vortags) ist es ausdrücklich NICHT — den gibt diese API
- * nicht her.
+ * Beschriftung einer Vorlaufzeit.
+ *
+ * `previous_dayN` ist der Stand, den die Vorhersage `n·24` Stunden VOR dem
+ * jeweiligen Zeitpunkt hatte — ein GLEITENDER Vorlauf, kein fester Lauf.
+ * Zweimal live gemessen: die Reihe macht an der Tagesgrenze keinen Sprung
+ * (Stundenänderung über 00 UTC 0,69 K gegenüber 0,92 K sonst — genau wie die
+ * durchgehende Reihe), und der Fehler ist über den Tagesverlauf flach
+ * (0,82/0,83/0,81/0,90 K je Sechs-Stunden-Block). Bei einem festen 00-UTC-Lauf
+ * müsste beides anders aussehen: ein Sprung um Mitternacht und ein Fehler, der
+ * über den Tag wächst.
+ *
+ * Aus welchem konkreten Lauf (00/06/12/18 UTC) der Stand jeweils stammt, gibt
+ * die API nicht preis; dafür bräuchte es die Single-Runs-API.
  */
-const leadLabel = (n: number) =>
-  n === 1 ? 'Lauf vom Vortag, 00 UTC' : `Lauf von vor ${n} Tagen, 00 UTC`
-const leadRange = (n: number) => `+${n * 24}–${n * 24 + 23} h`
+const leadLabel = (n: number) => `Stand ${n * 24} h vorher`
+const leadDays = (n: number) => (n === 1 ? '1 Tag' : `${n} Tage`)
 
 /** Einfärbung nach Fehlerbetrag: klein = ruhig, groß = warnend. */
 function errColor(mae: number): string {
@@ -319,7 +326,7 @@ export function VerifyPanel() {
       })),
     ]
     return {
-      title: `${TARGETS[target].label} · ${leadLabel(lead)} (${leadRange(lead)})`,
+      title: `${TARGETS[target].label} · ${leadLabel(lead)}`,
       unit: '°C',
       curves,
       minSpan: 6,
@@ -420,15 +427,21 @@ export function VerifyPanel() {
             value={lead}
             onChange={(e) => setLead(Number(e.target.value))}
             title={
-              'WELCHER Lauf verglichen wird. Hinter jeder Stufe steckt der Lauf von 00 UTC des ' +
-              'entsprechenden Vortags — der Vorlauf wächst über den Zieltag hinweg um 23 Stunden. ' +
-              'Der frischeste Lauf vor dem Zieltag (18 UTC) ist NICHT dabei: die Historical-' +
-              'Forecast-API kennt nur diese Tagesstufen, einzelne Läufe bräuchten die Single-Runs-API.'
+              'Wie ALT die verglichene Vorhersage war. „Stand 24 h vorher" heißt: für jede Stunde ' +
+              'des Zieltages wird der Wert genommen, den die Vorhersage 24 Stunden davor hatte — ' +
+              'ein gleitender Vorlauf. Es ist ausdrücklich NICHT der 00-UTC-Lauf des Vortags: das ' +
+              'Tagesmaximum fällt meist auf 14–16 UTC und stammt damit vom Stand des Vortags um ' +
+              'dieselbe Uhrzeit. Gemessen: die Reihe springt an der Tagesgrenze nicht, und der ' +
+              'Fehler wächst über den Tag nicht an — bei einem festen 00-UTC-Lauf müsste beides ' +
+              'zu sehen sein. Einen bestimmten Lauf gibt die API nicht her (geprüft: `run` wird ' +
+              'abgelehnt, `model_run` still ignoriert). Der gleitende Vorlauf hat dafür einen ' +
+              'Vorzug: jeder Tag wird beim GLEICHEN Vorhersagealter verglichen, während ein ' +
+              'fester Lauf über den Tag hinweg 24 bis 47 Stunden Vorlauf mischt.'
             }
           >
             {(availableLeads.length ? availableLeads : [1]).map((n) => (
               <option key={n} value={n}>
-                {leadLabel(n)} · {leadRange(n)}
+                {leadLabel(n)} ({leadDays(n)})
               </option>
             ))}
           </select>
@@ -509,8 +522,8 @@ export function VerifyPanel() {
                 {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}
               </strong>{' '}
               ({obsCount} Messtage). Verglichen wird der{' '}
-              <strong>{leadLabel(lead).toLowerCase()}</strong> ({leadRange(lead)} Vorlauf), auf
-              denselben UTC-Tag gerechnet.
+              <strong>{leadLabel(lead)}</strong> — also die Vorhersage, wie sie{' '}
+              {lead * 24} Stunden vor dem jeweiligen Zeitpunkt stand.
             </div>
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
@@ -550,9 +563,9 @@ export function VerifyPanel() {
                             title={
                               fc == null
                                 ? row.model.forecastHours < lead * 24 + 24
-                                  ? `${row.model.label} rechnet nur ${row.model.forecastHours} h weit — der Lauf von vor ${lead} Tag${lead > 1 ? 'en' : ''} reicht bis ${leadRange(lead).replace('+', '')} und deckt diesen Tag nicht ab.`
+                                  ? `${row.model.label} rechnet nur ${row.model.forecastHours} h weit — für einen Vorlauf von ${lead * 24} h bietet die API dort keine Reihe an.`
                                   : 'Für diesen Tag liegt keine Vorhersage vor.'
-                                : `${row.model.label}, ${leadLabel(lead)} (${leadRange(lead)}): ${fmt1(fc)} °C` +
+                                : `${row.model.label}, ${leadLabel(lead)}: ${fmt1(fc)} °C` +
                                   (err != null ? `, gemessen ${fmt1(obs!)} °C → ${fmtSigned(err)} K` : '')
                             }
                           >
@@ -610,9 +623,9 @@ export function VerifyPanel() {
               </tfoot>
             </table>
             <div className="verify-legend label-muted">
-              Große Zahl: was der {leadLabel(lead).toLowerCase()} für diesen Tag vorhergesagt
-              hat — der Vorlauf wächst über den Tag hinweg von {lead * 24} auf {lead * 24 + 23}
-              Stunden. Kleine Zahl darunter: Abweichung von der Messung, Vorzeichen und
+              Große Zahl: was für diesen Tag vorhergesagt war, als die Vorhersage{' '}
+              {lead * 24} Stunden alt war — für jede Stunde des Tages der Stand von {lead * 24} h
+              davor, nicht ein fester Modelllauf. Kleine Zahl darunter: Abweichung von der Messung, Vorzeichen und
               Größe. In der letzten Zeile der mittlere Fehlerbetrag über alle gezeigten Tage und
               daneben die systematische Schieflage — ein Modell mit +2 K Schieflage liegt immer
               zu warm und ist korrigierbar, eines mit 0 K streut nur. Darin steckt auch der

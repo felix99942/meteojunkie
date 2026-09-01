@@ -91,23 +91,24 @@ export function score(
 }
 
 /**
- * Welche Vorlaufzeiten ein Modell überhaupt tragen kann.
+ * Welche Vorlaufzeiten die API für ein Modell anbietet.
  *
- * WELCHER LAUF steckt hinter `previous_dayN`? Live ermittelt (2026-09-01),
- * weil es die Auswertung bestimmt: es ist der Lauf von **00 UTC des Tages
- * N Tage vor dem Zieltag** — der Vorlauf wächst also über den Zieltag hinweg
- * von 24·N Stunden (00 UTC) auf 24·N + 23 (23 UTC). Es ist NICHT der
- * jeweils frischeste Lauf vor dem Zieltag.
+ * WAS `previous_dayN` ist: der Stand, den die Vorhersage n·24 Stunden VOR dem
+ * jeweiligen Zeitpunkt hatte — ein GLEITENDER Vorlauf, kein fester Lauf.
+ * Zweimal live gemessen (2026-09-01): die Reihe springt an der Tagesgrenze
+ * nicht (Stundenänderung über 00 UTC 0,69 K gegen 0,92 K sonst, wie bei der
+ * durchgehenden Reihe), und der Fehler ist über den Tagesverlauf flach
+ * (0,82/0,83/0,81/0,90 K je Sechs-Stunden-Block). Ein fester 00-UTC-Lauf
+ * müsste beides zeigen: einen Sprung um Mitternacht und einen über den Tag
+ * wachsenden Fehler.
  *
- * Der Beweis steckt in den Horizonten: bei KONSTANTEM Vorlauf 48 h müsste
- * AROME Austria (60 h) `previous_day2` liefern — die Spalte ist aber
- * vollständig leer. Mit 24·N + Tagesstunde bräuchte sie bis zu 71 h, und
- * dieselbe Rechnung trifft alle gemessenen Fälle exakt: ICON-D2 (48 h) nur
- * N=1 (braucht 47 h), ICON-EU (120 h) bis N=4 (119 h, N=5 bräuchte 143),
- * IFS (360 h) alle sieben. Eine Reihe wird offenbar nur ausgeliefert, wenn
- * der GANZE Zieltag abgedeckt ist — Teilspalten gibt es nicht.
- *
- * Daraus folgt die Bedingung: `forecastHours ≥ n·24 + 24`.
+ * WELCHE n es gibt, folgt dagegen empirisch `forecastHours ≥ n·24 + 24` —
+ * gemessen und ohne Ausnahme: AROME Austria (60 h) und ICON-D2 (48 h) nur
+ * n=1, ICON-EU (120 h) n=1–4, IFS (360 h) und GFS (384 h) n=1–7. Immer
+ * vollständig oder gar nicht, nie teilweise. Das ist eine Verfügbarkeitsregel
+ * der API und lässt sich aus dem gleitenden Vorlauf allein NICHT herleiten
+ * (bei 48 h Vorlauf läge AROME mit 60 h Horizont im Rahmen) — deshalb hier als
+ * GEMESSENE Regel geführt, nicht als Herleitung.
  */
 export function leadsFor(forecastHours: number, maxLead: number): number[] {
   const out: number[] = []
