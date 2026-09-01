@@ -82,13 +82,72 @@ npm run preview   # gebautes dist/ servieren
   leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
-  Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). „Aktuell"-Knopf
+  Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). Sechs Zeitbezüge:
+  Tag · Monat · Saison · Jahr · Klimaperiode · Allzeit (s. u.) — die letzten
+  beiden lesen vorberechnete Assets und kosten keinen Request. „Aktuell"-Knopf
   springt auf den neuesten Stand — Tag = heute; Monat/Saison = der LAUFENDE
   Zeitraum als Teilsumme aus Tageswerten bis zum letzten abgeschlossenen Tag
   (`fetchRunningMonthPartial`/`PeriodCoverage.partial`, s. u.); Jahr bleibt bei
   der letzten ABGESCHLOSSENEN Periode (s. `latestPeriods()` in
   `AtClimatePanel.tsx` für die Begründung) — und holt den laufenden Tag mit
   `force` am TTL-Cache vorbei.
+  **Eine verlegte Station ist EINE Station** (`scripts/at-ingest-stations.mjs`):
+  GeoSphere führt jede Messreihe DOPPELT — als `INDIVIDUAL` (ein physischer
+  Standort) und als `COMBINED` (die fortgeführte Reihe über alle Standorte,
+  `group_id` zeigt vom Kind auf den Elternteil). Ungefiltert stand jede
+  verlegte Station zweimal in Karte und Rangliste, mit identischen aktuellen
+  Werten: „Salzburg Flughafen" als Standort ab 1939 UND als Reihe ab 1874. Der
+  Ingest behält je Gruppe nur die COMBINED-Reihe → **514 statt 1100 Einträge**
+  (216 zusammengeführte Reihen über 587 Standorte + 298 gruppenlose). Geprüft:
+  identische Werte in der Überlappung, die Reihe reicht nur weiter zurück;
+  **kein Verlust an Live-Abdeckung** (alle 240 gruppierten Standorte mit
+  10-Minuten-Daten haben einen Elternteil, der sie ebenfalls hat) und **kein
+  verlorenes Normal** (alle 94 wegfallenden Normal-Stationen sind durch ihre
+  Gruppenreihe ersetzt). Die eine Koordinate der Reihe trägt, weil die
+  Verlegungen klein sind: Median 1,0 km / 11 m Höhe, p90 3,1 km / 58 m, Maximum
+  6,2 km (Wien Hohe Warte) bzw. 346 m. Die Standortgeschichte wandert als
+  `AtStation.sites` in den Eintrag und steht im Stationsdetail — ohne sie sähe
+  „Salzburg Flughafen seit 1874" nach einem Datenfehler aus (Flughäfen gab es
+  1874 keine); die Reihe beginnt bei der Station „Salzburg" (1874–1903), geht
+  über das Lehrerseminar (1903–1941) zum Flughafen. **Zwei Dubletten bleiben
+  bewusst**: Dornbirn und Hochfilzen führen neben der Klimastation eine
+  ungruppierte reine Niederschlagsmessstelle am selben Punkt (live geprüft: nur
+  `rr`, alles andere null) — die wegzuwerfen hieße, eine eigene Messreihe zu
+  verlieren. Der Ingest warnt, wenn WEITERE Namensdubletten am selben Punkt
+  auftauchen; das wäre ein nicht gefiltertes COMBINED/INDIVIDUAL-Paar.
+  **Die COMBINED-Reihe ist NICHT immer die Vereinigung ihrer Standorte** — das
+  ist der eine Preis der Zusammenführung und muss bekannt sein. Bei 8 der 216
+  Gruppen reicht ein Vorgängerstandort weiter zurück als die Reihe, gemessen an
+  den Rekordjahren der alten Assets: Gmunden (Reihe ab 1930, Standort ab 1901),
+  Martinsberg/Gutenbrunn (1948 ↔ 1936), Neusiedl am See (1936 ↔ 1926), Bad
+  Goisern (1938 ↔ 1929), Weiz (1944 ↔ 1937), Fischbach (1982 ↔ 1976), Bad Ischl
+  (1936 ↔ 1931), Klagenfurt Flughafen (1953 ↔ 1950). Diese Frühjahre fehlen
+  seither in „Allzeit" und in Monats-/Jahreskarten vor ~1950 — an 8 von 514
+  Stationen. Die NORMALE sind praktisch nicht betroffen (sie beginnen 1961, und
+  alle acht Reihen laufen da längst). Bewusst NICHT selbst zusammengesetzt: ob
+  GeoSphere diese Segmente absichtlich aus der fortgeführten Reihe hält (weil
+  sie nicht vergleichbar sind) oder die Metadaten nur uneinheitlich sind, lässt
+  sich über die API nicht entscheiden — und Reihen über einen Standortwechsel
+  hinweg selbst zu verketten ist genau der Schritt, den man ohne Homogenisierung
+  nicht tun sollte. Wer es doch will: der Rekord-Ingest kennt über
+  `stations.json` → `sites` die IDs der Vorgängerstandorte und könnte deren
+  Monatsreihen vor der Rekordbildung dazunehmen.
+  Nebenwirkung: die Abwertung stillgelegter Stationen in der Stationssuche
+  (`climateAsk`) verliert ihren Hauptfall — die Station „Salzburg" 1874–1903
+  steht gar nicht mehr in der Liste. Die Regel bleibt für die 199 stillgelegten
+  Einzelstationen richtig.
+  **Quellenangabe im Klartext** (`.atclima-attribution`): „klima-v2-1d" ist ein
+  API-Bezeichner und sagt niemandem etwas. Dort stehen jetzt die offiziellen
+  Titel („Stationsdaten-v2", qualitätsgeprüfte Messwerte österreichischer
+  Klimastationen) mit Links auf die Datensatzseiten des GeoSphere Data Hub,
+  Auflösung und Reihenbeginn im Tooltip, dazu die Lizenz CC BY 4.0. **Ausdrücklich
+  dabei: das ist NICHT HISTALP.** HISTALP ist ein eigener Datensatz am selben
+  Hub (`histalp-v1-1y`, homogenisierte bruchbereinigte Langzeitreihen des
+  Alpenraums) — für die Messwerte selbst laufen hier die qualitätsgeprüften,
+  aber NICHT homogenisierten Stationsdaten. Das ist die naheliegende
+  Verwechslung und passt zur COMBINED-Frage oben: eine fortgeführte Reihe ist
+  keine homogenisierte. Für den PERIODENVERGLEICH wird HISTALP inzwischen
+  verwendet (s. u.) — dort ist es die richtige Quelle.
   **Frage ans Klimaarchiv** (`AtAskBox` + Rechenkern `climateAsk.ts`,
   Einstieg gleichrangig NEBEN „Rangliste & Stationssuche" links oben in der
   Karte, gemeinsame Reihe `.atmap-tools`): die Rangliste beantwortet „welche
@@ -96,7 +155,7 @@ npm run preview   # gebautes dist/ servieren
   Fenster gehen an derselben Stelle auf und schließen sich gegenseitig aus, wie
   bisher schon Knopf und Rangliste denselben Platz belegen: eine Frage in Alltagssprache („was war das
   tagesmaximum im juli seit messbeginn in salzburg?") wird in
-  {Station, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
+  {Gebiet, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
   beantwortet — Rekorde (`records/<id>.json`) bzw. Normale. **Kostet keinen
   Request.** Bewusst OHNE Sprachmodell: die Seite ist statisch (GitHub Pages),
   ein API-Key wäre im Frontend öffentlich, und ein Modell, das aus eigenem
@@ -115,7 +174,78 @@ npm run preview   # gebautes dist/ servieren
   Stationen werden abgewertet, und das ist Korrektheit, keine Kosmetik**: die
   Station namens „Salzburg" maß 1874–1903, ihr Allzeitmaximum sind 34,8 °C von
   1900 — richtig sind 37,7 °C (Flughafen, der die Reihe fortführt). Bei gleich
-  gutem Namenstreffer gewinnt die LÄNGERE Messreihe. „In der Karte zeigen"
+  gutem Namenstreffer gewinnt die LÄNGERE Messreihe. Beide Regeln sind seither
+  entschärft, aber nicht überflüssig: die Station „Salzburg" ist in die
+  Flughafen-Reihe zusammengeführt und steht gar nicht mehr in der Liste, und
+  „in Salzburg" fragt ohnehin den ORT (→ 38,6 °C, Freisaal). Für stillgelegte
+  EINZELstationen und für die Auswahl in der Stationsliste gelten sie weiter.
+  **Gefragt wird nach EINER Station, nach einem ORT oder nach GANZ ÖSTERREICH**
+  (`AskQuery.area`, Auswahl „Gebiet" im Fenster): „höchste je gemessene
+  Temperatur in Österreich" → 41,2 °C, Bad Deutsch-Altenburg.
+  **Der ORT ist der Normalfall einer Frage in Alltagssprache** und war der
+  Anlass: „höchste Temperatur in Wien" antwortete mit der Hohen Warte
+  (39,8 °C), obwohl Wien ZWÖLF Stationen hat und Stammersdorf 41,0 °C misst —
+  zwischen den Wiener Stationen liegen fast 5 K. Gefragt ist der Ort, welche
+  seiner Stationen den Rekord hält, ist die ANTWORT. `resolvePlace()`
+  entscheidet das daran, WIE VIEL vom Stationsnamen die Frage genannt hat: die
+  führenden Namenswörter, die in der Frage vorkommen, bilden den Ortsschlüssel
+  — „Wien" (1 von 3 Wörtern) ist ein Ort, „Wien Hohe Warte" (3 von 3) ist eine
+  Station. Der Namensvergleich läuft über den Anfang PLUS Leerzeichen, nicht
+  über einen blossen Präfix: sonst fielen „Wiener Neustadt" und „Wiener
+  Neudorf" unter „Wien" (`'wiener neustadt'.startsWith('wien ')` ist falsch,
+  `startsWith('wien')` wäre wahr — daran hängt es). Zusammengeführt wird mit
+  `mergeRecords()`: je Ebene und Richtung der beste Wert, die haltende Station
+  als `s`/`n` dazu — dieselbe Form wie die nationalen Rekorde, deshalb läuft
+  `answerFromRecords` unverändert weiter. Ein Ort kostet ein Dutzend kleine
+  statische Abrufe (~10 KB je Station), danach nichts mehr. Trägt ein Ortsname
+  nur EINE Station, bleibt es eine Stationsfrage. Der Landesfall
+  ist KEIN Sonderweg — `_national.json` hat dieselbe Form wie eine
+  Stationsdatei (`abs`/`mon`/`sea`), nur trägt dort jeder Extremwert `s`/`n`,
+  die Station, die ihn hält; derselbe `answerFromRecords` beantwortet beides,
+  und das WO wird dann Teil der Antwort (bei einer Stationsfrage stünde es
+  doppelt da). Der Ingest schreibt die nationalen Rekorde deshalb auf allen
+  drei Ebenen statt nur absolut: „wärmster Juli, den Österreich je hatte" ist
+  die häufigere Frage. **Ohne erkannten Ort ist die Frage eine LANDESfrage**,
+  nicht eine unbeantwortbare — „höchste je gemessene Temperatur" blieb vorher
+  einfach leer. **Beim langjährigen MITTEL gibt es österreichweit bewusst keine
+  eine Zahl** (`answerFromNormalsAustria`): ein Flächenmittel ist eine
+  räumliche Größe, und ein ungewichteter Mittelwert über ~300 ungleich
+  verteilte, ungleich hoch gelegene Stationen wäre von den Bergstationen
+  dominiert und schlicht falsch. Geantwortet wird stattdessen die SPANNE — das
+  gefragte Ende samt Station, als Notiz das andere Ende und die Stationszahl
+  („2.420 mm Rudolfshütte … bis 484 mm Retz"). Die Auswahl „gesucht" hat
+  deshalb im Landesfall zwei Mittel-Einträge (höchste/tiefste Station), bei
+  einer Station nur den einen.
+  **Der Zeitraum hat eine EBENE, und die Frage entscheidet welche**: „höchster
+  Jahresniederschlag in Salzburg" meint die höchste JAHRESSUMME (1.835 mm,
+  1912), nicht den nassesten MONAT (404 mm, Juli 1954) — genau das kam vorher
+  heraus, weil die Rekord-Assets überhaupt keine Jahresebene kannten. Sie haben
+  jetzt vier: `abs` (bester Einzelmonat der Reihe), `ann` (bester JAHRESwert,
+  nur aus vollständigen Jahren — dieselbe 12-Monats-Regel wie beim
+  Normal-Ingest), `mon[12]`, `sea`. Bei Maximum-/Minimum-Größen fallen `abs`
+  und `ann` zusammen (das höchste Jahresmaximum IST das absolute Maximum), bei
+  Summen und Mitteln liegen sie um eine Größenordnung auseinander.
+  `AskQuery.annual` erkennt die Vorsilbe „Jahres…" (auch getrennt geschrieben)
+  und das blosse „Jahr" — Letzteres steht als Funktionswort auf der
+  Stoppwortliste und wird deshalb auf der VOLLEN Tokenliste geprüft, mit
+  Ausnahme von „im Jahr 1954": folgt eine Jahreszahl, ist ein Zeitpunkt gemeint.
+  Ein engerer Zeitraum schlägt den Jahresbezug („nassester Juli" bleibt eine
+  Monatsfrage). Dieselbe Trennung hat die Karte im Zeitbezug „Allzeit"
+  („Bester Einzelmonat" ↔ „Jahreswert", `Period.annual`, Skala folgt der Ebene).
+  **Ein Superlativ über einen ganzen Zeitraum OHNE Größenwort meint das
+  MITTEL**: das wärmste Jahr Österreichs ist 2024 mit 14,3 °C Jahresmittel —
+  nicht 2013, weil damals an einem Augusttag 40,5 °C fielen. „Wärmstes Jahr",
+  „kältester Winter", „wärmster Juli" schalten deshalb auf `tl_mittel` statt auf
+  die Vorgabe `tlmax`. Nennt die Frage die Größe ausdrücklich („höchste
+  TEMPERATUR im Juli", „Tagesmaximum"), bleibt es beim Extremwert — das ist die
+  Grenze, und sie hängt daran, ob überhaupt ein Größenwort gefunden wurde.
+  **Deutsche KOMPOSITA zählen als Treffer** (enthaltenes Parameterwort ab
+  sechs Zeichen): „durchschnittlicher Jahresniederschlag" ist die normale Form
+  der Frage, liegt von „niederschlag" aber sechs Zeichen entfernt (Ähnlichkeit
+  0,67) und wurde vorher still als Temperatur beantwortet. Ab sechs Zeichen,
+  weil kürzere Fragmente zufällig in vielen Wörtern stecken; der exakte
+  Listentreffer geht weiter vor („höchsttemperatur" bleibt `tlmax`).
+  „In der Karte zeigen"
   springt auf den Zeitraum DER ANTWORT (Rekordjahr und -monat), nicht auf das
   laufende Jahr. Gegen die echte Stationsliste gemessen: 14 von 14
   Beispielfragen richtig.
@@ -180,7 +310,7 @@ npm run preview   # gebautes dist/ servieren
   der ANTEIL am Normal („143 % vom Normal" = das 1,43-Fache, 100 % = Normal) —
   Prozentwerte deshalb NIE mit Vorzeichen rendern, das läse sich als
   Prozentpunkte über dem Normal. Die Rechnung dazu steht in `anomaly()`.
-  **Was in der Karte steht, sagt `valueCaption(spec, kind, normalMonth)`** —
+  **Was in der Karte steht, sagt `valueCaption(spec, kind, scope, extreme)`** —
   Zeitbezug und Aggregat ergeben zusammen etwas anderes als der Parametername:
   „Temperatur Maximum" + Klimaperiode + Jahr ist NICHT ein Höchstwert, sondern
   das MITTEL der 30 Jahreshöchstwerte (Kette: Tageswerte → `agg` → Monatswert →
@@ -204,8 +334,8 @@ npm run preview   # gebautes dist/ servieren
   `countScale(max, ramp)` statt fester Konstanten: Frosttage erreichen im Jahr
   250, Gewittertage 50 — mit einer gemeinsamen Skala läge die eine Karte
   durchgehend im obersten, die andere im untersten Band; die Bereiche bleiben
-  trotzdem fest. Rekorde gibt es dafür (noch) nicht, die Assets führen die
-  `tage_*`-Codes nicht — das Detail sagt es. Plausibilitätsprobe der Normale
+  trotzdem fest. Rekorde gibt es seit der Rekord-Erweiterung auch dafür
+  („meiste Frosttage, die ein Jänner je hatte"). Plausibilitätsprobe der Normale
   1991–2020 gegen 1961–1990: Median +15 Sommertage, +7 Hitzetage,
   −15 Frosttage, −7 Eistage.
   **Klimaperioden** (`config/atNormals.ts`, `AT_NORMAL_PERIODS`): vierter
@@ -218,10 +348,88 @@ npm run preview   # gebautes dist/ servieren
   (`comparePeriod`, Bezug = nächstältere Periode) statt Wetter gegen Normal.
   **Deckungsregel**: ein Normal entsteht nur aus ≥ 24 der 30 Jahre und ein Jahr
   zählt nur mit allen 12 Monaten — deshalb hat lange nicht jede Station eines
-  (1991–2020: 301, 1961–1990: 282 Stationen), und die alte Datei `normals.json`
-  mit 806 Stationen ist bewusst weg: die zusätzlichen Werte stammten aus
-  Teilreihen. Für ältere Perioden zeigt erst der Haken „Historische" das volle
+  (1991–2020: 207, 1961–1990: 181 Stationen — vor der Zusammenführung der
+  Stationsdubletten waren es 301 bzw. 282, dieselben Reihen unter zwei IDs),
+  und die alte Datei `normals.json` mit 806 Stationen ist bewusst weg: die
+  zusätzlichen Werte stammten aus Teilreihen. Für ältere Perioden zeigt erst der Haken „Historische" das volle
   Netz.
+  **Allzeit** (Zeitbezug `record`, `Period` in `api/atValues.ts`): der
+  STATIONSREKORD über die gesamte Messreihe, aus denselben vorberechneten
+  Rekord-Assets wie das Stationsdetail — **kostet keinen Request**. Die Ebene
+  ist wählbar: „Bester Einzelmonat" (Extremum über alle Monatswerte) ↔
+  „Jahreswert" (`Period.annual`, Extremum über die Jahreswerte) ↔ Kalendermonat
+  ↔ Jahreszeit. Die ersten beiden auseinanderzuhalten ist keine Feinheit: der
+  nasseste Monat und das nasseste Jahr unterscheiden sich um eine
+  Größenordnung, und `valueCaption` benennt die Ebene deshalb im Text
+  (Ausschnitt `series` vs. `year`). Er ist der
+  einzige Zeitbezug, der eine RICHTUNG braucht (`extreme: 'max' | 'min'`):
+  „Temperatur Maximum" hat einen höchsten je gemessenen Tageswert UND einen
+  tiefsten Monatshöchstwert, beides ist ein Rekord, und nur `valueCaption(spec,
+  'record', scope, extreme)` hält sie auseinander. Voreinstellung je Parameter
+  über `defaultRecordExtreme` (Tiefstwert nur bei `agg: 'min'`); eine einmal
+  getroffene Wahl bleibt dann stehen. Ausschnitt wie bei der Klimaperiode:
+  ganze Reihe, Kalendermonat oder Saison. **Abweichung gibt es hier nicht** —
+  ein Einzelereignis hat kein Normal (`normalFor` liefert null, der Knopf ist
+  gesperrt und sagt warum). Die zugrunde liegenden Werte sind MONATS- bzw.
+  SAISONextreme, nie Jahreswerte: die Farbskala nimmt deshalb `span` =
+  `month`/`season`, mit der Jahresskala läge ein Summenparameter um eine
+  Größenordnung daneben. Die Karte trägt den Hinweis „Rekord, Reihenlänge
+  beachten": ein Rekord hängt an der LÄNGE der Reihe, eine Station seit 1990
+  kann die Nachbarstation seit 1900 nicht schlagen, ohne dass es dort je heißer
+  gewesen sein müsste — die Karte zeigt „was wurde wo je gemessen", nicht „wo
+  ist es am extremsten"; der Haken „Historische" holt gerade die Träger der
+  alten Rekorde dazu.
+  **Der Rekord-Ingest deckt jetzt ALLE Monatsparameter der Registry**
+  (`scripts/at-ingest-records.mjs`, 11 Codes statt 5 — dazu `rf_mittel` und die
+  fünf `tage_*`; einzige Ausnahme bleibt die Schneehöhe, die gar keinen
+  Monatsdatensatz hat). `RECORD_CODES`/`hasRecords()` in `api/atValues.ts` ist
+  die EINE Wahrheit darüber, welcher Parameter Rekorde hat — Stationsdetail,
+  Zeitbezug „Allzeit" und ein Test gegen die Registry hängen daran.
+  `_national.json` führt die österreichweiten Rekorde jetzt auf ALLEN drei
+  Ebenen (`abs`/`mon`/`sea`, `NationalRecords = Record<string, ParamRecords>`),
+  je Eintrag mit der haltenden Station — das Klimaarchiv beantwortet damit
+  Landesfragen; das Stationsdetail zeigt weiter nur die absolute Ebene. Neben den
+  Stationsdateien schreibt der Ingest je Parameter einen **Karten-Index**
+  `public/at/records/_map-<code>.json` (`loadRecordIndex`/`recordLevel`): die
+  Stationsdatei hat alle Parameter EINER Station, der Index eine Größe über
+  ALLE Stationen — genau die Richtung, die eine Karte braucht (~80–175 KB je
+  Parameter, Parallel-Arrays über `ids`). Bewusst NUR Werte, kein Datum: die
+  Karte beschriftet Zahlen, das Datum steht (tagesgenau aufgelöst) im
+  Stationsdetail, das ohnehin die Stationsdatei lädt. **Die Chunkgröße des
+  Ingests folgt jetzt dem 1.000.000-Datenpunkte-Limit von GeoSphere** statt
+  einer festen 80 — mit elf Codes über 126 Jahre riss die alte Konstante sofort
+  in HTTP 400 („data slice too large").
+  **Der Periodenvergleich läuft auf HISTALP, nicht auf den Stationsdaten**
+  (`scripts/at-ingest-histalp.mjs` → `public/at/histalp-normals.json`,
+  `loadHistalpNormals`/`histalpCovers`, Umschalter in der Werkzeugleiste). Der
+  Abweichungsmodus im Zeitbezug „Klimaperiode" ist eine TRENDaussage, und
+  Trends sind genau das, was inhomogene Reihen verfälschen: klima-v2 ist
+  qualitätsgeprüft, aber nicht bruchbereinigt — ein Standortwechsel ins Grüne
+  bleibt als künstlicher Abkühlungssprung in der Reihe stehen. **Gemessen**
+  (2026-09-01, Stationen mit vollem Normal in beiden Quellen): Erwärmung
+  1961–1990 → 1991–2020 im Median HISTALP **+1,27 K**, klima-v2 **+1,17 K**;
+  je Station bis 0,77 K Unterschied (Rauris +0,96 K statt +1,55 K — knapp zwei
+  Drittel des Signals). Die ABSOLUTwerte beider Quellen stimmen dagegen
+  praktisch überein (Median-Differenz 0,003 K im Jahresmittel) — deshalb
+  wechselt NUR der Periodenvergleich die Quelle, Absolutkarten, Rekorde und
+  alles Übrige bleiben bei klima-v2.
+  **Der Preis ist die Abdeckung, und deshalb ist es ein UMSCHALTER**: HISTALP
+  liegt am Hub nur JÄHRLICH vor (`histalp-v1-1y`), mit genau zwei Größen
+  (`T01`→`tl_mittel`, `R01`→`rr`), und die österreichischen Temperaturreihen
+  enden überwiegend zwischen 2001 und 2012 — für 1961–1990 ↔ 1991–2020 bleiben
+  **34 Temperatur- und 40 Niederschlagsstationen statt 207**. `histalpCovers()`
+  gattet das: außerhalb (Tmax, Sonnenschein, Kenntage, Monats-/Saison-Ausschnitt)
+  fällt die Karte auf klima-v2 zurück und sagt es. Beide Perioden kommen IMMER
+  aus derselben Quelle — eine aus HISTALP und die andere aus klima-v2 wäre
+  schlimmer als beide aus klima-v2, weil der Quellenversatz unbesehen im Trend
+  landete. Zuordnung HISTALP↔Klimastation über KOORDINATEN (≤ 3 km, ≤ 120 m
+  Höhenunterschied), nicht über Namen: HISTALP nutzt Synop-IDs und eigene
+  Schreibweisen („Wien-Schwechat" ↔ „Schwechat Flughafen"), namentlich trafen
+  nur 54 von 85, geografisch 72. Die sechs `Region_AT_*`-Einträge sind keine
+  Stationen, sondern HISTALPs regionale Mittelreihen (lat/lon = 0) — gefiltert,
+  aber der naheliegende Kandidat, falls je ein echtes Flächenmittel gebraucht
+  wird (siehe `answerFromNormalsRange`, wo es aus Stationsdaten bewusst keines
+  gibt).
   **Gefühlte Temperatur** (`config/apparentTemperature.ts`, AU-BOM/Steadman-
   Formel, dieselbe wie Open-Meteos `apparent_temperature`) ist der erste
   ABGELEITETE Parameter — kein GeoSphere-Feld, sondern aus Temperatur +
@@ -459,6 +667,59 @@ npm run preview   # gebautes dist/ servieren
   sie außerhalb der Fläche und verdeckt keine Symbole. Symboldichte an der
   Breite orientiert (~30 px Mindestabstand), Radius zusätzlich am Abstand
   gedeckelt, damit sich die Kreise nie berühren.
+- **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
+  einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
+  UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:
+  „wie gut war die Vorhersage?" Verglichen wird das TAGESEXTREM (Tmax/Tmin) —
+  die Größe, die `klima-v2-1d` direkt führt, auf der Messseite also ohne
+  Näherung.
+  **Kein eigenes Archiv nötig** (`fetchPastRuns`, eigener Endpunkt
+  `historical-forecast-api.open-meteo.com`, aber derselbe `apiGet`-Pfad wie das
+  Ensemble): Variablen-Suffixe `_previous_dayN` liefern zu einem vergangenen
+  Zeitpunkt das, was N Tage FRÜHER dafür vorhergesagt worden war. Live geprüft
+  (2026-09-01) und alles davon nicht-offensichtlich: die Suffixe gibt es **nur
+  stündlich** (`temperature_2m_max_previous_day1` → HTTP 400, Tagesextreme
+  rechnet `verify.ts` selbst); N = 1…7, **N = 8 ist durchgehend null**; auf der
+  NORMALEN Forecast-API liefern dieselben Suffixe HTTP 200 mit lauter null (die
+  Falle aus SPEC §6) — nur der historische Endpunkt trägt sie; das Archiv
+  reicht mindestens bis Mitte 2024. **`previous_dayN` ist ein früherer LAUF zum
+  selben Zeitpunkt, keine Zeitverschiebung** — gemessen: RMS gegen den besten
+  Wert 0,98 K (N=1) bzw. 1,52 K (N=2) beim selben Zeitstempel, gegen den um
+  24 h verschobenen 2,99 K.
+  **Der Vorlauf ist am Modellhorizont gedeckelt** (`leadsFor`): ein
+  Tagesmaximum braucht den ganzen Zieltag, also `forecastHours ≥ n·24 + 24`.
+  Live gemessen und exakt getroffen: ICON-D2 (48 h) → Vorlauf 1, AROME Austria
+  (60 h) → 1, ICON-EU (120 h) → 1–4, IFS (360 h) → 1–7. Leere Spalten werden
+  gar nicht erst geholt.
+  **Der Tag ist 00–24 UTC auf BEIDEN Seiten** (GeoSphere-Klimatag, Open-Meteo
+  überall mit `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
+  Verschiebung. Ein Tag zählt nur mit ≥ 20 Stundenwerten; angeschnittene Ränder
+  ergäben sonst Scheinextreme.
+  **Die Darstellung ist TAG FÜR TAG, nicht Modell × Vorlauf.** Die naheliegende
+  Matrix aus Fehlermaßen braucht lange Reihen, um überhaupt etwas zu sagen —
+  über 14 Tage (Wien Hohe Warte, live) SANK der IFS-Fehler mit LÄNGEREM Vorlauf
+  (2,01 K bei +1 d, 1,84 K bei +5 d), reines Rauschen; erst über 90 Tage wächst
+  er bei jedem Modell monoton (IFS 1,69 → 2,51 K, AROME Austria gewinnt auf
+  +1 Tag mit 0,95 K, wie man es vom Lokalmodell erwartet). Die tägliche Frage
+  ist aber „wie lief es diese Woche", und darauf antworten die konkreten Tage
+  nebeneinander: Messung, Vorhersage je Modell, Differenz — Fehlermaße nur als
+  eine Fußzeile. Zwei Zeiträume mit verschiedenem ZWECK statt Abstufungen
+  desselben: **5 Tage** (Voreinstellung, der Blick zurück) und **30 Tage**
+  (lang genug zum Reihen); unter `RELIABLE_DAYS` sagt die Legende ausdrücklich,
+  dass das kein Modellvergleich ist. Das Diagramm erscheint erst ab 8 Tagen —
+  fünf Punkte sagen nichts, was die Tabelle nicht schon zeigt.
+  Die Stationsauswahl ist ein **Suchfeld mit `datalist`**, kein Dropdown: 290
+  Stationen findet man scrollend nicht, und die native Variante filtert beim
+  Tippen ohne eigenes Widget. Übernommen wird erst bei EINDEUTIGEM Namenstreffer.
+  Die Modell-Auswahlliste zeigt nur Modelle, die den gewählten Vorlauf tragen
+  können — bei +3 Tagen fallen AROME Austria und ICON-D2 heraus, statt als
+  leere Spalten zum Fehlschluss einzuladen.
+  Der **Bias** steht klein unter jedem Wert: derselbe Fehlerbetrag bedeutet bei
+  +2 K Schieflage etwas anderes (systematisch, korrigierbar) als bei 0 K (streut
+  nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und
+  Messplatz — genau deshalb ist er stationsweise interessant. Ein Request je
+  Modell (alle Vorlaufzeiten in einem), Messung ein GeoSphere-Bulk-Request, für
+  immer gecacht.
 - `src/state/presets.ts` — speicherbare Panel-Presets (localStorage unter
   `meteo-workbench:presets`, getrennt vom IDB-Cache; Export/Import als JSON).
   Mechanismus für die Wetterlagen-Presets aus SPEC §13: `BUILTIN_PRESETS`
@@ -527,7 +788,16 @@ npm run preview   # gebautes dist/ servieren
   Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
   der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
   über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
-- **Fünf Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
+- **Attribution ist Lizenzbedingung, nicht Höflichkeit** (`Attribution.tsx`,
+  `.attribution` in `index.css`): Open-Meteo (CC BY 4.0), GeoSphere (CC BY 4.0)
+  und DWD (GeoNutzV) verlangen Namensnennung, SPEC §13 führte das als offen.
+  Jeder Bereich trägt jetzt eine Quellenzeile mit Links. Die Anbieterliste der
+  Vorhersagebereiche wird aus der Registry ABGELEITET (`ModelDef.provider`),
+  nicht gepflegt — ein neues Modell bringt seinen Anbieter mit. Für eine Seite,
+  die Modelle nebeneinanderstellt, ist das nicht nur Pflicht, sondern die
+  Information selbst: wer ICON gegen IFS vergleicht, sollte wissen, dass da DWD
+  gegen ECMWF steht.
+- **Sechs Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
   Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
   „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil ·
   Österreich-Klima. Ensemble und Profil waren früher Panel-MODI und sind jetzt
