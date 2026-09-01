@@ -23,7 +23,7 @@
 // `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
 // Verschiebung.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchPastRuns, MAX_LEAD_DAYS, type PastRunSeries } from '../api/openmeteo'
 import { activeStations, DATASET_DAILY, fetchStationSeries, loadStations, type AtStation } from '../api/geosphere'
 import { clean } from '../api/atValues'
@@ -159,9 +159,46 @@ export function VerifyPanel() {
 
   const shown = useMemo(() => (stations ? activeStations(stations) : []), [stations])
   const station = shown.find((s) => s.id === stationId) ?? null
+  // Das Suchfeld EINMAL mit der Startstation vorbelegen, sobald die Liste da
+  // ist — und danach nie wieder hineinregieren. Ein Effekt, der bei leerem
+  // Feld nachfüllt, kämpft gegen jedes Löschen an: die Rücktaste stellte
+  // sofort wieder „Wien Hohe Warte" her, und man kam nie dazu, „Graz" zu
+  // tippen. Beim Verlassen des Feldes schnappt es zurück (siehe onBlur) —
+  // das ist der richtige Zeitpunkt, nicht jeder Tastendruck.
+  /**
+   * Freien Text auf eine Station auflösen. Der exakte Name gewinnt (so wählt
+   * die Vorschlagsliste aus), danach Namensanfang, danach Teiltreffer: wer
+   * „graz" tippt und wegklickt, meint eine Grazer Station und nicht die
+   * zuletzt eingestellte. Ohne diese Stufen fühlte sich das Feld an wie der
+   * Fehler, den es gerade behoben hat.
+   */
+  const resolveStation = (text: string): AtStation | null => {
+    const q = text.trim().toLowerCase()
+    if (!q) return null
+    return (
+      shown.find((s) => s.name.toLowerCase() === q) ??
+      shown.find((s) => s.name.toLowerCase().startsWith(q)) ??
+      shown.find((s) => s.name.toLowerCase().includes(q)) ??
+      null
+    )
+  }
+  /** Text übernehmen, wenn er eine Station trifft; sonst zurückschnappen. */
+  const commitStation = () => {
+    const hit = resolveStation(stationQuery)
+    if (hit) {
+      setStationId(hit.id)
+      setStationQuery(hit.name)
+    } else if (station) {
+      setStationQuery(station.name)
+    }
+  }
+
+  const queryInit = useRef(false)
   useEffect(() => {
-    if (station && !stationQuery) setStationQuery(station.name)
-  }, [station, stationQuery])
+    if (queryInit.current || !station) return
+    queryInit.current = true
+    setStationQuery(station.name)
+  }, [station])
 
   // Bis GESTERN: der laufende Tag hat noch kein geprüftes Tagesextrem, und ein
   // halber Tag als „Messung" würde jedes Modell schlecht aussehen lassen.
@@ -328,10 +365,20 @@ export function VerifyPanel() {
             onChange={(e) => {
               const q = e.target.value
               setStationQuery(q)
-              const hit = shown.find((s) => s.name.toLowerCase() === q.trim().toLowerCase())
-              if (hit) setStationId(hit.id)
+              // Beim TIPPEN nur der exakte Treffer — so uebernimmt ein Klick
+              // in der Vorschlagsliste sofort, ohne dass jedes Zwischenzeichen
+              // die Tabelle neu laedt.
+              const exact = shown.find((s) => s.name.toLowerCase() === q.trim().toLowerCase())
+              if (exact) setStationId(exact.id)
             }}
             onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                commitStation()
+                e.currentTarget.blur()
+              }
+            }}
+            onBlur={commitStation}
             title="Messstation, gegen die verglichen wird — die Vorhersage wird für ihre Koordinaten geholt"
             style={{ width: 200 }}
           />

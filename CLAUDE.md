@@ -753,7 +753,13 @@ npm run preview   # gebautes dist/ servieren
   fünf Punkte sagen nichts, was die Tabelle nicht schon zeigt.
   Die Stationsauswahl ist ein **Suchfeld mit `datalist`**, kein Dropdown: 290
   Stationen findet man scrollend nicht, und die native Variante filtert beim
-  Tippen ohne eigenes Widget. Übernommen wird erst bei EINDEUTIGEM Namenstreffer.
+  Tippen ohne eigenes Widget. Beim TIPPEN greift nur der exakte Name (so
+  übernimmt ein Klick in der Vorschlagsliste sofort), beim VERLASSEN und bei
+  Enter wird der Text aufgelöst: exakt → Namensanfang → Teiltreffer, sonst
+  zurück auf die geltende Auswahl. **Kein Effekt darf ein leeres Feld
+  nachfüllen** — genau das kämpfte gegen jedes Löschen an: die Rücktaste stellte
+  sofort wieder „Wien Hohe Warte" her, und man kam nie dazu, „Graz" zu tippen.
+  Vorbelegt wird deshalb EINMAL über ein Ref, nicht reaktiv.
   Die Modell-Auswahlliste zeigt nur Modelle, die den gewählten Vorlauf tragen
   können — bei +3 Tagen fallen AROME Austria und ICON-D2 heraus, statt als
   leere Spalten zum Fehlschluss einzuladen.
