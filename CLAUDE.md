@@ -700,6 +700,21 @@ npm run preview   # gebautes dist/ servieren
   `leadsFor`: `forecastHours ≥ n·24 + 24`. Leere Spalten werden gar nicht erst
   geholt, und die Beschriftung sagt „Lauf vom Vortag, 00 UTC · +24–47 h" statt
   des zu groben „+1 Tag".
+  **Verglichen wird die DETERMINISTISCHE Punktprognose, kein MOS.** Rohe
+  Modellausgabe, auf den Punkt interpoliert. Statistisch korrigierte
+  Punktvorhersagen führt die Seite zwar (DWD MOSMIX im Bereich
+  „Österreich-Klima → Vorhersage"), sie lassen sich hier aber NICHT
+  verifizieren: MOSMIX hat kein öffentliches Archiv vergangener Läufe, genau
+  deshalb läuft die Verifikation über Open-Meteo.
+  **Die Stationshöhe wird mitgegeben** (`elevation`), und das ist kein Detail:
+  Open-Meteo rechnet die Temperatur auf die Höhe herunter, die sein
+  Geländemodell an der Koordinate annimmt — am Sonnblick 2962 statt 3109 m.
+  Gemessen (ECMWF IFS, 20 Tage, Vorlauf 1): der Bias fällt von +2,02 auf
+  +1,06 K, der MAE von 2,08 auf 1,62. An Flachlandstationen ändert sich fast
+  nichts (Hohe Warte 1,71 → 1,66; Salzburg unverändert) — die Korrektur
+  schadet also nirgends und rettet die Bergstationen davor, einen
+  Höhenunterschied als Modellfehler auszuweisen. Gilt auch für die
+  `_previous_dayN`-Reihen (live geprüft).
   **Der Tag ist 00–24 UTC auf BEIDEN Seiten** (GeoSphere-Klimatag, Open-Meteo
   überall mit `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
   Verschiebung. Ein Tag zählt nur mit ≥ 20 Stundenwerten; angeschnittene Ränder

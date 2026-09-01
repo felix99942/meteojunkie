@@ -618,6 +618,8 @@ const HISTORICAL_URL = 'https://historical-forecast-api.open-meteo.com/v1/foreca
 export const MAX_LEAD_DAYS = 7
 
 export interface PastRunSeries {
+  /** Höhe, auf die die API gerechnet hat (m) — gehört in die Beschriftung. */
+  elevation: number | null
   /** Zeitachse in Epoch-ms (UTC), stündlich. */
   timeMs: number[]
   /** Bester verfügbarer Wert je Zeitpunkt — die jüngste Vorhersage. */
@@ -638,6 +640,17 @@ export async function fetchPastRuns(
   startDate: string,
   endDate: string,
   leads: number[],
+  /**
+   * Seehöhe des Vergleichspunkts. Open-Meteo interpoliert nicht nur räumlich,
+   * sondern rechnet die Temperatur auf die Höhe herunter, die sein
+   * Geländemodell an der Koordinate annimmt — und die trifft die Station nicht
+   * unbedingt. Am Sonnblick (3109 m) nimmt die API von sich aus 2962 m an:
+   * 147 m Unterschied, rund 1 K, die nichts mit der Vorhersagequalität zu tun
+   * haben und sonst als „Bias" in der Verifikation landeten. Mit gesetzter
+   * Höhe rechnet die API auf genau diesen Punkt (live geprüft — gilt auch für
+   * die `_previous_dayN`-Reihen).
+   */
+  elevation?: number | null,
 ): Promise<PastRunSeries> {
   const wanted = leads.filter((n) => n >= 1 && n <= MAX_LEAD_DAYS)
   const vars = [variable, ...wanted.map((n) => `${variable}_previous_day${n}`)]
@@ -651,6 +664,9 @@ export async function fetchPastRuns(
     timezone: 'UTC',
     timeformat: 'unixtime',
   })
+  if (elevation != null && Number.isFinite(elevation)) {
+    params.set('elevation', String(Math.round(elevation)))
+  }
   const days = Math.max(
     1,
     Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1,
@@ -671,7 +687,10 @@ export async function fetchPastRuns(
     if (isRateLimited(res.status, reason)) throw new RateLimitError(reason)
     throw new Error(`Open-Meteo Verifikation: ${reason}`)
   }
-  const body = JSON.parse(res.text) as { hourly?: Record<string, (number | null)[] | number[]> }
+  const body = JSON.parse(res.text) as {
+    elevation?: number
+    hourly?: Record<string, (number | null)[] | number[]>
+  }
   const hourly = body.hourly ?? {}
   const timeMs = ((hourly.time as number[] | undefined) ?? []).map((t) => t * 1000)
   const byLead = new Map<number, (number | null)[]>()
@@ -683,6 +702,7 @@ export async function fetchPastRuns(
     if (series && series.some((v) => v != null)) byLead.set(n, series)
   }
   return {
+    elevation: body.elevation ?? null,
     timeMs,
     best: ((hourly[variable] as (number | null)[] | undefined) ?? []).slice(),
     byLead,

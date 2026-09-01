@@ -211,7 +211,19 @@ export function VerifyPanel() {
       models.map(async (m) => {
         const leads = leadsFor(m.forecastHours, MAX_LEAD_DAYS)
         if (leads.length === 0) return [m.id, null] as const
-        const r = await fetchPastRuns(station.lat, station.lon, m.id, FORECAST_VAR, start, end, leads)
+        // Stationshöhe mitgeben: sonst rechnet die API auf die Höhe ihres
+        // Geländemodells und der Höhenunterschied landete als „Bias" in der
+        // Verifikation (Sonnblick: 2962 statt 3109 m, rund 1 K).
+        const r = await fetchPastRuns(
+          station.lat,
+          station.lon,
+          m.id,
+          FORECAST_VAR,
+          start,
+          end,
+          leads,
+          station.altitude,
+        )
         return [m.id, r] as const
       }),
     )
@@ -429,6 +441,22 @@ export function VerifyPanel() {
               <strong>{station.name}</strong>
               {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als
               Tagesextrem über <strong>00–24 UTC</strong> aus dem geprüften Klimatagesdatensatz.
+              Verglichen mit der <strong>deterministischen Punktprognose</strong>{' '}
+              <span
+                title={
+                  'Rohe Modellausgabe, auf den Punkt interpoliert — KEIN MOS. Statistisch ' +
+                  'korrigierte Punktvorhersagen (Model Output Statistics) stehen im Bereich ' +
+                  '„Österreich-Klima → Vorhersage" als DWD MOSMIX; die lassen sich hier nicht ' +
+                  'verifizieren, weil MOSMIX kein öffentliches Archiv vergangener Läufe hat. ' +
+                  'Open-Meteo rechnet die Temperatur auf die angegebene Seehöhe herunter — ' +
+                  'deshalb wird die Stationshöhe mitgegeben: ohne sie nimmt die API die Höhe ' +
+                  'ihres Geländemodells, am Sonnblick 2962 statt 3109 m, was rund 1 K als ' +
+                  'vermeintlichen Modellfehler erzeugt.'
+                }
+              >
+                (kein MOS, auf die Stationshöhe gerechnet)
+              </span>
+              .
               Zeitraum{' '}
               <strong>
                 {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}

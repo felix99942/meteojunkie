@@ -2378,6 +2378,11 @@ button:focus-visible {
   color: var(--ink);
 }
 
+.verify-what span[title] {
+  border-bottom: 1px dotted var(--ink-muted);
+  cursor: help;
+}
+
 .verify-legend {
   max-width: 78ch;
   font-size: 11px;
