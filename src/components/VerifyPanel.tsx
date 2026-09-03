@@ -397,8 +397,25 @@ export function VerifyPanel() {
   /** Schwelle der kategorischen Bewertung (nur bei Schwellen-Zielgrößen). */
   const [threshold, setThreshold] = useState(1)
 
-  const [observed, setObserved] = useState<Map<string, number> | null>(null)
-  const [runs, setRuns] = useState<Record<string, PastRunSeries>>({})
+  /*
+   * MESSUNG UND LÄUFE TRAGEN MIT SICH, WOZU SIE GEHÖREN — sonst deutet die
+   * Tabelle nach einem Wechsel für die Dauer des Nachladens die alten Daten
+   * nach der neuen Regel.
+   *
+   * Beim Sprung Temperatur → Niederschlag war das nicht subtil: `mode: 'sum'`
+   * summierte die noch geladenen 24 STUNDENWERTE VON ~20 °C zu „480 mm"
+   * Tagesniederschlag, aufgetragen gegen eine Messung von 3 mm. Beim
+   * Stationswechsel ist derselbe Fehler heimtückischer, weil das Ergebnis
+   * plausibel aussieht: die Werte von Wien stünden kurz unter dem Namen
+   * Innsbruck. Deshalb hängt der Schlüssel an BEIDEM, und alles Abgeleitete
+   * verwirft den Zustand, solange er nicht passt — lieber „—" als eine Zahl,
+   * die zu etwas anderem gehört.
+   */
+  const [observed, setObserved] = useState<{ key: string; days: Map<string, number> } | null>(null)
+  const [runs, setRuns] = useState<{ key: string; byModel: Record<string, PastRunSeries> }>({
+    key: '',
+    byModel: {},
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -455,6 +472,9 @@ export function VerifyPanel() {
     setStationQuery(station.name)
   }, [station])
 
+  /** Woran geladene Daten hängen: Zielgröße UND Station. */
+  const dataKey = `${target}|${station?.id ?? ''}`
+
   // Bis GESTERN: der laufende Tag hat noch kein geprüftes Tagesextrem, und ein
   // halber Tag als „Messung" würde jedes Modell schlecht aussehen lassen.
   const end = dayOffset(-1)
@@ -497,13 +517,13 @@ export function VerifyPanel() {
           const v = clean(obsSpec, data[i] ?? null)
           if (v != null) map.set(s.timestamps[i].slice(0, 10), v)
         }
-        setObserved(map)
+        setObserved({ key: dataKey, days: map })
       })
       .catch((err) => !cancelled && setError(err?.message ?? 'Messwerte nicht ladbar'))
     return () => {
       cancelled = true
     }
-  }, [station, target, obsStart, end])
+  }, [station, target, dataKey, obsStart, end])
 
   // Vergangene Läufe je Modell — ein Request pro Modell, alle Vorlaufzeiten in
   // einem. Die Vorlaufzeiten sind am Modellhorizont gedeckelt, sonst holt man
@@ -537,7 +557,7 @@ export function VerifyPanel() {
         if (cancelled) return
         const next: Record<string, PastRunSeries> = {}
         for (const [id, r] of all) if (r) next[id] = r
-        setRuns(next)
+        setRuns({ key: dataKey, byModel: next })
       })
       .catch((err) => !cancelled && setError(err?.message ?? 'Vorhersagen nicht ladbar'))
       .finally(() => !cancelled && setLoading(false))
@@ -546,7 +566,7 @@ export function VerifyPanel() {
     }
     // models über modelKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [station, modelKey, target, fcStart, fcEnd])
+  }, [station, modelKey, target, dataKey, fcStart, fcEnd])
 
   const days = useMemo(() => dayRange(start, end), [start, end])
 
@@ -556,14 +576,14 @@ export function VerifyPanel() {
    * Fehlerzeile ein Tag mehr, als die Tabelle darüber zeigt.
    */
   const obsShown = useMemo(() => {
-    if (!observed) return null
+    if (!observed || observed.key !== dataKey) return null
     const out = new Map<string, number>()
     for (const d of days) {
-      const v = observed.get(d)
+      const v = observed.days.get(d)
       if (v != null) out.set(d, v)
     }
     return out
-  }, [observed, days])
+  }, [observed, dataKey, days])
 
   /**
    * Persistenz als Vergleichsvorhersage: der Wert von gestern gilt für heute.
@@ -571,14 +591,17 @@ export function VerifyPanel() {
    * gezeigte Tag einen Vorgänger hat.
    */
   const reference = useMemo(
-    () => (observed ? persistenceForecast(observed) : null),
-    [observed],
+    () => (observed && observed.key === dataKey ? persistenceForecast(observed.days) : null),
+    [observed, dataKey],
   )
 
   /** Je Modell und Vorlauf: Tageswerte der damaligen Vorhersage + Bewertung. */
   const table = useMemo(() => {
+    // Läufe der vorigen Zielgröße oder Station nicht anfassen — siehe oben,
+    // das ergab Niederschlagssummen von mehreren hundert Millimetern.
+    const fresh = runs.key === dataKey ? runs.byModel : {}
     return models.map((m) => {
-      const r = runs[m.id]
+      const r = fresh[m.id]
       const cells = new Map<
         number,
         { daily: Map<string, number>; scores: Scores; skill: Skill; cont: Contingency }
@@ -596,7 +619,7 @@ export function VerifyPanel() {
       }
       return { model: m, cells }
     })
-  }, [models, runs, obsShown, reference, spec, threshold])
+  }, [models, runs, dataKey, obsShown, reference, spec, threshold])
 
   const availableLeads = useMemo(() => {
     const s = new Set<number>()
@@ -893,7 +916,9 @@ export function VerifyPanel() {
               </thead>
               <tbody>
                 {[...days].reverse().map((d) => {
-                  const obs = observed?.get(d) ?? null
+                  // obsShown, nicht observed: gegatet auf die Zielgröße und auf
+                  // die gezeigten Tage beschränkt.
+                  const obs = obsShown?.get(d) ?? null
                   return (
                     <tr key={d}>
                       <th>{fmtDay(d)}</th>

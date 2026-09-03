@@ -832,6 +832,39 @@ npm run preview   # gebautes dist/ servieren
   auch einen **60-Tage-Zeitraum** (rund 25 Regentage statt 8 bei 20 Tagen).
   Die Zelleinfärbung hat Stufen JE GRÖSSE (`Target.errSteps`): 2,6 K sind ein
   grober Fehlgriff, 2,6 mm Tagesniederschlag sind Alltag.
+  **Geladene Daten hängen an Zielgröße UND Station** (`dataKey`, siehe
+  `VerifyPanel`): sonst deutet die Tabelle für die Dauer des Nachladens die
+  ALTEN Daten nach der NEUEN Regel. Beim Sprung Temperatur → Niederschlag war
+  das nicht subtil — `mode: 'sum'` summierte die noch geladenen 24
+  Stundenwerte von ~20 °C zu „480 mm" Tagesniederschlag, aufgetragen gegen
+  eine Messung von 3 mm. Beim Stationswechsel ist derselbe Fehler
+  heimtückischer, weil das Ergebnis plausibel aussieht. Alles Abgeleitete
+  verwirft den Zustand, solange der Schlüssel nicht passt: lieber „—" als eine
+  Zahl, die zu etwas anderem gehört.
+  **DASS IFS UND AIFS BEIM TAGESMAXIMUM SCHLECHT DASTEHEN, IST ECHT** — dreimal
+  gegengeprüft (2026-09-03), weil es wie ein Fehler aussieht und keiner ist.
+  (a) Die eigene Tagesreduktion stimmt exakt mit Open-Meteos `daily=
+  temperature_2m_max` überein (Δ 0,00 K über 13 Tage × 3 Modelle). (b) Kein
+  3-Stunden-Artefakt: die Reihen sind echt stündlich (keine wiederholten
+  Differenzen), und die Tagesmaxima liegen nicht gehäuft auf dem 3-h-Raster
+  (22 von 60 = Zufallsniveau, wie bei den stündlichen Modellen auch). (c) Keine
+  Höhenfrage: Open-Meteo rechnet JEDES Modell auf sein eigenes 90-m-DEM herunter
+  und meldet für alle Modelle dieselbe Punkthöhe — die mitgegebene Stationshöhe
+  ändert an diesen Stationen ±0,1 K.
+  Der MECHANISMUS ist die gestauchte TAGESAMPLITUDE. Mittleres Tmax−Tmin über
+  60 Tage gegen die Messung: AIFS 9,1–10,5 K gegen gemessene 12,5–13,9 K, also
+  ein Viertel bis ein Drittel des Tagesgangs verloren — bei jeder der fünf
+  geprüften Stationen der kleinste Wert aller Modelle. Das ist das bekannte
+  Verhalten MSE-trainierter KI-Modelle (glatte Felder, gedämpfte Extreme), und
+  es erklärt das Vorzeichenmuster: AIFS ist beim Tmax das SCHLECHTESTE Modell
+  (Wien Bias −1,42 K) und beim Tmin das BESTE (+0,68 K, MAE 1,10). Es wird nach
+  Westen dramatisch schlimmer — Tmax-Bias Wien −1,4 / Salzburg −3,1 / Graz
+  −3,0 / Klagenfurt −3,7 / **Innsbruck −4,9 K**, und MAE = |Bias| an jeder
+  Station, also ein reiner Sockel und kein Streuen. IFS zeigt dasselbe
+  abgeschwächt (Wien −1,27, Innsbruck −2,49). In den Alpen ist ein 0,25°-Global
+  am Talboden schlicht nicht auflösbar; die Lokalmodelle liegen dort um
+  Größenordnungen besser (AROME Austria Innsbruck −0,13 K). **Nicht erneut als
+  Bug untersuchen** — wer es doch tut, fängt bei (a)–(c) an.
   **Markiert wird das beste Modell ÜBER DEN ZEITRAUM, nie je Tag.** Je Tag das
   im Nachhinein nächstliegende Modell zu zeigen ist kein Vergleich, sondern
   Rosinenpicken: gemessen (Wien Hohe Warte, 20 Tage, Vorlauf 1) käme man damit
