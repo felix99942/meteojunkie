@@ -1,7 +1,7 @@
 // Tests des Verifikations-Rechenkerns.
 
 import { describe, expect, it } from 'vitest'
-import { dailyExtremes, dayRange, leadsFor, score, utcDay } from './verify'
+import { climateDay, dailyExtremes, dayRange, leadsFor, score, utcDay } from './verify'
 
 const H = 3600_000
 const day0 = Date.parse('2026-08-20T00:00:00Z')
@@ -9,17 +9,51 @@ const day0 = Date.parse('2026-08-20T00:00:00Z')
 const hours = (start: number, vals: number[]) =>
   vals.map((_, i) => start + i * H) as number[]
 
+describe('climateDay', () => {
+  // Der GeoSphere-Klimatag läuft 18 UTC (Vortag) bis 18 UTC — gemessen gegen
+  // die 10-Minuten-Reihe an 5 Stationen über 298 Stationstage (siehe
+  // verify.ts). Das ist die Konvention 19–19 MEZ und steht in keiner Doku.
+  it('zieht den Abend ab 18 UTC schon zum FOLGENDEN Tag', () => {
+    expect(climateDay(Date.parse('2026-08-20T17:59:00Z'))).toBe('2026-08-20')
+    expect(climateDay(Date.parse('2026-08-20T18:00:00Z'))).toBe('2026-08-21')
+    expect(climateDay(Date.parse('2026-08-20T23:00:00Z'))).toBe('2026-08-21')
+  })
+
+  it('lässt Nacht und Nachmittag beim Kalendertag', () => {
+    expect(climateDay(Date.parse('2026-08-21T00:00:00Z'))).toBe('2026-08-21')
+    expect(climateDay(Date.parse('2026-08-21T14:00:00Z'))).toBe('2026-08-21')
+  })
+
+  it('ist NICHT der UTC-Tag — sonst gäbe es den Fehler nicht, den er behebt', () => {
+    const evening = Date.parse('2026-08-20T20:00:00Z')
+    expect(utcDay(evening)).toBe('2026-08-20')
+    expect(climateDay(evening)).toBe('2026-08-21')
+  })
+})
+
 describe('dailyExtremes', () => {
-  const t = hours(day0, new Array(48).fill(0))
+  // Zwei volle Klimatage: 20.8. 18 UTC … 22.8. 18 UTC.
+  const t = hours(day0 + 18 * H, new Array(48).fill(0))
   const v = [
-    ...Array.from({ length: 24 }, (_, i) => i), // 20.8.: 0 … 23
-    ...Array.from({ length: 24 }, (_, i) => 100 - i), // 21.8.: 100 … 77
+    ...Array.from({ length: 24 }, (_, i) => i), // Klimatag 21.8.: 0 … 23
+    ...Array.from({ length: 24 }, (_, i) => 100 - i), // Klimatag 22.8.: 100 … 77
   ]
 
-  it('reduziert je UTC-Tag auf Maximum bzw. Minimum', () => {
-    expect(dailyExtremes(t, v, 'max').get('2026-08-20')).toBe(23)
-    expect(dailyExtremes(t, v, 'min').get('2026-08-20')).toBe(0)
-    expect(dailyExtremes(t, v, 'max').get('2026-08-21')).toBe(100)
+  it('reduziert je KLIMATAG auf Maximum bzw. Minimum', () => {
+    expect(dailyExtremes(t, v, 'max').get('2026-08-21')).toBe(23)
+    expect(dailyExtremes(t, v, 'min').get('2026-08-21')).toBe(0)
+    expect(dailyExtremes(t, v, 'max').get('2026-08-22')).toBe(100)
+  })
+
+  it('rechnet den Abend des Vortags in den Klimatag hinein', () => {
+    // DER Fall, an dem sich das Fenster entscheidet: heißer Abend, kühler
+    // Folgetag. Über 00–24 UTC käme 10 heraus, richtig ist die 30 vom Vorabend
+    // — genau so setzt GeoSphere das Klima-Tagesmaximum (Wien Hohe Warte,
+    // 29.08.2026: 29,5 °C aus dem Abend des 28., während der Kalendertag nur
+    // 26,2 °C brachte).
+    const times = hours(day0 + 18 * H, new Array(24).fill(0))
+    const vals = [...new Array(6).fill(30), ...new Array(18).fill(10)]
+    expect(dailyExtremes(times, vals, 'max').get('2026-08-21')).toBe(30)
   })
 
   it('verwirft angeschnittene Tage', () => {
@@ -33,14 +67,14 @@ describe('dailyExtremes', () => {
     const withGaps = [...v]
     for (let i = 0; i < 6; i++) withGaps[i] = null as unknown as number
     // 18 von 24 Stunden → unter der Schwelle, kein Tageswert.
-    expect(dailyExtremes(t, withGaps, 'max').get('2026-08-20')).toBeUndefined()
+    expect(dailyExtremes(t, withGaps, 'max').get('2026-08-21')).toBeUndefined()
     // Mit gelockerter Schwelle wieder da.
-    expect(dailyExtremes(t, withGaps, 'max', 12)?.get('2026-08-20')).toBe(23)
+    expect(dailyExtremes(t, withGaps, 'max', 12)?.get('2026-08-21')).toBe(23)
   })
 
-  it('nutzt den UTC-Tag, nicht die Ortszeit', () => {
-    // 22:00 UTC am 20. ist in Wien schon der 21. — für die Zuordnung zählt
-    // UTC, weil GeoSphere-Klimatage ebenso laufen.
+  it('nutzt UTC, nicht die Ortszeit', () => {
+    // Der Bezug ist UTC (plus der Klimatag-Versatz), nicht die Zeitzone des
+    // Punkts — Open-Meteo wird überall mit `timezone: 'UTC'` abgefragt.
     expect(utcDay(Date.parse('2026-08-20T22:00:00Z'))).toBe('2026-08-20')
   })
 })

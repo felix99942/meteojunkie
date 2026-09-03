@@ -731,10 +731,32 @@ npm run preview   # gebautes dist/ servieren
   schadet also nirgends und rettet die Bergstationen davor, einen
   Höhenunterschied als Modellfehler auszuweisen. Gilt auch für die
   `_previous_dayN`-Reihen (live geprüft).
-  **Der Tag ist 00–24 UTC auf BEIDEN Seiten** (GeoSphere-Klimatag, Open-Meteo
-  überall mit `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
-  Verschiebung. Ein Tag zählt nur mit ≥ 20 Stundenwerten; angeschnittene Ränder
-  ergäben sonst Scheinextreme.
+  **Der Tag ist der KLIMATAG 18–18 UTC auf BEIDEN Seiten, NICHT 00–24 UTC.**
+  GeoSphere bildet die Tagesextreme von 19 MEZ des Vortags bis 19 MEZ, also
+  18:00 UTC (D−1) bis 18:00 UTC (D) — die deutsch-österreichische Konvention,
+  in keiner API-Doku vermerkt. GEMESSEN (2026-09-03, `tlmax`/`tlmin` aus
+  klima-v2-1d gegen die selbst gebildeten Extreme der 10-Minuten-Reihe, 5
+  Stationen × 60 Tage = 298 Stationstage): mit 18–18 UTC bleibt ein mittlerer
+  Restfehler von 0,18 K (tlmax) bzw. 0,06 K (tlmin) — das ist nur noch die
+  10-Minuten-Abtastung gegen ein stetiges Extremum; mit 00–24 UTC sind es
+  0,35/0,36 K im Mittel und **7,3 K im Extremfall**. Das Optimum ist scharf,
+  jedes benachbarte Fenster deutlich schlechter. Die Grenze ist halboffen:
+  18:00 zählt zum FOLGENDEN Tag (`climateDay` in `verify.ts`, gemessen).
+  **Ohne das war die Verifikation an Frontdurchgangstagen grob falsch, und
+  zwar bei ALLEN Modellen gleichzeitig im selben Vorzeichen** — genau das
+  Muster, an dem man einen Definitionsfehler von einem Modellfehler
+  unterscheidet: an den meisten Tagen fallen beide Fenster zusammen (das
+  Maximum liegt gegen 13–15 UTC), sie laufen aber auseinander, wenn nach einem
+  heißen Tag eine Front durchgeht — der Abend des Vortags ist dann wärmer als
+  der ganze Folgetag und setzt dessen Klima-Tagesmaximum. Wien Hohe Warte,
+  29.08.2026: Klima-Tagesmaximum 29,5 °C (aus dem Abend des 28.), Maximum über
+  den Kalendertag nur 26,2 °C; die Abweichungen der fünf Standardmodelle
+  standen dadurch bei −1,4…−2,6 K statt richtig −0,1…+1,8 K. Über 60 Tage
+  sinkt der MAE dadurch z. B. von 0,97 auf 0,84 K (best_match) und der
+  Kaltbias um ~0,2 K. Konsequenz für die Abfrage: die Vorhersagereihe wird
+  einen Tag FRÜHER geholt (`fcStart`), sonst fehlten dem ersten Klimatag seine
+  sechs Abendstunden und die erste Zeile bliebe leer. Ein Tag zählt nur mit
+  ≥ 20 Stundenwerten; angeschnittene Ränder ergäben sonst Scheinextreme.
   **Die Darstellung ist TAG FÜR TAG, nicht Modell × Vorlauf.** Die naheliegende
   Matrix aus Fehlermaßen braucht lange Reihen, um überhaupt etwas zu sagen —
   über 14 Tage (Wien Hohe Warte, live) SANK der IFS-Fehler mit LÄNGEREM Vorlauf
@@ -754,7 +776,7 @@ npm run preview   # gebautes dist/ servieren
   mehr. Die Tabelle ist inhaltsbreit (`align-self: flex-start`), nicht über die
   Seite gezogen.
   **Über der Tabelle steht in einem Satz, WAS gemessen wurde**: Größe, Station
-  samt Seehöhe, das Zeitfenster (00–24 UTC), der Zeitraum mit Jahr und die
+  samt Seehöhe, das Zeitfenster (Klimatag 18–18 UTC), der Zeitraum mit Jahr und die
   Zahl der Messtage — eine Zahlenmatrix ohne diesen Bezug ist nicht lesbar. Die
   Tagesspalte trägt das volle Datum inklusive Jahr. Das Diagramm hat KEINE
   Tagesleiste: die ist für stündliche Reihen gedacht und sagt bei Tageswerten

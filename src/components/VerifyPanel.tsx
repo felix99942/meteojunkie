@@ -19,9 +19,11 @@
 // diesen Zeitpunkt vorhergesagt worden war (siehe fetchPastRuns). Alles andere
 // hieße, jede Modellausgabe selbst wegzuschreiben und für immer zu halten.
 //
-// Der Tag ist 00–24 UTC auf BEIDEN Seiten (GeoSphere-Klimatag, Open-Meteo mit
-// `timezone: 'UTC'`) — sonst wäre ein Teil des „Fehlers" bloß eine
-// Verschiebung.
+// Der Tag ist der KLIMATAG 18–18 UTC (19–19 MEZ) auf BEIDEN Seiten — so
+// definiert GeoSphere seine Tagesextreme, und die Vorhersagereihe wird über
+// dasselbe Fenster reduziert (siehe verify.ts, dort ist es gemessen). Mit
+// 00–24 UTC auf der Vorhersageseite stand nach jedem heißen Tag mit
+// Frontdurchgang ein „Fehler" in der Tabelle, den kein Modell gemacht hat.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchPastRuns, MAX_LEAD_DAYS, type PastRunSeries } from '../api/openmeteo'
@@ -211,6 +213,11 @@ export function VerifyPanel() {
   // halber Tag als „Messung" würde jedes Modell schlecht aussehen lassen.
   const end = dayOffset(-1)
   const start = dayOffset(-span)
+  // Der Klimatag des ERSTEN Tages beginnt schon um 18 UTC des Vortags — ohne
+  // diesen Vorlauf fehlten ihm sechs Stunden, er fiele unter die
+  // Mindeststundenzahl und die erste Zeile bliebe leer. Betrifft nur die
+  // Vorhersageabfrage; die Messung liefert GeoSphere fertig je Klimatag.
+  const fcStart = dayOffset(-span - 1)
 
   const models = useMemo(
     () =>
@@ -263,7 +270,7 @@ export function VerifyPanel() {
           station.lon,
           m.id,
           FORECAST_VAR,
-          start,
+          fcStart,
           end,
           leads,
           station.altitude,
@@ -284,7 +291,7 @@ export function VerifyPanel() {
     }
     // models über modelKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [station, modelKey, start, end])
+  }, [station, modelKey, fcStart, end])
 
   /** Je Modell und Vorlauf: Tageswerte der damaligen Vorhersage + Fehlermaße. */
   const table = useMemo(() => {
@@ -470,14 +477,18 @@ export function VerifyPanel() {
         <span
           className="atclima-hint"
           title={
-            'Verglichen wird das Tagesextrem über den UTC-Tag — auf beiden Seiten derselbe ' +
-            'Zeitraum, weil GeoSphere-Klimatage ebenso von 00 bis 24 UTC laufen. Die Vorhersage ' +
+            'Verglichen wird das Tagesextrem über den KLIMATAG: 18 UTC des Vortags bis 18 UTC, ' +
+            'also 19 bis 19 MEZ. So definiert GeoSphere seine Tagesextreme (gemessen gegen die ' +
+            '10-Minuten-Reihe, siehe verify.ts) — die Vorhersage wird über dasselbe Fenster ' +
+            'reduziert. Mit dem naheliegenden 00–24 UTC stand nach einem heißen Tag mit ' +
+            'Frontdurchgang bei ALLEN Modellen gleichzeitig ein Fehler von 2 bis 3 K, der keiner ' +
+            'war: das Klima-Tagesmaximum stammte dann aus dem Abend des Vortags. Die Vorhersage ' +
             'kommt aus der Historical-Forecast-API von Open-Meteo: sie liefert zu einem ' +
             'vergangenen Zeitpunkt auch das, was N Tage vorher dafür vorhergesagt wurde. Der ' +
             'laufende Tag fehlt bewusst — er hat noch kein geprüftes Tagesextrem.'
           }
         >
-          Tagesextrem 00–24 UTC
+          Tagesextrem 18–18 UTC
         </span>
       </div>
 
@@ -518,7 +529,8 @@ export function VerifyPanel() {
               <strong>{TARGETS[target].label}</strong> an der Station{' '}
               <strong>{station.name}</strong>
               {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als
-              Tagesextrem über <strong>00–24 UTC</strong>. Verglichen mit der{' '}
+              Tagesextrem über den Klimatag <strong>18–18 UTC</strong> (19–19 MEZ). Verglichen
+              mit der{' '}
               <span
                 title={
                   'Rohe Modellausgabe, auf den Punkt und auf die Stationshöhe gerechnet — KEIN ' +
@@ -560,9 +572,9 @@ export function VerifyPanel() {
               <thead>
                 <tr>
                   <th>Tag</th>
-                  <th title="Gemessener Wert der Station — Tagesextrem über 00–24 UTC aus dem geprüften Klimatagesdatensatz (GeoSphere klima-v2-1d)">
+                  <th title="Gemessener Wert der Station — Tagesextrem über den Klimatag 18–18 UTC (19–19 MEZ) aus dem geprüften Klimatagesdatensatz (GeoSphere klima-v2-1d); die Vorhersage wird über dasselbe Fenster reduziert">
                     Messung
-                    <span className="verify-err">00–24 UTC</span>
+                    <span className="verify-err">18–18 UTC</span>
                   </th>
                   {table.map((row, i) => (
                     <th
