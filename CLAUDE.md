@@ -893,6 +893,34 @@ npm run preview   # gebautes dist/ servieren
   in den Tooltips, und ein Merker in der Werkzeugleiste („⚠ kein
   Modellvergleich") warnt bei kurzen Reihen sichtbar. Ein Absatz Erklärung
   unter einer Tabelle wird nicht gelesen.
+  **Vergangene Läufe werden GECACHT, und das ist Budget, keine Optimierung**
+  (`api/pastRuns.ts` = reiner Kern mit Tests, Cache in `fetchPastRuns`): was
+  vor drei Tagen für vorgestern vorhergesagt wurde, ändert sich nie mehr —
+  einmal holen und für immer behalten ist die richtige Semantik. Ohne das
+  kostete JEDER Handgriff die volle Runde: einen Haken bei einem weiteren
+  Modell zu setzen holte ALLE Modelle neu, ein Blick auf einen anderen
+  Zeitraum und zurück ebenso; bei neun Modellen über 60 Tage der Unterschied
+  zwischen einem und neununddreißig gewichteten Requests. ZWEI Stufen: exakter
+  Treffer (IndexedDB, überlebt den Reload — derselbe Store wie `atcache.ts`,
+  Schlüsselpräfix `verify|`) und **überdeckender** Treffer, bei dem ein schon
+  geholter GRÖSSERER Zeitraum zugeschnitten wird (`sliceRuns`) — wer von 60 auf
+  20 Tage zurückgeht, zahlt nichts. Der Bereichsindex dazu lebt nur in der
+  Sitzung. TTL nur, wenn der Zeitraum den HEUTIGEN Tag einschließt (die
+  Niederschlagsabfrage reicht bis heute 06 UTC und ist noch nicht fertig);
+  alles, was vorher endet, gilt für immer. `sliceRuns` schneidet ALLE Reihen
+  über DIESELBEN Indizes — eine gegen die Zeitachse verrutschte Lead-Reihe
+  sähe plausibel aus und wäre um Stunden verschoben.
+  **Die Modell-Liste ist nach SKALA gruppiert, nicht alphabetisch**
+  (`modelScale`/`groupModelsByScale`/`compareModelsByScale` in `config/
+  models.ts`, mit Tests): Lokalmodelle (regional, ≤ 4 km) · Regionalmodelle ·
+  Globalmodelle · Mischungen, darin nach Gitterweite fein → grob. Interessant
+  ist der Vergleich 2,5-km-Lokalmodell gegen 25-km-Global — und der Anbieter
+  als Stichentscheid bei gleicher Auflösung sorgt dafür, dass `ecmwf_ifs025`
+  und `ecmwf_aifs025_single` NEBENEINANDER stehen und GFS mit denselben 25 km
+  nicht dazwischenrutscht (ein Test hält das fest). Die **Auflösung steht
+  sichtbar an jedem Eintrag** und in jedem Modell-Tooltip (`resolutionLabel`,
+  `resolutionKm = 0` → „variabel"): ohne sie ist nicht zu sehen, warum ein
+  Globalmodell im Alpental danebenliegt — siehe der AIFS-Befund oben.
   Der **Bias** steht klein unter jedem Wert: derselbe Fehlerbetrag bedeutet bei
   +2 K Schieflage etwas anderes (systematisch, korrigierbar) als bei 0 K (streut
   nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und

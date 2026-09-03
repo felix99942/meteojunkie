@@ -150,6 +150,11 @@ import { latestRun } from '../config/runs'
 import { useApiUsage, type UsageKind } from '../state/apiUsage'
 import { parseEnsembleBody, type EnsembleBody, type ParsedEnsemble } from './ensembleParse'
 import { getCachedGrid, putCachedGrid } from './gridcache'
+// Derselbe IndexedDB-Cache wie die GeoSphere-Werte — generisch über einen
+// String-Key, hier mit Präfix `verify|` (siehe fetchPastRuns).
+import { cacheGet, cacheSet } from './atcache'
+import { runsBaseKey, sliceRuns, type PastRunSeries } from './pastRuns'
+export { sliceRuns, type PastRunSeries } from './pastRuns'
 import { gridRequestQueue } from './queue'
 import { maybeMockApiGet, MOCK_MODE, mockGridDims, type HttpResult } from './mock'
 
@@ -621,20 +626,51 @@ const HISTORICAL_URL = 'https://historical-forecast-api.open-meteo.com/v1/foreca
 /** Größter von der API getragener Vorlauf in Tagen. */
 export const MAX_LEAD_DAYS = 7
 
-export interface PastRunSeries {
-  /** Höhe, auf die die API gerechnet hat (m) — gehört in die Beschriftung. */
-  elevation: number | null
-  /** Zeitachse in Epoch-ms (UTC), stündlich. */
-  timeMs: number[]
-  /** Bester verfügbarer Wert je Zeitpunkt — die jüngste Vorhersage. */
-  best: (number | null)[]
-  /** Vorlauf in Tagen → Werte, die damals für denselben Zeitpunkt galten. */
-  byLead: Map<number, (number | null)[]>
+/**
+ * CACHE FÜR VERGANGENE LÄUFE — die eine Stelle, an der die Verifikation ihr
+ * Budget verliert oder spart.
+ *
+ * Was hier zurückkommt, ist UNVERÄNDERLICH: was vor drei Tagen für vorgestern
+ * vorhergesagt wurde, ändert sich nie mehr. Es einmal zu holen und für immer
+ * zu behalten ist deshalb nicht Optimierung, sondern die richtige Semantik —
+ * dieselbe Überlegung wie beim GeoSphere-Cache in `api/atcache.ts`, dessen
+ * IndexedDB hier mitbenutzt wird (Schlüsselpräfix `verify|`, damit die beiden
+ * Datensätze sich nicht in die Quere kommen).
+ *
+ * Ohne den Cache kostete JEDER Handgriff die volle Runde: einen Haken bei
+ * einem weiteren Modell zu setzen holte ALLE Modelle neu, ein Blick auf einen
+ * anderen Zeitraum und zurück ebenso. Bei neun Modellen über 60 Tage war das
+ * der Unterschied zwischen einem Request und neununddreißig gewichteten.
+ *
+ * ZWEI STUFEN, weil der zweite Fall der häufigere ist:
+ *   1. exakter Treffer — überlebt auch einen Reload (IndexedDB);
+ *   2. ÜBERDECKENDER Treffer — ein bereits geholter GRÖSSERER Zeitraum wird
+ *      zugeschnitten. Wer von 60 auf 20 Tage zurückgeht, zahlt nichts mehr.
+ *      Der Index dazu lebt nur in der Sitzung; nach einem Reload greift wieder
+ *      Stufe 1.
+ *
+ * TTL: ein Zeitraum, der den HEUTIGEN Tag einschließt, ist noch nicht fertig
+ * (die Niederschlagsabfrage reicht bewusst bis heute 06 UTC) — der Eintrag
+ * verfällt deshalb nach `TODAY_TTL_MS`. Alles, was vor heute endet, gilt für
+ * immer.
+ */
+const RUNS_TODAY_TTL_MS = 30 * 60_000
+
+/** In dieser Sitzung bekannte Zeiträume je Basis-Schlüssel (für Stufe 2). */
+const runsRanges = new Map<string, { start: string; end: string }[]>()
+
+function noteRange(base: string, start: string, end: string): void {
+  const list = runsRanges.get(base) ?? []
+  if (!list.some((r) => r.start === start && r.end === end)) list.push({ start, end })
+  runsRanges.set(base, list)
 }
 
 /**
  * Vergangene Läufe EINES Modells an EINEM Punkt. `leads` sind Vorlaufzeiten in
  * Tagen (1…7); der Aufrufer gattet sie am Modellhorizont.
+ *
+ * Gecacht (siehe oben) — ein Treffer kostet keinen Request und zählt deshalb
+ * auch nicht in den Verbrauchszähler.
  */
 export async function fetchPastRuns(
   lat: number,
@@ -657,6 +693,23 @@ export async function fetchPastRuns(
   elevation?: number | null,
 ): Promise<PastRunSeries> {
   const wanted = leads.filter((n) => n >= 1 && n <= MAX_LEAD_DAYS)
+
+  const base = runsBaseKey(lat, lon, model, variable, wanted, elevation)
+  const exactKey = `${base}|${startDate}|${endDate}`
+  const cached = await cacheGet<PastRunSeries>(exactKey)
+  if (cached) {
+    noteRange(base, startDate, endDate)
+    return cached
+  }
+  // Stufe 2: ein bereits geholter, GRÖSSERER Zeitraum deckt diesen ab.
+  // Datumsstrings in ISO-Form vergleichen sich lexikografisch wie Daten.
+  for (const r of runsRanges.get(base) ?? []) {
+    if (r.start <= startDate && r.end >= endDate) {
+      const wider = await cacheGet<PastRunSeries>(`${base}|${r.start}|${r.end}`)
+      if (wider) return sliceRuns(wider, startDate, endDate)
+    }
+  }
+
   const vars = [variable, ...wanted.map((n) => `${variable}_previous_day${n}`)]
   const params = new URLSearchParams({
     latitude: lat.toFixed(4),
@@ -705,12 +758,18 @@ export async function fetchPastRuns(
     // als Reihe aus lauter Lücken durchzureichen.
     if (series && series.some((v) => v != null)) byLead.set(n, series)
   }
-  return {
+  const series: PastRunSeries = {
     elevation: body.elevation ?? null,
     timeMs,
     best: ((hourly[variable] as (number | null)[] | undefined) ?? []).slice(),
     byLead,
   }
+  // Reicht der Zeitraum bis heute, ist er noch nicht abgeschlossen — dann mit
+  // Verfall. Sonst für immer: vergangene Läufe ändern sich nicht mehr.
+  const today = new Date().toISOString().slice(0, 10)
+  await cacheSet(exactKey, series, endDate >= today ? RUNS_TODAY_TTL_MS : undefined)
+  noteRange(base, startDate, endDate)
+  return series
 }
 
 const ENSEMBLE_URL = 'https://ensemble-api.open-meteo.com/v1/ensemble'

@@ -53,6 +53,77 @@ export interface ModelInfo {
   selectable?: false
 }
 
+/**
+ * SKALENKLASSE eines Modells — die Ordnung, in der man Modelle vergleicht.
+ *
+ * Eine alphabetische Liste stellt AROME Austria neben ARPEGE und IFS neben
+ * GFS; interessant ist aber die Gegenüberstellung nach AUFLÖSUNG: das
+ * 2,5-km-Lokalmodell gegen das 25-km-Globalmodell, und innerhalb davon die
+ * beiden ECMWF-Läufe (IFS gegen AIFS) direkt nebeneinander — das ist der
+ * Vergleich, der in der Verifikation etwas aussagt.
+ *
+ * `resolutionKm === 0` heißt „variabel" (Blend/Seamless): diese Einträge sind
+ * keine Modelle, sondern Mischungen mehrerer, und gehören deshalb in eine
+ * eigene Gruppe statt an irgendeine Stelle der Auflösungsskala.
+ */
+export type ModelScale = 'local' | 'regional' | 'global' | 'blend'
+
+export const SCALE_LABELS: Record<ModelScale, string> = {
+  local: 'Lokalmodelle',
+  regional: 'Regionalmodelle',
+  global: 'Globalmodelle',
+  blend: 'Mischungen',
+}
+
+/** Kurzer Zusatz für den Tooltip — was die Gruppe bedeutet. */
+export const SCALE_HINTS: Record<ModelScale, string> = {
+  local:
+    'Feines Gitter über einem begrenzten Gebiet: löst Täler und Konvektion auf, reicht dafür ' +
+    'nur ein bis drei Tage weit.',
+  regional:
+    'Mittleres Gitter über einem Kontinent — der Kompromiss zwischen Auflösung und Reichweite.',
+  global:
+    'Grobes Gitter über die ganze Erde, dafür bis zu 16 Tage. In den Alpen ist ein Talboden ' +
+    'damit nicht auflösbar.',
+  blend:
+    'Keine eigenen Modelle, sondern Mischungen: nach Vorlaufzeit wird zwischen mehreren ' +
+    'Modellen umgeschaltet, die Auflösung ist deshalb variabel.',
+}
+
+export function modelScale(m: ModelInfo): ModelScale {
+  if (m.resolutionKm === 0) return 'blend'
+  if (m.coverage === 'global') return 'global'
+  return m.resolutionKm <= 4 ? 'local' : 'regional'
+}
+
+const SCALE_ORDER: ModelScale[] = ['local', 'regional', 'global', 'blend']
+
+/**
+ * Sortierung: erst die Skalenklasse, darin nach Auflösung (fein → grob), bei
+ * gleicher Auflösung nach Anbieter. Der letzte Schritt ist der Grund, warum
+ * `ecmwf_ifs025` und `ecmwf_aifs025_single` (beide 25 km) nebeneinander landen
+ * und GFS mit denselben 25 km nicht dazwischenrutscht.
+ */
+export function compareModelsByScale(a: ModelInfo, b: ModelInfo): number {
+  const d = SCALE_ORDER.indexOf(modelScale(a)) - SCALE_ORDER.indexOf(modelScale(b))
+  if (d !== 0) return d
+  if (a.resolutionKm !== b.resolutionKm) return a.resolutionKm - b.resolutionKm
+  return a.provider.localeCompare(b.provider, 'de') || a.label.localeCompare(b.label, 'de')
+}
+
+/** Modelle nach Skalenklasse gruppiert, in der Reihenfolge von SCALE_ORDER. */
+export function groupModelsByScale(models: ModelInfo[]): { scale: ModelScale; models: ModelInfo[] }[] {
+  return SCALE_ORDER.map((scale) => ({
+    scale,
+    models: models.filter((m) => modelScale(m) === scale).sort(compareModelsByScale),
+  })).filter((g) => g.models.length > 0)
+}
+
+/** „2,5 km" bzw. „variabel" — resolutionKm = 0 ist keine Auflösung. */
+export function resolutionLabel(m: ModelInfo): string {
+  return m.resolutionKm === 0 ? 'variabel' : `${String(m.resolutionKm).replace('.', ',')} km`
+}
+
 const BASE_VARS = [
   'temperature_2m',
   'apparent_temperature',

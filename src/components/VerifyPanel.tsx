@@ -30,7 +30,16 @@ import { fetchPastRuns, MAX_LEAD_DAYS, type PastRunSeries } from '../api/openmet
 import { activeStations, DATASET_DAILY, fetchStationSeries, loadStations, type AtStation } from '../api/geosphere'
 import { clean } from '../api/atValues'
 import { getAtParameter } from '../config/atParameters'
-import { isInCoverage, MODELS, SELECTABLE_MODELS, type ModelInfo } from '../config/models'
+import {
+  groupModelsByScale,
+  isInCoverage,
+  MODELS,
+  resolutionLabel,
+  SCALE_HINTS,
+  SCALE_LABELS,
+  SELECTABLE_MODELS,
+  type ModelInfo,
+} from '../config/models'
 import { OpenMeteoAttribution } from './Attribution'
 import {
   contingency,
@@ -356,7 +365,16 @@ function CategoricalBlock({
             const fb = frequencyBias(cont)
             return (
               <tr key={model.id}>
-                <th title={`${model.label} · ${model.provider}`}>{model.label}</th>
+                <th
+                  title={
+                    `${model.label} — ${model.provider}\n` +
+                    `Gitterweite ${resolutionLabel(model)}\n` +
+                    `Vorhersagehorizont ${model.forecastHours} h`
+                  }
+                >
+                  {model.label}
+                  <span className="verify-res">{resolutionLabel(model)}</span>
+                </th>
                 <td>{cont.hits}</td>
                 <td>{cont.misses}</td>
                 <td>{cont.falseAlarms}</td>
@@ -808,29 +826,58 @@ export function VerifyPanel() {
         </span>
       </div>
 
-      {/* Nur Modelle, die den gewählten Vorlauf überhaupt tragen: bei +3 Tagen
-          fallen AROME Austria (60 h) und ICON-D2 (48 h) heraus, weil es dort
-          keine drei Tage alte Vorhersage für diesen Tag geben KANN. Sie als
-          leere Spalten anzubieten wäre nur eine Einladung zum Fehlschluss. */}
+      {/* NACH SKALA GRUPPIERT, nicht alphabetisch: interessant ist der
+          Vergleich 2,5-km-Lokalmodell gegen 25-km-Global, und innerhalb der
+          Globalen die beiden ECMWF-Läufe (IFS gegen AIFS) direkt
+          nebeneinander. Die Auflösung steht an jedem Eintrag — ohne sie ist
+          nicht zu sehen, warum ein Modell im Alpental danebenliegt.
+
+          Gezeigt werden nur Modelle, die den gewählten Vorlauf überhaupt
+          tragen: bei +3 Tagen fallen AROME Austria (60 h) und ICON-D2 (48 h)
+          heraus, weil es dort keine drei Tage alte Vorhersage für diesen Tag
+          geben KANN. Sie als leere Spalten anzubieten wäre eine Einladung zum
+          Fehlschluss. */}
       <div className="verify-models">
-        <span className="label-muted">Modelle</span>
-        {SELECTABLE_MODELS.filter(
-          (m) =>
-            (!station || isInCoverage(m, station.lat, station.lon)) &&
-            m.forecastHours >= lead * 24 + 24,
-        ).map((m) => (
-          <label key={m.id} className="verify-model" title={`${m.provider} · Horizont ${m.forecastHours} h`}>
-            <input
-              type="checkbox"
-              checked={modelIds.includes(m.id)}
-              onChange={(e) =>
-                setModelIds((prev) =>
-                  e.target.checked ? [...prev, m.id] : prev.filter((x) => x !== m.id),
-                )
-              }
-            />
-            {m.label}
-          </label>
+        {groupModelsByScale(
+          SELECTABLE_MODELS.filter(
+            (m) =>
+              (!station || isInCoverage(m, station.lat, station.lon)) &&
+              m.forecastHours >= lead * 24 + 24,
+          ),
+        ).map((group) => (
+          <div key={group.scale} className="verify-modelgroup">
+            <span className="label-muted" title={SCALE_HINTS[group.scale]}>
+              {SCALE_LABELS[group.scale]}
+            </span>
+            {group.models.map((m) => (
+              <label
+                key={m.id}
+                className="verify-model"
+                title={
+                  `${m.label} — ${m.provider}\n` +
+                  `Gitterweite ${resolutionLabel(m)}\n` +
+                  `Vorhersagehorizont ${m.forecastHours} h\n` +
+                  `neuer Lauf alle ${m.updateIntervalHours} h\n` +
+                  `Abdeckung ${m.coverage === 'global' ? 'global' : 'regional'}\n\n` +
+                  SCALE_HINTS[group.scale]
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={modelIds.includes(m.id)}
+                  onChange={(e) =>
+                    setModelIds((prev) =>
+                      e.target.checked ? [...prev, m.id] : prev.filter((x) => x !== m.id),
+                    )
+                  }
+                />
+                {m.label}
+                {/* Die Auflösung steht sichtbar dabei, nicht nur im Tooltip:
+                    sie ist beim Modellvergleich die halbe Erklärung. */}
+                <span className="verify-res">{resolutionLabel(m)}</span>
+              </label>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -903,13 +950,15 @@ export function VerifyPanel() {
                     <th
                       key={row.model.id}
                       title={
-                        `${row.model.label} · ${row.model.provider} · Horizont ` +
-                        `${row.model.forecastHours} h · neuer Lauf alle ${row.model.updateIntervalHours} h\n` +
+                        `${row.model.label} — ${row.model.provider}\n` +
+                        `Gitterweite ${resolutionLabel(row.model)}\n` +
+                        `Vorhersagehorizont ${row.model.forecastHours} h\n` +
+                        `neuer Lauf alle ${row.model.updateIntervalHours} h\n\n` +
                         'Obere Zahl: Vorhersagewert. Untere: Abweichung von der Messung.'
                       }
                     >
                       {row.model.label}
-                      <span className="verify-err">Wert / Δ</span>
+                      <span className="verify-err">{resolutionLabel(row.model)} · Wert / Δ</span>
                     </th>
                   ))}
                 </tr>

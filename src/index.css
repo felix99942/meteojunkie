@@ -2240,12 +2240,43 @@ button:focus-visible {
   font-size: 11px;
 }
 
+/* Eine Gruppe je Skalenklasse, sichtbar abgesetzt: die Reihenfolge IST die
+   Aussage (fein → grob), deshalb duerfen die Gruppen nicht ineinanderlaufen. */
+.verify-modelgroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+}
+
+.verify-modelgroup:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
 .verify-model {
   display: flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* Aufloesung sichtbar am Eintrag, nicht nur im Tooltip — beim Modellvergleich
+   ist sie die halbe Erklaerung. Gedaempft, damit sie den Namen nicht
+   ueberstimmt. */
+.verify-res {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+}
+
+.verify-cat-table .verify-res,
+.verify-table thead .verify-res {
+  display: block;
+  font-weight: 400;
 }
 
 .verify-body {
