@@ -2383,25 +2383,41 @@ button:focus-visible {
   cursor: help;
 }
 
-/* Tabelle links, Abweichungsdiagramm rechts. Umbricht auf schmalen Fenstern,
-   statt die Tabelle zusammenzuquetschen. */
+/* Frueher lag rechts ein Abweichungsdiagramm; es ist raus. Der Wrapper bleibt,
+   weil die Tabelle inhaltsbreit sein soll und nicht ueber die Seite gezogen. */
 .verify-main {
   display: flex;
-  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 14px;
 }
 
-.verify-chart {
-  flex: 1 1 420px;
-  min-width: 340px;
-  min-height: 240px;
+/* Kategorische Bewertung UNTER der Tabelle, nicht daneben: sie hat eigene
+   Spaltenkoepfe und waere neben der Tagestabelle zwei konkurrierende Raster
+   auf einer Zeile. */
+.verify-cat {
+  align-self: flex-start;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-/* Farbmarke im Spaltenkopf = Kurvenfarbe im Diagramm daneben. */
-.verify-swatch {
-  display: block;
-  height: 3px;
-  margin: 3px -13px -2px;
-  border-radius: 2px;
+.verify-cat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+/* Hier sind ALLE Spalten Zahlen gleicher Art — anders als in der Tagestabelle
+   steht pro Zelle nur ein Wert, deshalb mittig und ohne die zweite Zeile. */
+.verify-cat-table td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-cat-table thead th {
+  font-weight: 500;
 }

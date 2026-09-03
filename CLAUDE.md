@@ -670,9 +670,9 @@ npm run preview   # gebautes dist/ servieren
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
   einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
   UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:
-  „wie gut war die Vorhersage?" Verglichen wird das TAGESEXTREM (Tmax/Tmin) —
-  die Größe, die `klima-v2-1d` direkt führt, auf der Messseite also ohne
-  Näherung.
+  „wie gut war die Vorhersage?" Verglichen werden TAGESEXTREM (Tmax/Tmin) und
+  TAGESNIEDERSCHLAG — Größen, die `klima-v2-1d` direkt führt, auf der Messseite
+  also ohne Näherung.
   **Kein eigenes Archiv nötig** (`fetchPastRuns`, eigener Endpunkt
   `historical-forecast-api.open-meteo.com`, aber derselbe `apiGet`-Pfad wie das
   Ensemble): Variablen-Suffixe `_previous_dayN` liefern zu einem vergangenen
@@ -757,6 +757,21 @@ npm run preview   # gebautes dist/ servieren
   einen Tag FRÜHER geholt (`fcStart`), sonst fehlten dem ersten Klimatag seine
   sechs Abendstunden und die erste Zeile bliebe leer. Ein Tag zählt nur mit
   ≥ 20 Stundenwerten; angeschnittene Ränder ergäben sonst Scheinextreme.
+  **Der NIEDERSCHLAGSTAG ist ein anderer: 06–06 UTC, und er läuft VORWÄRTS.**
+  Nicht dieselbe Konstante mit anderem Vorzeichen zu erwarten ist der zweite
+  Fallstrick — GeoSphere führt `rr` als 24-Stunden-Summe zum Termin 06 UTC, Tag
+  D umfasst also [D 06:00 UTC, D+1 06:00 UTC): der Regen des frühen Morgens von
+  D+1 zählt noch zu D (Ablesung 07 MEZ, der Vortag bekommt sie). Ebenso
+  gemessen (nur nasse Tage, n = 126): 06–06 UTC lässt 0,03 mm Restfehler stehen
+  (größter 1,10 mm), 00–24 UTC 1,14 mm (16,0 mm) und das Extremtag-Fenster
+  18–18 UTC 3,66 mm (26,6 mm). An TROCKENEN Tagen bleibt eine Differenz von
+  ~0,9 mm, die kein Fenstereffekt ist: die 10-Minuten-Reihe zählt Tau- und
+  Störimpulse mit, die der geprüfte Tageswert auf 0 setzt — deshalb wird nur
+  über nasse Tage gemessen. Das Fenster steht deshalb in der Zielgrößen-Registry
+  (`Target.offsetH`) und NICHT in einer gemeinsamen Konstante; die 06-UTC-Grenze
+  fällt auf ein Vielfaches von 3 h, die IFS/AIFS-Dreistundenblöcke werden also
+  nicht angeschnitten. Konsequenz für die Abfrage: bei Extremwerten reicht sie
+  einen Tag FRÜHER, beim Niederschlag einen Tag SPÄTER (`fcStart`/`fcEnd`).
   **Die Darstellung ist TAG FÜR TAG, nicht Modell × Vorlauf.** Die naheliegende
   Matrix aus Fehlermaßen braucht lange Reihen, um überhaupt etwas zu sagen —
   über 14 Tage (Wien Hohe Warte, live) SANK der IFS-Fehler mit LÄNGEREM Vorlauf
@@ -781,21 +796,52 @@ npm run preview   # gebautes dist/ servieren
   Tagesspalte trägt das volle Datum inklusive Jahr. Das Diagramm hat KEINE
   Tagesleiste: die ist für stündliche Reihen gedacht und sagt bei Tageswerten
   nichts, was die Datums-Ticks nicht schon zeigen.
+  **Der bloße Fehlerbetrag beantwortet die Frage nicht, die man hat** — deshalb
+  zwei Skill Scores (`verify.ts`, mit Vitest getestet). **Skill gegen die
+  PERSISTENZ** (`skillScore`, `persistenceForecast`): `1 − MSE(Modell)/MSE(„wie
+  gestern")`. „MAE 1,5 K" ist in einer stabilen Hochdrucklage schwach und in
+  einer Woche mit drei Frontdurchgängen gut — die Zahl allein sagt nicht, wie
+  schwer die Aufgabe war. Persistenz ist die ehrlichste verfügbare Referenz:
+  kostet keine zusätzlichen Daten und ist an JEDER Station definiert, anders
+  als eine Klimatologie (die gäbe es nur für die ~207 Stationen mit vollem
+  Normal). Ihre Grenze steht in der Beschriftung: bei +7 Tagen schlägt sie
+  jedes Modell mühelos, ein hoher Wert heißt dort „besser als raten". Dafür
+  wird die Messung einen Tag früher geholt als gezeigt (`obsStart`) — sonst
+  verlöre der Score die erste Zeile. Ist die Referenz fehlerfrei (zwei trockene
+  Tage hintereinander), gibt es KEINE Zahl statt einer 0.
+  **Beim Niederschlag ist der mittlere Fehler in mm fast wertlos**, und das ist
+  der Grund für die **kategorische Bewertung** (`contingency`/`pod`/`far`/
+  `frequencyBias`/`ets`, Block unter der Tabelle): gemessen sind 174 von 300
+  Stationstagen trocken — ein Modell, das NIE Regen ansagt, bekommt damit einen
+  glänzenden MAE und hat nichts geleistet. Dazu die doppelte Bestrafung (ein
+  Schauer zwölf Stunden zu früh zählt als verpasst UND als Fehlalarm). Gefragt
+  ist deshalb nicht „wie viele mm daneben", sondern „hat es Regen angesagt, und
+  kam welcher": Vierfeldertafel über eine wählbare Schwelle (0,1 / 1 / 5 /
+  10 mm), daraus Trefferquote (POD), Fehlalarmanteil (FAR), Häufigkeitsbias und
+  **ETS** (Gilbert). Der ETS ist die Kennzahl, wegen der es den Block gibt: er
+  zieht die Treffer ab, die bei gleicher Ansagehäufigkeit schon durch Zufall
+  zustande kämen — in einem trockenen Zeitraum trifft „selten Regen" oft genug
+  zufällig, und ohne die Korrektur sähe das nach Können aus. Live gemessen
+  (Wien Hohe Warte, 60 Tage, Vorlauf 1, ≥ 1 mm, 11 Regentage): der MAE trennt
+  die fünf Modelle kaum (2,00–2,40 mm), der ETS trennt sie fast 2:1
+  (ICON-EU 0,38 … AROME Austria 0,20) — und IFS fällt mit Häufigkeitsbias 1,45
+  als zu nass auf, was im MAE gar nicht sichtbar ist. **Die ZÄHLUNGEN stehen
+  mit in der Tabelle**, nicht nur im Tooltip: ein ETS von 0,6 aus vier
+  Regentagen ist eine andere Aussage als einer aus vierzig. Unter `MIN_EVENTS`
+  (10) eingetretenen Ereignissen warnt der Block sichtbar — dafür gibt es jetzt
+  auch einen **60-Tage-Zeitraum** (rund 25 Regentage statt 8 bei 20 Tagen).
+  Die Zelleinfärbung hat Stufen JE GRÖSSE (`Target.errSteps`): 2,6 K sind ein
+  grober Fehlgriff, 2,6 mm Tagesniederschlag sind Alltag.
   **Markiert wird das beste Modell ÜBER DEN ZEITRAUM, nie je Tag.** Je Tag das
   im Nachhinein nächstliegende Modell zu zeigen ist kein Vergleich, sondern
   Rosinenpicken: gemessen (Wien Hohe Warte, 20 Tage, Vorlauf 1) käme man damit
   auf **0,59 K** statt 1,16 K des besten Einzelmodells — eine Zahl, die niemand
   im Voraus hätte haben können. `best_match` (Open-Meteos eigene Mischung) ist
   als Bezug voreingestellt und lag dort NICHT vorn (1,33 K gegen 1,16 K von
-  GFS). **Rechts neben der Tabelle die ABWEICHUNGEN als
-  Kurven** (nicht die Absolutwerte — die stehen in der Tabelle): was man dort
-  nicht sieht, ist der Verlauf. Ob ein Modell durchgehend zu warm liegt, ob
-  alle am selben Tag danebenlagen (dann war die LAGE schwierig, nicht das
-  Modell) oder ob eines ausreißt. Nulllinie als Bezug, Mindestspanne 6 K, sonst
-  sähen Zehntelkelvin wie Ausreißer aus. Die Kurven tragen die Farben der
-  Spaltenköpfe (Farbmarke unter dem Modellnamen) — deshalb braucht das
-  Diagramm keine eigene Legende und die Tabelle keine zweite Spalte. Umbricht
-  auf schmalen Fenstern unter die Tabelle, statt sie zusammenzuquetschen.
+  GFS). **Das Abweichungsdiagramm neben der Tabelle ist RAUS**
+  (auf Wunsch): die Verläufe standen schon als Spalten daneben, und der Platz
+  gehört jetzt der kategorischen Bewertung darunter. `verify-swatch` und der
+  `ChartRow`-Import sind mit weggefallen.
   Die Stationsauswahl ist ein **Suchfeld mit `datalist`**, kein Dropdown: 290
   Stationen findet man scrollend nicht, und die native Variante filtert beim
   Tippen ohne eigenes Widget. Beim TIPPEN greift nur der exakte Name (so

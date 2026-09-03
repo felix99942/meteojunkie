@@ -31,10 +31,27 @@ import { activeStations, DATASET_DAILY, fetchStationSeries, loadStations, type A
 import { clean } from '../api/atValues'
 import { getAtParameter } from '../config/atParameters'
 import { isInCoverage, MODELS, SELECTABLE_MODELS, type ModelInfo } from '../config/models'
-import { SERIES_COLORS } from '../config/colors'
-import { ChartRow } from './ChartStack'
 import { OpenMeteoAttribution } from './Attribution'
-import { dailyExtremes, dayRange, leadsFor, score, type DailyMode, type Scores } from './verify'
+import {
+  contingency,
+  dailyValues,
+  dayRange,
+  ets,
+  events,
+  EXTREME_DAY_OFFSET_H,
+  far,
+  frequencyBias,
+  leadsFor,
+  persistenceForecast,
+  pod,
+  PRECIP_DAY_OFFSET_H,
+  score,
+  skillScore,
+  type Contingency,
+  type DailyMode,
+  type Scores,
+  type Skill,
+} from './verify'
 
 /**
  * Voreingestellte Modelle: je ein Vertreter der interessanten Klassen, dazu
@@ -66,18 +83,113 @@ const SPANS: { days: number; label: string; hint: string }[] = [
   { days: 5, label: '5 Tage', hint: 'Blick auf die vergangenen Tage — zu kurz für einen Modellvergleich' },
   { days: 10, label: '10 Tage', hint: 'erste Tendenz, welches Modell hier näher liegt — noch stark vom Zufall geprägt' },
   { days: 20, label: '20 Tage', hint: 'grober Modellvergleich; belastbar würde er erst über Monate' },
+  {
+    days: 60,
+    label: '60 Tage',
+    hint:
+      'für die kategorische Bewertung des Niederschlags — erst hier kommen genug Regentage ' +
+      'zusammen, dass ETS und Trefferquote etwas heißen (rund 25 statt 8)',
+  },
 ]
 /** Ab hier taugt die Fehlerzeile wenigstens als grobe Reihung. */
 const ROUGH_DAYS = 10
+/**
+ * So viele eingetretene Ereignisse braucht die kategorische Bewertung
+ * mindestens, bevor sie überhaupt angezeigt wird.
+ *
+ * Zehn ist keine statistische Schranke, sondern eine Anstandsgrenze: bei drei
+ * Regentagen springt der ETS zwischen 0 und 1, je nachdem wie EIN Tag ausgeht,
+ * und eine Zahl, die so wackelt, sollte gar nicht erst dastehen. Bei 20 Tagen
+ * kommen im österreichischen Sommer rund 8 Regentage zusammen, bei 60 rund 25
+ * (gemessen an 5 Stationen über 60 Tage: 126 nasse von 300 Stationstagen).
+ */
+const MIN_EVENTS = 10
 
-/** Was verglichen wird: Messgröße ↔ Vorhersagevariable ↔ Tagesreduktion. */
-const TARGETS = {
-  tlmax: { label: 'Tageshöchsttemperatur', obsCode: 'tlmax', mode: 'max' as DailyMode },
-  tlmin: { label: 'Tagestiefsttemperatur', obsCode: 'tlmin', mode: 'min' as DailyMode },
+/** Fehlerstufen der Temperatur, in Kelvin. */
+const TEMP_ERR_STEPS = [0.7, 1.2, 1.8, 2.6, 3.6]
+
+/**
+ * Was verglichen wird: Messgröße ↔ Vorhersagevariable ↔ Tagesreduktion ↔
+ * TAGESFENSTER.
+ *
+ * Das Fenster gehört zwingend hierher und nicht in eine Konstante daneben:
+ * Extremwerte und Niederschlag haben bei GeoSphere VERSCHIEDENE Tagesbegriffe,
+ * und zwar in verschiedene Richtungen (18–18 UTC rückwärts gegen 06–06 UTC
+ * vorwärts, beides gemessen — siehe verify.ts). Eine gemeinsame Konstante
+ * wäre für eine der beiden Größen still falsch.
+ *
+ * `unit` ist die Einheit des Werts, `errUnit` die der Differenz: bei der
+ * Temperatur ist eine Differenz von 2 °C eine von 2 K, und das gehört auch so
+ * beschriftet.
+ */
+interface Target {
+  label: string
+  obsCode: string
+  mode: DailyMode
+  offsetH: number
+  windowLabel: string
+  unit: string
+  errUnit: string
+  /** Schwellen für die kategorische Bewertung; leer = keine (stetige Größe). */
+  thresholds: number[]
+  /**
+   * Stufen der Zelleinfärbung, in der Einheit der GRÖSSE. Sie müssen mitwandern:
+   * 2,6 K sind ein grober Fehlgriff, 2,6 mm Tagesniederschlag sind Alltag —
+   * mit einer gemeinsamen Skala stünde die halbe Niederschlagstabelle rot da.
+   */
+  errSteps: number[]
+}
+
+const TARGETS: Record<string, Target> = {
+  tlmax: {
+    label: 'Tageshöchsttemperatur',
+    obsCode: 'tlmax',
+    mode: 'max',
+    offsetH: EXTREME_DAY_OFFSET_H,
+    windowLabel: '18–18 UTC',
+    unit: '°C',
+    errUnit: 'K',
+    thresholds: [],
+    errSteps: TEMP_ERR_STEPS,
+  },
+  tlmin: {
+    label: 'Tagestiefsttemperatur',
+    obsCode: 'tlmin',
+    mode: 'min',
+    offsetH: EXTREME_DAY_OFFSET_H,
+    windowLabel: '18–18 UTC',
+    unit: '°C',
+    errUnit: 'K',
+    thresholds: [],
+    errSteps: TEMP_ERR_STEPS,
+  },
+  rr: {
+    label: 'Niederschlagssumme',
+    obsCode: 'rr',
+    mode: 'sum',
+    offsetH: PRECIP_DAY_OFFSET_H,
+    windowLabel: '06–06 UTC',
+    unit: 'mm',
+    errUnit: 'mm',
+    // Die vier üblichen Stufen der Niederschlagsverifikation: „hat es
+    // überhaupt geregnet" (0,1), der Niederschlagstag der Klimatologie (1,0),
+    // ergiebiger Regen (5) und die Warnschwelle (10). Voreingestellt ist
+    // 1,0 mm — dieselbe Schwelle, mit der die Kenntage in der Klimakarte
+    // rechnen, und die einzige, die auch bei 20 Tagen genug Fälle hat.
+    thresholds: [0.1, 1, 5, 10],
+    // Ein Tagesniederschlag streut ganz anders als eine Temperatur: 1 mm
+    // daneben ist gut, 10 mm daneben ist ein verpasstes Ereignis.
+    errSteps: [0.5, 1, 2, 5, 10],
+  },
 }
 type TargetId = keyof typeof TARGETS
 
-const FORECAST_VAR = 'temperature_2m'
+/** Vorhersagevariable je Zielgröße. */
+const FORECAST_VAR: Record<string, string> = {
+  tlmax: 'temperature_2m',
+  tlmin: 'temperature_2m',
+  rr: 'precipitation',
+}
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 const dayOffset = (n: number) => {
@@ -86,8 +198,16 @@ const dayOffset = (n: number) => {
   return isoDay(d)
 }
 const fmt1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '—')
+const fmt2 = (v: number) => (Number.isFinite(v) ? v.toFixed(2).replace('.', ',') : '—')
 const fmtSigned = (v: number) =>
   Number.isFinite(v) ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(1).replace('.', ',')}` : '—'
+/** Skill Score und ETS: zwei Nachkommastellen, Vorzeichen zeigen. */
+const fmtScore = (v: number) =>
+  Number.isFinite(v) ? `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(2).replace('.', ',')}` : '—'
+/** Anteil als Prozentzahl — Trefferquote und Fehlalarmanteil lesen sich so. */
+const fmtPct = (v: number) => (Number.isFinite(v) ? `${Math.round(v * 100)} %` : '—')
+/** Schwelle in der Beschriftung: „1 mm", nicht „1,0 mm"; aber „0,1 mm". */
+const fmtThreshold = (v: number) => `${v.toString().replace('.', ',')} mm`
 
 const fmtDayLabel = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'UTC',
@@ -127,18 +247,142 @@ const fmtShort = new Intl.DateTimeFormat('de-AT', {
 const leadLabel = (n: number) => `Stand ${n * 24} h vorher`
 const leadDays = (n: number) => (n === 1 ? '1 Tag' : `${n} Tage`)
 
-/** Einfärbung nach Fehlerbetrag: klein = ruhig, groß = warnend. */
-function errColor(mae: number): string {
-  if (!Number.isFinite(mae)) return 'transparent'
-  const steps: [number, string][] = [
-    [0.7, '#1d4b3a'],
-    [1.2, '#37613a'],
-    [1.8, '#6b6033'],
-    [2.6, '#7c4a24'],
-    [3.6, '#7a3020'],
-  ]
-  for (const [limit, color] of steps) if (mae < limit) return color
-  return '#5c1f1a'
+/** Fünf Stufen von ruhig nach warnend, dazu die Farbe jenseits der letzten. */
+const ERR_COLORS = ['#1d4b3a', '#37613a', '#6b6033', '#7c4a24', '#7a3020']
+const ERR_COLOR_OVER = '#5c1f1a'
+
+/**
+ * Einfärbung nach Fehlerbetrag: klein = ruhig, groß = warnend. Die Stufen
+ * kommen aus der Zielgröße — sie sind in deren Einheit angegeben und dürfen
+ * nicht geteilt werden (siehe `Target.errSteps`).
+ */
+function errColor(err: number, steps: number[]): string {
+  if (!Number.isFinite(err)) return 'transparent'
+  for (let i = 0; i < steps.length; i++) if (err < steps[i]) return ERR_COLORS[i]
+  return ERR_COLOR_OVER
+}
+
+/**
+ * KATEGORISCHE BEWERTUNG — die eigentliche Antwort auf „was taugt die
+ * Niederschlagsvorhersage".
+ *
+ * Der mittlere Fehler in mm ist dort fast wertlos: an fünf österreichischen
+ * Stationen über 60 Tage waren 174 von 300 Tagen trocken (gemessen). Ein
+ * Modell, das NIE Regen ansagt, bekommt damit einen glänzenden MAE — es hat
+ * nur nichts geleistet. Dazu die doppelte Bestrafung: ein Schauer zwölf
+ * Stunden zu früh zählt einmal als verpasst und einmal als Fehlalarm, obwohl
+ * die Lage im Kern getroffen war.
+ *
+ * Gefragt ist deshalb nicht „wie viele mm daneben", sondern „hat es Regen
+ * angesagt, und kam welcher". Die Vierfeldertafel beantwortet genau das, und
+ * die vier Kennzahlen darunter sind die Standardwährung der
+ * Niederschlagsverifikation.
+ *
+ * Die ZÄHLUNGEN stehen bewusst mit in der Tabelle und nicht nur im Tooltip:
+ * ein ETS von 0,6 aus vier Regentagen ist eine andere Aussage als einer aus
+ * vierzig, und ohne die Zahl daneben sehen beide gleich aus.
+ */
+function CategoricalBlock({
+  table,
+  lead,
+  threshold,
+  span,
+}: {
+  table: { model: ModelInfo; cells: Map<number, { cont: Contingency }> }[]
+  lead: number
+  threshold: number
+  span: number
+}) {
+  const rows = table
+    .map((r) => ({ model: r.model, cont: r.cells.get(lead)?.cont }))
+    .filter((r): r is { model: ModelInfo; cont: Contingency } => r.cont != null && r.cont.n > 0)
+  if (rows.length === 0) return null
+
+  const nEvents = Math.max(...rows.map((r) => events(r.cont)))
+  const thin = nEvents < MIN_EVENTS
+  // Bestes Modell nach ETS — dieselbe Regel wie oben: über den ZEITRAUM, nicht
+  // je Tag.
+  const scores = rows.map((r) => ets(r.cont)).filter(Number.isFinite)
+  const bestEts = scores.length ? Math.max(...scores) : null
+
+  return (
+    <div className="verify-cat">
+      <div className="verify-cat-head">
+        <strong>Kategorisch: Regentag ab ≥ {fmtThreshold(threshold)}</strong>
+        <span className="label-muted">
+          {nEvents} {nEvents === 1 ? 'Regentag' : 'Regentage'} gemessen
+        </span>
+        {thin && (
+          <span
+            className="atclima-hint"
+            title={
+              `Unter ${MIN_EVENTS} eingetretenen Ereignissen sind diese Kennzahlen nicht ` +
+              'lesbar: der ETS springt dann zwischen 0 und 1, je nachdem wie EIN Tag ausgeht. ' +
+              (span < 60
+                ? 'Auf 60 Tage stellen — im österreichischen Sommer kommen dort rund 25 ' +
+                  'Regentage zusammen.'
+                : 'Auch 60 Tage reichen bei dieser Schwelle nicht; eine niedrigere wählen.')
+            }
+          >
+            ⚠ zu wenige Ereignisse
+          </span>
+        )}
+      </div>
+      <table className="verify-table verify-cat-table">
+        <thead>
+          <tr>
+            <th>Modell</th>
+            <th title="Regen angesagt UND eingetreten.">Treffer</th>
+            <th title="Regen eingetreten, aber nicht angesagt.">verpasst</th>
+            <th title="Regen angesagt, aber ausgeblieben.">Fehlalarm</th>
+            <th title={'Anteil der eingetretenen Regentage, die angesagt waren (POD). Allein wertlos — „immer Regen" ergibt ebenfalls 100 %; nur zusammen mit dem Fehlalarmanteil zu lesen.'}>
+              Trefferquote
+            </th>
+            <th title="Anteil der ANGESAGTEN Regentage, an denen nichts kam (FAR). 0 % ist perfekt. Das Gegengewicht zur Trefferquote.">
+              Fehlalarm­anteil
+            </th>
+            <th title="Wie oft das Modell Regen ansagt, geteilt durch wie oft er eintritt. Über 1 = zu nass, unter 1 = zu trocken. Sagt nichts über die Trefferlage: ein Modell kann die richtige ZAHL Regentage treffen und dabei jeden einzelnen am falschen Tag.">
+              Häufigkeit
+            </th>
+            <th title={'Equitable Threat Score (Gilbert). Anteil richtig getroffener Regentage, ABZÜGLICH der Treffer, die bei gleicher Ansagehäufigkeit schon durch Zufall zustande kämen — genau das unterscheidet ihn vom einfachen Threat Score und ist der Grund, warum er hier steht: in einem trockenen Zeitraum trifft „selten Regen" oft genug zufällig. 1 = perfekt, 0 = nicht besser als Zufall, Untergrenze −1/3.'}>
+              ETS
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ model, cont }) => {
+            const e = ets(cont)
+            const isBest = bestEts != null && Number.isFinite(e) && e === bestEts
+            const fb = frequencyBias(cont)
+            return (
+              <tr key={model.id}>
+                <th title={`${model.label} · ${model.provider}`}>{model.label}</th>
+                <td>{cont.hits}</td>
+                <td>{cont.misses}</td>
+                <td>{cont.falseAlarms}</td>
+                <td>{fmtPct(pod(cont))}</td>
+                <td>{fmtPct(far(cont))}</td>
+                <td
+                  title={
+                    Number.isFinite(fb)
+                      ? fb > 1
+                        ? `Sagt Regen ${fmt2(fb)}-mal so oft an, wie er eintritt — zu nass.`
+                        : fb < 1
+                          ? `Sagt Regen nur ${fmt2(fb)}-mal so oft an, wie er eintritt — zu trocken.`
+                          : 'Sagt Regen genau so oft an, wie er eintritt.'
+                      : 'Kein eingetretenes Ereignis im Zeitraum.'
+                  }
+                >
+                  {fmt2(fb)}
+                </td>
+                <td className={isBest ? 'verify-best' : undefined}>{fmtScore(e)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export function VerifyPanel() {
@@ -150,6 +394,8 @@ export function VerifyPanel() {
   const [span, setSpan] = useState(5)
   const [modelIds, setModelIds] = useState<string[]>(DEFAULT_MODELS)
   const [lead, setLead] = useState(1)
+  /** Schwelle der kategorischen Bewertung (nur bei Schwellen-Zielgrößen). */
+  const [threshold, setThreshold] = useState(1)
 
   const [observed, setObserved] = useState<Map<string, number> | null>(null)
   const [runs, setRuns] = useState<Record<string, PastRunSeries>>({})
@@ -213,11 +459,20 @@ export function VerifyPanel() {
   // halber Tag als „Messung" würde jedes Modell schlecht aussehen lassen.
   const end = dayOffset(-1)
   const start = dayOffset(-span)
-  // Der Klimatag des ERSTEN Tages beginnt schon um 18 UTC des Vortags — ohne
-  // diesen Vorlauf fehlten ihm sechs Stunden, er fiele unter die
-  // Mindeststundenzahl und die erste Zeile bliebe leer. Betrifft nur die
-  // Vorhersageabfrage; die Messung liefert GeoSphere fertig je Klimatag.
-  const fcStart = dayOffset(-span - 1)
+  const spec = TARGETS[target]
+
+  // Das Tagesfenster ragt über den Zeitraum hinaus, und je nach Größe an einem
+  // ANDEREN Ende: der Extremtag beginnt um 18 UTC des Vortags, der
+  // Niederschlagstag endet um 06 UTC des Folgetags. Ohne diesen Überhang
+  // fehlten dem Randtag sechs Stunden, er fiele unter die Mindeststundenzahl
+  // und die Zeile bliebe leer. Betrifft nur die VORHERSAGE — die Messung
+  // liefert GeoSphere fertig je Tag.
+  const fcStart = spec.offsetH > 0 ? dayOffset(-span - 1) : start
+  const fcEnd = spec.offsetH < 0 ? dayOffset(0) : end
+  // Die Messung wird einen Tag früher geholt als gezeigt: die Persistenz als
+  // Vergleichsvorhersage braucht den Vortag des ersten Tages, sonst verlöre
+  // der Skill Score genau die erste Zeile.
+  const obsStart = dayOffset(-span - 1)
 
   const models = useMemo(
     () =>
@@ -232,14 +487,14 @@ export function VerifyPanel() {
   useEffect(() => {
     if (!station) return
     let cancelled = false
-    const spec = getAtParameter(TARGETS[target].obsCode)
-    fetchStationSeries(spec.code, start, end, [station.id], DATASET_DAILY)
+    const obsSpec = getAtParameter(TARGETS[target].obsCode)
+    fetchStationSeries(obsSpec.code, obsStart, end, [station.id], DATASET_DAILY)
       .then((s) => {
         if (cancelled) return
         const map = new Map<string, number>()
         const data = s.byStation[station.id] ?? []
         for (let i = 0; i < s.timestamps.length; i++) {
-          const v = clean(spec, data[i] ?? null)
+          const v = clean(obsSpec, data[i] ?? null)
           if (v != null) map.set(s.timestamps[i].slice(0, 10), v)
         }
         setObserved(map)
@@ -248,7 +503,7 @@ export function VerifyPanel() {
     return () => {
       cancelled = true
     }
-  }, [station, target, start, end])
+  }, [station, target, obsStart, end])
 
   // Vergangene Läufe je Modell — ein Request pro Modell, alle Vorlaufzeiten in
   // einem. Die Vorlaufzeiten sind am Modellhorizont gedeckelt, sonst holt man
@@ -269,9 +524,9 @@ export function VerifyPanel() {
           station.lat,
           station.lon,
           m.id,
-          FORECAST_VAR,
+          FORECAST_VAR[target],
           fcStart,
-          end,
+          fcEnd,
           leads,
           station.altitude,
         )
@@ -291,57 +546,57 @@ export function VerifyPanel() {
     }
     // models über modelKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [station, modelKey, fcStart, end])
+  }, [station, modelKey, target, fcStart, fcEnd])
 
-  /** Je Modell und Vorlauf: Tageswerte der damaligen Vorhersage + Fehlermaße. */
+  const days = useMemo(() => dayRange(start, end), [start, end])
+
+  /**
+   * Die Messreihe auf die GEZEIGTEN Tage beschränkt. Geholt wird ein Tag mehr
+   * (für die Persistenz), gewertet werden darf er nicht — sonst stünde in der
+   * Fehlerzeile ein Tag mehr, als die Tabelle darüber zeigt.
+   */
+  const obsShown = useMemo(() => {
+    if (!observed) return null
+    const out = new Map<string, number>()
+    for (const d of days) {
+      const v = observed.get(d)
+      if (v != null) out.set(d, v)
+    }
+    return out
+  }, [observed, days])
+
+  /**
+   * Persistenz als Vergleichsvorhersage: der Wert von gestern gilt für heute.
+   * Sie wird aus der UNGEKÜRZTEN Messreihe gebildet, damit auch der erste
+   * gezeigte Tag einen Vorgänger hat.
+   */
+  const reference = useMemo(
+    () => (observed ? persistenceForecast(observed) : null),
+    [observed],
+  )
+
+  /** Je Modell und Vorlauf: Tageswerte der damaligen Vorhersage + Bewertung. */
   const table = useMemo(() => {
-    const mode = TARGETS[target].mode
     return models.map((m) => {
       const r = runs[m.id]
-      const cells = new Map<number, { daily: Map<string, number>; scores: Scores }>()
-      if (r && observed) {
+      const cells = new Map<
+        number,
+        { daily: Map<string, number>; scores: Scores; skill: Skill; cont: Contingency }
+      >()
+      if (r && obsShown && reference) {
         for (const [n, series] of r.byLead) {
-          const daily = dailyExtremes(r.timeMs, series, mode)
-          cells.set(n, { daily, scores: score(daily, observed) })
+          const daily = dailyValues(r.timeMs, series, spec.mode, spec.offsetH)
+          cells.set(n, {
+            daily,
+            scores: score(daily, obsShown),
+            skill: skillScore(daily, obsShown, reference),
+            cont: contingency(daily, obsShown, threshold),
+          })
         }
       }
       return { model: m, cells }
     })
-  }, [models, runs, observed, target])
-
-  const days = useMemo(() => dayRange(start, end), [start, end])
-  const xs = useMemo(() => days.map((d) => Date.parse(`${d}T12:00:00Z`)), [days])
-
-  /**
-   * Diagramm rechts: die ABWEICHUNGEN je Modell über den Zeitraum, nicht die
-   * Absolutwerte. Die stehen in der Tabelle daneben; was man dort NICHT sieht,
-   * ist der Verlauf — ob ein Modell durchgehend zu warm liegt, ob alle am
-   * selben Tag danebenlagen (dann war die Lage schwierig, nicht das Modell),
-   * oder ob eines ausreißt. Die Nulllinie ist der Bezug: darüber zu warm
-   * vorhergesagt, darunter zu kalt.
-   */
-  const chart = useMemo(() => {
-    const curves = table.map((row, i) => ({
-      label: row.model.label,
-      color: SERIES_COLORS[i % SERIES_COLORS.length],
-      type: 'line' as const,
-      values: days.map((d) => {
-        const fc = row.cells.get(lead)?.daily.get(d)
-        const obs = observed?.get(d)
-        return fc != null && obs != null ? fc - obs : null
-      }),
-      width: 1.8,
-    }))
-    return {
-      title: `Abweichung von der Messung · ${leadLabel(lead)}`,
-      unit: 'K',
-      curves,
-      // Ohne Mindestspanne staucht ein ruhiger Zeitraum die Nulllinie an den
-      // Rand und lässt Zehntelkelvin wie Ausreißer aussehen.
-      minSpan: 6,
-      refLines: [{ value: 0, color: '#8a8a8a' }],
-    }
-  }, [days, observed, table, lead])
+  }, [models, runs, obsShown, reference, spec, threshold])
 
   const availableLeads = useMemo(() => {
     const s = new Set<number>()
@@ -352,7 +607,14 @@ export function VerifyPanel() {
     if (availableLeads.length && !availableLeads.includes(lead)) setLead(availableLeads[0])
   }, [availableLeads, lead])
 
-  const obsCount = observed ? days.filter((d) => observed.has(d)).length : 0
+  const obsCount = obsShown ? obsShown.size : 0
+  /** Zielgröße mit Schwellenereignis → kategorische Bewertung anbieten. */
+  const categorical = spec.thresholds.length > 0
+  // Die Schwelle muss zur Größe passen: beim Wechsel von Niederschlag auf
+  // Temperatur bliebe sonst eine 1-mm-Schwelle im Zustand stehen.
+  useEffect(() => {
+    if (categorical && !spec.thresholds.includes(threshold)) setThreshold(spec.thresholds[0])
+  }, [categorical, spec, threshold])
   /** Kleinster mittlerer Fehler über den ganzen Zeitraum — nur zum Markieren. */
   const bestMae = useMemo(() => {
     const vals = table
@@ -456,6 +718,30 @@ export function VerifyPanel() {
             ))}
           </select>
         </label>
+        {categorical && (
+          <label className="atclima-ctrl">
+            <span className="label-muted">Schwelle</span>
+            <select
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+              title={
+                'Ab welcher Tagesmenge ein Tag als „Regentag" zählt. Die kategorische ' +
+                'Bewertung darunter fragt nur noch: hat das Modell diesen Tag angesagt, und kam ' +
+                'er? 0,1 mm = überhaupt messbarer Niederschlag, 1 mm = der Niederschlagstag der ' +
+                'Klimatologie (dieselbe Schwelle wie die Kenntage in der Klimakarte), 5 und ' +
+                '10 mm = ergiebiger Regen. Je höher die Schwelle, desto seltener das Ereignis ' +
+                'und desto wackliger die Zahlen — bei 10 mm bleiben selbst in 60 Tagen oft ' +
+                'weniger als zehn Fälle übrig.'
+              }
+            >
+              {spec.thresholds.map((t) => (
+                <option key={t} value={t}>
+                  ≥ {fmtThreshold(t)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <span className="atclima-sub">
           {error ? `⚠ ${error}` : loading ? 'lädt …' : `${obsCount} Messtage`}
         </span>
@@ -477,18 +763,25 @@ export function VerifyPanel() {
         <span
           className="atclima-hint"
           title={
-            'Verglichen wird das Tagesextrem über den KLIMATAG: 18 UTC des Vortags bis 18 UTC, ' +
-            'also 19 bis 19 MEZ. So definiert GeoSphere seine Tagesextreme (gemessen gegen die ' +
-            '10-Minuten-Reihe, siehe verify.ts) — die Vorhersage wird über dasselbe Fenster ' +
-            'reduziert. Mit dem naheliegenden 00–24 UTC stand nach einem heißen Tag mit ' +
-            'Frontdurchgang bei ALLEN Modellen gleichzeitig ein Fehler von 2 bis 3 K, der keiner ' +
-            'war: das Klima-Tagesmaximum stammte dann aus dem Abend des Vortags. Die Vorhersage ' +
-            'kommt aus der Historical-Forecast-API von Open-Meteo: sie liefert zu einem ' +
-            'vergangenen Zeitpunkt auch das, was N Tage vorher dafür vorhergesagt wurde. Der ' +
-            'laufende Tag fehlt bewusst — er hat noch kein geprüftes Tagesextrem.'
+            (spec.mode === 'sum'
+              ? 'Verglichen wird die Tagessumme über den NIEDERSCHLAGSTAG: 06 UTC bis 06 UTC ' +
+                'des Folgetags, also 07 bis 07 MEZ. Der Regen des frühen Morgens zählt damit ' +
+                'noch zum VORTAG. Das ist ein anderes Fenster als bei den Temperaturextremen ' +
+                'und läuft in die andere Richtung — beides gegen die 10-Minuten-Reihe gemessen ' +
+                '(siehe verify.ts), nicht aus der Doku übernommen.'
+              : 'Verglichen wird das Tagesextrem über den KLIMATAG: 18 UTC des Vortags bis ' +
+                '18 UTC, also 19 bis 19 MEZ. So definiert GeoSphere seine Tagesextreme ' +
+                '(gemessen gegen die 10-Minuten-Reihe, siehe verify.ts). Mit dem naheliegenden ' +
+                '00–24 UTC stand nach einem heißen Tag mit Frontdurchgang bei ALLEN Modellen ' +
+                'gleichzeitig ein Fehler von 2 bis 3 K, der keiner war: das Klima-Tagesmaximum ' +
+                'stammte dann aus dem Abend des Vortags.') +
+            ' Die Vorhersage wird über dasselbe Fenster reduziert und kommt aus der ' +
+            'Historical-Forecast-API von Open-Meteo: sie liefert zu einem vergangenen ' +
+            'Zeitpunkt auch das, was N Tage vorher dafür vorhergesagt wurde. Der laufende Tag ' +
+            'fehlt bewusst — er hat noch keinen geprüften Tageswert.'
           }
         >
-          Tagesextrem 18–18 UTC
+          {spec.mode === 'sum' ? 'Tagessumme' : 'Tagesextrem'} {spec.windowLabel}
         </span>
       </div>
 
@@ -526,11 +819,12 @@ export function VerifyPanel() {
             {/* Was hier verglichen wird, in einem Satz. Eine Zahlenmatrix ohne
                 Größe, Ort, Zeitfenster und Zeitraum ist nicht lesbar. */}
             <div className="verify-what">
-              <strong>{TARGETS[target].label}</strong> an der Station{' '}
-              <strong>{station.name}</strong>
-              {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als
-              Tagesextrem über den Klimatag <strong>18–18 UTC</strong> (19–19 MEZ). Verglichen
-              mit der{' '}
+              <strong>{spec.label}</strong> an der Station <strong>{station.name}</strong>
+              {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als{' '}
+              {spec.mode === 'sum' ? 'Tagessumme' : 'Tagesextrem'} über den{' '}
+              {spec.mode === 'sum' ? 'Niederschlagstag' : 'Klimatag'}{' '}
+              <strong>{spec.windowLabel}</strong> ({spec.mode === 'sum' ? '07–07' : '19–19'} MEZ).
+              Verglichen mit der{' '}
               <span
                 title={
                   'Rohe Modellausgabe, auf den Punkt und auf die Stationshöhe gerechnet — KEIN ' +
@@ -572,11 +866,17 @@ export function VerifyPanel() {
               <thead>
                 <tr>
                   <th>Tag</th>
-                  <th title="Gemessener Wert der Station — Tagesextrem über den Klimatag 18–18 UTC (19–19 MEZ) aus dem geprüften Klimatagesdatensatz (GeoSphere klima-v2-1d); die Vorhersage wird über dasselbe Fenster reduziert">
+                  <th
+                    title={
+                      `Gemessener Wert der Station — ${spec.mode === 'sum' ? 'Tagessumme' : 'Tagesextrem'} ` +
+                      `über ${spec.windowLabel} aus dem geprüften Klimatagesdatensatz ` +
+                      '(GeoSphere klima-v2-1d); die Vorhersage wird über dasselbe Fenster reduziert.'
+                    }
+                  >
                     Messung
-                    <span className="verify-err">18–18 UTC</span>
+                    <span className="verify-err">{spec.windowLabel}</span>
                   </th>
-                  {table.map((row, i) => (
+                  {table.map((row) => (
                     <th
                       key={row.model.id}
                       title={
@@ -587,13 +887,6 @@ export function VerifyPanel() {
                     >
                       {row.model.label}
                       <span className="verify-err">Wert / Δ</span>
-                      {/* Farbmarke = Kurvenfarbe im Diagramm daneben. Erspart
-                          dem Diagramm eine eigene Legende und der Tabelle eine
-                          zweite Spalte. */}
-                      <span
-                        className="verify-swatch"
-                        style={{ background: SERIES_COLORS[i % SERIES_COLORS.length] }}
-                      />
                     </th>
                   ))}
                 </tr>
@@ -604,21 +897,27 @@ export function VerifyPanel() {
                   return (
                     <tr key={d}>
                       <th>{fmtDay(d)}</th>
-                      <td className="verify-obs">{obs != null ? `${fmt1(obs)} °C` : '—'}</td>
+                      <td className="verify-obs">
+                        {obs != null ? `${fmt1(obs)} ${spec.unit}` : '—'}
+                      </td>
                       {table.map((row) => {
                         const fc = row.cells.get(lead)?.daily.get(d) ?? null
                         const err = fc != null && obs != null ? fc - obs : null
                         return (
                           <td
                             key={row.model.id}
-                            style={{ background: err != null ? errColor(Math.abs(err)) : undefined }}
+                            style={{
+                              background: err != null ? errColor(Math.abs(err), spec.errSteps) : undefined,
+                            }}
                             title={
                               fc == null
                                 ? row.model.forecastHours < lead * 24 + 24
                                   ? `${row.model.label} rechnet nur ${row.model.forecastHours} h weit — für einen Vorlauf von ${lead * 24} h bietet die API dort keine Reihe an.`
                                   : 'Für diesen Tag liegt keine Vorhersage vor.'
-                                : `${row.model.label}, ${leadLabel(lead)}: ${fmt1(fc)} °C` +
-                                  (err != null ? `, gemessen ${fmt1(obs!)} °C → ${fmtSigned(err)} K` : '')
+                                : `${row.model.label}, ${leadLabel(lead)}: ${fmt1(fc)} ${spec.unit}` +
+                                  (err != null
+                                    ? `, gemessen ${fmt1(obs!)} ${spec.unit} → ${fmtSigned(err)} ${spec.errUnit}`
+                                    : '')
                             }
                           >
                             {fc != null ? (
@@ -647,6 +946,12 @@ export function VerifyPanel() {
                       'beste Modell ÜBER DEN ZEITRAUM — je Tag das nächstliegende zu zeigen wäre ' +
                       'Rosinenpicken im Nachhinein (gemessen 0,59 K statt 1,16 K des besten ' +
                       'Einzelmodells).' +
+                      (categorical
+                        ? '\n\nBEIM NIEDERSCHLAG ist diese Zeile das schwächste Maß der Seite: die ' +
+                          'meisten Tage sind trocken, ein Modell, das nie Regen ansagt, bekommt ' +
+                          'damit einen glänzenden Wert. Maßgeblich ist die kategorische ' +
+                          'Bewertung unter der Tabelle.'
+                        : '') +
                       (span < ROUGH_DAYS
                         ? `\n\nACHTUNG: über ${span} Tage ist das kein Modellvergleich — bei so kurzen Reihen entscheidet der Zufall, welches Modell vorn liegt.`
                         : `\n\nÜber ${span} Tage ist die Reihung grob; belastbar würde sie erst über Monate.`)
@@ -669,7 +974,8 @@ export function VerifyPanel() {
                         className={isBest ? 'verify-best' : undefined}
                         title={
                           sc && sc.n
-                            ? `${sc.n} Tage · mittlerer absoluter Fehler ${fmt1(sc.mae)} K · Bias ${fmtSigned(sc.bias)} K · RMSE ${fmt1(sc.rmse)} K` +
+                            ? `${sc.n} Tage · mittlerer absoluter Fehler ${fmt1(sc.mae)} ${spec.errUnit} · ` +
+                              `Bias ${fmtSigned(sc.bias)} ${spec.errUnit} · RMSE ${fmt1(sc.rmse)} ${spec.errUnit}` +
                               (isBest ? '\nKleinster Fehler über den gezeigten Zeitraum.' : '')
                             : 'Keine gemeinsamen Tage.'
                         }
@@ -686,20 +992,56 @@ export function VerifyPanel() {
                     )
                   })}
                 </tr>
+                {/* SKILL statt bloßem Fehlerbetrag: „MAE 1,5 K" sagt nicht,
+                    wie schwer die Aufgabe war. Gegen die Persistenz gemessen
+                    schon — sie ist die Vorhersage, die jeder ohne Modell
+                    hinbekommt. */}
+                <tr>
+                  <th
+                    title={
+                      'Skill Score gegen die PERSISTENZ, also gegen „morgen wird es wie heute": ' +
+                      '1 − MSE(Modell)/MSE(Persistenz). 0 heißt „so gut wie gar kein Modell", ' +
+                      '1 wäre fehlerfrei, NEGATIV heißt schlechter als die triviale Ansage. ' +
+                      'Erst dadurch lässt sich ein Fehlerbetrag einordnen: dieselben 1,5 K sind ' +
+                      'in einer stabilen Hochdrucklage schwach und in einer Woche mit drei ' +
+                      'Frontdurchgängen gut.\n\n' +
+                      'GRENZE: Persistenz ist nur bei kurzem Vorlauf ein ernsthafter Gegner. ' +
+                      `Bei ${leadDays(lead)} Vorlauf ist ein hoher Wert eher „besser als raten" ` +
+                      'als ein Gütesiegel. Bei der Niederschlagssumme ist sie zusätzlich ein ' +
+                      'schwacher Maßstab, weil zwei trockene Tage hintereinander ihr einen ' +
+                      'fehlerfreien Treffer schenken.'
+                    }
+                  >
+                    Skill
+                    <span className="verify-err">vs. Persistenz</span>
+                  </th>
+                  <td className="verify-empty">—</td>
+                  {table.map((row) => {
+                    const sk = row.cells.get(lead)?.skill
+                    const ok = sk != null && sk.n > 0 && Number.isFinite(sk.ss)
+                    return (
+                      <td
+                        key={row.model.id}
+                        title={
+                          ok
+                            ? `${row.model.label}: ${sk.ss > 0 ? 'um ' + Math.round(sk.ss * 100) + ' % kleinerer' : 'kein kleinerer'} ` +
+                              `quadratischer Fehler als die Persistenz, über ${sk.n} Tage.`
+                            : 'Nicht bestimmbar — die Persistenz hat hier keinen Fehler, gegen den sich messen ließe (kommt bei Trockenperioden vor).'
+                        }
+                      >
+                        {ok ? (
+                          <span className="verify-fc">{fmtScore(sk.ss)}</span>
+                        ) : (
+                          <span className="verify-empty">—</span>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
               </tfoot>
             </table>
-            {/* Die Kurven tragen die Modellfarben der Spaltenköpfe — dadurch
-                braucht das Diagramm keine eigene Legende. */}
-            <div className="verify-chart">
-              <ChartRow
-                xs={xs}
-                chart={chart}
-                height={Math.max(240, Math.min(days.length * 22 + 90, 520))}
-                formatTick={(ts) => fmtShort.format(new Date(ts * 1000))}
-                xSpace={58}
-              />
             </div>
-            </div>
+            {categorical && <CategoricalBlock table={table} lead={lead} threshold={threshold} span={span} />}
           </>
         )}
       </div>
