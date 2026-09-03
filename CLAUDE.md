@@ -854,17 +854,36 @@ npm run preview   # gebautes dist/ servieren
   Der MECHANISMUS ist die gestauchte TAGESAMPLITUDE. Mittleres Tmax−Tmin über
   60 Tage gegen die Messung: AIFS 9,1–10,5 K gegen gemessene 12,5–13,9 K, also
   ein Viertel bis ein Drittel des Tagesgangs verloren — bei jeder der fünf
-  geprüften Stationen der kleinste Wert aller Modelle. Das ist das bekannte
-  Verhalten MSE-trainierter KI-Modelle (glatte Felder, gedämpfte Extreme), und
-  es erklärt das Vorzeichenmuster: AIFS ist beim Tmax das SCHLECHTESTE Modell
-  (Wien Bias −1,42 K) und beim Tmin das BESTE (+0,68 K, MAE 1,10). Es wird nach
-  Westen dramatisch schlimmer — Tmax-Bias Wien −1,4 / Salzburg −3,1 / Graz
-  −3,0 / Klagenfurt −3,7 / **Innsbruck −4,9 K**, und MAE = |Bias| an jeder
-  Station, also ein reiner Sockel und kein Streuen. IFS zeigt dasselbe
-  abgeschwächt (Wien −1,27, Innsbruck −2,49). In den Alpen ist ein 0,25°-Global
-  am Talboden schlicht nicht auflösbar; die Lokalmodelle liegen dort um
-  Größenordnungen besser (AROME Austria Innsbruck −0,13 K). **Nicht erneut als
-  Bug untersuchen** — wer es doch tut, fängt bei (a)–(c) an.
+  geprüften Stationen der kleinste Wert aller Modelle. Das erklärt das
+  Vorzeichenmuster: AIFS ist beim Tmax das SCHLECHTESTE Modell (Wien Bias
+  −1,42 K) und beim Tmin das BESTE (+0,68 K, MAE 1,10). Es wird nach Westen
+  dramatisch schlimmer — Tmax-Bias Wien −1,4 / Salzburg −3,1 / Graz −3,0 /
+  Klagenfurt −3,7 / **Innsbruck −4,9 K**, und MAE = |Bias| an jeder Station,
+  also ein reiner Sockel und kein Streuen. IFS zeigt dasselbe abgeschwächt
+  (Wien −1,27, Innsbruck −2,49).
+  **ZWEI URSACHEN, und die VORLAUFZEIT trennt sie** — eine Verwischung durch
+  die Verlustfunktion WÄCHST mit dem Vorlauf, ein Auflösungsproblem ist
+  KONSTANT. Gemessen über die Vorläufe 1–6 Tage:
+  IFS ist flach (Wien −1,27 → −0,95, Innsbruck −2,49 → −2,60) — reine
+  REPRÄSENTATIVITÄT, ein Gitterkasten gegen einen Messplatz. AIFS wächst
+  monoton (Wien −1,42 → −2,65, Innsbruck −4,87 → −5,84) bei gleichzeitig
+  schrumpfender Amplitude (Innsbruck 9,09 → 8,49 K). AIFS hat also BEIDES: den
+  großen konstanten Sockel — 0,25° gegen die nativen ~9 km von IFS, dazu die
+  schon geglättete ERA5-Trainingsbasis — PLUS rund 0,2 K je Vorlauftag
+  Verwischung, die IFS nicht zeigt. Die ist das bekannte Verhalten
+  gitterpunktweise MSE-trainierter KI-Modelle: der Vorhersagewert, der den
+  erwarteten quadratischen Fehler minimiert, ist der ERWARTUNGSWERT der
+  Verteilung, nicht eine plausible Einzelrealisierung — glatte Felder,
+  gedämpfte Extreme, und ein Tagesmaximum ist ein Extremwert. (ECMWF hat für
+  die Ensemble-Variante genau deshalb auf eine CRPS-Verlustfunktion
+  umgestellt.) **Der DOMINANTE Term ist aber die Auflösung, nicht die
+  Verlustfunktion** — in Innsbruck sind von −4,9 K bei +1 Tag etwa −2,5 K das,
+  was IFS auch hat; die Verwischung legt bis +6 Tage knapp 1 K drauf. Die
+  frühere Notiz hier hatte das umgedreht.
+  In den Alpen ist ein 0,25°-Global am Talboden schlicht nicht auflösbar; die
+  Lokalmodelle liegen dort um Größenordnungen besser (AROME Austria Innsbruck
+  −0,13 K). **Nicht erneut als Bug untersuchen** — wer es doch tut, fängt bei
+  (a)–(c) an.
   **Markiert wird das beste Modell ÜBER DEN ZEITRAUM, nie je Tag.** Je Tag das
   im Nachhinein nächstliegende Modell zu zeigen ist kein Vergleich, sondern
   Rosinenpicken: gemessen (Wien Hohe Warte, 20 Tage, Vorlauf 1) käme man damit
