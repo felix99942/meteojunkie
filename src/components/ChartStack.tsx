@@ -804,11 +804,18 @@ function readoutPlugin(
  * Die Tagesgrenzen kommen als fertige Liste herein (einmal beim Plot-Aufbau
  * aus dem Zeitraster bestimmt) — die Stunde je Punkt über `Intl` zu prüfen
  * würde bei jedem Neuzeichnen tausende Formatierungen kosten.
+ *
+ * `axisH` ist die Höhe der STUNDENACHSE darüber. Sie muss hereingegeben
+ * werden, weil unter der Zeichenfläche ZWEI Achsen liegen (Stunden, darunter
+ * der Datumsstreifen) und `u.bbox` nur die Fläche selbst kennt: ohne diesen
+ * Versatz landete das Datum im Band der Uhrzeiten und lag bei 00 UTC genau
+ * auf der „00" — während der eigens reservierte Streifen darunter leer blieb.
  */
 function dayMarkPlugin(
   days: { t: number; label: string; short: string }[],
   showLabels: boolean,
   stripH: number,
+  axisH: number,
 ): uPlot.Plugin {
   return {
     hooks: {
@@ -819,7 +826,9 @@ function dayMarkPlugin(
         ctx.save()
         ctx.setLineDash([])
         const bottom = u.bbox.top + u.bbox.height
-        const lineEnd = showLabels ? bottom + stripH : bottom
+        // Oberkante des Datumsstreifens: unter der Stundenachse, nicht in ihr.
+        const stripTop = bottom + axisH
+        const lineEnd = showLabels ? stripTop + stripH : bottom
         ctx.strokeStyle = GRIDLINE_DAY
         ctx.lineWidth = 1
         for (const d of days) {
@@ -843,7 +852,7 @@ function dayMarkPlugin(
         ctx.textBaseline = 'middle'
         ctx.textAlign = 'left'
         ctx.fillStyle = INK
-        const ty = bottom + stripH / 2 + 1
+        const ty = stripTop + stripH / 2 + 1
         for (const d of days) {
           const x = u.valToPos(d.t, 'x', true)
           if (!Number.isFinite(x)) continue
@@ -1046,7 +1055,18 @@ export function ChartRow({
         // Nach den Bezugslinien, damit die Fläche über ihnen liegt (beide im
         // drawAxes-Hook — die Reihenfolge hier ist die Zeichenreihenfolge).
         ...(hasBands ? [bandPlugin(chart.curves)] : []),
-        ...(dayRow || dayGrid ? [dayMarkPlugin(dayMarks, dayRow, DAY_STRIP_H)] : []),
+        ...(dayRow || dayGrid
+          ? [
+              dayMarkPlugin(
+                dayMarks,
+                dayRow,
+                DAY_STRIP_H,
+                // Nur was uPlot wirklich reserviert: eine ausgeblendete
+                // Stundenachse (Symbolzeile) belegt keine Höhe.
+                chart.hideXAxis !== true ? X_AXIS_SIZE : 0,
+              ),
+            ]
+          : []),
         markPlugin(markRef),
         ...(chart.marks ? [pointMarkPlugin(chart.marks)] : []),
         ...(windCurve

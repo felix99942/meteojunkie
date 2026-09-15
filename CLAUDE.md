@@ -700,7 +700,14 @@ npm run preview   # gebautes dist/ servieren
   über vier Diagramme hinweg nach unten suchen, welcher Tag gilt. Bewusst ein
   PLUGIN und keine Achsenbeschriftung — uPlot zentriert Achsentexte auf dem
   Tick, das Datum soll aber am Strich anliegen; die Achse reserviert nur die
-  Höhe (`DAY_STRIP_H`). Die Tagesgrenzen werden EINMAL beim Plot-Aufbau aus
+  Höhe (`DAY_STRIP_H`). **Weil das Plugin außerhalb der Achsenlogik zeichnet,
+  muss es den VERSATZ selbst kennen**: unter der Zeichenfläche liegen ZWEI
+  Achsen (Stunden, darunter der Datumsstreifen), `u.bbox` kennt aber nur die
+  Fläche. Ohne die übergebene Stundenachsenhöhe (`axisH`) landete das Datum im
+  Band der UHRZEITEN und lag bei 00 UTC genau auf der „00", während der eigens
+  reservierte Streifen darunter leer blieb. `axisH` ist 0, wenn die
+  Stundenachse ausgeblendet ist (Symbolzeile) — eine versteckte Achse
+  reserviert bei uPlot keine Höhe. Die Tagesgrenzen werden EINMAL beim Plot-Aufbau aus
   dem Zeitraster bestimmt (`dayMarks`) — die Stunde je Punkt über `Intl` zu
   prüfen kostete bei jedem Neuzeichnen tausende Formatierungen. Schrift hell
   und fett (`DAY_FONT`, 13 px), bei schmalem Fenster fällt sie auf den
