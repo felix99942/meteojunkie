@@ -501,6 +501,71 @@ npm run preview   # gebautes dist/ servieren
   (u.a. 850 hPa / 500 hPa), eigene Zeitachse über den vollen Horizont, Zoom per
   Mausrad. **Keine Kartenvariante**: ein Punkt kostet ~5 gewichtete Locations,
   ein AT-Gitter käme auf ~7.200 Calls pro Feld (Rechnung in `config/ensemble.ts`).
+- **Föhn** (`FoehnPanel.tsx`, Kern `foehn.ts` mit Tests, Registry
+  `config/foehn.ts`, AppView `foehn`) — Föhndiagnose entlang fester
+  FÖHNACHSEN (Bozen–Innsbruck, Lugano–Zürich). **Nur Lokalmodelle (≤ 2,5 km)**,
+  auf Wunsch: ein 25-km-Global glättet genau weg, worum es geht. Aufbau:
+  Kriterien-Streifen über die volle Breite, darunter ein **2×3-Kachelraster**
+  (links ΔP Süd − Nord der Modelle · ΔP je Ensemble-Member · Wahrscheinlichkeit;
+  rechts Kamm 700 hPa + Stau · Lee-Talstation · Δθ Tal − 700 hPa). Als EIN
+  Stapel waren sieben Diagramme so gestaucht (88 px Zeichenfläche), dass sich
+  nichts ablesen ließ — nicht dahin zurück. Beide Spalten sind gleich breit,
+  die Zeitachsen stehen also auch zwischen den Spalten deckungsgleich; ein
+  Cursor für alle Kacheln. Die Zeitachse endet am längsten Horizont der
+  gewählten Modelle/des Ensembles. **+ = Südföhn.**
+  **ΔP wird JE MEMBER gebildet**, nicht aus den Medianen: Member n ist an beiden
+  Punkten derselbe Lauf, die Differenz also eine echte Realisierung; die
+  Wahrscheinlichkeit ist der Anteil der Member über der Schwelle (keine Zahl
+  unter der halben Memberzahl). Die Wahrscheinlichkeits-Kachel ist nach
+  STÄRKE eingefärbt statt in zwei gleichrangige Linien geteilt: die Fläche ist
+  ocker bis zum Anteil der Member ≥ 4 hPa und ROT, soweit die Member ≥ 8 hPa
+  liegen. Der rote Anteil ist im ockerfarbenen ENTHALTEN (wer 8 hPa
+  überschreitet, überschreitet auch 4) — deshalb ein STREIFEN zwischen den
+  beiden Kurven (`Curve.fillTo`) und kein Stapel: die Achse bleibt eine
+  Wahrscheinlichkeit von 0 bis 100 %, und beide Kanten sind an ihr ablesbar
+  (Oberkante = Anteil ≥ 4 hPa, Trennkante = Anteil ≥ 8 hPa). Ein Stapel wäre
+  hier falsch, er zählte die starken Member doppelt und brauchte eine Achse
+  bis 200 %. Als zwei gleichrangige Linien ging der starke Anteil unter, weil
+  er meist klein ist.
+  **Jede Kachel graut den Bereich hinter IHREM Horizont aus** (`ChartDef.veil`,
+  Kante aus `horizonEdge()`): die Zeitachse reicht bis zum längsten gewählten
+  Modell, bei ICON-CH1 (33 h) auf einer 120-h-Achse ist der Rest sonst leere
+  Fläche, in der Gitter und Schwellenlinien weiterlaufen und sich wie Daten
+  lesen. Die Kante kommt aus den REIHEN, nicht aus `forecastHours` — so stimmt
+  sie auch, wenn ein Modell kürzer liefert als die Registry angibt. **Kriterien-STREIFEN statt Index** — eine
+  Gewichtung wäre gesetzt, nicht gemessen. Kriterien sind 1/0/null, „nicht
+  verfügbar" hat eine eigene Markierung (sonst sähe ein Modell ohne 700 hPa
+  aus wie „kein Föhn"). Das Lee wechselt mit der Richtung: Südföhn Innsbruck
+  bzw. **Altdorf** (Kloten liegt im Mittelland, keine Föhnstation), Nordföhn
+  Bozen bzw. Lugano.
+  **Die Schwellen sind FAUSTREGELN, nicht kalibriert** (±4/±8 hPa, Kamm
+  ≥ 30 km/h aus SO–WSW bzw. WNW–NO, rF ≤ 50 %, Δθ ≥ −3 K) und stehen so in der
+  UI; offen ist eine Kalibrierung gegen gemessene Föhnstunden (GeoSphere
+  10-min Innsbruck).
+  **Live geprüft (2026-09-14, alle sieben Achsenpunkte)**: ICON-CH1 (1 km,
+  33 h), AROME France (1,5 km, 51 h), ICON-CH2 (2,1 km, 120 h), ICON-D2 (2,2 km,
+  48 h), AROME Austria (2,5 km, 60 h) liefern `pressure_msl`/`surface_pressure`/
+  Bodengrößen; **700 hPa nur ICON-D2 und AROME France** (`FOEHN_UPPER_AIR_
+  MODELS`, die übrigen durchgehend null) — deshalb ICON-D2 als Detailmodell.
+  `meteofrance_arome_france_hd` liefert KEIN `pressure_msl` und fehlt deshalb.
+  Lokal-Ensembles: ICON-CH2-EPS (21 Member, +120 h, Voreinstellung),
+  ICON-D2-EPS (20), ICON-CH1-EPS (11) — über `useEnsembleSeriesFor` mit
+  expliziter Tages-/Memberzahl, weil `getEnsembleModel` unbekannte IDs still
+  auf IFS abbildet (15 Tage, 51 Member). **ICON-CH1/CH2 stehen mit
+  `selectable: false` in der Registry**: nur die Größen des Föhn-Bereichs sind
+  geprüft (kein `weather_code`, keine Bewölkung, keine Drucklevel) — für andere
+  Bereiche erst live prüfen. Ihre Coverage ist eine Näherung.
+  `config/levels.ts` führt ICON-D2 für das Skew-T weiter als nicht
+  drucklevelfähig; zumindest für 700 hPa ist das widerlegt.
+  `usePointSeries` holt Serien OHNE Registry-Gate (Drucklevel,
+  `surface_pressure` stehen nicht in `availableVariables`), mit demselben
+  Query-Key und Batcher wie `useMeteogramSeries`. Kosten je Achse: ein
+  Request je Punkt (Tirol 3 — Lee fällt mit Nord zusammen, Schweiz 4) plus
+  zwei Ensemble-Abrufe. Dafür neu in `ChartStack`/`chartDef`: `flagRows`
+  (Kriterien-Streifen), `Curve.quiet` (Member ohne Werteanzeige/Legende),
+  `symmetricMin` (Achse symmetrisch um 0) und `yInclude` (Bezugswerte, die
+  die Achse immer enthält). Die Stundenbeschriftung kommt aus
+  `getUTCHours`: de-DE formatiert eine reine Stunde als „06 Uhr".
 - **Klassisches Meteogramm** (`ClassicMeteogram.tsx`, AppView `classic`) — der
   „Meteogramm, wie man's kennt"-Bereich: EIN Ort (teilt sich `lockedLocation`
   mit Punktprognosen/Ensemble/Profil), EIN wählbares Modell (Default
@@ -578,8 +643,16 @@ npm run preview   # gebautes dist/ servieren
   — bewusst NICHT entlang der schwankenden Geschwindigkeitslinie (bei Flaute
   kaum lesbar, bei Sturm überdeckt von der Linie). Der Streifen deckt sich
   dafür mit einer eigenen Fläche ab (`--bg-panel`-Farbe), damit die Linie nie
-  hindurchläuft; Dichte an der Breite orientiert, sonst Symbolteppich bei
-  vielen Stunden. Die Fieder ersetzt den früheren Richtungspfeil, weil sie
+  hindurchläuft; Dichte an der Breite orientiert
+  (`ChartDef.barbGap`, Standard 34 px Mindestabstand), sonst Symbolteppich bei
+  vielen Stunden. **Die Fiedernlänge folgt dem TATSÄCHLICHEN Abstand**, nicht
+  einer festen Zahl: bei dichter Reihung liefen 30-px-Fiedern ineinander, die
+  Fahnen stehen quer zum Schaft und brauchen rundum Platz. Der Föhn-Kamm setzt
+  `barbGap: 10` — dort ist die RICHTUNG das Kriterium (Sektor SO–WSW bzw.
+  WNW–NO) und ein Wechsel über wenige Stunden entscheidet, also so dicht wie
+  lesbar statt im 6-h-Standardabstand. Unter ~9 px (`MIN_BARB_GAP`) wird eine
+  Fieder zum Strich, deshalb dort ein Boden; der Abstand rastet weiter auf
+  runde Stundenvielfache. Die Fieder ersetzt den früheren Richtungspfeil, weil sie
   Richtung UND Stärke in einem Symbol trägt: Schaft in die Richtung, AUS der
   der Wind kommt (`wind_direction_10m` ist meteorologisch genau diese
   Herkunftsrichtung — hier also KEIN +180° wie beim alten Pfeil), Fahnen im
@@ -590,6 +663,22 @@ npm run preview   # gebautes dist/ servieren
   gestrichelten Böen färbten damit die Fiedern gestrichelt ein. Jeder eigene
   Draw-Hook setzt deshalb als Erstes `ctx.setLineDash([])`; das gilt für alle
   Zeichner in `render/wxsymbols.ts` und die Plugins in `ChartStack.tsx`.
+  **Die Werteanzeige ist das LETZTE Plugin und liegt damit ganz oben.** Alle
+  Zeichner (Fiedern, Achtel-Kreise, Kriterienzellen, Symbole, Schleier) laufen
+  im `draw`-Hook, die Registrierungsreihenfolge in `ChartStack` IST die
+  Zeichenreihenfolge — stand die Anzeige vorher, verschwanden ihre Kästchen
+  unter den Kriterienzellen und den Achtel-Kreisen, also genau in den Zeilen,
+  deren Werte man nur dort ablesen kann. Nicht nach vorn sortieren.
+  **Die senkrechte Achsen-Chrome zahlt man JE ZEILE, deshalb ist sie knapp
+  gesetzt**: `X_AXIS_SIZE` = 20 statt uPlots Vorgabe 30 (die ist für eine
+  Achse mit Datumsbeschriftung gedacht; hier stehen zwei Ziffern in 10-px-
+  Schrift) und `DAY_STRIP_H` = 16. Über sechs Zeilen sind die gesparten ~14 px
+  eine halbe Diagrammhöhe, die vorher zwischen den Kurven leer stand. Dazu
+  `.meteo-stack` mit 2 px Abstand und eine Kopfzeile mit `line-height: 1.2`.
+  Die Mindesthöhen der Zeilen (inline in `ClassicMeteogram`, 88 px bzw. 46 für
+  die Symbolzeile) sind NUR das Sicherheitsnetz für kleine Fenster — zu groß
+  gesetzt reißt ihre Summe über die Fensterhöhe, `.meteo-stack` scrollt, und
+  dann wächst KEINE Zeile mehr per Flex, obwohl Platz da wäre.
   **Alle Zeilen eines Stapels reservieren links UND rechts dieselbe
   Achsenbreite** (`Y_AXIS_SIZE`/`RIGHT_AXIS_SIZE`, blind beschriftet, wo nichts
   steht) — Achsen einfach auszublenden (`show: false`) hat die Zeitachsen der
@@ -626,6 +715,24 @@ npm run preview   # gebautes dist/ servieren
   25 km/h): ein Starkregenereignis zieht die Achse frei mit, ohne den Boden
   liefe sie aber bei 0,2 mm/h Nieselregen bis 0,22 und ein Hauch Sprühregen
   sähe aus wie ein Wolkenbruch.
+  **Fläche ZWISCHEN zwei Kurven** (`Curve.fillTo` → Index einer anderen Kurve,
+  Plugin `bandPlugin`): gefüllt wird der Streifen hinunter zu jener Kurve statt
+  bis zur Nulllinie — beide behalten ihre echten Werte, es wird nichts addiert.
+  Damit lässt sich eine Größe nach INEINANDER liegenden Klassen einfärben (Föhn:
+  ocker bis „≥ 4 hPa", rot soweit „≥ 8 hPa"). Muss ein eigener Zeichner sein,
+  weil uPlots `fillTo` nur EINEN Skalar als Boden nimmt; mit `fill` bis zur
+  Nulllinie überdeckte die obere Fläche die untere. Läuft im `drawAxes`-Hook
+  NACH den Bezugslinien — über Gitter und Linien, unter den Kurven, damit beide
+  Kanten sichtbar bleiben. **Kein Stapeln**: ein früherer `stackOn`-Versuch
+  addierte die Kurven und brauchte damit eine Achse über 100 % — bei
+  geschachtelten Klassen ist das die falsche Rechnung.
+  **Bereich jenseits des Modellhorizonts ausgrauen** (`ChartDef.veil`, Plugin
+  `veilPlugin`): Schleier + feine Schraffur + Kante am Horizont, im `draw`-Hook
+  und als LETZTES Plugin registriert — der Schleier soll alles dämpfen, was
+  dort hineinragt (Gitter, Bezugslinien, Fiedern, Kriterienzellen). Die
+  Schraffur ist nicht Zierde: sie unterscheidet „keine Daten" von „Wert null",
+  ein flacher Nullverlauf sähe sonst genauso leer aus. Beschriftung nur, wenn
+  sie ganz hineinpasst (schmale Kacheln, niedrige Kriterienleiste → weg).
   Weitere Bausteine in `ChartDef`: `night` (Tag/Nacht-Fläche, `drawClear` —
   also unter Gitter und Kurven), `refLines` (0-°C-Linie, Standarddruck
   1013,25 hPa; `drawAxes`), `minSpan`/`ySpace` (Mindestspanne und Tickdichte
@@ -654,13 +761,23 @@ npm run preview   # gebautes dist/ servieren
   sitzt), darüber in gröberem Abstand der **Achtel-Kreis** (sagt „5 von 8"
   genau, wo die Fläche nur „ungefähr" sagt). Vier Zeilen von oben
   nach unten: Gesamt, dann Hoch/Mittel/Tief in der Reihenfolge, in der die
-  Schichten am Himmel stehen. **Helligkeitsrichtung ist umgekehrt zum
-  gedruckten Meteogramm**: leer = wolkenlos, HELL = bedeckt (`CLOUD_SHADE_MIN/
-  MAX`, 26 → 112) — auf weißem Papier ist „klar" das unbedruckte Blatt, im
-  dunklen Theme die unbemalte Panelfläche. Damit deckt sich die Fläche mit dem
-  Symbol darüber (leerer Kreis = klar, voller = bedeckt), und die HELLEN
-  Symbole bleiben auf jeder Stufe lesbar — bei umgekehrter Richtung
-  verschwänden sie über „klar". Die Achtel-ZAHL steht nur
+  Schichten am Himmel stehen. **SONNIG = HELL, BEDECKT = DUNKEL**
+  (`CLOUD_SHADE_CLEAR/OVERCAST`, 128 → 42) — die Fläche zeigt, wie der Himmel
+  aussieht, und muss nicht übersetzt werden. Das dunkle Ende bleibt bewusst
+  ÜBER der Panelfläche (~25): läge „bedeckt" genau darauf, wäre es von „kein
+  Wert" nicht zu unterscheiden. **Der Preis ist die Symbolfarbe** — sie kann
+  nicht fest sein: ein helles Symbol verschwindet über „sonnig", ein dunkles
+  über „bedeckt". **Der Achtelkreis hat deshalb ZWEI Farben**
+  (`drawOctaSymbol(..., cloudInk, clearInk)`): der bewölkte Sektor dunkel, der
+  freie Himmel hell — bei 6/8 also drei Viertel dunkel, ein Viertel hell,
+  dieselbe Leserichtung wie die Fläche darunter. Mit EINER Farbe stünde „hell"
+  je nach Stufe einmal für Wolke und einmal für freien Himmel. Das Symbol trägt
+  seinen Kontrast selbst und braucht keine Anpassung an den Untergrund: ein
+  heller Ring sichert die Silhouette auf DUNKLEM Grund (8/8 auf bedeckter
+  Fläche), die Umrandung in `cloudInk` die Kante auf HELLEM (0/8 auf sonniger).
+  Nur die Achtel-ZAHL daneben liegt direkt auf der Fläche und dreht ihre Farbe
+  über `octaInk()` am Grauwert unter ihr (nicht je Zeile — die Helligkeit
+  wechselt von Stunde zu Stunde). Die Achtel-ZAHL steht nur
   in der Gesamtzeile (`withNumber`) — viermal beziffert wäre die Fläche wieder
   zugestellt. Die **Zeilenbeschriftung kommt aus der linken y-Achse** (Splits
   auf den Zeilenmitten, y-Range = Zeilenanzahl), nicht aus dem Plugin: so steht
@@ -973,6 +1090,29 @@ npm run preview   # gebautes dist/ servieren
   Mock umgeht den IndexedDB-Cache in beide Richtungen (nie mit echten Daten
   verwechselbar) und zeigt ein Badge in der TopBar inkl. aktiver Auflösung.
   Für Debug-Läufe im Headless-Browser immer `?mock=1` verwenden.
+  **`?mock=foehn` ist `?mock=1` plus einer Föhnorkan-Episode**
+  (`api/mockFoehn.ts`, reiner Kern mit Tests): das glatte Grundfeld liefert
+  über die Föhnachsen nur ~0,2 hPa Druckunterschied — der Föhn-Bereich zeigt
+  mit `?mock=1` also NIE Föhn und ist nicht ansehbar. Die Episode ist
+  GEOGRAFISCH gebaut, nicht pro Punkt: alles hängt an der Lage relativ zum
+  Alpenhauptkamm (`crestLat`, interpoliert durch die Kammpunkte der echten
+  Achsen), deshalb gilt sie für BEIDE Achsen und jeden weiteren Punkt ohne
+  Sonderfälle, und die Lee-Größen passen automatisch zum Lee-Punkt der
+  Richtung. Südföhn mit ΔP ~16 hPa (Tirol) bzw. ~20 (Schweiz), Kamm 115 km/h
+  aus 205°, Lee 16 % rF und 142 km/h Böen (Orkan ≥ 118). **Nordföhn zeigt
+  damit korrekt KEINEN Föhn** — eigener Testfall, kein Mangel.
+  `mockFoehn.test.ts` rechnet die ECHTEN `foehnCriteria` darauf und verlangt
+  4/4 auf beiden Achsen über die ganze Temperaturspanne des Grundfelds: ein
+  Testdatensatz, der die Kriterien nicht erfüllt, ist wertlos, und das sieht
+  man den Zahlen nicht an. Zwei Lücken fielen dabei auf und sind mitbehoben —
+  **`surface_pressure` fehlte im Mock ganz** (fiel in den Default ±10, Δθ war
+  daraus Unsinn, ohne dass irgendwo etwas fehlte), und die **Member-Streuung
+  des Ensembles hing nicht vom ORT ab**: sie war an zwei Punkten identisch und
+  kürzte sich in ΔP exakt weg, alle Member lagen als eine Linie aufeinander
+  und die Wahrscheinlichkeit sprang 0 → 100. Jetzt gemeinsamer PLUS
+  ortsabhängiger Anteil (der gemeinsame bleibt der größere — ein Ensemble ist
+  im Gradienten besser bestimmt als im absoluten Niveau). Die Memberzahl kommt
+  außerdem aus der Registry des angefragten Modells statt fester 51.
 - `src/render/fieldImage.ts` — Gitterfeld → ImageData: Mercator-Vorverzerrung
   (Zeile → Latitude via inverser Projektion), bilineare Interpolation,
   Farbskalen-LUT; NaN → transparent.
@@ -1023,10 +1163,75 @@ npm run preview   # gebautes dist/ servieren
   die Modelle nebeneinanderstellt, ist das nicht nur Pflicht, sondern die
   Information selbst: wer ICON gegen IFS vergleicht, sollte wissen, dass da DWD
   gegen ECMWF steht.
-- **Sechs Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
+- **Impressum ist Pflicht, nicht Beiwerk** (`Impressum.tsx`, AppView
+  `impressum`, `.legal*` in `index.css`): Rechtsrahmen ist DEUTSCHLAND, private
+  nicht kommerzielle Seite. **Welche Norm gilt, entscheidet den Umfang, und der
+  naheliegende Schluss ist falsch**: § 5 DDG (seit Mai 2024 an der Stelle des
+  früheren § 5 TMG) gilt nur für GESCHÄFTSMÄSSIGE, gegen Entgelt angebotene
+  Dienste — greift hier nicht. Pflicht ist trotzdem **§ 18 Abs 1 MStV**: Name
+  und Anschrift für alle Telemedien, die „nicht ausschließlich persönlichen oder
+  familiären Zwecken" dienen, und eine öffentlich erreichbare Wetterseite tut
+  das nicht. Nicht kommerziell heißt also NICHT impressumsfrei. § 18 Abs 2 MStV
+  (inhaltlich Verantwortlicher) entfällt — kein journalistisch-redaktionelles
+  Angebot —, steht aber ausdrücklich im Text, weil es sonst die Rückfrage ist.
+  **KEINE Postadresse des Anbieters steht im Quellcode** — und das gilt auch
+  für die einer IMPRESSUMSVERTRETUNG, nicht nur für eine Wohnadresse: das
+  Repository ist öffentlich, die Pflichtangabe gehört auf die ausgelieferte
+  Seite, aber nicht in einen öffentlichen Git-Verlauf, aus dem man sie nur mit
+  einem History-Rewrite wieder herausbekommt (und bis dahin kann geforkt oder
+  gespiegelt sein). Name, Zustellzusatz, Straße, Ort und E-Mail kommen erst
+  beim BAUEN herein (`VITE_IMPRESSUM_NAME`/`_CAREOF`/`_STREET`/`_CITY`/
+  `_EMAIL`, typisiert in `src/env.d.ts`): lokal aus `.env.local` (gitignored
+  über `*.local`, Vorlage `.env.example`), im Deploy aus
+  GitHub-Actions-Secrets (`IMPRESSUM_*`, gesetzt in `deploy.yml`). Im fertigen
+  Bundle stehen sie im Klartext — richtig so, eine Pflichtangabe muss lesbar
+  sein; verborgen werden sie nur vor dem Repository. Fehlt eine Angabe, baut
+  die Seite trotzdem und zeigt SELBST eine Warnung (`DETAILS_MISSING`) —
+  dieselbe Regel wie beim Preset-Laden: Fehlendes wird nie still übergangen.
+  `_CAREOF` ist optional und löst keine Warnung aus (nicht jeder Anbieter hat
+  eine Vertretung); eine Kundennummer darin gehört ZUR Adresse, ohne sie kommt
+  dort keine Post an. Geprüft: ohne Secrets kommt die Anschrift im Bundle
+  nicht vor (nur der Warntext), mit Secrets schon. **Der Preis der Trennung**:
+  was die Seite als Anschrift zeigt, steht nicht mehr im Code, sondern in der
+  Deploy-Konfiguration — ein falsch GESETZTES Secret ersetzt sie still, ohne
+  dass ein Diff es zeigt; dagegen hilft nur ein Blick auf die ausgelieferte
+  Seite nach dem Deploy.
+  **Bewusst KEINE einzelne Landes-Aufsichtsbehörde genannt**: Art. 77 DSGVO
+  eröffnet die Beschwerde bei der Behörde des Aufenthalts, des Arbeitsplatzes
+  ODER des Orts des Verstoßes, eine bestimmte zu benennen ist Praxis, aber
+  nicht vorgeschrieben. Die Zuständigkeit folgt der tatsächlichen
+  Niederlassung, NICHT der Zustelladresse — eine nach der Zustelladresse
+  gewählte Behörde wäre die falsche, und die richtige hätte das Bundesland
+  verraten, das die Vertretung gerade verdeckt. Verlinkt ist die Liste des
+  BfDI. **Kein Werkzeug-Tab**, sondern ein
+  stiller Link am rechten Rand der `AppNav` (`.appnav-legal`,
+  `margin-left: auto`): gleichrangig neben Meteogramm und Klimakarte wäre
+  falsch, schwer erreichbar wäre rechtswidrig („leicht erkennbar, unmittelbar
+  erreichbar und ständig verfügbar").
+  Inhaltlich ist der PFLICHTBLOCK der uninteressante Teil — der wichtige ist
+  der **Haftungshinweis**: die Seite zeigt rohe Modellausgaben und ist kein
+  Warndienst, für sicherheitsrelevante Entscheidungen gelten die amtlichen
+  Warnungen (verlinkt: DWD, GeoSphere, MeteoSchweiz, lawinen.report). Deshalb
+  hebt `.legal-emph` ihn hervor statt ihn ins Kleingedruckte zu setzen; dazu
+  die Linkhaftung nach §§ 7–10 DDG.
+  Die **Datenschutzerklärung ist AUS DEM CODE abgeleitet**, nicht aus einem
+  Generator: keine Cookies/Tracker/Fremdfonts (geprüft), Hosting GitHub Pages
+  (USA-Übermittlung, Art. 6 Abs 1 lit. f), der Browser kontaktiert
+  `open-meteo.com` und `hub.geosphere.at` DIREKT — IP, Koordinaten und
+  Suchbegriffe gehen dorthin, der Preis dafür, dass es keinen eigenen
+  Zwischenserver gibt. MOSMIX dagegen nicht (Ingest im Build). **IndexedDB und
+  localStorage brauchen eine Begründung, kein Banner**: sie fallen unter
+  § 25 Abs 2 Nr. 2 TDDDG (unbedingt erforderlich) — ohne die Caches belastete
+  jeder Handgriff die Kontingente der Datenanbieter erneut; das ist genau das
+  Argument und steht so im Text. Aufsichtsbehörde folgt dem Sitz des
+  Verantwortlichen (Konstante `DPA`).
+  Der einzige Bereich mit FLIESSTEXT: `.legal-body` setzt die Grundschrift von
+  12 auf 14 px hoch und deckelt die Satzbreite auf 78ch — die Dichte der
+  Workbench ist für Prosa falsch. Ein Scroll-Container, wie in der Verifikation.
+- **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
   Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
-  „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil ·
-  Österreich-Klima. Ensemble und Profil waren früher Panel-MODI und sind jetzt
+  „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil · Föhn ·
+  Österreich-Klima · Verifikation. Ensemble und Profil waren früher Panel-MODI und sind jetzt
   eigene Bereiche — `PanelMode` kennt nur noch `'meteogram' | 'map'` (Panel
   zeigt Linienchart vs. Feld-Karte — ACHTUNG, andere Bedeutung als die
   AppView-Id `classic`; deshalb bewusst NICHT `'meteogram'` als AppView-Id
@@ -1147,6 +1352,27 @@ npm run preview   # gebautes dist/ servieren
   Modelle werden schraffiert, nicht abgeschnitten. Jenseits davon: keine Extrapolation — Karte zeigt Meldung statt
   Feld, Meteogramm-Serien enden (Maskierung + Endlinien im Chart, Legende „—"),
   Scrubber schraffiert den Bereich hinter dem längsten aktiven Horizont.
+- **Der Modelllauf steht in JEDEM Vorhersagebereich** (`config/runs.ts`):
+  geholt wird immer der neueste verfügbare Lauf (die Forecast-API liefert von
+  sich aus den neuesten Seamless-Lauf), ausgewiesen wird er in Punktprognosen
+  (Legende), Karte, klassischem Meteogramm, Ensemble, Vertikalprofil und Föhn
+  (Detailmodell UND Ensemble getrennt — verschiedene Takte, also verschieden
+  alt). **Die Init-Zeit ist GESCHÄTZT, nicht gemeldet**: die API nennt sie
+  nicht, `run=` wird mit HTTP 400 abgelehnt und `model_run=` still ignoriert
+  (SPEC §6) — `latestRun()` rechnet sie aus Lauftakt und typischer
+  Bereitstellungsverzögerung (`AVAILABILITY_LAG_H`). Diese Einschränkung steht
+  als EINE Konstante `RUN_TITLE` im Tooltip jeder Laufanzeige, nicht je
+  Bereich neu formuliert. **Mit Tagesbezug** (`formatRunLong`: „heute 06 UTC",
+  „gestern 18 UTC", sonst „13.09. 12 UTC") — die kompakte Form `formatRun` ist
+  in einer Legende richtig, als einzige Angabe aber zweideutig: um 01 UTC ist
+  „18 UTC" der Lauf von gestern, und genau dann ist die Frage nach dem Alter
+  akut. `latestRun` nimmt `RunnableModel` (`id` + `updateIntervalHours`), nicht
+  `ModelInfo`, damit die Ensemble-Registry ihren Lauf genauso ausweisen kann;
+  die Föhn-Ensembles führen keinen eigenen Takt und rechnen über ihr
+  `deterministicModel` — EPS und Hauptlauf laufen im gleichen Rhythmus, das EPS
+  ist aber typisch etwas später fertig, was der Tooltip dort sagt. Getestet in
+  `runs.test.ts`. Die MOS-Vorhersage ist der einzige Bereich mit einer ECHTEN
+  Laufangabe (`meta.run` aus dem Ingest).
 - **UI-Sprache ist Deutsch**, Code/Bezeichner Englisch. Dunkles Theme,
   Design-Tokens als CSS-Variablen in `src/index.css`.
 - TypeScript strict; `verbatimModuleSyntax` verlangt `import type` für reine

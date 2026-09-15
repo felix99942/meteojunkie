@@ -9,6 +9,7 @@ import { useProfiles } from '../api/queries'
 import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel } from '../config/models'
+import { formatRun, latestRun, RUN_TITLE } from '../config/runs'
 import { supportsPressureLevels } from '../config/levels'
 import { formatCursorTime, PROFILE_FORECAST_DAYS, timeToIndex } from '../config/time'
 import { columnFromProfile, computeSounding, type SoundingParams } from '../lib/sounding'
@@ -321,6 +322,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
                       style={{ background: SERIES_COLORS[panel.modelSlots[id] ?? 0] }}
                     />
                     {getModel(id).label}
+                    {/* Welcher Lauf das Profil ist — bei einer Schichtung
+                        entscheidet das Alter über die Aussage. */}
+                    <span className="legend-run" title={RUN_TITLE}>
+                      {formatRun(latestRun(getModel(id), Date.now()))}
+                    </span>
                   </th>
                 ))}
               </tr>

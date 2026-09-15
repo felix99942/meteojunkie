@@ -53,6 +53,36 @@ export function useMeteogramSeries(
   })
 }
 
+/**
+ * Eine Punktserie OHNE Registry-Gate — für Größen, die bewusst nicht in
+ * `availableVariables` stehen (Drucklevel wie `wind_speed_700hPa`, oder
+ * `surface_pressure`). Der Aufrufer gattet selbst über `enabled` (Föhn: live
+ * geprüfte Modellliste in config/foehn.ts). Derselbe Query-Key wie
+ * `useMeteogramSeries`, derselbe Batcher — teilt sich also Cache und Request.
+ */
+export function usePointSeries(
+  location: LatLon | null,
+  model: string,
+  variable: string,
+  enabled = true,
+): UseQueryResult<HourlySeries> {
+  return useQuery({
+    queryKey: [
+      'hourly',
+      location ? location.lat.toFixed(4) : null,
+      location ? location.lon.toFixed(4) : null,
+      model,
+      variable,
+    ],
+    queryFn: () => fetchHourlySeries(location!.lat, location!.lon, model, variable),
+    enabled: location !== null && enabled,
+    staleTime: SERIES_STALE_TIME_MS,
+    gcTime: SERIES_GC_TIME_MS,
+    retry: 3,
+    retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
+  })
+}
+
 /** Vertikalprofile: eine Query pro Modell, gegatet auf Drucklevel-Support. */
 export function useProfiles(
   location: LatLon | null,
@@ -109,6 +139,38 @@ export function useEnsembleSeries(
     staleTime: SERIES_STALE_TIME_MS,
     gcTime: SERIES_GC_TIME_MS,
     // Ein Retry kostet hier gleich wieder ~5 Calls — sparsamer als bei Punktserien.
+    retry: 1,
+    retryDelay: 2000,
+  })
+}
+
+/**
+ * Wie `useEnsembleSeries`, aber mit ausdrücklicher Tageszahl und Memberzahl —
+ * für Ensembles außerhalb der Ensemble-Registry (Lokal-EPS im Föhn-Bereich).
+ * `getEnsembleModel` fällt für unbekannte IDs still auf IFS zurück und setzte
+ * dann 15 Tage und 51 Member an. Die Tageszahl steht mit im Query-Key.
+ */
+export function useEnsembleSeriesFor(
+  location: LatLon | null,
+  model: string,
+  variable: string,
+  forecastDays: number,
+  members: number,
+): UseQueryResult<EnsembleSeries> {
+  return useQuery({
+    queryKey: [
+      'ensemble',
+      location ? location.lat.toFixed(4) : null,
+      location ? location.lon.toFixed(4) : null,
+      model,
+      variable,
+      forecastDays,
+    ],
+    queryFn: () =>
+      fetchEnsembleSeries(location!.lat, location!.lon, model, variable, forecastDays, members),
+    enabled: location !== null,
+    staleTime: SERIES_STALE_TIME_MS,
+    gcTime: SERIES_GC_TIME_MS,
     retry: 1,
     retryDelay: 2000,
   })

@@ -40,6 +40,9 @@ export interface ModelInfo {
    * Karte). Der Eintrag bleibt in der Registry, damit gespeicherte Presets ihn
    * weiter auflösen können und das Wiedereinschalten ein Wort ist.
    *
+   * Außerdem `meteoswiss_icon_ch1`/`_ch2`: nur für den Föhn-Bereich geprüft,
+   * der sie direkt anspricht.
+   *
    * Aktuell abgeschaltet: `ukmo_uk_deterministic_2km`. Es LIEFERT Daten (live
    * geprüft 2026-08-31: London 73 h), scheitert außerhalb Großbritanniens aber
    * komplett — in Österreich antwortet der Request nicht einmal mit JSON, und
@@ -155,6 +158,16 @@ const BASE_VARS = [
 const PROB_VAR = ['precipitation_probability']
 
 const CONVECTION_VARS = ['cape', 'shortwave_radiation']
+
+/** Die für ICON-CH1/CH2 live geprüften Größen (Föhn-Bereich, siehe dort). */
+const FOEHN_ONLY_VARS = [
+  'temperature_2m',
+  'relative_humidity_2m',
+  'precipitation',
+  'pressure_msl',
+  'wind_speed_10m',
+  'wind_gusts_10m',
+]
 
 export const MODELS: ModelInfo[] = [
   {
@@ -334,6 +347,39 @@ export const MODELS: ModelInfo[] = [
     coverage: { latMin: 44.9, lonMin: -13.9, latMax: 60.9, lonMax: 6.6 },
     supportsBoundingBox: true,
     availableVariables: BASE_VARS,
+    selectable: false,
+  },
+  {
+    // MeteoSwiss ICON-CH1 / ICON-CH2 — NUR im Föhn-Bereich angeboten
+    // (`selectable: false`, dort über FOEHN_MODELS direkt referenziert). Live
+    // geprüft (2026-09-14) sind ausschließlich die Größen unten, und nur an den
+    // sieben Punkten der Föhnachsen (Bozen … Altdorf). KEINE Drucklevel
+    // (`temperature_700hPa`/`wind_*_700hPa` durchgehend null). Für Meteogramm,
+    // Karte und Verifikation fehlen weather_code, Bewölkung, is_day usw. — erst
+    // live prüfen, dann `selectable` entfernen. Horizonte gemessen am letzten
+    // Wert: CH1 Lauf 18 UTC → +33 h, CH2 Lauf 12 UTC → +120 h. Die Coverage ist
+    // eine Näherung der ICON-CH-Domain (Alpenraum), nicht vermessen.
+    id: 'meteoswiss_icon_ch1',
+    label: 'ICON-CH1',
+    provider: 'MeteoSchweiz',
+    resolutionKm: 1,
+    updateIntervalHours: 3,
+    forecastHours: 33,
+    coverage: { latMin: 42.5, lonMin: 0.5, latMax: 50.5, lonMax: 17.5 },
+    supportsBoundingBox: false,
+    availableVariables: FOEHN_ONLY_VARS,
+    selectable: false,
+  },
+  {
+    id: 'meteoswiss_icon_ch2',
+    label: 'ICON-CH2',
+    provider: 'MeteoSchweiz',
+    resolutionKm: 2.1,
+    updateIntervalHours: 6,
+    forecastHours: 120,
+    coverage: { latMin: 42.5, lonMin: 0.5, latMax: 50.5, lonMax: 17.5 },
+    supportsBoundingBox: false,
+    availableVariables: FOEHN_ONLY_VARS,
     selectable: false,
   },
 ]

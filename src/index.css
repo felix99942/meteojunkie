@@ -1165,6 +1165,28 @@ button:focus-visible {
   border-color: var(--accent);
 }
 
+/* Impressum-Link: abgesetzt am rechten Rand, kleiner und stiller als die
+   Werkzeug-Tabs — erreichbar aus jedem Bereich, aber nicht gleichrangig. */
+.appnav-legal {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ink-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.appnav-legal:hover {
+  color: var(--ink-secondary);
+  background: var(--bg-control);
+}
+
+.appnav-legal.is-active {
+  color: var(--ink);
+  background: var(--bg-control-hover);
+  border-color: var(--accent);
+}
+
 /* --- Österreich-Klimakarte ---------------------------------------------- */
 
 .atsection {
@@ -1510,6 +1532,9 @@ button:focus-visible {
   align-items: baseline;
   gap: 8px;
   font-size: 11px;
+  /* Dicht: die Kopfzeile steht über JEDER Stapelzeile, ihre Zeilenhöhe zählt
+     also mehrfach gegen die Zeichenfläche. */
+  line-height: 1.2;
   color: var(--ink-secondary);
 }
 
@@ -1542,6 +1567,105 @@ button:focus-visible {
   gap: 10px;
 }
 
+/* Föhn-Bereich (FoehnPanel): zwei Werkzeugleisten, der Überblick in
+   Klartext, darunter der Kriterien-Streifen über die volle Breite und ein
+   2×3-Raster aus Diagramm-Kacheln (links Druck/Ensemble/Wahrscheinlichkeit,
+   rechts Kamm/Lee/Δθ). Als EIN Stapel waren sieben Diagramme vertikal so
+   gestaucht, dass sich nichts ablesen ließ — nebeneinander bekommt jede
+   Kachel rund ein Drittel der Höhe. Beide Spalten sind gleich breit und
+   reservieren dieselben Achsenbreiten, die Zeitachsen stehen also auch
+   ZWISCHEN den Spalten deckungsgleich. Die Leisten dürfen umbrechen. */
+.foehn-bar {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  align-items: center;
+}
+
+.foehn-model {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.foehn-model i {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+}
+
+.foehn-glance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.foehn-glance strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.foehn-error {
+  color: #e66767;
+}
+
+.foehn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.foehn-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 8px 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.foehn-cell .atfc-chartcap {
+  flex-wrap: wrap;
+}
+
+.foehn-cell .atfc-legend {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.foehn-strip {
+  flex: 0 0 auto;
+  height: 240px;
+}
+
+.foehn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(250px, 1fr);
+  gap: 8px;
+  flex: 1 0 auto;
+  min-height: calc(3 * 250px + 16px);
+}
+
+@media (max-width: 1100px) {
+  .foehn-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
 /* Zeitangabe der Meteogramm-Legende (Punktprognosen): trägt die Werte
    daneben — deshalb hervorgehoben und am Zeiger zusätzlich markiert. */
 .legend-time {
@@ -1561,8 +1685,9 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   /* Eng gesetzt: die Zeilen eines Meteogramms werden senkrecht miteinander
-     gelesen, große Abstände zerlegen den Stapel optisch in Einzelbilder. */
-  gap: 4px;
+     gelesen, große Abstände zerlegen den Stapel optisch in Einzelbilder —
+     und jeder Pixel Abstand fehlt sechsmal den Kurven. */
+  gap: 2px;
   flex: 1 1 auto;
   min-height: 0;
   /* Sicherheitsnetz bei sehr kleinen Fenstern — normalerweise füllen die
@@ -1615,7 +1740,9 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
-  min-height: 120px;
+  /* Gleicher Boden wie die Inline-Angabe in ClassicMeteogram (die gewinnt) —
+     hier nur, damit die Klasse allein keine größere Untergrenze setzt. */
+  min-height: 88px;
 }
 
 .meteo-plotwrap {
@@ -2451,4 +2578,132 @@ button:focus-visible {
 
 .verify-cat-table thead th {
   font-weight: 500;
+}
+
+/* --- Impressum / Offenlegung -------------------------------------------- */
+
+/* Der einzige Bereich, der FLIESSTEXT zeigt. Die Workbench ist auf 12 px
+   Informationsdichte getrimmt — Prosa braucht das Gegenteil: größere Schrift,
+   Zeilenabstand und eine begrenzte Satzbreite. Deshalb setzt dieser Bereich
+   die Grundschrift bewusst hoch und zieht den Text NICHT über die ganze
+   Fensterbreite. GENAU EIN Scroll-Container (.legal-body), wie in der
+   Verifikation. */
+.legal {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.legal-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 24px 28px 48px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+}
+
+/* Satzbreite begrenzen: Prosa über 1600 px Fensterbreite ist unlesbar. */
+.legal-body > * {
+  max-width: 78ch;
+}
+
+.legal-body h1 {
+  margin: 0 0 20px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.legal-body h2 {
+  margin: 28px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-body h3 {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.legal-body p {
+  margin: 0 0 10px;
+}
+
+.legal-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal-body a:hover {
+  color: var(--ink);
+}
+
+.legal-body code {
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--bg-control);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* Erläuterungen im Tooltip (HISTALP-Hinweis) sichtbar machen — wie in der
+   Quellenzeile der Klimakarte. */
+.legal-body span[title] {
+  border-bottom: 1px dotted var(--ink-muted);
+  cursor: help;
+}
+
+.legal-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.legal-list li {
+  margin-bottom: 6px;
+}
+
+/* Pflichtangabe — die steht nicht im Fließtext, sondern als Block. */
+.legal-address {
+  font-style: normal;
+  color: var(--ink);
+  background: var(--bg-control);
+  border-left: 2px solid var(--accent);
+  padding: 10px 14px;
+  margin: 0 0 10px;
+}
+
+/* Der Haftungshinweis ist der inhaltlich wichtigste Absatz der Seite und
+   darf nicht wie Kleingedrucktes aussehen. */
+.legal-emph {
+  color: var(--ink);
+  background: var(--bg-control);
+  border-left: 2px solid var(--warn);
+  padding: 10px 14px;
+}
+
+/* Fehlende Pflichtangabe wird nie still übergangen. */
+.legal-warn {
+  color: var(--warn);
+  background: rgba(250, 178, 25, 0.08);
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  padding: 8px 12px;
+}
+
+/* Randbemerkungen (Rechtsgrundlage, Einschränkungen) — kleiner, aber lesbar. */
+.legal-note {
+  font-size: 12.5px;
+  color: var(--ink-muted);
 }

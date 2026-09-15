@@ -16,7 +16,15 @@
 // zentral statt in jeder Registry-Zeile, weil sie beim Bau der Laufauswahl
 // ohnehin gemeinsam nachgeschärft werden.
 
-import type { ModelInfo } from './models'
+/**
+ * Alles, was die Laufrechnung braucht — absichtlich KEIN `ModelInfo`: die
+ * Ensemble-Registry (`config/ensemble.ts`) führt eigene Modelle mit demselben
+ * Takt, und die sollen ihren Lauf genauso ausweisen können.
+ */
+export interface RunnableModel {
+  id: string
+  updateIntervalHours: number
+}
 
 const HOUR_MS = 3_600_000
 
@@ -36,6 +44,10 @@ const AVAILABILITY_LAG_H: Record<string, number> = {
   meteofrance_arpege_europe: 4,
   meteofrance_arome_france: 3,
   geosphere_arome_austria: 3,
+  // Live beobachtet (2026-09-14, 21 UTC): CH1 lieferte den 18-UTC-Lauf, CH2
+  // noch den 12-UTC-Lauf — CH2 also mehr als 3 h, der Wert ist geschätzt.
+  meteoswiss_icon_ch1: 3,
+  meteoswiss_icon_ch2: 5,
   // Live gemessen (2026-07-31, 18:30 UTC): geliefert wurde noch der 00-UTC-Lauf,
   // der 06-UTC-Lauf war nach 12,5 h also nicht online. Mit 7 h Verzögerung hätte
   // die Horizontrechnung 5 h Vorhersage behauptet, die es nicht gab.
@@ -52,7 +64,7 @@ export interface ModelRun {
 }
 
 /** Neuester zum Zeitpunkt `now` (Epoch-ms) voraussichtlich verfügbarer Lauf. */
-export function latestRun(model: ModelInfo, now: number): ModelRun {
+export function latestRun(model: RunnableModel, now: number): ModelRun {
   const intervalMs = model.updateIntervalHours * HOUR_MS
   const lagMs = (AVAILABILITY_LAG_H[model.id] ?? DEFAULT_LAG_H) * HOUR_MS
   const initTime = Math.floor((now - lagMs) / intervalMs) * intervalMs
@@ -63,3 +75,38 @@ export function latestRun(model: ModelInfo, now: number): ModelRun {
 export function formatRun(run: ModelRun): string {
   return `${String(run.initHourUtc).padStart(2, '0')} UTC`
 }
+
+/**
+ * Laufstunde MIT Tagesbezug: „heute 06 UTC", „gestern 18 UTC", sonst
+ * „13.09. 12 UTC".
+ *
+ * Die kompakte Form (`formatRun`) ist in einer Legende richtig, als einzige
+ * Angabe in einer Werkzeugleiste aber zweideutig: um 01 UTC ist „18 UTC" der
+ * Lauf von GESTERN, und genau dann ist die Frage „wie alt ist das" akut. Der
+ * Tagesbezug wird gegen `now` gerechnet, beide in UTC — die Zeitachse der
+ * Seite läuft ohnehin in UTC.
+ */
+export function formatRunLong(run: ModelRun, now: number): string {
+  const hour = `${String(run.initHourUtc).padStart(2, '0')} UTC`
+  const dayMs = 86_400_000
+  const dayOf = (t: number) => Math.floor(t / dayMs)
+  const diff = dayOf(now) - dayOf(run.initTime)
+  if (diff === 0) return `heute ${hour}`
+  if (diff === 1) return `gestern ${hour}`
+  const d = new Date(run.initTime)
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}. ${hour}`
+}
+
+/**
+ * Erklärung für den Tooltip jeder Laufanzeige — EINE Stelle, weil die
+ * Einschränkung überall dieselbe ist und wichtig: die API liefert von sich aus
+ * den neuesten Seamless-Lauf und nennt seine Init-Zeit NICHT (ein `run=`- bzw.
+ * `model_run=`-Parameter wird abgelehnt oder still ignoriert, siehe SPEC §6).
+ * Die Stunde hier ist also aus Takt und typischer Bereitstellungsverzögerung
+ * GESCHÄTZT, nicht gemeldet.
+ */
+export const RUN_TITLE =
+  'Immer der neueste verfügbare Lauf. Die Init-Zeit meldet die API nicht — ' +
+  'sie ist aus Lauftakt und typischer Bereitstellungsverzögerung geschätzt.'

@@ -1,7 +1,7 @@
 // Oberste Ansichts-Navigation der Website. Bewusst ein eigener, minimaler Store
 // (kein react-router, keine Kopplung an den komplexen Workbench-State).
 //
-// Sechs Bereiche: das klassische Meteogramm (EIN Ort, EIN Modell, gestapelte
+// Bereiche der Tab-Reihe: das klassische Meteogramm (EIN Ort, EIN Modell, gestapelte
 // Standardgrößen — `ClassicMeteogram`), Punktprognosen (der frühere
 // „Meteogramm"-Bereich: freie Variable/Modellwahl, Karte, bis zu 6 Panels —
 // intern weiter `workbench`, nur umbenannt), Ensemble, Vertikalprofil und die
@@ -36,6 +36,22 @@ export type AppView =
    * rückwärts blickt, während alles andere nach vorn schaut.
    */
   | 'verify'
+  /**
+   * Föhn-Diagnose: Druckdifferenz über den Alpenhauptkamm (Modelle und
+   * Ensemble), Kammwind, Lee-Station und ein Kriterien-Streifen. Eigenes
+   * Gerüst wie das klassische Meteogramm — die Punkte sind durch die
+   * Föhnachse fest vorgegeben, `lockedLocation` spielt hier keine Rolle.
+   */
+  | 'foehn'
+  /**
+   * Impressum/Offenlegung. Kein Werkzeug-Bereich — steht nicht in der
+   * Tab-Reihe, sondern hinter dem kleinen Link am rechten Rand der Navigation
+   * (siehe AppNav). Als AppView geführt, weil die Anbieterkennzeichnung
+   * „leicht erkennbar, unmittelbar erreichbar und ständig verfügbar" sein
+   * muss: aus jedem Bereich ein Klick, ohne Router und ohne Modal, das man
+   * wegklickt und nicht wiederfindet.
+   */
+  | 'impressum'
 
 /** Bereiche, die das Panel-Raster benutzen (Klimakarte UND klassisches Meteogramm nicht). */
 export type PanelSection = 'workbench' | 'ensemble' | 'profile'

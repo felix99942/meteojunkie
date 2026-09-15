@@ -198,13 +198,25 @@ export function drawWxSymbol(
 }
 
 /**
- * WMO-Stationskreis für den Bedeckungsgrad in ACHTELN: leerer Kreis = wolkenlos,
- * voll ausgefüllt = bedeckt (8/8), dazwischen ein im Uhrzeigersinn ab 12 Uhr
- * gefüllter Sektor. Für 1/8 zeichnet der Schlüssel klassisch einen senkrechten
+ * WMO-Stationskreis für den Bedeckungsgrad in ACHTELN, im Uhrzeigersinn ab
+ * 12 Uhr gefüllt. Für 1/8 zeichnet der Schlüssel klassisch einen senkrechten
  * Strich statt eines (kaum sichtbaren) Achtelsektors — das ist hier
  * übernommen; die Zwischenstufen sind bewusst als monotoner Sektor gefüllt und
  * nicht in der historischen Quadranten-Notation, weil der Füllgrad so ohne
  * Schlüsseltabelle direkt als Anteil gelesen werden kann.
+ *
+ * ZWEI Farben, und das ist der Punkt: `cloudInk` füllt den BEWÖLKTEN Sektor
+ * (dunkel), `clearInk` den Rest der Scheibe (hell) — bei 6/8 sind also drei
+ * Viertel dunkel und ein Viertel hell. Mit einer Farbe stünde „hell" je nach
+ * Stufe einmal für Wolke und einmal für freien Himmel, und das Symbol
+ * widerspräche der Fläche, auf der es liegt.
+ *
+ * Damit trägt das Symbol seinen Kontrast selbst und bleibt auf jeder
+ * Untergrundhelligkeit lesbar: ein heller Ring (`clearInk`) unter der Scheibe
+ * sichert die Silhouette auf DUNKLEM Grund (8/8 auf bedeckter Fläche), die
+ * Umrandung in `cloudInk` die Kante auf HELLEM Grund (0/8 auf sonniger
+ * Fläche). Ohne den Ring verschwand die bedeckte Scheibe im bedeckten
+ * Hintergrund.
  */
 export function drawOctaSymbol(
   ctx: CanvasRenderingContext2D,
@@ -212,12 +224,28 @@ export function drawOctaSymbol(
   cy: number,
   r: number,
   octa: number,
-  ink: string,
+  cloudInk: string,
+  clearInk: string,
 ) {
   ctx.save()
   ctx.setLineDash([])
-  ctx.strokeStyle = ink
-  ctx.fillStyle = ink
+  ctx.lineWidth = 1.3
+
+  // Heller Ring als Silhouette (wie der Halo der Stadt-Labels).
+  ctx.strokeStyle = clearInk
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(cx, cy, r + 0.7, 0, Math.PI * 2)
+  ctx.stroke()
+
+  // Freier Himmel = die ganze Scheibe, davon wird der bewölkte Teil überdeckt.
+  ctx.fillStyle = clearInk
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.fillStyle = cloudInk
+  ctx.strokeStyle = cloudInk
   ctx.lineWidth = 1.3
   if (octa >= 8) {
     ctx.beginPath()
@@ -225,25 +253,22 @@ export function drawOctaSymbol(
     ctx.fill()
   } else if (octa === 1) {
     ctx.beginPath()
-    ctx.arc(cx, cy, r, 0, Math.PI * 2)
-    ctx.stroke()
-    ctx.beginPath()
     ctx.moveTo(cx, cy - r)
     ctx.lineTo(cx, cy + r)
     ctx.stroke()
-  } else {
-    if (octa > 0) {
-      const start = -Math.PI / 2
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.arc(cx, cy, r, start, start + (octa / 8) * Math.PI * 2)
-      ctx.closePath()
-      ctx.fill()
-    }
+  } else if (octa > 0) {
+    const start = -Math.PI / 2
     ctx.beginPath()
-    ctx.arc(cx, cy, r, 0, Math.PI * 2)
-    ctx.stroke()
+    ctx.moveTo(cx, cy)
+    ctx.arc(cx, cy, r, start, start + (octa / 8) * Math.PI * 2)
+    ctx.closePath()
+    ctx.fill()
   }
+
+  // Umrandung zuletzt, damit sie über der Sektorkante liegt.
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.stroke()
   ctx.restore()
 }
 

@@ -5,6 +5,8 @@ import { AppNav } from './components/AppNav'
 import { AtSection } from './components/AtSection'
 import { ClassicMeteogram } from './components/ClassicMeteogram'
 import { VerifyPanel } from './components/VerifyPanel'
+import { FoehnPanel } from './components/FoehnPanel'
+import { Impressum } from './components/Impressum'
 import { OpenMeteoAttribution } from './components/Attribution'
 import { isPanelSection, useAppView } from './state/appView'
 
@@ -29,6 +31,10 @@ export default function App() {
         <ClassicMeteogram />
       ) : view === 'verify' ? (
         <VerifyPanel />
+      ) : view === 'foehn' ? (
+        <FoehnPanel />
+      ) : view === 'impressum' ? (
+        <Impressum />
       ) : (
         <AtSection />
       )}

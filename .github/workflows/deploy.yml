@@ -58,10 +58,22 @@ jobs:
             echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
           fi
 
+      # Impressum-Angaben kommen aus Secrets, nicht aus dem Quellcode: das
+      # Repository ist öffentlich, und dort soll KEINE Postadresse des
+      # Anbieters stehen — auch nicht die der Impressumsvertretung. Auf die
+      # ausgelieferte Seite gehört sie (§ 18 Abs 1 MStV), im gebauten Bundle
+      # steht sie deshalb im Klartext. Fehlt ein Secret, baut die Seite
+      # trotzdem und das Impressum warnt sichtbar, statt still eine Lücke zu
+      # lassen. IMPRESSUM_CAREOF ist optional (Zustellzusatz).
       - name: Web-Version bauen (Karte aus)
         run: npm run build:web
         env:
           VITE_BASE: ${{ steps.base.outputs.base }}
+          VITE_IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
+          VITE_IMPRESSUM_CAREOF: ${{ secrets.IMPRESSUM_CAREOF }}
+          VITE_IMPRESSUM_STREET: ${{ secrets.IMPRESSUM_STREET }}
+          VITE_IMPRESSUM_CITY: ${{ secrets.IMPRESSUM_CITY }}
+          VITE_IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

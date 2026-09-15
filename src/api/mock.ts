@@ -4,8 +4,13 @@
 // Multi-Modell-Requests, damit der reale Parsing-Pfad durchlaufen wird.
 //
 // Aktivierung: ?mock=1 (ohne Dev-Server-Neustart), ?mock=ratelimit,
-// ?mock=empty — oder VITE_MOCK=1 für automatisierte Läufe. Im
+// ?mock=empty, ?mock=foehn — oder VITE_MOCK=1 für automatisierte Läufe. Im
 // Produktions-Build ohne VITE_MOCK ist der Modus hart abgeschaltet.
+//
+// ?mock=foehn ist ?mock=1 PLUS einer Föhnorkan-Episode über dem Alpenraum
+// (`mockFoehn.ts`, dort steht das Warum): das glatte Grundfeld liefert über
+// die Föhnachsen nur ~0,2 hPa Druckunterschied, der Föhn-Bereich zeigt damit
+// nie Föhn und ist nicht ansehbar.
 //
 // Felder sind seed-basiert deterministisch (Screenshots vergleichbar) und
 // über Zeitschritte stetig (Play-Modus ohne Springen). Modelle bekommen
@@ -13,8 +18,11 @@
 // Mock respektiert forecastHours der Registry (Horizontbehandlung testbar).
 
 import type { DomainPreset } from '../config/domains'
+import { ENSEMBLE_MODELS } from '../config/ensemble'
+import { FOEHN_ENSEMBLES } from '../config/foehn'
 import { getModel } from '../config/models'
 import { TIME_RANGE } from '../config/time'
+import { foehnOverride } from './mockFoehn'
 
 export type MockMode = 'off' | 'data' | 'ratelimit' | 'empty'
 
@@ -27,17 +35,25 @@ export interface HttpResult {
 // Produktions-Gate: ohne DEV bzw. explizites VITE_MOCK=1 bleibt der Modus aus
 const MOCK_ALLOWED = import.meta.env.DEV || import.meta.env.VITE_MOCK === '1'
 
+function mockParam(): string | null {
+  if (!MOCK_ALLOWED) return null
+  return new URLSearchParams(window.location.search).get('mock')
+}
+
 function resolveMode(): MockMode {
   if (!MOCK_ALLOWED) return 'off'
-  const q = new URLSearchParams(window.location.search).get('mock')
+  const q = mockParam()
   if (q === 'ratelimit') return 'ratelimit'
   if (q === 'empty') return 'empty'
-  if (q === '1' || q === 'true') return 'data'
+  if (q === '1' || q === 'true' || q === 'foehn') return 'data'
   if (q !== null) return 'off' // ?mock=0 u.ä. schaltet explizit ab
   return import.meta.env.VITE_MOCK === '1' ? 'data' : 'off'
 }
 
 export const MOCK_MODE: MockMode = resolveMode()
+
+/** Föhnorkan-Szenario aktiv (?mock=foehn) — Aufschlag auf den Datenmodus. */
+export const MOCK_FOEHN: boolean = MOCK_MODE === 'data' && mockParam() === 'foehn'
 
 // --- Mock-Auflösung (?mockres=N) -------------------------------------------
 // Mock kostet kein API-Budget, also ist die Gitterauflösung frei wählbar.
@@ -279,6 +295,22 @@ function mockProfile(
 const LEVEL_VAR = /^(temperature|relative_humidity|wind_speed|wind_direction|geopotential_height)_(\d+)hPa$/
 
 function mockValue(variable: string, model: string, lat: number, lon: number, t: number): number {
+  const v = baseMockValue(variable, model, lat, lon, t)
+  if (!MOCK_FOEHN) return v
+  // Das Szenario blendet über das Grundfeld: außerhalb der Episode und
+  // außerhalb des Alpenraums gibt `foehnOverride` null zurück, der übrige
+  // Mock bleibt also Bit für Bit derselbe.
+  const o = foehnOverride(variable, lat, lon, t, v)
+  return o == null ? v : round1(o)
+}
+
+function baseMockValue(
+  variable: string,
+  model: string,
+  lat: number,
+  lon: number,
+  t: number,
+): number {
   const level = LEVEL_VAR.exec(variable)
   if (level) return mockProfile(level[1], Number(level[2]), model, lat, lon, t)
   const phase = hash01(model) * Math.PI * 2
@@ -341,6 +373,12 @@ function mockValue(variable: string, model: string, lat: number, lon: number, t:
     }
     case 'pressure_msl':
       return round1(1013 + 14 * Math.sin(lon / 10 - t / 40 + phase) - (lat - 50) * 0.3)
+    // Der Mock hat kein Geländemodell, also ein pauschaler Abzug für eine
+    // Stationshöhe um 400 m. Ohne diesen Fall fiel `surface_pressure` in den
+    // Default (±10) — und Δθ im Föhn-Bereich wurde daraus als Unsinn
+    // gerechnet, ohne dass irgendwo etwas fehlte.
+    case 'surface_pressure':
+      return round1(mockValue('pressure_msl', model, lat, lon, t) - 45)
     case 'wind_speed_10m':
       return round1(mockWind(model, lat, lon, t))
     case 'wind_gusts_10m':
@@ -373,6 +411,7 @@ const UNITS: Record<string, string> = {
   weather_code: 'wmo code',
   is_day: '',
   pressure_msl: 'hPa',
+  surface_pressure: 'hPa',
   wind_speed_10m: 'km/h',
   wind_gusts_10m: 'km/h',
   wind_direction_10m: '°',
@@ -455,13 +494,25 @@ const NON_NEGATIVE = new Set([
   'cape',
 ])
 
+/** Member inkl. Kontrolllauf aus den Registries; unbekannte ID → IFS-Größe. */
+function mockMemberCount(model: string): number {
+  const ens = ENSEMBLE_MODELS.find((m) => m.id === model)
+  if (ens) return ens.members
+  const foehn = FOEHN_ENSEMBLES.find((m) => m.id === model)
+  if (foehn) return foehn.members
+  return 51
+}
+
 function buildEnsembleBody(u: URL): MockLocation {
   const lat = Number(u.searchParams.get('latitude') ?? '0')
   const lon = Number(u.searchParams.get('longitude') ?? '0')
   const model = (u.searchParams.get('models') ?? 'ecmwf_ifs025').split(',')[0]
   const variable = (u.searchParams.get('hourly') ?? 'temperature_2m').split(',')[0]
   const days = Number(u.searchParams.get('forecast_days') ?? '15')
-  const members = 51
+  // Memberzahl des ANGEFRAGTEN Modells statt fester 51: die Lokal-Ensembles
+  // des Föhn-Bereichs haben 11–21 Member, und die Wahrscheinlichkeit „kein
+  // Wert unter der halben Memberzahl" ist nur mit der richtigen Zahl prüfbar.
+  const members = mockMemberCount(model)
 
   const startSec = TIME_RANGE.start / 1000
   const nt = days * 24
@@ -476,13 +527,26 @@ function buildEnsembleBody(u: URL): MockLocation {
     const key = m === 0 ? variable : `${variable}_member${String(m).padStart(2, '0')}`
     const phase = hash01(`${model}|${variable}|m${m}`) * Math.PI * 2
     const tilt = hash01(`tilt|${m}`) - 0.5
+    // Ortsabhängiger Anteil der Streuung. OHNE ihn hängt die Abweichung eines
+    // Members nur an m und t — sie ist an zwei Punkten also IDENTISCH und
+    // kürzt sich in einer Differenz exakt weg. Genau das macht der Föhn-
+    // Bereich: ΔP wird je Member aus zwei Punkten gebildet, und alle 21
+    // Member lägen als eine Linie aufeinander, die Wahrscheinlichkeit spränge
+    // von 0 auf 100. Der gemeinsame Anteil bleibt der größere — ein Ensemble
+    // ist im Gradienten besser bestimmt als im absoluten Niveau, und die
+    // Member sollen weiter erkennbar zusammengehören.
+    const site = `${lat.toFixed(2)},${lon.toFixed(2)}`
+    const locPhase = hash01(`${model}|${variable}|m${m}|${site}`) * Math.PI * 2
+    const locTilt = hash01(`tilt|${m}|${site}`) - 0.5
     hourly[key] = time.map((_, t) => {
       if (MOCK_MODE === 'empty') return null
       const base = mockValue(variable, model, lat, lon, t)
       if (m === 0) return round1(base)
       // Wachstum ~ sqrt(Vorhersagezeit), gedeckelt am Horizontende
       const growth = Math.min(1, Math.sqrt(t / (nt || 1)))
-      const dev = amp * growth * (0.7 * Math.sin(t / 26 + phase) + 1.3 * tilt)
+      const shared = 0.7 * Math.sin(t / 26 + phase) + 1.3 * tilt
+      const local = 0.4 * Math.sin(t / 19 + locPhase) + 0.7 * locTilt
+      const dev = amp * growth * (shared + local)
       const v = base + dev
       return round1(nonNeg ? Math.max(0, v) : v)
     })

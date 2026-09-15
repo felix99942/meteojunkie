@@ -27,6 +27,11 @@ const TABS: { id: AppView; label: string; title: string }[] = [
     label: 'Vertikalprofil',
     title: 'Skew-T am Punkt — Schichtung der Atmosphäre',
   },
+  {
+    id: 'foehn',
+    label: 'Föhn',
+    title: 'Föhn-Diagnose: Druckdifferenz über die Alpen, Kammwind und Lee-Station — Modelle und Ensemble',
+  },
   { id: 'at-klima', label: 'Österreich-Klima', title: 'Klimakarte und MOS-Vorhersage' },
   {
     id: 'verify',
@@ -53,6 +58,21 @@ export function AppNav() {
           {t.label}
         </button>
       ))}
+      {/* Impressum gehört NICHT in die Tab-Reihe: es beantwortet keine
+          Wetterfrage und stünde gleichrangig neben Werkzeugen, die man
+          täglich benutzt. Es muss aber aus jedem Bereich mit einem Klick
+          erreichbar sein (§ 18 MStV: „leicht erkennbar, unmittelbar
+          erreichbar und ständig verfügbar") —
+          deshalb abgesetzt am rechten Rand, unauffällig, aber immer da. */}
+      <button
+        type="button"
+        className={`appnav-legal${view === 'impressum' ? ' is-active' : ''}`}
+        title="Impressum, Offenlegung, Datenquellen und Datenschutz"
+        aria-pressed={view === 'impressum'}
+        onClick={() => setView('impressum')}
+      >
+        Impressum
+      </button>
     </nav>
   )
 }

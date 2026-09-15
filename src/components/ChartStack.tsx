@@ -22,6 +22,7 @@ import {
   Y_AXIS_SIZE,
   type ChartDef,
   type Curve,
+  type FlagRows,
   type OctaRows,
   type Symbols,
 } from '../config/chartDef'
@@ -30,15 +31,31 @@ import { toOcta, wxLabel } from '../config/wmo'
 
 const INK_MUTED = '#898781'
 const INK = '#e8e6df'
+/** Seitenhintergrund — als Tinte auf hellen Flächen (siehe octaInk). */
+const PAGE_BG = '#101113'
 const GRIDLINE = '#2c2c2a'
 // Tagesgrenze: deutlich heller als das Stundenraster — sie trennt die Tage,
 // nicht nur zwei Stunden.
 const GRIDLINE_DAY = '#5f5f57'
 /** Datumskennzeichnung: das Auffälligste an der Zeitachse, deshalb hell und fett. */
 const DAY_FONT = '600 13px system-ui, sans-serif'
-/** Höhe des Datumsstreifens unter jedem Diagramm. */
-const DAY_STRIP_H = 20
+/** Höhe des Datumsstreifens unter jedem Diagramm. Knapp über der 13-px-Schrift. */
+const DAY_STRIP_H = 16
+/**
+ * Höhe der Stundenachse. uPlots Vorgabe ist 30 px und auf eine Achse mit
+ * Datumsbeschriftung ausgelegt — hier stehen nur zwei Ziffern in 10-px-Schrift.
+ * In einem STAPEL zahlt man das je Zeile: sechs Zeilen × 10 px sind eine halbe
+ * Diagrammhöhe, die zwischen den Kurven leer stand.
+ */
+const X_AXIS_SIZE = 20
 const AXIS_FONT = '10px system-ui, sans-serif'
+/* Jenseits des Modellhorizonts: Schleier, Schraffur und Kante. Der Schleier
+   liegt ÜBER dem Inhalt, deshalb halbdeckend in der Seitenfarbe — er soll
+   dämpfen, nicht ausradieren. */
+const VEIL_FILL = 'rgba(16,17,19,0.62)'
+const VEIL_HATCH = 'rgba(137,135,129,0.16)'
+const VEIL_EDGE = 'rgba(137,135,129,0.45)'
+const VEIL_HATCH_STEP = 7
 /** Werteanzeige beim Überfahren: klar lesbar, deutlich über der Achsenschrift. */
 const READOUT_FONT = '600 12px system-ui, sans-serif'
 const READOUT_LINE = '#f0c04a'
@@ -77,6 +94,8 @@ function withAlpha(hex: string, alpha: number): string {
  * senkrecht gegeneinander versetzt stehen.
  */
 const NICE_STEPS = [1, 2, 3, 6, 12, 24]
+/** Kleinster sinnvoller Fiedern-Abstand in px — darunter trägt das Symbol nichts mehr. */
+const MIN_BARB_GAP = 9
 function symbolStep(u: uPlot, count: number, minPxGap: number): number {
   const pxPerPoint = u.bbox.width / Math.max(count - 1, 1)
   for (const step of NICE_STEPS) if (step * pxPerPoint >= minPxGap) return step
@@ -129,6 +148,141 @@ function nightPlugin(night: (number | null)[]): uPlot.Plugin {
   }
 }
 
+/**
+ * Flächen zwischen zwei Kurven (`Curve.fillTo`): gefüllt wird der Streifen
+ * von der Kurve hinunter zu einer anderen, statt bis zur Nulllinie.
+ *
+ * Muss ein eigener Zeichner sein: uPlots `fillTo` nimmt nur EINEN Skalarwert
+ * als Boden, hier ist der Boden eine Kurve. Im `drawAxes`-Hook, also über dem
+ * Gitter und den Bezugslinien, aber UNTER den Linien — beide Kanten des
+ * Streifens bleiben so sichtbar.
+ */
+function bandPlugin(curves: Curve[]): uPlot.Plugin {
+  return {
+    hooks: {
+      drawAxes: (u) => {
+        const xs = u.data[0]
+        const ctx = u.ctx
+        ctx.save()
+        // Strichmuster einer vorher gezeichneten Serie würde die Kanten
+        // gestrichelt einfärben (siehe die übrigen Zeichner hier).
+        ctx.setLineDash([])
+        for (const c of curves) {
+          if (c.fillTo == null || c.fill == null) continue
+          const floor = curves[c.fillTo]?.values
+          if (!floor) continue
+          const scale = c.rightAxis ? RIGHT_SCALE : 'y'
+          ctx.fillStyle = withAlpha(c.color, c.fill)
+          // Zusammenhängende Läufe einzeln füllen: über eine Lücke hinweg
+          // (Modellhorizont, fehlender Member) darf keine Fläche gezogen
+          // werden — sie behauptete sonst Werte, die es nicht gibt.
+          let i = 0
+          while (i < xs.length) {
+            if (c.values[i] == null || floor[i] == null) {
+              i++
+              continue
+            }
+            let j = i
+            while (j + 1 < xs.length && c.values[j + 1] != null && floor[j + 1] != null) j++
+            if (j > i) {
+              ctx.beginPath()
+              for (let m = i; m <= j; m++) {
+                const x = u.valToPos(xs[m], 'x', true)
+                const y = u.valToPos(c.values[m]!, scale, true)
+                if (m === i) ctx.moveTo(x, y)
+                else ctx.lineTo(x, y)
+              }
+              for (let m = j; m >= i; m--) {
+                ctx.lineTo(u.valToPos(xs[m], 'x', true), u.valToPos(floor[m]!, scale, true))
+              }
+              ctx.closePath()
+              ctx.fill()
+            }
+            i = j + 1
+          }
+        }
+        ctx.restore()
+      },
+    },
+  }
+}
+
+/**
+ * Bereich jenseits des Modellhorizonts ausgrauen (`ChartDef.veil`).
+ *
+ * Im `draw`-Hook, also ÜBER Gitter, Bezugslinien und Kurven: der Schleier soll
+ * alles dämpfen, was dort noch hineinragt. In der Fläche stehen ohnehin keine
+ * Werte — gedämpft werden Gitterlinien und die durchlaufenden Bezugslinien,
+ * die sonst eine leere Fläche wie eine gefüllte aussehen lassen.
+ *
+ * Drei Teile, und jeder trägt etwas: der Schleier nimmt dem Bereich das
+ * Gewicht, die feine Schraffur unterscheidet „keine Daten" von „Wert null"
+ * (ein flacher Nullverlauf sähe sonst genauso leer aus), die Kante sagt genau,
+ * wo der Horizont liegt.
+ */
+function veilPlugin(veil: NonNullable<ChartDef['veil']>): uPlot.Plugin {
+  return {
+    hooks: {
+      draw: (u) => {
+        const x0 = u.valToPos(veil.from / 1000, 'x', true)
+        const right = u.bbox.left + u.bbox.width
+        if (!Number.isFinite(x0) || x0 >= right) return
+        const x = Math.max(x0, u.bbox.left)
+        const w = right - x
+        if (w < 2) return
+        const top = u.bbox.top
+        const h = u.bbox.height
+
+        const ctx = u.ctx
+        ctx.save()
+        // Jeder eigene Zeichner muss das Strichmuster der zuletzt gezeichneten
+        // Serie zurücksetzen, sonst wird die Kante gestrichelt.
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.rect(x, top, w, h)
+        ctx.fillStyle = VEIL_FILL
+        ctx.fill()
+
+        // Schraffur nur innerhalb der Fläche.
+        ctx.clip()
+        ctx.strokeStyle = VEIL_HATCH
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        for (let d = -h; d < w; d += VEIL_HATCH_STEP) {
+          ctx.moveTo(x + d, top + h)
+          ctx.lineTo(x + d + h, top)
+        }
+        ctx.stroke()
+
+        // Kante am Horizont — nur wenn er wirklich im Bild liegt.
+        if (x0 > u.bbox.left) {
+          ctx.strokeStyle = VEIL_EDGE
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(Math.round(x0) + 0.5, top)
+          ctx.lineTo(Math.round(x0) + 0.5, top + h)
+          ctx.stroke()
+        }
+
+        // Beschriftung nur, wenn sie ganz hineinpasst — ein abgeschnittenes
+        // Wort ist schlechter als keines. Bei den schmalen Föhn-Kacheln und
+        // bei der Kriterienleiste (wenige Pixel hoch) fällt sie deshalb weg.
+        if (veil.label && h >= 34) {
+          ctx.font = AXIS_FONT
+          ctx.textBaseline = 'middle'
+          ctx.textAlign = 'center'
+          const tw = ctx.measureText(veil.label).width
+          if (tw + 16 <= w) {
+            ctx.fillStyle = INK_MUTED
+            ctx.fillText(veil.label, x + w / 2, top + h / 2)
+          }
+        }
+        ctx.restore()
+      },
+    },
+  }
+}
+
 /** Waagrechte Bezugslinie (0 °C) — über dem Gitter, unter den Kurven. */
 function refLinePlugin(lines: NonNullable<ChartDef['refLines']>): uPlot.Plugin {
   return {
@@ -161,7 +315,12 @@ function refLinePlugin(lines: NonNullable<ChartDef['refLines']>): uPlot.Plugin {
  * der Linie überdeckt. Der Streifen deckt sich dafür selbst ab, damit die
  * Kurve nie hindurchläuft.
  */
-function windBarbStripPlugin(curve: Curve, color: string, reserve: number): uPlot.Plugin {
+function windBarbStripPlugin(
+  curve: Curve,
+  color: string,
+  reserve: number,
+  gap: number,
+): uPlot.Plugin {
   return {
     hooks: {
       draw: (u) => {
@@ -187,14 +346,22 @@ function windBarbStripPlugin(curve: Curve, color: string, reserve: number): uPlo
         ctx.stroke()
 
         const y = u.bbox.top + stripH / 2
-        const step = symbolStep(u, xs.length, 34)
+        // Unter ~9 px ist eine Fieder nur noch ein Strich — Boden, auch wenn
+        // die Kachel einen kleineren Abstand anfordert.
+        const step = symbolStep(u, xs.length, Math.max(gap, MIN_BARB_GAP))
+        // Die Länge folgt dem TATSÄCHLICHEN Abstand, nicht einer festen Zahl:
+        // bei dichter Reihung würden 30-px-Fiedern ineinanderlaufen, und die
+        // Fahnen stehen quer zum Schaft, brauchen also rundum Platz. 0,95 ×
+        // Abstand lässt eine Haarlinie Luft zwischen zwei Symbolen.
+        const pxStep = step * (u.bbox.width / Math.max(xs.length - 1, 1))
+        const len = Math.min(stripH * 0.86, 30, pxStep * 0.95)
         for (let i = 0; i < xs.length; i += step) {
           const d = dir[i]
           const v = curve.values[i]
           if (d == null || v == null) continue
           const x = u.valToPos(xs[i], 'x', true)
           if (!Number.isFinite(x)) continue
-          drawWindBarb(ctx, x, y, v, d, Math.min(stripH * 0.86, 30), color)
+          drawWindBarb(ctx, x, y, v, d, len, color)
         }
         ctx.restore()
       },
@@ -213,20 +380,38 @@ function windBarbStripPlugin(curve: Curve, color: string, reserve: number): uPlo
  *     Bedeckungsgrad in ACHTELN. Er sagt „5 von 8" genau, wo die Fläche nur
  *     „ungefähr" sagt.
  *
- * Helligkeitsrichtung: leer = wolkenlos, HELL = bedeckt — also andersherum als
- * im gedruckten Meteogramm auf weißem Papier, und aus demselben Grund: dort
- * ist „klar" das unbedruckte Blatt, hier ist es die unbemalte Panelfläche.
- * Damit deckt sich die Fläche außerdem mit dem Symbol darüber (leerer Kreis =
- * klar, voller Kreis = bedeckt), und die hellen Symbole bleiben auf jeder
- * Stufe lesbar — bei umgekehrter Richtung verschwänden sie über „klar".
+ * Helligkeitsrichtung: SONNIG = HELL, BEDECKT = DUNKEL — wie der Himmel
+ * aussieht, nicht wie das gedruckte Meteogramm auf weißem Papier. Die Fläche
+ * ist damit eine Helligkeitsskala und muss nicht übersetzt werden.
+ *
+ * Preis dafür: das Symbol kann nicht in einer festen Farbe gezeichnet werden.
+ * Ein helles Symbol verschwindet über „sonnig", ein dunkles über „bedeckt" —
+ * `octaInk()` dreht es deshalb am Grauwert der Fläche unter ihm. Dieselbe
+ * Regel gilt für die Achtel-ZAHL daneben.
  *
  * Die Zeilenbeschriftung kommt aus der linken y-Achse (Splits auf den
  * Zeilenmitten), nicht aus dem Plugin: sie steht damit außerhalb der Fläche
  * und verdeckt keine Symbole.
  */
-/** Grauwert der Bedeckungsfläche: Panelfläche (wolkenlos) → helles Grau (bedeckt). */
-const CLOUD_SHADE_MIN = 26
-const CLOUD_SHADE_MAX = 112
+/**
+ * Grauwert der Bedeckungsfläche: wolkenlos = hell, bedeckt = dunkel.
+ *
+ * Das dunkle Ende bleibt bewusst ÜBER der Panelfläche (~25): läge „bedeckt"
+ * genau darauf, wäre es von „kein Wert" nicht zu unterscheiden — und das sind
+ * zwei sehr verschiedene Aussagen.
+ */
+const CLOUD_SHADE_CLEAR = 128
+const CLOUD_SHADE_OVERCAST = 42
+
+/** Lesbare Symbolfarbe auf einer Fläche dieses Grauwerts. */
+function octaInk(shade: number): string {
+  return shade > 96 ? PAGE_BG : INK
+}
+
+/** Bedeckungsanteil 0…1 → Grauwert der Fläche. */
+function cloudShade(t: number): number {
+  return Math.round(CLOUD_SHADE_CLEAR + t * (CLOUD_SHADE_OVERCAST - CLOUD_SHADE_CLEAR))
+}
 
 function octaRowsPlugin(octaRows: OctaRows): uPlot.Plugin {
   return {
@@ -249,7 +434,7 @@ function octaRowsPlugin(octaRows: OctaRows): uPlot.Plugin {
             const v = vals[i]
             if (v == null) continue
             const t = Math.max(0, Math.min(1, v / 100))
-            const shade = Math.round(CLOUD_SHADE_MIN + t * (CLOUD_SHADE_MAX - CLOUD_SHADE_MIN))
+            const shade = cloudShade(t)
             ctx.fillStyle = `rgb(${shade},${shade},${shade})`
             ctx.fillRect(u.valToPos(xs[i], 'x', true), top, slotWidth(u, i), rowH)
           }
@@ -272,17 +457,79 @@ function octaRowsPlugin(octaRows: OctaRows): uPlot.Plugin {
             const x = u.valToPos(xs[i], 'x', true)
             if (!Number.isFinite(x)) continue
             const octa = toOcta(v)
-            drawOctaSymbol(ctx, x, cy, r, octa, INK)
+            // Farbe folgt der Fläche UNTER dem Symbol, nicht der Zeile: in
+            // einer Zeile wechselt die Helligkeit von Stunde zu Stunde.
+            const ink = octaInk(cloudShade(Math.max(0, Math.min(1, v / 100))))
+            // Symbol mit ZWEI Farben: der bewölkte Sektor dunkel, der freie
+            // Himmel hell — dieselbe Leserichtung wie die Fläche darunter.
+            // Es trägt seinen Kontrast selbst (heller Ring), braucht also
+            // keine Anpassung an den Untergrund; die ZAHL daneben liegt
+            // dagegen direkt auf der Fläche und schon.
+            drawOctaSymbol(ctx, x, cy, r, octa, PAGE_BG, INK)
             // Die Zahl nur in der Gesamtzeile: viermal beziffert wäre die
             // Fläche wieder zugestellt.
             if (row.withNumber && gapPx > 26) {
-              ctx.fillStyle = INK
+              ctx.fillStyle = ink
               ctx.fillText(String(octa), x + r + 2.5, cy + 0.5)
             }
           }
         }
 
         // Zeilentrenner.
+        ctx.strokeStyle = GRIDLINE
+        ctx.lineWidth = 1
+        for (let ri = 1; ri < n; ri++) {
+          const y = Math.round(u.bbox.top + ri * rowH) + 0.5
+          ctx.beginPath()
+          ctx.moveTo(u.bbox.left, y)
+          ctx.lineTo(u.bbox.left + u.bbox.width, y)
+          ctx.stroke()
+        }
+        ctx.restore()
+      },
+    },
+  }
+}
+
+/** Markierung „Modell liefert das nicht" im Kriterien-Streifen. */
+const NA_FILL = 'rgba(137,135,129,0.28)'
+
+/**
+ * Kriterien-Streifen (Föhn): je Zeile ein Kriterium, je Stunde eine Zelle.
+ * Erfüllt = volle Zelle in der Zeilenfarbe (Anteile wie „3 von 4" als
+ * Deckkraft), nicht erfüllt = leer, nicht verfügbar = schmaler grauer Balken
+ * in der Zeilenmitte. Die Zeilenbeschriftung kommt wie bei den Achtel-Zeilen
+ * aus der linken y-Achse.
+ */
+function flagRowsPlugin(flagRows: FlagRows): uPlot.Plugin {
+  return {
+    hooks: {
+      draw: (u) => {
+        const xs = u.data[0]
+        const rows = flagRows.rows
+        const n = rows.length
+        if (n === 0 || xs.length === 0) return
+        const ctx = u.ctx
+        ctx.save()
+        ctx.setLineDash([])
+        const rowH = u.bbox.height / n
+        for (let ri = 0; ri < n; ri++) {
+          const row = rows[ri]
+          const top = u.bbox.top + ri * rowH
+          for (let i = 0; i < xs.length; i++) {
+            const v = row.values[i]
+            const x = u.valToPos(xs[i], 'x', true)
+            if (!Number.isFinite(x)) continue
+            const w = slotWidth(u, i)
+            if (v == null) {
+              ctx.fillStyle = NA_FILL
+              ctx.fillRect(x, top + rowH * 0.44, w, Math.max(1, rowH * 0.12))
+            } else if (v > 0) {
+              ctx.fillStyle = withAlpha(row.color, 0.2 + 0.75 * Math.min(1, v))
+              ctx.fillRect(x, top + 1.5, w, rowH - 3)
+            }
+          }
+        }
         ctx.strokeStyle = GRIDLINE
         ctx.lineWidth = 1
         for (let ri = 1; ri < n; ri++) {
@@ -449,7 +696,7 @@ function readoutPlugin(
         const entries: { y: number; text: string; color: string }[] = []
         for (const c of chart.curves) {
           const v = c.values[idx]
-          if (v == null) continue
+          if (v == null || c.quiet) continue
           const unit = c.rightAxis ? (chart.rightAxis?.unit ?? '') : chart.unit
           const y = u.valToPos(v, c.rightAxis ? RIGHT_SCALE : 'y', true)
           if (!Number.isFinite(y)) continue
@@ -467,6 +714,15 @@ function readoutPlugin(
               text: `${r.label} ${toOcta(v)}/8`,
               color: INK_MUTED,
             })
+          })
+        }
+        if (chart.flagRows) {
+          const rows = chart.flagRows.rows
+          const rowH = u.bbox.height / rows.length
+          rows.forEach((r, ri) => {
+            const v = r.values[idx]
+            const text = r.texts?.[idx] ?? (v == null ? 'n. v.' : v >= 1 ? 'ja' : 'nein')
+            entries.push({ y: u.bbox.top + rowH * (ri + 0.5), text: `${r.label} ${text}`, color: r.color })
           })
         }
         if (chart.symbols) {
@@ -519,7 +775,7 @@ function readoutPlugin(
         // Punkte auf den Kurven zuletzt, damit kein Kästchen sie deckt.
         for (const c of chart.curves) {
           const v = c.values[idx]
-          if (v == null) continue
+          if (v == null || c.quiet) continue
           const y = u.valToPos(v, c.rightAxis ? RIGHT_SCALE : 'y', true)
           if (!Number.isFinite(y)) continue
           ctx.beginPath()
@@ -729,10 +985,11 @@ export function ChartRow({
     const tickLabel = formatTick ?? ((ts: number) => fmt.format(new Date(ts * 1000)))
     const bars = uPlot.paths.bars?.({ size: [0.7, 12] })
     const windCurve = chart.curves.find((c) => c.direction)
+    const hasBands = chart.curves.some((c) => c.fillTo != null)
     const octaRows = chart.octaRows
     // Zeilen mit SPUREN statt Kurven (Achtel-Kreise): die y-Skala ist reine
     // Geometrie (eine Einheit je Spur), die Achse beschriftet die Spuren.
-    const lanes = octaRows?.rows
+    const lanes: { label: string }[] | undefined = octaRows?.rows ?? chart.flagRows?.rows
     // Oben freigehaltener Anteil für den Fiedern-Streifen; ohne Streifen 0.
     const topReserve = chart.topReserve ?? 0
     const symbols = chart.symbols
@@ -786,13 +1043,27 @@ export function ChartRow({
       plugins: [
         ...(chart.night ? [nightPlugin(chart.night)] : []),
         ...(chart.refLines ? [refLinePlugin(chart.refLines)] : []),
+        // Nach den Bezugslinien, damit die Fläche über ihnen liegt (beide im
+        // drawAxes-Hook — die Reihenfolge hier ist die Zeichenreihenfolge).
+        ...(hasBands ? [bandPlugin(chart.curves)] : []),
         ...(dayRow || dayGrid ? [dayMarkPlugin(dayMarks, dayRow, DAY_STRIP_H)] : []),
         markPlugin(markRef),
-        ...(chart.hideCursor ? [] : [readoutPlugin(readoutRef, chart, readoutLabelRef)]),
         ...(chart.marks ? [pointMarkPlugin(chart.marks)] : []),
-        ...(windCurve ? [windBarbStripPlugin(windCurve, windCurve.color, topReserve)] : []),
+        ...(windCurve
+          ? [windBarbStripPlugin(windCurve, windCurve.color, topReserve, chart.barbGap ?? 34)]
+          : []),
         ...(octaRows ? [octaRowsPlugin(octaRows)] : []),
+        ...(chart.flagRows ? [flagRowsPlugin(chart.flagRows)] : []),
         ...(symbols ? [symbolsPlugin(symbols)] : []),
+        // Der Schleier dämpft alles, was in den Bereich jenseits des Horizonts
+        // hineinragt — auch Fiedern, Symbole und Kriterienzellen.
+        ...(chart.veil ? [veilPlugin(chart.veil)] : []),
+        // ZULETZT und damit GANZ OBEN: die Werteanzeige. Alle diese Zeichner
+        // laufen im `draw`-Hook, die Reihenfolge HIER ist die
+        // Zeichenreihenfolge — stand die Anzeige vorher, verschwanden ihre
+        // Kästchen unter den Kriterienzellen und den Achtel-Kreisen, also
+        // genau in den Zeilen, deren Werte man nur dort ablesen kann.
+        ...(chart.hideCursor ? [] : [readoutPlugin(readoutRef, chart, readoutLabelRef)]),
       ],
       scales: {
         // Bei Achtel-Zeilen ist die y-Skala reine Geometrie: eine Einheit je
@@ -801,6 +1072,17 @@ export function ChartRow({
           ? { range: [0, lanes.length] as [number, number] }
           : chart.range
             ? { range: chart.range }
+            : chart.symmetricMin != null
+              ? {
+                  // Symmetrisch um 0 (Differenzen mit Vorzeichen), mindestens
+                  // ±symmetricMin, darüber mit 10 % Luft.
+                  range: (_u, min, max) => {
+                    const lo = Number.isFinite(min) ? Math.abs(min) : 0
+                    const hi = Number.isFinite(max) ? Math.abs(max) : 0
+                    const top = Math.max(Math.max(lo, hi) * 1.1, chart.symmetricMin ?? 0)
+                    return [-top, top]
+                  },
+                }
             : chart.zeroBased
               ? {
                   // Dynamisch bis zum Datenmaximum — aber nie unter `minTop`,
@@ -831,7 +1113,14 @@ export function ChartRow({
                       range: (_u, min, max) => {
                         const mid = (min + max) / 2
                         const span = Math.max((max - min) * 1.25, chart.minSpan ?? 0)
-                        return [mid - span / 2, mid + span / 2]
+                        let lo = mid - span / 2
+                        let hi = mid + span / 2
+                        // Bezugswerte (`yInclude`) mit etwas Luft hineinziehen.
+                        for (const v of chart.yInclude ?? []) {
+                          if (v - 1 < lo) lo = v - 1
+                          if (v + 1 > hi) hi = v + 1
+                        }
+                        return [lo, hi]
                       },
                     }
                   : {},
@@ -849,7 +1138,12 @@ export function ChartRow({
                 points: { show: false },
                 ...(s.rightAxis ? { scale: RIGHT_SCALE } : {}),
                 ...(s.dash ? { dash: s.dash } : {}),
-                ...(s.fill != null ? { fill: withAlpha(s.color, s.fill) } : {}),
+                // Streifen zu einer anderen Kurve → die Fläche zeichnet
+                // bandPlugin; uPlots `fill` ginge bis zur Nulllinie und
+                // überdeckte die Kurve darunter.
+                ...(s.fill != null && s.fillTo == null
+                  ? { fill: withAlpha(s.color, s.fill) }
+                  : {}),
                 ...(s.type === 'bars' ? { fill: s.color, paths: bars } : {}),
               })),
             ],
@@ -859,8 +1153,10 @@ export function ChartRow({
           show: chart.hideXAxis !== true,
           stroke: INK_MUTED,
           font: AXIS_FONT,
+          size: X_AXIS_SIZE,
+          gap: 2,
           grid: { stroke: GRIDLINE, width: 1 },
-          ticks: { stroke: GRIDLINE, width: 1 },
+          ticks: { size: 4, stroke: GRIDLINE, width: 1 },
           space: xSpace,
           values: (_u, ticks) => ticks.map(tickLabel),
         },

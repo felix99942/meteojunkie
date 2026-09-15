@@ -20,7 +20,7 @@ import { CITIES } from '../config/cities'
 import { getColorScale, type ColorScale } from '../config/colorscales'
 import type { DomainPreset } from '../config/domains'
 import { getModel, isDomainInCoverage, modelHorizonEnd } from '../config/models'
-import { formatRun, latestRun } from '../config/runs'
+import { formatRun, latestRun, RUN_TITLE } from '../config/runs'
 import { formatCursorTime, MAP_FORECAST_DAYS, STEP_MS, TIME_RANGE } from '../config/time'
 import { getVariable } from '../config/variables'
 import { renderFieldToCanvas } from '../render/fieldImage'
@@ -429,7 +429,7 @@ export function MapPanel({ panel }: { panel: PanelConfig }) {
         </span>
         {covered && available && (
           // Geschätzter neuester verfügbarer Lauf (SPEC §13) — Laufauswahl folgt.
-          <span className="map-run" title={`${model.label} · neuester verfügbarer Lauf`}>
+          <span className="map-run" title={`${model.label} · ${RUN_TITLE}`}>
             Lauf {formatRun(latestRun(model, Date.now()))}
           </span>
         )}

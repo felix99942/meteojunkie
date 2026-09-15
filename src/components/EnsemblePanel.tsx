@@ -20,6 +20,7 @@ import {
   getEnsembleModel,
   getEnsembleVariable,
 } from '../config/ensemble'
+import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { TIME_RANGE } from '../config/time'
 import { accumulateMembers, bucketMembers, plumeStats, readoutAt } from '../render/plume'
 import { cursorRangeEnd, useWorkbench, type PanelConfig } from '../state/workbench'
@@ -365,6 +366,12 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             ⤢ Zoom zurück
           </button>
         )}
+        {/* Welcher Lauf im Bild ist — bei einem 15-Tage-Plume ist das die
+            Frage nach dem Alter der Aussage. Immer der neueste verfügbare;
+            die Init-Zeit ist geschätzt (RUN_TITLE). */}
+        <span className="label-muted" title={`${model.label} · ${RUN_TITLE}`}>
+          Lauf {formatRunLong(latestRun(model, Date.now()), Date.now())}
+        </span>
         <label className="ens-toggle" title="Alle Member als Spaghetti zeigen">
           <input
             type="checkbox"

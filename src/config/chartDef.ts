@@ -38,6 +38,47 @@ export interface Curve {
    * Richtung und Stärke in Knoten tragen (WMO-Konvention der Wetterdienste).
    */
   direction?: (number | null)[]
+  /**
+   * Hintergrundkurve ohne Werteanzeige und Legendeneintrag — für die
+   * Ensemble-Member: 51 Kästchen beim Überfahren wären unlesbar, abgelesen
+   * werden Median und Perzentile daneben.
+   */
+  quiet?: true
+  /**
+   * Fläche dieser Kurve reicht nicht bis zur Nulllinie, sondern nur HINUNTER
+   * ZUR Kurve mit diesem Index (Index in `ChartDef.curves`) — gefüllt wird
+   * also der Streifen zwischen beiden. Beide Kurven behalten dabei ihre
+   * ECHTEN Werte; es wird nichts addiert.
+   *
+   * Damit lässt sich eine Größe nach Klassen einfärben, wenn die Klassen
+   * INEINANDER liegen: die Föhn-Wahrscheinlichkeit ist ocker bis zum Anteil
+   * der Member ≥ 4 hPa und rot, soweit die Member ≥ 8 hPa liegen — der rote
+   * Teil ist im ockerfarbenen enthalten, deshalb Streifen statt Stapel. Beide
+   * Kanten bleiben so an der Achse ablesbar (Oberkante = Anteil ≥ 4 hPa,
+   * Trennkante = Anteil ≥ 8 hPa) und die Achse bleibt eine
+   * Wahrscheinlichkeit von 0 bis 100 %.
+   *
+   * Muss von einem eigenen Zeichner gefüllt werden (`stackBandPlugin` in
+   * ChartStack): uPlots `fillTo` nimmt nur EINEN Skalarwert als Boden, hier
+   * ist der Boden eine Kurve.
+   */
+  fillTo?: number
+}
+
+/**
+ * Kriterien-Streifen (Föhn): je Zeile ein Kriterium, je Stunde eine Zelle.
+ * Werte 0–1 (1 = erfüllt, Zwischenwerte = Anteil, z. B. „3 von 4") oder null =
+ * nicht verfügbar — das bekommt eine eigene, schwache Markierung, weil „nicht
+ * erfüllt" und „liefert das Modell nicht" verschiedene Aussagen sind.
+ */
+export interface FlagRows {
+  rows: {
+    label: string
+    values: (number | null)[]
+    color: string
+    /** Klartext je Zeitschritt für die Werteanzeige; ohne: „ja"/„nein"/„n. v.". */
+    texts?: (string | null)[]
+  }[]
 }
 
 /**
@@ -124,6 +165,13 @@ export interface ChartDef {
    * sich nichts ablesen lässt.
    */
   minSpan?: number
+  /**
+   * Werte, die die y-Achse bei `minSpan` IMMER enthält — für Bezugslinien, die
+   * sonst aus dem Bild fallen: die Δθ-Zeile des Föhn-Bereichs lief bei −10 bis
+   * −20 K, und genau die Linien bei 0 und −3 K, an denen man sie liest, lagen
+   * außerhalb.
+   */
+  yInclude?: number[]
   /** Mindestabstand der y-Ticks in Pixeln (Standard 30) — kleiner = mehr Beschriftungen. */
   ySpace?: number
   /**
@@ -134,6 +182,14 @@ export interface ChartDef {
    * Doppelte bzw. Vierfache aus, statt Beschriftungen übereinander zu setzen.
    */
   yStep?: number
+  /**
+   * y-Achse symmetrisch um 0, mindestens ±`symmetricMin` — für Differenzen mit
+   * Vorzeichen (ΔP Süd − Nord): 0 liegt immer in der Mitte, Südföhn oben,
+   * Nordföhn unten, und die Schwellenlinien bleiben auf beiden Seiten sichtbar.
+   */
+  symmetricMin?: number
+  /** Gesetzt → Kriterien-Streifen statt Kurven, `curves` bleibt leer. */
+  flagRows?: FlagRows
   /** Gesetzt → Achtel-Kreise statt Linien/Balken, `curves` bleibt dann leer. */
   octaRows?: OctaRows
   /** Gesetzt → Wettersymbol-Zeile, `curves` bleibt leer. */
@@ -151,6 +207,30 @@ export interface ChartDef {
   note?: string
   /** Waagrechte Bezugslinie, z. B. die 0-°C-Frostgrenze. */
   refLines?: { value: number; color: string; dash?: number[] }[]
+  /**
+   * Bereich RECHTS von diesem Zeitpunkt ausgrauen: dort endet der
+   * Modell- bzw. Ensemblehorizont dieser Zeile, es gibt also keine Daten
+   * mehr. Ohne das laufen Gitter und Bezugslinien weiter, als wäre die
+   * Fläche nur gerade leer — bei einem 33-h-Modell auf einer 120-h-Achse ist
+   * das der größere Teil des Diagramms.
+   *
+   * Gezeichnet wird ein Schleier mit feiner Schraffur ÜBER dem Inhalt (die
+   * Schraffur unterscheidet „keine Daten" von „Wert null"), dazu eine Kante
+   * am Anfang und, wenn Platz ist, `label`. Anfang liefert `horizonEdge()`
+   * aus den Reihen der Zeile — nicht die Registry: so stimmt er auch, wenn
+   * ein Modell kürzer liefert als angekündigt.
+   */
+  veil?: { from: number; label?: string }
+  /**
+   * Mindestabstand der Windfiedern in PIXELN (Standard 34). Kleiner = dichter;
+   * die Fiedern werden dann automatisch kürzer, damit sie sich nicht berühren
+   * (`drawWindBarb` bekommt die Länge aus dem tatsächlichen Abstand).
+   *
+   * Der Abstand rastet weiter auf runde Stundenvielfache (`symbolStep`) — mit
+   * einem krummen Schritt wanderten die Fiedern über die Uhrzeiten. Unter
+   * ~9 px wird eine Fieder zum Strich, deshalb gibt es dort einen Boden.
+   */
+  barbGap?: number
   /** Rechte y-Achse für Kurven mit `rightAxis`. */
   rightAxis?: { unit: string; range: [number, number] }
   /**
@@ -182,4 +262,5 @@ export interface ChartDef {
 export const chartHasData = (c: ChartDef): boolean =>
   c.curves.some((s) => s.values.some((v) => v != null)) ||
   (c.octaRows?.rows.some((r) => r.values.some((v) => v != null)) ?? false) ||
+  (c.flagRows?.rows.some((r) => r.values.some((v) => v != null)) ?? false) ||
   (c.symbols?.codes.some((v) => v != null) ?? false)

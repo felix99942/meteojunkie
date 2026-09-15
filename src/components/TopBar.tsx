@@ -2,7 +2,7 @@ import { useWorkbench } from '../state/workbench'
 import { useApiUsage } from '../state/apiUsage'
 import { DOMAIN_PRESETS } from '../config/domains'
 import { MAP_ENABLED } from '../config/features'
-import { MOCK_MODE, mockGridDims } from '../api/mock'
+import { MOCK_FOEHN, MOCK_MODE, mockGridDims } from '../api/mock'
 import { isPanelSection, useAppView } from '../state/appView'
 import { LocationPicker } from './LocationPicker'
 import { PresetBar } from './PresetBar'
@@ -37,10 +37,14 @@ export function TopBar() {
                 (dims
                   ? `Testauflösung ${dims.ny}×${dims.nx} via ?mockres.`
                   : `Gitter in Realauflösung (${domain.gridLat}×${domain.gridLon}); ?mockres=N übersteuert.`) +
+                (MOCK_FOEHN
+                  ? ` Szenario Föhnorkan: Südföhn-Episode über dem Alpenraum (?mock=foehn).`
+                  : '') +
                 ` Abschalten: ?mock aus der URL entfernen.`
               }
             >
               MOCK{MOCK_MODE !== 'data' ? ` · ${MOCK_MODE.toUpperCase()}` : ''}
+              {MOCK_FOEHN && ' · FÖHNORKAN'}
               {res}
             </span>
           )

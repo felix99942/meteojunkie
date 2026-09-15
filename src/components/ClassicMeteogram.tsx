@@ -34,7 +34,7 @@ import {
   type PointMark,
 } from '../config/chartDef'
 import { getModel, isInCoverage, modelHorizonEnd, SELECTABLE_MODELS } from '../config/models'
-import { formatRun, latestRun } from '../config/runs'
+import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { timeGridMs } from '../config/time'
 import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
@@ -475,7 +475,9 @@ export function ClassicMeteogram() {
             ))}
           </select>
         </label>
-        <span className="label-muted">Lauf {formatRun(run)}</span>
+        <span className="label-muted" title={RUN_TITLE}>
+          Lauf {formatRunLong(run, Date.now())}
+        </span>
         <span
           className="label-muted"
           title="Vorhersagehorizont des gewählten Modells — so weit reicht die Zeitachse."
@@ -525,7 +527,11 @@ export function ClassicMeteogram() {
             )}
             <div
               className="atfc-chart meteo-row"
-              style={{ flexGrow: c.flex ?? 1, minHeight: c.symbols ? 58 : 104 }}
+              // Mindesthöhen knapp halten: sie sind nur das Sicherheitsnetz
+              // für kleine Fenster. Zu groß gesetzt reißen sie die Summe über
+              // die Fensterhöhe, der Stapel scrollt — und dann wächst KEINE
+              // Zeile mehr per Flex, obwohl Platz da wäre.
+              style={{ flexGrow: c.flex ?? 1, minHeight: c.symbols ? 46 : 88 }}
             >
               {/* Die Wettersymbolzeile bekommt keine Kopfzeile: „Wetter" über
                   einer Reihe Wettersymbole sagt nichts, kostet aber Höhe. */}
