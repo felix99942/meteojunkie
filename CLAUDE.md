@@ -1032,6 +1032,83 @@ npm run preview   # gebautes dist/ servieren
   sonst greifen die Fiedern der Nachbarn ineinander. Wer WIRKLICH mehr Fahnen
   will, müsste sie zwischen den Leveln INTERPOLIEREN — das sähe wie ein
   echtes Radiosondenprofil aus, wäre aber erfunden; bewusst nicht gemacht.
+- **Niederschlagsradar** (`RadarPanel.tsx`, Registry/Kern `config/radar.ts` und
+  `api/dwdRadar.ts` mit Tests, AppView `radar`) — der erste Bereich, der
+  überhaupt keine Zahlen holt, sondern FERTIGE KARTEN: der **WMS des DWD**
+  (`maps.dwd.de/geoserver/dwd/wms`) liefert das deutsche Radarkomposit **RV**
+  (1 km, alle 5 Minuten, Analyse ~4 Tage rückwärts PLUS 2 h Nowcast) als
+  eingefärbtes, transparentes PNG, schickt `Access-Control-Allow-Origin: *` und
+  braucht keinen Key. Deshalb: direkt aus dem Browser, **kein Proxy, kein
+  eigenes Rendering, kein Open-Meteo-Budget** (läuft über plain `fetch`, nicht
+  über `apiGet` — dieselbe Trennung wie die Ortssuche). Nutzung nach GeoNutzV,
+  Quellenzeile im Bereich; `maps.dwd.de` steht als einziger DWD-Host jetzt auch
+  im Impressum bei den Drittanbietern — die MOSMIX-Daten kommen weiter aus dem
+  Ingest, das Radar NICHT.
+  **Die ABDECKUNG ist die wichtigste Eigenschaft dieses Bereichs, und sie ist
+  gemessen**: das Gitter reicht von 45,7–56,2 °N und 1,5–18,7 °O, die
+  Radardaten aber nicht. Das Produkt malt „keine Daten" (Rasterwert **−999**,
+  über GetFeatureInfo geprüft) als halbtransparentes Grau, und diese Maske
+  beginnt je Breite zwischen **13,2 °O (47 °N) und 14,4 °O (49 °N)**.
+  Deutschland, die Schweiz, Vorarlberg, Tirol und das Land Salzburg sind drin —
+  **Linz, Wien, Graz, Klagenfurt, St. Pölten, Eisenstadt und Villach nicht.**
+  Die Maske wird deshalb NICHT ausgeblendet, sondern in der Legende benannt:
+  ein grauer Fleck liest sich sonst als „kein Regen", und das ist die falsche
+  Aussage. Für den fehlenden Osten Österreichs gibt es aus der GeoSphere-API
+  **keinen gangbaren Ersatz** — das Nowcast-Gitter
+  (`grid/forecast/nowcast-v1-15min-1km`, `rr`, 1 km/15 min) ist inhaltlich
+  genau richtig, aber nur als GeoJSON oder NetCDF-4 abrufbar: EIN Zeitschritt
+  über ganz Österreich sind 188.574 Punkte = **36 MB in 115 Sekunden**
+  (gemessen 2026-09-16), und NetCDF-4 ist HDF5, bräuchte also zusätzlich einen
+  Binärparser. Nicht erneut als „vielleicht doch"-Weg prüfen. Eine echte
+  Vollabdeckung Österreichs bräuchte eine andere Quelle (OPERA/Austro Control
+  sind nicht offen).
+  **Ein Bild je Zeitschritt über die GANZE Produktfläche, in EPSG:3857** — und
+  beides mit Grund. Mercator, weil MapLibre eine image-Source LINEAR im
+  Mercator-Raum aufspannt: so stimmt die Zuordnung exakt, ohne die
+  Vorverzerrung, die `render/fieldImage.ts` für lat/lon-Gitter braucht. Ein
+  Vollflächenbild statt Kacheln, weil ein Zeitschritt dann EINEN Abruf kostet
+  statt eines Dutzends, die Folge sich vorladen lässt (Schleife läuft danach
+  ruckfrei) und ein Verschieben der Karte KEINEN neuen Abruf auslöst. Preis ist
+  die feste Auflösung: `RADAR_IMAGE_WIDTH` = 1200 px sind bei 48 °N rund 1,1 km
+  je Pixel, also etwa die Produktauflösung (gemessen 1000 px → 63 KB, 1400 px →
+  111 KB, 1800 px → 166 KB je Bild) — weiter hineinzoomen darf man, es wird nur
+  weich (`maxZoom: 11`).
+  **Die Zeitschritte werden GEHOLT, nicht gerechnet**: eine Zeit abseits des
+  5-Minuten-Rasters beantwortet der Dienst mit einer ServiceException statt mit
+  einem Bild. Sie stehen in der Zeitdimension des GetCapabilities — und zwar
+  des **layer-eigenen virtuellen WMS** (`/geoserver/dwd/<Layer>/wms`, 18 KB)
+  statt des Workspace-Capabilities (862 KB), was den Minutentakt erst
+  vertretbar macht. Das Ende der Dimension ist NICHT der letzte
+  Analysezeitpunkt, sondern das Ende des Nowcasts; `analysisTime()` zieht
+  `forecastMs` (2 h) ab. Zweimal gegengeprüft: die Dimension des reinen
+  Analyse-Layers (`Radar_wn-analysis_1x1km_ger`) endete exakt 120 min früher.
+  Ein neuer Stand wird **angezeigt, aber nicht automatisch geladen** (ein Satz
+  Bilder sind ~40 Abrufe bei einem fremden, kostenlosen Dienst) — Knopf
+  „● neuer Stand". Ladereihenfolge ist `frameLoadOrder`: erst das ANGEZEIGTE
+  Bild, dann vorwärts, dann die älteren rückwärts; vier gleichzeitig.
+  **Die magentafarbene Randlinie des Produkts wird weggerechnet**
+  (`render/radarImage.ts`, mit Tests): der Dienst zeichnet entlang der
+  Außengrenze des Radargebiets eine 1 px breite Linie in **#FB00FF** — eine
+  Farbe, die in seiner eigenen Legende nicht vorkommt (Werte außerhalb der
+  Farbtabelle; die Linie steht bei 110 m/px genauso da wie bei 1,1 km/px, ist
+  also im Produkt und kein Artefakt der Anfrage). Sie liest sich GENAU FALSCH:
+  Magenta sitzt in jeder Niederschlagsskala am oberen Ende, hier markiert es
+  den Rand des unbekannten Gebiets. Jedes Bild läuft deshalb einmal über ein
+  Canvas und wird als Data-URL weitergegeben (`toDataURL()` ist synchron —
+  bei vier parallel ladenden Bildern kann so kein zweites dazwischen auf
+  dieselbe Leinwand malen). Die Farbskala selbst ist NICHT erfunden, sondern
+  1:1 aus `GetLegendGraphic&format=application/json` desselben Layers.
+  Kartenhintergrund kommt aus `render/basemap.ts` — dafür aus `MapPanel.tsx`
+  herausgezogen, damit Radar und Feld-Karte nicht zwei Fassungen derselben
+  Linienfarben pflegen. Städte kommen aus `config/cities.ts` über die
+  **Pseudo-Domain `'radar'`** (die Radarkarte hat keine `DomainPreset`, ihre
+  Fläche gibt der Dienst vor; ein zweites Städteverzeichnis wäre schlechter);
+  ausgedünnt wird hier nach ZOOM, nicht nach Panelbreite.
+  Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
+  `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` — kostet aber einen Abruf je
+  Abfrage) und weitere Produkte desselben Dienstes (`RADOLAN-RW` angeeichte
+  Stundensummen, `RADOLAN-RY`) — die Registry `RADAR_PRODUCTS` ist dafür schon
+  eine Liste.
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
   einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
   UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:
@@ -1609,7 +1686,7 @@ npm run preview   # gebautes dist/ servieren
 - **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
   Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
   „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil · Föhn ·
-  Österreich-Klima · Verifikation. Ensemble und Profil waren früher Panel-MODI und sind jetzt
+  Radar · Österreich-Klima · Verifikation. Ensemble und Profil waren früher Panel-MODI und sind jetzt
   eigene Bereiche — `PanelMode` kennt nur noch `'meteogram' | 'map'` (Panel
   zeigt Linienchart vs. Feld-Karte — ACHTUNG, andere Bedeutung als die
   AppView-Id `classic`; deshalb bewusst NICHT `'meteogram'` als AppView-Id

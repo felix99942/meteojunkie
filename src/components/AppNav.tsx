@@ -34,6 +34,12 @@ const TABS: { id: AppView; label: string; title: string }[] = [
     label: 'Föhn',
     title: 'Föhn-Diagnose: Druckdifferenz über die Alpen, Kammwind und Lee-Station — Modelle und Ensemble',
   },
+  {
+    id: 'radar',
+    label: 'Radar',
+    title:
+      'Niederschlagsradar: DWD-Komposit im 5-Minuten-Takt plus 2-Stunden-Nowcast — Deutschland, Schweiz und Westösterreich',
+  },
   { id: 'at-klima', label: 'Österreich-Klima', title: 'Klimakarte und MOS-Vorhersage' },
   {
     id: 'verify',

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { TopBar } from './components/TopBar'
 import { PanelGrid } from './components/PanelGrid'
 import { TimeScrubber } from './components/TimeScrubber'
@@ -10,6 +11,10 @@ import { Impressum } from './components/Impressum'
 import { OpenMeteoAttribution } from './components/Attribution'
 import { POINT_FORECASTS_ENABLED } from './config/features'
 import { isPanelSection, useAppView } from './state/appView'
+
+// Der Radarbereich zieht MapLibre nach — wie die Feld-Karte per `lazy`
+// abgetrennt, damit das Hauptbündel der übrigen Bereiche davon frei bleibt.
+const RadarPanel = lazy(() => import('./components/RadarPanel').then((m) => ({ default: m.RadarPanel })))
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
 // (TopBar, Panel-Raster, Zeit-Scrubber) und dieselben Panel-Configs — sie
@@ -41,6 +46,10 @@ export default function App() {
         <VerifyPanel />
       ) : view === 'foehn' ? (
         <FoehnPanel />
+      ) : view === 'radar' ? (
+        <Suspense fallback={<div className="panel-placeholder">Lade Radar…</div>}>
+          <RadarPanel />
+        </Suspense>
       ) : view === 'impressum' ? (
         <Impressum />
       ) : (

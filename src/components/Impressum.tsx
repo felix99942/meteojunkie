@@ -59,6 +59,12 @@ const THIRD_PARTY_HOSTS = [
     href: 'https://data.hub.geosphere.at/',
     hrefLabel: 'Data Hub',
   },
+  {
+    host: 'maps.dwd.de',
+    what: 'Radarbilder des Niederschlagsradars (nur im Bereich „Radar")',
+    href: 'https://www.dwd.de/DE/service/datenschutz/datenschutz_node.html',
+    hrefLabel: 'Datenschutzerklärung des DWD',
+  },
 ]
 
 export function Impressum() {
@@ -242,7 +248,8 @@ export function Impressum() {
               >
                 Deutscher Wetterdienst, Open Data
               </a>{' '}
-              — MOSMIX-Punktvorhersagen und Stationskatalog. Nutzung nach{' '}
+              — MOSMIX-Punktvorhersagen, Stationskatalog und das Niederschlagsradar
+              (Radarkomposit RV über <code>maps.dwd.de</code>). Nutzung nach{' '}
               <a
                 href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
                 target="_blank"
@@ -333,9 +340,12 @@ export function Impressum() {
             ))}
           </ul>
           <p className="legal-note">
-            Die Punktvorhersagen des Deutschen Wetterdienstes werden nicht im Browser geholt,
-            sondern beim Bauen der Seite vorverarbeitet und wie eine eigene Datei
-            ausgeliefert — an den DWD gehen also keine Abrufe der Besucher.
+            Die MOSMIX-Punktvorhersagen des Deutschen Wetterdienstes werden nicht im Browser
+            geholt, sondern beim Bauen der Seite vorverarbeitet und wie eine eigene Datei
+            ausgeliefert. Die Radarbilder dagegen holt der Browser direkt bei{' '}
+            <code>maps.dwd.de</code> — sie sind minutenaktuell und lassen sich nicht
+            vorverarbeiten; Abrufe dorthin entstehen also nur, solange der Bereich „Radar"
+            offen ist.
           </p>
 
           <h3>Speicherung auf dem Endgerät</h3>

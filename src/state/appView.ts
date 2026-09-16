@@ -44,6 +44,14 @@ export type AppView =
    */
   | 'foehn'
   /**
+   * Niederschlagsradar (DWD-Komposit RV, 5-Minuten-Bilder plus 2-h-Nowcast).
+   * Eigener Bereich mit eigenem Gerüst: er hängt an KEINER der übrigen
+   * Datenquellen — keine Open-Meteo-Abrufe, kein Zeitraster der Workbench,
+   * kein Panel-Modell —, sondern holt fertige Karten beim DWD (siehe
+   * `config/radar.ts`). Dort liegt auch die gemessene Abdeckungsgrenze.
+   */
+  | 'radar'
+  /**
    * Impressum/Offenlegung. Kein Werkzeug-Bereich — steht nicht in der
    * Tab-Reihe, sondern hinter dem kleinen Link am rechten Rand der Navigation
    * (siehe AppNav). Als AppView geführt, weil die Anbieterkennzeichnung

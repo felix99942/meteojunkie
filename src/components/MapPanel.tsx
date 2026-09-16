@@ -5,7 +5,9 @@
 //
 // Basemap ist komplett lokal — kein externer Tile-Dienst, kein API-Key, kein
 // zusätzliches Rate-Limit. Unter einem eingefärbten Feld wäre eine volle
-// Basemap ohnehin visuelles Rauschen. Layer von unten nach oben:
+// Basemap ohnehin visuelles Rauschen. Style und Bündel-Laden stehen in
+// `render/basemap.ts`, weil die Radarkarte denselben Hintergrund benutzt.
+// Layer von unten nach oben:
 // Hintergrund → Feldraster → Küsten/Grenzen (Natural Earth 1:50m, auf die
 // Domains zugeschnitten, gebündelt) → Gradnetz → Städte (DOM-Marker, Labels
 // mit Halo zuoberst; bei kleinen Panels werden Labels nach Priorität
@@ -25,165 +27,21 @@ import { formatCursorTime, MAP_FORECAST_DAYS, STEP_MS, TIME_RANGE } from '../con
 import { getVariable } from '../config/variables'
 import { renderFieldToCanvas } from '../render/fieldImage'
 import { useWorkbench, type PanelConfig } from '../state/workbench'
-import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
-import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
+import {
+  BASE_STYLE,
+  buildGraticuleBox,
+  EMPTY_FC,
+  loadBasemap,
+  OVERLAY_INSERT_BEFORE,
+} from '../render/basemap'
 
 const FIELD_SOURCE_ID = 'field'
 const FIELD_LAYER_ID = 'field'
 const FIELD_OPACITY = 0.78
 
-const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
-
-// Lokaler Style: nur Hintergrund + GeoJSON-Linien, keine externen Ressourcen.
-//
-// Grenzen als CASING-Paare (breite dunkle Linie unten, schmaler heller Kern
-// darüber): eine einzelne Linienfarbe funktioniert gegen eine divergierende
-// Farbskala nie überall — mit dunkler UND heller Kante bleibt jede Grenze
-// über hellen wie dunklen Feldbereichen lesbar (gleiches Prinzip wie der
-// Label-Halo). Hierarchie über STRICHART, nicht über Helligkeit:
-// Staatsgrenzen/Küsten durchgezogen, Bundeslandgrenzen gestrichelt.
-//
-// Achtung: line-dasharray skaliert mit line-width — Casing und Kern brauchen
-// unterschiedliche dasharray-Werte, damit die Strichelung physisch deckungs-
-// gleich bleibt (Ziel ~3 px Strich / 2 px Lücke).
-//
-// Reihenfolge bottom→top: Hintergrund → Feld (vor 'graticule' eingefügt) →
-// Gradnetz → Bundeslandgrenzen → Küsten → Staatsgrenzen; Städte/Labels sind
-// DOM-Marker und liegen immer zuoberst.
-const CASING_COLOR = '#0c0d0f'
-const CORE_COLOR = '#b4b9c2'
-
-const BASE_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    coast: { type: 'geojson', data: EMPTY_FC },
-    borders: { type: 'geojson', data: EMPTY_FC },
-    admin1: { type: 'geojson', data: EMPTY_FC },
-    graticule: { type: 'geojson', data: EMPTY_FC },
-  },
-  layers: [
-    { id: 'background', type: 'background', paint: { 'background-color': '#131418' } },
-    {
-      id: 'graticule',
-      type: 'line',
-      source: 'graticule',
-      paint: { 'line-color': '#585c66', 'line-width': 0.6, 'line-opacity': 0.35 },
-    },
-    // Bundeslandgrenzen: gestrichelt, Casing ~2 px / Kern ~0.8 px
-    {
-      id: 'admin1-casing',
-      type: 'line',
-      source: 'admin1',
-      paint: {
-        'line-color': CASING_COLOR,
-        'line-width': 2,
-        'line-opacity': 0.85,
-        'line-dasharray': [1.5, 1], // ×2 px = 3 px Strich / 2 px Lücke
-      },
-    },
-    {
-      id: 'admin1',
-      type: 'line',
-      source: 'admin1',
-      paint: {
-        'line-color': CORE_COLOR,
-        'line-width': 0.8,
-        'line-opacity': 0.9,
-        'line-dasharray': [3.75, 2.5], // ×0.8 px = 3 px Strich / 2 px Lücke
-      },
-    },
-    // Küsten und Staatsgrenzen: durchgezogen, Casing ~3 px / Kern ~1.5 px
-    {
-      id: 'coast-casing',
-      type: 'line',
-      source: 'coast',
-      paint: { 'line-color': CASING_COLOR, 'line-width': 3, 'line-opacity': 0.85 },
-    },
-    {
-      id: 'coast',
-      type: 'line',
-      source: 'coast',
-      paint: { 'line-color': CORE_COLOR, 'line-width': 1.5 },
-    },
-    {
-      id: 'borders-casing',
-      type: 'line',
-      source: 'borders',
-      paint: { 'line-color': CASING_COLOR, 'line-width': 3, 'line-opacity': 0.85 },
-    },
-    {
-      id: 'borders',
-      type: 'line',
-      source: 'borders',
-      paint: { 'line-color': CORE_COLOR, 'line-width': 1.5 },
-    },
-  ],
-}
-
-/** Das Feld liegt unter Gradnetz und allen Grenz-Layern. */
-const FIELD_INSERT_BEFORE = 'graticule'
-
-// --- Basemap-Daten (gebündelt, lazy geladen und gecacht) -------------------
-
-interface BasemapData {
-  coast: FeatureCollection
-  borders: FeatureCollection
-  /** Bundesland-/Regionsgrenzen — nur in der Österreich-Domain gebündelt. */
-  admin1?: FeatureCollection
-}
-
-const BASEMAP_URLS: Record<string, string> = {
-  europe: europeBasemapUrl,
-  austria: austriaBasemapUrl,
-}
-
-const basemapCache = new Map<string, Promise<BasemapData>>()
-
-function loadBasemap(domainId: string): Promise<BasemapData> {
-  let cached = basemapCache.get(domainId)
-  if (!cached) {
-    cached = fetch(BASEMAP_URLS[domainId]).then((r) => {
-      if (!r.ok) throw new Error(`Basemap ${domainId}: HTTP ${r.status}`)
-      return r.json() as Promise<BasemapData>
-    })
-    basemapCache.set(domainId, cached)
-  }
-  return cached
-}
-
-/** Gradnetz über die Domain-BBox (+ Rand), Abstand pro Domain konfiguriert. */
+/** Gradnetz über die Domain-BBox, Abstand pro Domain konfiguriert. */
 function buildGraticule(domain: DomainPreset): FeatureCollection {
-  const step = domain.graticuleDeg
-  const ext = 2 * step
-  const { latMin, latMax, lonMin, lonMax } = domain.bbox
-  const features: FeatureCollection['features'] = []
-  for (let lon = Math.ceil((lonMin - ext) / step) * step; lon <= lonMax + ext; lon += step) {
-    features.push({
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: [
-          [lon, Math.max(latMin - ext, -85)],
-          [lon, Math.min(latMax + ext, 85)],
-        ],
-      },
-    })
-  }
-  for (let lat = Math.ceil((latMin - ext) / step) * step; lat <= latMax + ext; lat += step) {
-    features.push({
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: [
-          [lonMin - ext, lat],
-          [lonMax + ext, lat],
-        ],
-      },
-    })
-  }
-  return { type: 'FeatureCollection', features }
+  return buildGraticuleBox(domain.bbox, domain.graticuleDeg)
 }
 
 function domainBounds(d: DomainPreset): [[number, number], [number, number]] {
@@ -414,7 +272,7 @@ export function MapPanel({ panel }: { panel: PanelConfig }) {
           source: FIELD_SOURCE_ID,
           paint: { 'raster-opacity': FIELD_OPACITY, 'raster-fade-duration': 0 },
         },
-        FIELD_INSERT_BEFORE,
+        OVERLAY_INSERT_BEFORE,
       )
     }
   }, [field, scale, displayTime, domain, mapReady, beyondHorizon])
