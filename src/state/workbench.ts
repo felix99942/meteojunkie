@@ -319,7 +319,20 @@ const DEFAULT_PANEL_VARIABLES = [
 export const useWorkbench = create<WorkbenchStore>((set) => ({
   cursorTime: INITIAL_CURSOR,
   domain: DOMAIN_PRESETS[0], // Europa
-  lockedLocation: { lat: 52.52, lon: 13.41, label: 'Berlin' },
+  /**
+   * Vorgabe-Ort ALLER punktbasierten Bereiche (klassisches Meteogramm,
+   * Punktprognosen, Ensemble, Vertikalprofil teilen sich dieses Feld).
+   *
+   * Salzburg statt Berlin, und das ist nicht Geschmack: Berlin liegt
+   * AUSSERHALB der Abdeckung sämtlicher Lokalmodelle dieser Workbench —
+   * AROME Austria, ICON-CH1/CH2 antworten dort mit Fehler bzw. leeren Reihen
+   * (live geprüft 2026-09-16). Beim ersten Laden war damit ausgerechnet das
+   * ausgegraut, worum es hier geht: der Vergleich 1–2,5-km-Lokalmodell gegen
+   * 25-km-Global. Salzburg liegt in jeder Abdeckung, nahe am Alpenrand und
+   * damit in einem Gelände, in dem der Auflösungsunterschied überhaupt
+   * sichtbar wird.
+   */
+  lockedLocation: { lat: 47.8, lon: 13.04, label: 'Salzburg' },
   runInit: null,
   playing: false,
   panels: DEFAULT_PANEL_VARIABLES.map(makePanel),

@@ -712,10 +712,23 @@ npm run preview   # gebautes dist/ servieren
   Lokal-Ensembles: ICON-CH2-EPS (21 Member, +120 h, Voreinstellung),
   ICON-D2-EPS (20), ICON-CH1-EPS (11) — über `useEnsembleSeriesFor` mit
   expliziter Tages-/Memberzahl, weil `getEnsembleModel` unbekannte IDs still
-  auf IFS abbildet (15 Tage, 51 Member). **ICON-CH1/CH2 stehen mit
-  `selectable: false` in der Registry**: nur die Größen des Föhn-Bereichs sind
-  geprüft (kein `weather_code`, keine Bewölkung, keine Drucklevel) — für andere
-  Bereiche erst live prüfen. Ihre Coverage ist eine Näherung.
+  auf IFS abbildet (15 Tage, 51 Member). **ICON-CH1/CH2 sind inzwischen FREIGESCHALTET**
+  (waren `selectable: false`, solange nur die Föhn-Größen geprüft waren): live
+  verifiziert (2026-09-16, Innsbruck) liefern BEIDE alle 19 Größen des
+  klassischen Meteogramms vollständig — `weather_code`, `is_day`, die vier
+  Bewölkungsschichten, `precipitation_probability`, `cape` und
+  `shortwave_radiation` inklusive, kein leeres Feld. Auch die Registry-Werte
+  bestätigten sich beim Nachmessen: CH1 endet bei +43 h ab Rasterbeginn, vom
+  geschätzten 09-UTC-Lauf also genau die eingetragenen 33 h; CH2 bei +127 h,
+  vom 06-UTC-Lauf 120 h (eine schöne Gegenprobe für `modelHorizonEnd`, das ab
+  Init rechnet). Die Abdeckung hält ebenfalls — Werte in Innsbruck, Salzburg,
+  WIEN und Lugano, Fehler in Berlin (jenseits 50,5° N). In der Auswahl stehen
+  sie an der Spitze der Lokalmodelle; CH1 mit 1 km ist das feinste Modell der
+  Registry. **Drucklevel haben sie weiter NICHT** — das gatet
+  `PRESSURE_LEVEL_MODELS` in `config/levels.ts` unabhängig von `selectable`,
+  sonst zeigte das Vertikalprofil leere Diagramme. Vier Tests halten
+  Freischaltung, Größenliste, Einordnung und die fehlende
+  Drucklevel-Fähigkeit fest.
   `config/levels.ts` führt ICON-D2 für das Skew-T weiter als nicht
   drucklevelfähig; zumindest für 700 hPa ist das widerlegt.
   `usePointSeries` holt Serien OHNE Registry-Gate (Drucklevel,
@@ -1540,6 +1553,17 @@ npm run preview   # gebautes dist/ servieren
   ausgeblendet, schaltet parsync ab (`parSyncAfterLayout`), sonst blieben die
   Parameter-Dropdowns der übrigen Panels für immer gesperrt. Getestet in
   `state/workbench.test.ts`.
+- **Vorgabe-Ort ist SALZBURG** (`lockedLocation` in `state/workbench.ts`), und
+  das ist keine Geschmacksfrage: die frühere Vorgabe Berlin liegt AUSSERHALB
+  der Abdeckung sämtlicher Lokalmodelle dieser Workbench — AROME Austria und
+  ICON-CH1/CH2 antworten dort mit Fehler bzw. leeren Reihen (live geprüft
+  2026-09-16). Beim ersten Laden war damit ausgerechnet das ausgegraut, worum
+  es hier geht: 1–2,5-km-Lokalmodell gegen 25-km-Global. Salzburg liegt in
+  jeder Abdeckung und nahe am Alpenrand, wo der Auflösungsunterschied
+  überhaupt sichtbar wird. Das Feld gilt für ALLE punktbasierten Bereiche —
+  klassisches Meteogramm, Punktprognosen, Ensemble und Vertikalprofil teilen
+  es sich. Die Verifikation hat davon getrennt eine STATION (Wien Hohe Warte),
+  weil sie GeoSphere-Messwerte braucht und nicht eine Koordinate.
 - **Meteogramm-Default ist EIN Modell** (`DEFAULT_MODELS = ['ecmwf_ifs025']`):
   IFS als Referenzlauf, weitere kommen per Modellwähler dazu. Nicht wieder auf
   mehrere vorausgewählte Modelle stellen — das kostet beim Laden Budget für

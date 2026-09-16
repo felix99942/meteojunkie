@@ -74,3 +74,59 @@ describe('resolutionLabel', () => {
     expect(resolutionLabel(m('icon_eu'))).toBe('7 km')
   })
 })
+
+describe('ICON-CH1/CH2', () => {
+  const ch = ['meteoswiss_icon_ch1', 'meteoswiss_icon_ch2']
+
+  // Sie waren abgeschaltet, solange nur die Föhn-Größen geprüft waren. Live
+  // verifiziert (2026-09-16, Innsbruck): beide liefern alle 19 Größen des
+  // klassischen Meteogramms vollständig. Der Test hält das fest, damit ein
+  // Aufräumen sie nicht still wieder versteckt.
+  it('stehen in der Auswahlliste', () => {
+    const ids = SELECTABLE_MODELS.map((m) => m.id)
+    for (const id of ch) expect(ids, id).toContain(id)
+  })
+
+  it('führen alle Größen, die das klassische Meteogramm braucht', () => {
+    // Genau die Zeilen des Stapels: Symbole, Achtel, Temperatur/Taupunkt,
+    // Niederschlag samt Wahrscheinlichkeit, Wind, Druck, Tag/Nacht.
+    const needed = [
+      'weather_code',
+      'is_day',
+      'cloud_cover',
+      'cloud_cover_low',
+      'cloud_cover_mid',
+      'cloud_cover_high',
+      'temperature_2m',
+      'dew_point_2m',
+      'apparent_temperature',
+      'precipitation',
+      'snowfall',
+      'precipitation_probability',
+      'wind_speed_10m',
+      'wind_gusts_10m',
+      'wind_direction_10m',
+      'pressure_msl',
+    ]
+    for (const id of ch) {
+      const m = getModel(id)
+      for (const v of needed) expect(m.availableVariables, `${id} / ${v}`).toContain(v)
+    }
+  })
+
+  // Die Auflösung ordnet sie an die Spitze der Lokalmodelle — CH1 mit 1 km ist
+  // das feinste Modell der Registry.
+  it('stehen als feinste Lokalmodelle vorn', () => {
+    const local = groupModelsByScale([...SELECTABLE_MODELS]).find((g) => g.scale === 'local')
+    expect(local?.models[0].id).toBe('meteoswiss_icon_ch1')
+    expect(local?.models.map((m) => m.id)).toContain('meteoswiss_icon_ch2')
+  })
+
+  // Drucklevel haben sie NICHT — das gatet levels.ts unabhängig von
+  // `selectable`, und das muss so bleiben, sonst zeigt das Vertikalprofil
+  // leere Diagramme.
+  it('gelten weiter als nicht drucklevelfähig', async () => {
+    const { supportsPressureLevels } = await import('./levels')
+    for (const id of ch) expect(supportsPressureLevels(id), id).toBe(false)
+  })
+})

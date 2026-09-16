@@ -40,8 +40,13 @@ export interface ModelInfo {
    * Karte). Der Eintrag bleibt in der Registry, damit gespeicherte Presets ihn
    * weiter auflösen können und das Wiedereinschalten ein Wort ist.
    *
-   * Außerdem `meteoswiss_icon_ch1`/`_ch2`: nur für den Föhn-Bereich geprüft,
-   * der sie direkt anspricht.
+   * `meteoswiss_icon_ch1`/`_ch2` waren hier, solange nur die Föhn-Größen
+   * geprüft waren. Inzwischen live verifiziert (2026-09-16, Innsbruck): BEIDE
+   * liefern alle 19 Größen des klassischen Meteogramms vollständig — auch
+   * `weather_code`, `is_day`, die vier Bewölkungsschichten,
+   * `precipitation_probability`, `cape` und `shortwave_radiation`. Deshalb
+   * freigeschaltet. Drucklevel haben sie weiter nicht; das gatet
+   * `PRESSURE_LEVEL_MODELS` in `config/levels.ts` unabhängig hiervon.
    *
    * Aktuell abgeschaltet: `ukmo_uk_deterministic_2km`. Es LIEFERT Daten (live
    * geprüft 2026-08-31: London 73 h), scheitert außerhalb Großbritanniens aber
@@ -158,16 +163,6 @@ const BASE_VARS = [
 const PROB_VAR = ['precipitation_probability']
 
 const CONVECTION_VARS = ['cape', 'shortwave_radiation']
-
-/** Die für ICON-CH1/CH2 live geprüften Größen (Föhn-Bereich, siehe dort). */
-const FOEHN_ONLY_VARS = [
-  'temperature_2m',
-  'relative_humidity_2m',
-  'precipitation',
-  'pressure_msl',
-  'wind_speed_10m',
-  'wind_gusts_10m',
-]
 
 export const MODELS: ModelInfo[] = [
   {
@@ -367,8 +362,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 33,
     coverage: { latMin: 42.5, lonMin: 0.5, latMax: 50.5, lonMax: 17.5 },
     supportsBoundingBox: false,
-    availableVariables: FOEHN_ONLY_VARS,
-    selectable: false,
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
   {
     id: 'meteoswiss_icon_ch2',
@@ -379,8 +373,7 @@ export const MODELS: ModelInfo[] = [
     forecastHours: 120,
     coverage: { latMin: 42.5, lonMin: 0.5, latMax: 50.5, lonMax: 17.5 },
     supportsBoundingBox: false,
-    availableVariables: FOEHN_ONLY_VARS,
-    selectable: false,
+    availableVariables: [...BASE_VARS, ...CONVECTION_VARS, ...PROB_VAR],
   },
 ]
 

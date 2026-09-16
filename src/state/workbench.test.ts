@@ -4,6 +4,7 @@
 // das, was man beim Umbauen kaputt macht.
 
 import { beforeEach, describe, expect, it } from 'vitest'
+import { isInCoverage, modelScale, SELECTABLE_MODELS } from '../config/models'
 import { STEP_MS, TIME_RANGE } from '../config/time'
 import { useAppView, type AppView } from './appView'
 import {
@@ -160,5 +161,21 @@ describe('parsync und Sichtbarkeit', () => {
     setPanelVariable(0, 'cloud_cover')
     setLayout(1)
     expect(useWorkbench.getState().panels.every((p) => p.variable === 'cloud_cover')).toBe(true)
+  })
+})
+
+describe('Vorgabe-Ort', () => {
+  // Berlin lag AUSSERHALB der Abdeckung aller Lokalmodelle (AROME Austria,
+  // ICON-CH1/CH2 antworten dort mit Fehler bzw. leeren Reihen) — beim ersten
+  // Laden war damit ausgerechnet der Auflösungsvergleich ausgegraut, um den es
+  // in dieser Workbench geht.
+  it('liegt in der Abdeckung ALLER Lokalmodelle', () => {
+    const loc = useWorkbench.getState().lockedLocation
+    expect(loc).not.toBeNull()
+    const local = SELECTABLE_MODELS.filter((m) => modelScale(m) === 'local')
+    expect(local.length).toBeGreaterThan(2)
+    for (const m of local) {
+      expect(isInCoverage(m, loc!.lat, loc!.lon), `${m.label} deckt ${loc!.label}`).toBe(true)
+    }
   })
 })
