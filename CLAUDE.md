@@ -1083,28 +1083,37 @@ npm run preview   # gebautes dist/ servieren
   je Pixel, also etwa die Produktauflösung (gemessen 1000 px → 63 KB, 1400 px →
   111 KB, 1800 px → 166 KB je Bild) — weiter hineinzoomen darf man, es wird nur
   weich (`maxZoom: 11`).
-  **DIE VORHERSAGE IST KEIN MODELL, sondern eine VERLAGERUNGSRECHNUNG**
-  (DWD **RADVOR**): ähnliche Niederschlagsstrukturen zweier aufeinander
-  folgender Komposite werden wiedererkannt, daraus ein flächendeckendes
-  Verlagerungsvektorfeld bestimmt und das Echofeld in 5-Minuten-Schritten bis
-  +2 h verschoben — keine Entstehung, kein Zerfall, keine NWV-Physik. Gemessen
-  bestätigt: alle Vorhersageschritte tragen dieselbe `REFERENCE_TIME` wie die
-  Analyse (GetFeatureInfo), sind also EIN Nowcast vom Analysezeitpunkt.
-  **Daraus folgt eine Korrektur, die sichtbar war**: verschoben wird das GANZE
-  Feld, einschliesslich der „keine Daten"-Kennung — die Radarkreise der
-  Abdeckungsgrenze wandern mit dem Wind mit. Gemessen (2026-09-16, 1200-px-
-  Bild, +120 min): 50.342 Pixel, die in der Analyse Maske sind, zeigen im
-  Vorhersagebild Inhalt, der aus dem Inneren über unbeobachtetes Gebiet
-  geschoben wurde; der Schwerpunkt der Maske verschiebt sich um 60 px nach
-  Westen. Die Abdeckung wird deshalb aus dem ANALYSEBILD festgehalten
-  (`coverageStencil`/`applyCoverageStencil`) und auf jedes Vorhersagebild
-  gelegt — nachgerechnet bleiben danach 0 solcher Pixel. Die umgekehrte
-  Richtung wird ABSICHTLICH nicht angefasst: die Maske, die INNERHALB der
-  Abdeckung wächst (76.121 px bei +120 min, 13 % der Analysemaske), ist die
-  ehrliche Aussage „hier hat die Verlagerung nichts, woraus sie fortschreiben
-  könnte" — sie wegzurechnen würde Vorhersage erfinden. Deshalb wird das
-  Analysebild ZUERST und allein geholt (`stencilIndex`), erst danach laufen die
-  vier parallelen Lader.
+  **GEZEIGT WIRD NUR GEMESSENES — die Vorhersage ist auf Wunsch DRAUSSEN.**
+  Der Dienst liefert sie mit: am Ende der Zeitdimension von WN und RV stehen
+  2 Stunden Verlagerungsrechnung (DWD **RADVOR**: ähnliche Strukturen zweier
+  Komposite wiedererkennen, ein flächendeckendes Verlagerungsvektorfeld
+  bestimmen, das Echofeld in 5-Minuten-Schritten fortschreiben — keine
+  Entstehung, kein Zerfall, keine NWV-Physik; gemessen bestätigt: alle
+  Vorhersageschritte tragen dieselbe `REFERENCE_TIME` wie die Analyse).
+  `forecastMs` sagt, wie viel davon am Ende steht, `analysisTime()` schneidet
+  es ab, `radarTimes()` endet am letzten Analysebild.
+  **Wer sie je zurückholt, braucht wieder das Festhalten der Abdeckung**:
+  verschoben wird das GANZE Feld, einschliesslich der „keine Daten"-Kennung —
+  die Radarkreise der Abdeckungsgrenze wandern mit dem Wind mit. Gemessen
+  (2026-09-16, 1200-px-Bild, +120 min): 50.342 Pixel, die in der Analyse
+  maskiert sind, zeigen im Vorhersagebild Inhalt, der aus dem Inneren über
+  unbeobachtetes Gebiet geschoben wurde; der Maskenschwerpunkt verschiebt sich
+  um 60 px nach Westen. Der Code dafür (`coverageStencil`) ist mit der
+  Vorhersage entfallen, die Messung steht hier.
+  **AKTUALITÄT: 5-Minuten-Takt, rund 3 Minuten Verzug** — gemessen
+  (2026-09-16, Minutenproben): das Bild für 22:30 UTC stand zwischen 22:32:26
+  und 22:33:07 bereit, das Blitzprodukt hängt einen Schritt weiter zurück.
+  Näher an „jetzt" und feiner als 5 Minuten gibt es diese Quelle nicht. Was
+  fehlte, war das **automatische Nachrücken im Browser**: die Seite blieb auf
+  dem Stand des Seitenaufrufs stehen und sah dadurch alt aus, obwohl die Quelle
+  längst weiter war. Deshalb fragt `RadarPanel` jede Minute die Zeitdimension
+  nach und holt beim neuen Stand GENAU DAS EINE fehlende Bild — und deshalb
+  liegen die Bilder in einer Map über den **ZEITSTEMPEL** statt in einem Array
+  über den Index: beim Nachrücken verschieben sich alle Indizes, die Zeiten
+  nicht, alles Geladene bleibt gültig. Nachgerückt wird nur, wenn der Zeiger
+  auf dem neuesten Bild steht oder die Schleife läuft (`atLiveEdge`) — wer ein
+  älteres Bild ansieht, wird nicht weggerissen und bekommt den Knopf
+  „● neuer Stand".
   **Interpolation: KEINE — der Dienst rastert nearest neighbour**, und das ist
   gemessen, nicht angenommen: 90-fach überzoomt (~11 m/px) stehen entlang einer
   Zeile durch ein Echo Blöcke von 101–102 Pixeln in EINER Klassenfarbe mit

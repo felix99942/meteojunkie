@@ -1,11 +1,11 @@
-// Nachbearbeitung der DWD-Radarbilder (siehe radarImage.ts). Zwei Dinge
-// müssen stimmen, und das zweite ist das heikle: die Randlinie muss
+// Die magentafarbene Randlinie der DWD-Radarbilder (siehe radarImage.ts). Zwei
+// Dinge müssen stimmen, und das zweite ist das heikle: die Linie muss
 // verschwinden, und die ECHTE Skala darf es NICHT — die dBZ-Skala führt
 // #FF33FF für 75–85 dBZ, eine Klassenfarbe, die jeder groben
 // „magenta"-Regel zum Opfer fällt.
 
 import { describe, expect, it } from 'vitest'
-import { applyCoverageStencil, coverageStencil, maskRadarEdge } from './radarImage'
+import { maskRadarEdge } from './radarImage'
 import { RV_LEGEND, WN_LEGEND } from '../config/radar'
 
 /** Baut Pixeldaten aus (r,g,b,a). */
@@ -61,41 +61,5 @@ describe('maskRadarEdge', () => {
     const d = img([255, 0, 255, 0])
     expect(maskRadarEdge(d, 0.5)).toBe(0)
     expect([...d]).toEqual([255, 0, 255, 0])
-  })
-})
-
-describe('Abdeckung festhalten', () => {
-  // Analyse: Pixel 0 ist Maske, Pixel 1 freier Himmel, Pixel 2 ein Echo.
-  const analysis = img([125, 125, 125, 128], [0, 0, 0, 0], [0, 153, 52, 255])
-
-  it('merkt sich genau die Maskenpixel der Analyse', () => {
-    expect([...coverageStencil(analysis)]).toEqual([1, 0, 0])
-  })
-
-  it('überschreibt im Vorhersagebild, was über unbeobachtetes Gebiet geschoben wurde', () => {
-    const stencil = coverageStencil(analysis)
-    // Die Verlagerung hat die Maske weggezogen und dort ein Echo hingeschoben.
-    const forecast = img([0, 153, 52, 255], [0, 0, 0, 0], [77, 191, 26, 255])
-    expect(applyCoverageStencil(forecast, stencil, 0.5)).toBe(1)
-    expect([...forecast.slice(0, 4)]).toEqual([125, 125, 125, 128])
-    // Innerhalb der Abdeckung bleibt alles, wie der Dienst es liefert.
-    expect([...forecast.slice(8, 12)]).toEqual([77, 191, 26, 255])
-  })
-
-  it('lässt Maske, die INNERHALB der Abdeckung wächst, stehen', () => {
-    // Das ist die ehrliche Aussage „hier hat die Verlagerung nichts" und darf
-    // NICHT weggerechnet werden.
-    const stencil = coverageStencil(analysis)
-    const forecast = img([125, 125, 125, 128], [125, 125, 125, 128], [0, 0, 0, 0])
-    expect(applyCoverageStencil(forecast, stencil, 0.5)).toBe(0)
-    expect([...forecast.slice(4, 8)]).toEqual([125, 125, 125, 128])
-  })
-
-  it('zählt die umgefärbte Randlinie zur Abdeckung', () => {
-    // Sonst bliebe an der Grenze eine ein Pixel schmale Rinne im Stencil, in
-    // der in den Vorhersagebildern wieder verschobener Inhalt durchscheint.
-    const frame = img([251, 0, 255, 255], [0, 0, 0, 0])
-    maskRadarEdge(frame, 0.5)
-    expect([...coverageStencil(frame)]).toEqual([1, 0])
   })
 })

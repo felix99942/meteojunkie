@@ -1,6 +1,5 @@
-// Nachbearbeitung der DWD-Radarbilder. Zwei Eingriffe, beide mit Grund.
-//
-// (1) DIE MAGENTAFARBENE RANDLINIE. Der Dienst zeichnet entlang der
+// Nachbearbeitung der DWD-Radarbilder: die magentafarbene Randlinie.
+// Der Dienst zeichnet entlang der
 // Außengrenze des Radargebiets eine ein Pixel breite Linie in **#FB00FF**,
 // einer Farbe, die in keiner seiner Legenden vorkommt (Werte außerhalb der
 // Farbtabelle) — an der Grenze zwischen „keine Daten" (Rasterwert −999, über
@@ -12,16 +11,6 @@
 // „Keine Daten"-Maske, nicht auf transparent: die Linie GEHÖRT zum unbekannten
 // Bereich.
 //
-// (2) DIE ABDECKUNG WIRD AUS DEM ANALYSEBILD FESTGEHALTEN. Die Vorhersage ist
-// eine Verlagerungsrechnung (DWD RADVOR) und verschiebt das GANZE Feld — die
-// „keine Daten"-Kennung eingeschlossen. Die Radarkreise der Abdeckungsgrenze
-// wandern dadurch mit dem Wind mit, und im aufgedeckten Streifen steht Inhalt,
-// der aus dem Inneren herangeschoben wurde, über einem Gebiet, das kein Radar
-// sieht. Deshalb: was in der ANALYSE Maske ist, bleibt in jedem
-// Vorhersagebild Maske. Die umgekehrte Richtung wird bewusst NICHT angefasst —
-// Maske, die INNERHALB der Abdeckung wächst, ist die ehrliche Aussage „hier
-// hat die Verlagerung nichts, woraus sie fortschreiben könnte".
-
 /** Farbe der „Keine Daten"-Maske beider Produktstile (#7D7D7D). */
 const MASK_RGB: [number, number, number] = [125, 125, 125]
 /** Out-of-colormap-Farbe der Randlinie (#FB00FF). */
@@ -54,14 +43,6 @@ function isEdgePixel(r: number, g: number, b: number): boolean {
   return Math.abs(r - expR) <= EDGE_TOLERANCE && Math.abs(b - expB) <= EDGE_TOLERANCE
 }
 
-function isMaskPixel(r: number, g: number, b: number): boolean {
-  return (
-    Math.abs(r - MASK_RGB[0]) <= 10 &&
-    Math.abs(g - MASK_RGB[1]) <= 10 &&
-    Math.abs(b - MASK_RGB[2]) <= 10
-  )
-}
-
 function paintMask(data: Uint8ClampedArray, i: number, alpha: number): void {
   data[i] = MASK_RGB[0]
   data[i + 1] = MASK_RGB[1]
@@ -83,44 +64,6 @@ export function maskRadarEdge(data: Uint8ClampedArray, maskOpacity: number): num
     if (a === 0) continue
     if (!isEdgePixel(data[i], data[i + 1], data[i + 2])) continue
     paintMask(data, i, a === 255 ? full : Math.round((full * a) / 255))
-    changed++
-  }
-  return changed
-}
-
-/**
- * Wo hat das Analysebild keine Daten? Ein Byte je Pixel (1 = Maske).
- *
- * MUSS nach `maskRadarEdge` gebildet werden, damit die umgefärbte Randlinie
- * als Maske mitgeht — sonst blieb sie in den Vorhersagebildern als Lücke im
- * Stencil übrig, also als schmale Rinne, in der wieder verschobener Inhalt
- * durchscheint.
- */
-export function coverageStencil(data: Uint8ClampedArray): Uint8Array {
-  const mask = new Uint8Array(data.length / 4)
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    if (data[i + 3] !== 0 && isMaskPixel(data[i], data[i + 1], data[i + 2])) mask[p] = 1
-  }
-  return mask
-}
-
-/**
- * Legt die festgehaltene Abdeckung auf ein (Vorhersage-)Bild: wo das
- * Analysebild keine Daten hatte, wird die Maske gemalt. Gibt die Zahl der
- * überschriebenen Pixel zurück — das ist genau der Inhalt, den die
- * Verlagerungsrechnung über unbeobachtetes Gebiet geschoben hätte.
- */
-export function applyCoverageStencil(
-  data: Uint8ClampedArray,
-  stencil: Uint8Array,
-  maskOpacity: number,
-): number {
-  const full = maskAlphaOf(maskOpacity)
-  let changed = 0
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    if (stencil[p] !== 1) continue
-    if (data[i + 3] !== 0 && isMaskPixel(data[i], data[i + 1], data[i + 2])) continue
-    paintMask(data, i, full)
     changed++
   }
   return changed

@@ -2850,9 +2850,7 @@ button:focus-visible {
   margin: 0;
 }
 
-/* Ladezustand je Bild — ein Strich pro Zeitschritt, direkt unter dem Regler.
-   Der Nowcast-Teil ist heller abgesetzt: „gerechnet" ist etwas anderes als
-   „gemessen", und das muss man am Regler sehen. */
+/* Ladezustand je Bild — ein Strich pro Zeitschritt, direkt unter dem Regler. */
 .radar-ticks {
   display: flex;
   gap: 1px;
@@ -2868,10 +2866,6 @@ button:focus-visible {
 
 .radar-tick.is-loaded {
   background: #2f6fb5;
-}
-
-.radar-tick.is-forecast.is-loaded {
-  background: #6f9fd8;
 }
 
 .radar-tick.is-current {
@@ -2893,8 +2887,9 @@ button:focus-visible {
   color: var(--warn);
 }
 
-/* „Neuer Stand": bewusst ein KNOPF und kein Automatismus — ein Satz neuer
-   Bilder sind ~40 Abrufe beim DWD, das entscheidet der Nutzer. */
+/* „Neuer Stand": erscheint NUR, wenn der Nutzer gerade ein älteres Bild
+   ansieht — steht der Zeiger am neuesten, rückt die Anzeige von selbst nach
+   (ein Bild je 5 Minuten). */
 .radar-fresh {
   color: var(--warn);
   border-color: var(--warn);

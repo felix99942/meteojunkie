@@ -25,27 +25,30 @@
 // Reichweite der deutschen Radare — deshalb wird die Maske NICHT ausgeblendet,
 // sondern in der Legende erklärt.
 //
-// DIE VORHERSAGE IST KEIN MODELL, sondern eine VERLAGERUNGSRECHNUNG (DWD
-// RADVOR): im Radarfeld werden ähnliche Niederschlagsstrukturen zweier
-// aufeinanderfolgender Komposite wiedererkannt, daraus ein flächendeckendes
-// Verlagerungsvektorfeld bestimmt und das Feld in 5-Minuten-Schritten bis
-// +2 h verschoben. Keine Entstehung, kein Zerfall, keine NWV-Physik — reine
-// Fortschreibung des Beobachteten. Gemessen bestätigt: alle Vorhersageschritte
-// tragen dieselbe `REFERENCE_TIME` wie die Analyse (GetFeatureInfo), sind also
-// EIN Nowcast, der zum Analysezeitpunkt losgeschickt wurde.
+// **DIE VORHERSAGE IST BEWUSST DRAUSSEN** (auf Wunsch entfernt). Der Dienst
+// liefert sie mit: die Produkte WN und RV tragen am Ende ihrer Zeitdimension
+// 2 Stunden Verlagerungsrechnung (DWD RADVOR — ähnliche Strukturen zweier
+// Komposite wiedererkennen, Verlagerungsvektorfeld bestimmen, das Echofeld in
+// 5-Minuten-Schritten fortschreiben; keine Entstehung, kein Zerfall, keine
+// NWV-Physik). `forecastMs` sagt, wie viel davon am Ende steht, und
+// `analysisTime()` schneidet es ab — GEZEIGT WIRD NUR GEMESSENES.
 //
-// **Daraus folgt der Grund für `coverageStencil`**: verschoben wird das ganze
-// Feld, einschliesslich der „keine Daten"-Kennung. Die Radarkreise der
-// Abdeckungsgrenze WANDERN dadurch mit dem Wind — gemessen (2026-09-16,
-// 1200-px-Bild): bei +120 min sind 50.533 Pixel nicht mehr maskiert, die in
-// der Analyse maskiert waren, und 76.559 neu maskiert; der Schwerpunkt der
-// Maske verschiebt sich um 60 px nach Westen. Dort, wo die Analyse keine Daten
-// hat, kann auch die Verlagerung keine haben — was der Nowcast dort malt, ist
-// aus dem Inneren herangeschobener Inhalt über einem Gebiet, das kein Radar
-// sieht. Die Abdeckung wird deshalb aus dem ANALYSEBILD festgehalten und auf
-// alle Vorhersagebilder gelegt. Umgekehrt bleibt die Maske, die INNERHALB der
-// Abdeckung wächst, stehen: dort hat die Verlagerung wirklich nichts, woraus
-// sie fortschreiben könnte, und das ist eine ehrliche Aussage.
+// Wer sie je zurückholt, braucht dann auch wieder das Festhalten der
+// Abdeckung: verschoben wird das GANZE Feld, einschliesslich der „keine
+// Daten"-Kennung, die Radarkreise der Abdeckungsgrenze wandern also mit dem
+// Wind mit. Gemessen (2026-09-16, 1200-px-Bild, +120 min): 50.342 Pixel, die
+// in der Analyse maskiert sind, zeigen im Vorhersagebild Inhalt, der aus dem
+// Inneren über unbeobachtetes Gebiet geschoben wurde; der Schwerpunkt der
+// Maske verschiebt sich um 60 px nach Westen. Der Code dafür ist mit der
+// Vorhersage entfallen, die Messung bleibt hier stehen.
+//
+// **AKTUALITÄT: 5 Minuten Takt, rund 3 Minuten Verzug** — gemessen
+// (2026-09-16, Minutenproben): das Bild für 22:30 UTC stand zwischen 22:32:26
+// und 22:33:07 zur Verfügung. Näher an „jetzt" kommt man an dieser Quelle
+// nicht, und feiner als 5 Minuten gibt es sie nicht. Was fehlte, war das
+// automatische Nachrücken im Browser (siehe `RadarPanel`): ohne das blieb die
+// Seite auf dem Stand des Seitenaufrufs stehen und sah alt aus, obwohl die
+// Quelle längst weiter war.
 //
 // **Interpolation: KEINE — der Dienst rastert nearest neighbour.** Live
 // nachgemessen (2026-09-16, 90-fach überzoomt auf ~11 m/px): entlang einer
@@ -328,45 +331,45 @@ export function parseRadarCapabilities(xml: string): RadarMeta | null {
 
 // --- Bildfolge -------------------------------------------------------------
 
-export interface RadarFrame {
-  time: number
-  /** true = Nowcast (liegt hinter dem letzten Analysezeitpunkt). */
-  forecast: boolean
-}
-
-/** Letzter ANALYSEzeitpunkt = Ende der Dimension minus Vorhersagelänge. */
+/**
+ * Letzter ANALYSEzeitpunkt. Bei Produkten mit Vorhersageteil ist das NICHT das
+ * Ende der Zeitdimension — dort stehen die 2 Stunden Verlagerungsrechnung,
+ * die dieser Bereich nicht zeigt. Zweimal gegengeprüft: die Zeitdimension des
+ * reinen Analyse-Layers (`Radar_wn-analysis_1x1km_ger`) endete genau
+ * `forecastMs` vor der des Produkt-Layers.
+ */
 export function analysisTime(meta: RadarMeta, product: RadarProduct): number {
   return meta.extent.end - product.forecastMs
 }
 
 /**
- * Die Bildfolge des Zeitschiebers: `historyMs` rückwärts vom letzten
- * Analysebild, dann (wenn gewünscht) der Nowcast bis zum Ende der Dimension.
- * Jedes Bild ist ein eigener HTTP-Abruf — die Fensterlänge ist deshalb
- * Bandbreite, nicht Kosmetik, und steht in der Bedienleiste zur Wahl.
+ * Die Zeitpunkte des Zeitschiebers: `historyMs` rückwärts vom letzten
+ * Analysebild, in Schritten der Zeitdimension. Jedes Bild ist ein eigener
+ * HTTP-Abruf — die Fensterlänge ist deshalb Bandbreite, nicht Kosmetik, und
+ * steht in der Bedienleiste zur Wahl.
+ *
+ * Aufsteigend sortiert, das letzte Element ist der neueste Stand.
  */
-export function radarFrames(
+export function radarTimes(
   meta: RadarMeta,
   product: RadarProduct,
   historyMs: number,
-  withForecast: boolean,
-): RadarFrame[] {
+): number[] {
   const step = meta.extent.stepMs || product.stepMs
-  const analysis = analysisTime(meta, product)
-  const from = Math.max(meta.extent.start, analysis - historyMs)
-  const to = withForecast ? meta.extent.end : analysis
-  const frames: RadarFrame[] = []
-  for (let t = from; t <= to + 1; t += step) frames.push({ time: t, forecast: t > analysis })
-  return frames
+  const last = analysisTime(meta, product)
+  const from = Math.max(meta.extent.start, last - historyMs)
+  const times: number[] = []
+  for (let t = from; t <= last + 1; t += step) times.push(t)
+  return times
 }
 
-/** Index des Bildes, das der Zeit am nächsten liegt (für Sprünge auf „jetzt"). */
-export function nearestFrame(frames: RadarFrame[], t: number): number {
-  if (frames.length === 0) return 0
+/** Index der Zeit, die einem Zeitpunkt am nächsten liegt. */
+export function nearestFrame(times: number[], t: number): number {
+  if (times.length === 0) return 0
   let best = 0
   let bestDist = Infinity
-  for (let i = 0; i < frames.length; i++) {
-    const d = Math.abs(frames[i].time - t)
+  for (let i = 0; i < times.length; i++) {
+    const d = Math.abs(times[i] - t)
     if (d < bestDist) {
       bestDist = d
       best = i

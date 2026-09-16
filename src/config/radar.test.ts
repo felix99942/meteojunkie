@@ -2,8 +2,8 @@
 // und beides hat eine Falle, die genau hier festgehalten wird: der Dienst
 // antwortet auf eine Zeit ABSEITS des Rasters mit einer ServiceException statt
 // mit einem Bild, die Zeiten dürfen also nicht geraten werden, und das Ende
-// der Dimension ist NICHT der letzte Analysezeitpunkt, sondern das Ende des
-// Nowcasts.
+// der Dimension ist NICHT der letzte Analysezeitpunkt, sondern das Ende der
+// Verlagerungsrechnung, die dieser Bereich NICHT zeigt.
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -16,7 +16,7 @@ import {
   parseIsoDuration,
   parseRadarCapabilities,
   parseTimeExtent,
-  radarFrames,
+  radarTimes,
   radarImageCoordinates,
   radarImageHeight,
   radarImageUrl,
@@ -108,45 +108,53 @@ describe('parseRadarCapabilities', () => {
   })
 })
 
-describe('radarFrames', () => {
-  it('endet am Ende des Nowcasts und trennt Analyse von Vorhersage', () => {
-    const frames = radarFrames(META, P, 60 * 60_000, true)
-    // 60 min Rückblick (12 Schritte) + jetzt + 120 min Nowcast (24 Schritte)
-    expect(frames).toHaveLength(37)
-    const analysis = analysisTime(META, P)
-    expect(new Date(analysis).toISOString()).toBe('2026-09-16T21:40:00.000Z')
-    expect(frames.filter((f) => !f.forecast)).toHaveLength(13)
-    expect(frames.filter((f) => f.forecast)).toHaveLength(24)
-    expect(new Date(frames[0].time).toISOString()).toBe('2026-09-16T20:40:00.000Z')
-    expect(new Date(frames[frames.length - 1].time).toISOString()).toBe('2026-09-16T23:40:00.000Z')
+describe('radarTimes', () => {
+  // Der Bereich zeigt NUR Gemessenes: die 2 Stunden Verlagerungsrechnung am
+  // Ende der Zeitdimension werden abgeschnitten. Genau das ist die Stelle, an
+  // der das passiert.
+  it('endet am letzten ANALYSEbild, nicht am Ende der Zeitdimension', () => {
+    const times = radarTimes(META, P, 60 * 60_000)
+    expect(new Date(META.extent.end).toISOString()).toBe('2026-09-16T23:40:00.000Z')
+    expect(new Date(analysisTime(META, P)).toISOString()).toBe('2026-09-16T21:40:00.000Z')
+    expect(new Date(times[times.length - 1]).toISOString()).toBe('2026-09-16T21:40:00.000Z')
   })
 
-  it('hört ohne Nowcast beim letzten Analysebild auf', () => {
-    const frames = radarFrames(META, P, 30 * 60_000, false)
-    expect(frames).toHaveLength(7)
-    expect(frames.every((f) => !f.forecast)).toBe(true)
-    expect(new Date(frames[frames.length - 1].time).toISOString()).toBe('2026-09-16T21:40:00.000Z')
+  it('reicht genau den gewünschten Rückblick zurück', () => {
+    const times = radarTimes(META, P, 60 * 60_000)
+    expect(times).toHaveLength(13) // 12 Schritte à 5 min plus der neueste
+    expect(new Date(times[0]).toISOString()).toBe('2026-09-16T20:40:00.000Z')
+    const half = radarTimes(META, P, 30 * 60_000)
+    expect(half).toHaveLength(7)
   })
 
   it('geht nie vor den Anfang der Dimension zurück', () => {
-    const frames = radarFrames(META, P, 999 * 60 * 60_000, false)
-    expect(frames[0].time).toBe(META.extent.start)
+    const times = radarTimes(META, P, 999 * 60 * 60_000)
+    expect(times[0]).toBe(META.extent.start)
   })
 
   // Jeder Zeitschritt muss auf dem Raster liegen — sonst antwortet der Dienst
   // mit einer ServiceException statt mit einem Bild.
   it('legt jeden Zeitschritt auf das 5-Minuten-Raster', () => {
-    for (const f of radarFrames(META, P, 60 * 60_000, true)) {
-      expect(f.time % 300_000).toBe(0)
+    for (const t of radarTimes(META, P, 3 * 60 * 60_000)) {
+      expect(t % 300_000).toBe(0)
     }
+  })
+
+  it('ist aufsteigend sortiert — das letzte Element ist der neueste Stand', () => {
+    const times = radarTimes(META, P, 120 * 60_000)
+    expect([...times].sort((a, b) => a - b)).toEqual(times)
+    expect(times[times.length - 1]).toBe(analysisTime(META, P))
   })
 })
 
 describe('nearestFrame', () => {
+  // Hält den Zeiger beim Nachrücken auf SEINER Zeit, obwohl sich alle Indizes
+  // verschieben (siehe RadarPanel).
   it('findet den Zeitschritt, der einer Zeit am nächsten liegt', () => {
-    const frames = radarFrames(META, P, 60 * 60_000, true)
-    expect(nearestFrame(frames, analysisTime(META, P))).toBe(12)
-    expect(nearestFrame(frames, frames[0].time - 10 * 60_000)).toBe(0)
+    const times = radarTimes(META, P, 60 * 60_000)
+    expect(nearestFrame(times, analysisTime(META, P))).toBe(12)
+    expect(nearestFrame(times, times[0] - 10 * 60_000)).toBe(0)
+    expect(nearestFrame(times, times[4] + 60_000)).toBe(4)
     expect(nearestFrame([], Date.now())).toBe(0)
   })
 })
