@@ -58,14 +58,31 @@ const SEASON_LABEL: Record<Season, string> = {
 /** Normalperiode der Antworten — dieselbe Vorgabe wie in der Karte. */
 const NORMAL_PERIOD: NormalPeriodId = '1991-2020'
 
+/**
+ * Beispielfragen, nach EBENEN geordnet — die Liste ist auch eine Landkarte
+ * dessen, was der Erkenner auseinanderhält. Bewusst nebeneinander: Tag,
+ * Nacht, Monat, Saison und Jahr derselben Größe sind fünf verschiedene
+ * Antworten, und beim Niederschlag liegen sie um Größenordnungen auseinander
+ * (Salzburg: 135 mm an einem Tag, 404 mm im nassesten Monat, 1.835 mm im
+ * nassesten Jahr). Wer das nicht weiß, hält die erste Zahl für die Antwort.
+ */
 const EXAMPLES = [
   'was war das tagesmaximum im juli seit messbeginn in salzburg?',
   'höchste je gemessene temperatur in österreich',
   'höchste temperatur in wien',
   'kälteste temperatur im jänner in innsbruck',
-  // Die NACHT ist eine eigene Größe (tiefstes Tagesminimum), nicht der
-  // kälteste Tag — und die Antwort nennt das exakte Datum.
+  // Die NACHT ist eine eigene Größe (Tagesminimum), nicht der kälteste Tag —
+  // und die Antwort nennt Datum und Nachtspanne.
   'kälteste nacht in salzburg',
+  // Die WÄRMSTE Nacht ist die Gegenrichtung derselben Größe und war aus dem
+  // Monatsarchiv gar nicht beantwortbar (sie kam auf den höchsten
+  // Monats-Tiefstwert). Wien ist dafür der interessante Ort: Tropennächte.
+  'wärmste nacht in wien',
+  // Symmetrisch dazu, und vorher still falsch (tiefster Monats-Höchstwert).
+  'kältester tag in innsbruck',
+  // Der einzelne TAG als eigene Ebene: vorher antwortete das mit der
+  // Monatssumme — 404 mm statt 135 mm.
+  'höchster tagesniederschlag in salzburg',
   'nassester sommer in villach',
   'höchster jahresniederschlag in salzburg',
   'meiste hitzetage österreichweit',
