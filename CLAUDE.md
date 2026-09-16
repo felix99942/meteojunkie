@@ -78,7 +78,18 @@ npm run preview   # gebautes dist/ servieren
   je Parameter in `config/atParameters.ts`), TTL-Cache 5 min, `PeriodValues.source`
   = `'live'` → UI markiert den Wert als vorläufig samt Messzeitpunkt. Nur Stationen
   mit `has10min` dürfen in den Request — eine unbekannte ID lässt den GANZEN
-  Bulk-Request mit HTTP 400 scheitern. Karte ist ein
+  Bulk-Request mit HTTP 400 scheitern. **DASSELBE gilt für den MONATSdatensatz**
+  (`hasMonthly`, gefiltert über `monthlyIds()`), und das hat lange gefehlt:
+  klima-v2-1m kennt nicht jede Station aus klima-v2-1d — gemessen
+  (2026-09-15) genau EINE der 513, die stillgelegte 610 „Meires" (1971–1974) —
+  und GeoSphere lehnt deswegen den ganzen Bulk-Request mit **HTTP 403**
+  („Violation for station_ids") ab. Damit war JEDER Monats-, Saison- und
+  Jahresabruf der Klimakarte tot, nicht nur diese eine Station; live bestätigt,
+  dass die gefilterte Liste 200 mit 512 Stationen liefert. Das Feld ist
+  OPTIONAL und gefiltert wird nur auf ein ausdrückliches `false`, damit eine
+  älter erzeugte `stations.json` sich wie bisher verhält statt die Karte zu
+  leeren. Wer einen weiteren Datensatz anbindet, braucht dieselbe Prüfung —
+  das ist kein Einzelfall, sondern die Hausregel dieser API. Karte ist ein
   leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
   gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
@@ -245,6 +256,79 @@ npm run preview   # gebautes dist/ servieren
   0,67) und wurde vorher still als Temperatur beantwortet. Ab sechs Zeichen,
   weil kürzere Fragmente zufällig in vielen Wörtern stecken; der exakte
   Listentreffer geht weiter vor („höchsttemperatur" bleibt `tlmax`).
+  **Bei Extremgrößen ist nur EINE Richtung ein echtes Tagesextrem**
+  (`directionDerivable`/`directionNote`) — die Gegenrichtung beantwortet eine
+  andere Frage, und das war ein echter Fehler. Die Rekord-Assets stammen aus
+  dem MONATSdatensatz: dort ist `tlmax` das höchste Tagesmaximum und `tlmin`
+  das tiefste Tagesminimum des Monats. Das Extremum über die Monate in der
+  Gegenrichtung ist damit etwas anderes: „wärmste Nacht in Salzburg"
+  antwortete mit **13,4 °C (August 2024)** — dem höchsten Monats-TIEFSTWERT,
+  also dem August, dessen kälteste Nacht die wärmste war; Salzburg hat längst
+  Tropennächte über 20 °C gehabt. Symmetrisch hätte „kältester Tag" −0,4 °C
+  geliefert (Jänner 1940): den Monat, dessen wärmster Tag am kältesten blieb.
+  Diese Werte sind KEIN Datenfehler — die Karte im Zeitbezug „Allzeit" zeigt
+  sie bewusst und `valueCaption` benennt sie korrekt als Monats-Höchst-/
+  Tiefstwerte; nur als ANTWORT auf eine Frage nach einem Tag oder einer Nacht
+  sind sie falsch. Die Fragebox gibt dort deshalb KEINE Zahl, sondern die
+  Erklärung: „keine Daten" wäre ebenfalls unzutreffend, die Daten sind da und
+  beantworten etwas anderes. Bei Summen, Mitteln und Kenntagen sind beide
+  Richtungen sinnvoll (nassester UND trockenster Monat). **Das fehlende
+  Gegenstück gibt es auch nicht unter anderem Namen** — geprüft (2026-09-15,
+  420 Parameter in klima-v2-1m): es gibt `tlmin`, `tlmax` und die Mittel
+  `tlmin_mittel`/`tlmax_mittel`, aber kein „monatlich höchstes Tagesminimum".
+  Für die wärmste Nacht bräuchte es die TAGESreihe der ganzen Messreihe.
+  **Eine NACHT ist ein ZEITRAUM über zwei Kalendertage, und die Antwort muss
+  das sagen** (`AskQuery.nightly`, `formatNightSpan`, `nightNote`): GeoSphere
+  bildet die Tagesextreme von 19 MEZ des Vortags bis 19 MEZ (18–18 UTC, in
+  `verify.ts` gemessen) — das Minimum des Klimatags D gehört damit zur Nacht
+  von **D−1 auf D**, nicht von D auf D+1. Genau dafür existiert die Konvention:
+  über den Kalendertag gerechnet schnitte die Tagesgrenze mitten durch den
+  Tiefpunkt und eine Nacht hätte zwei Minima (dieselbe Überlegung wie die
+  synoptische Nacht 18–06 UTC im klassischen Meteogramm). Die Antwort lautet
+  deshalb „Nacht vom 11. auf den 12. Jänner 1940"; über Monats- und
+  Jahresgrenzen beidseitig voll ausgeschrieben, sonst läse sich „Nacht vom 31.
+  auf den 1. Jänner" als der 31. Jänner.
+  **Der Vorbehalt gilt nur in EINER Richtung — das überrascht beim
+  Nachrechnen.** Geantwortet wird mit dem Minimum des KLIMATAGS, nicht mit dem
+  eines eigenen Nachtfensters (18–06 UTC); ein solches ist aus dem Archiv nicht
+  ableitbar (die Rekorde sind Monatswerte, eine eigene Nachtauswertung
+  bräuchte die 10-Minuten-Reihen, die erst 1992 beginnen). Bei der **wärmsten**
+  Nacht ist das beweisbar unkritisch: gesucht ist das HÖCHSTE Tagesminimum,
+  fiel es ausnahmsweise am Tag (Kaltfront nachmittags), war die Nacht NOCH
+  wärmer — der Wert ist dann eine untere Schranke und die Aussage bleibt
+  richtig. Bei der **kältesten** Nacht ist es umgekehrt: das tiefste
+  Tagesminimum KANN ein Nachmittagswert sein und gehört dann gar nicht in die
+  Nacht. Deshalb trägt nur diese Richtung einen Vorbehalt; ein Test hält die
+  Asymmetrie fest.
+  **Die NACHT ist auch eine eigene GRÖSSE**, und das war ein echter Fehlgriff: „kälteste
+  Nacht in Salzburg" fand gar kein Größenwort, fiel auf die Vorgabe `tlmax`
+  zurück und antwortete mit dem tiefsten Tages-MAXIMUM — dem kältesten TAG
+  statt der kältesten Nacht. „Nacht" steht deshalb in `PARAM_WORDS` mit
+  `tlmin`, aber OHNE Richtung: sie bestimmt die Größe, nicht das Vorzeichen —
+  „wärmste Nacht" ist das HÖCHSTE Tagesminimum (die Tropennacht), dieselbe
+  Messgröße andersherum. `tropennacht`/`frostnacht` tragen ihre Richtung selbst.
+  **Der Antworttext braucht handgeschriebene Superlative**
+  (`superlativeText`/`SUPERLATIVE`): vorher stand dort `richtung + spec.label`
+  mit einem immer maskulinen „höchster"/„tiefster" vor einem Registry-
+  BEZEICHNER — heraus kam „tiefster Temperatur Maximum". Deutsche Grammatik
+  lässt sich daraus nicht ableiten: jede Größe hat ihr Genus („die Schneehöhe",
+  „das Tagesminimum") und ihren passenden Superlativ („längste"
+  Sonnenscheindauer, nicht „höchste"; „meiste" Frosttage). Ein Test hält die
+  Tabelle gegen alle Codes vollständig, die das Parsen erzeugen kann — sonst
+  rutscht still die Ersatzformulierung („Tiefstwert von …") durch.
+  **Die Antwort nennt das EXAKTE DATUM, nicht nur „Jänner 1940"**
+  (`askDayRange` + `resolveExtremeDay`): die Assets kennen nur Monat und Jahr,
+  bei `tlmax`/`tlmin` IST der Monatswert aber ein Tagesextrem — der Tag steht
+  in der Tagesreihe und kostet EINEN Request, für immer gecacht. Gesucht wird
+  im engsten bekannten Fenster (genannter Monat → Saison → ganzes Jahr; beim
+  absoluten Rekord liefert das Asset den Monat mit). Bei Summen und Mitteln
+  gibt es keinen Rekordtag; die Whitelist `DAY_RESOLVABLE` bleibt die eine
+  Wahrheit dazu, `resolveExtremeDay` lehnt andere Codes ohne Request ab — es
+  braucht also keine zweite Liste im Frageteil. Kommt der Wert an mehreren
+  Tagen vor (`ties`), steht „(erstmals)" dabei. Der Effekt hängt an einem
+  SCHLÜSSEL aus Primitiven, nicht an `query`: das Objekt wird jede Renderrunde
+  neu gebaut und der Effekt lief sonst in einer Endlosschleife (`dataKey`-Muster
+  aus `VerifyPanel`).
   „In der Karte zeigen"
   springt auf den Zeitraum DER ANTWORT (Rekordjahr und -monat), nicht auf das
   laufende Jahr. Gegen die echte Stationsliste gemessen: 14 von 14
@@ -904,10 +988,14 @@ npm run preview   # gebautes dist/ servieren
   +1 Tag mit 0,95 K, wie man es vom Lokalmodell erwartet). Die tägliche Frage
   ist aber „wie lief es diese Woche", und darauf antworten die konkreten Tage
   nebeneinander: Messung, Vorhersage je Modell, Differenz — Fehlermaße nur als
-  eine Fußzeile. Drei Zeiträume, 5 (Voreinstellung) / 10 / 20 Tage,
-  nach oben bewusst gedeckelt: ein belastbarer Vergleich bräuchte Monate, und
-  die Legende stuft das ab (unter `ROUGH_DAYS` „kein Modellvergleich", darüber
-  „grobe Reihung"). Bei 20 Zeilen klebt der Tabellenkopf mit (Modellnamen
+  eine Fußzeile. Zeiträume 5 (Voreinstellung) / 10 / 20 / 60 / 90 / 180 Tage;
+  die Legende stuft ab (unter `ROUGH_DAYS` „kein Modellvergleich", darüber
+  „grobe Reihung"). **Die langen Zeiträume sind die Voraussetzung dafür, dass
+  die Rangliste Modelle überhaupt TRENNEN kann** — bei 20 Tagen liegt der
+  gepaarte Unterschied zweier Globalmodelle regelmäßig innerhalb der
+  Unsicherheit. Kosten: ein Request je Modell für ALLE Vorlaufzeiten, danach
+  für immer im IDB-Cache; ein einmal geholter größerer Zeitraum wird beim
+  Zurückschalten zugeschnitten (`sliceRuns`) und kostet nichts mehr. Bei 20 Zeilen klebt der Tabellenkopf mit (Modellnamen
   dürfen umbrechen statt die Spalte breitzuziehen). **GENAU EIN
   Scroll-Container**, nämlich `.verify-body`: ein zweiter, geschachtelter mit
   eigener `max-height` verschluckte bei 20 Tagen die untersten Zeilen, und die
@@ -920,8 +1008,44 @@ npm run preview   # gebautes dist/ servieren
   Tagesspalte trägt das volle Datum inklusive Jahr. Das Diagramm hat KEINE
   Tagesleiste: die ist für stündliche Reihen gedacht und sagt bei Tageswerten
   nichts, was die Datums-Ticks nicht schon zeigen.
+  **ÜBER der Tabelle steht eine RANGLISTE über den ganzen Zeitraum**
+  (`RankingBlock`) — der „auf einen Blick"-Teil. Bewusst keine Reihung nach MAE
+  allein: die Spalten beantworten drei verschiedene Fragen. MAE/Bias = wie groß
+  und systematisch-oder-streuend; **σf/σo und r = WORAN es liegt**; Skill gegen
+  Persistenz/Klimatologie = war die Aufgabe leicht oder schwer; **Δ zum Besten
+  = ist die Reihenfolge überhaupt belastbar**. Die letzte Spalte ist der Grund
+  für den Block: über 14 Tage SANK der IFS-Fehler mit längerem Vorlauf
+  (gemessen, reines Rauschen) — eine Reihung ohne Unsicherheit hätte das als
+  Befund ausgewiesen. Die Kopfzeile sagt deshalb ausdrücklich, ob die Spitze
+  belastbar führt oder ob die Reihenfolge oben Zufall ist.
+  **Der Vergleich ist GEPAART** (`pairedMae`): alle Modelle werden an DENSELBEN
+  Tagen verifiziert, die richtige Größe ist deshalb die Differenz der
+  Tagesfehler und deren Streuung, NICHT der Vergleich zweier unabhängig
+  gemittelter MAE — was allen gemeinsam schwerfiel (ein Frontdurchgang) kürzt
+  sich heraus, und genau das macht den Vergleich trennscharf. **Autokorrelation
+  ist dabei der Fallstrick**: Wetter hält an, aufeinander folgende Tagesfehler
+  sind nicht unabhängig, `sd/√n` wäre zu optimistisch und wiese Unterschiede
+  als gesichert aus, die es nicht sind. Korrigiert über die Autokorrelation
+  erster Ordnung (`nEff = n(1−ρ)/(1+ρ)`, AR(1)-Näherung; bei ρ = 0,5 bleibt von
+  60 Tagen ein effektives Drittel). Schwelle `PAIRED_Z` = 2 — die Markierung
+  heißt deshalb „unterscheidbar", nicht „signifikant": bei einem halben Dutzend
+  Modellen im Vergleich ist die Konvention ohnehin optimistisch
+  (Mehrfachvergleiche).
+  **`Scores` trägt eine DIAGNOSE, nicht nur Fehlerbeträge**: `sdRatio` =
+  σ(Vorhersage)/σ(Messung) macht den AIFS-Befund (Tagesgang auf zwei Drittel
+  gestaucht), der hier von Hand herausgerechnet wurde, für JEDES Modell und
+  jede Station automatisch sichtbar; `corr` trennt „richtiger Verlauf, falsches
+  Niveau" (korrigierbar) von „falscher Verlauf". Dazu die **Murphy-Zerlegung**
+  `MSE = Bias² + (σf−σo)² + 2σfσo(1−r)` (`decomp`) — eine exakte Identität, die
+  aus einer Rangliste eine Diagnose macht: systematischer Versatz ↔ falsche
+  Amplitude ↔ Timing/Verlauf. Zwei Modelle mit demselben MSE sehen hier völlig
+  verschieden aus. Streuungen als POPULATIONsgrößen (durch n), sonst gilt die
+  Identität nicht exakt; `phase` wird als REST gerechnet, damit die Summe
+  numerisch immer stimmt, auch wenn r undefiniert ist (konstante Messreihe).
+  Ein Test prüft genau diese Summe — das ist der einzige, der hier etwas
+  beweist.
   **Der bloße Fehlerbetrag beantwortet die Frage nicht, die man hat** — deshalb
-  zwei Skill Scores (`verify.ts`, mit Vitest getestet). **Skill gegen die
+  drei Referenzen (`verify.ts`, mit Vitest getestet). **Skill gegen die
   PERSISTENZ** (`skillScore`, `persistenceForecast`): `1 − MSE(Modell)/MSE(„wie
   gestern")`. „MAE 1,5 K" ist in einer stabilen Hochdrucklage schwach und in
   einer Woche mit drei Frontdurchgängen gut — die Zahl allein sagt nicht, wie
@@ -933,6 +1057,18 @@ npm run preview   # gebautes dist/ servieren
   wird die Messung einen Tag früher geholt als gezeigt (`obsStart`) — sonst
   verlöre der Score die erste Zeile. Ist die Referenz fehlerfrei (zwei trockene
   Tage hintereinander), gibt es KEINE Zahl statt einer 0.
+  **Skill gegen KLIMATOLOGIE als zweite Referenz** (`climatologyForecast`),
+  weil Persistenz nur bei KURZEM Vorlauf ein ernsthafter Gegner ist: bei +5 bis
+  +7 Tagen schlägt sie jedes Modell mühelos, der Score sättigt gegen 1 und
+  trennt die Modelle nicht mehr — genau dort, wo der Vergleich am
+  interessantesten wäre. Es ist eine STICHPROBEN-Klimatologie (Mittelwert des
+  ausgewerteten Zeitraums), **nicht** das 30-jährige Normal: die vorhandenen
+  Normal-Assets führen bei `tlmax` das MONATSMAXIMUM und nicht das Mittel der
+  Tagesmaxima (siehe `atParameters.ts`) — als Tagesklimatologie wären sie grob
+  zu hoch und damit schlechter als keine; außerdem gäbe es sie nur für ~207
+  Stationen, die Stichprobenversion ist überall definiert und kostet keinen
+  Request. Gerechnet LEAVE-ONE-OUT (je Tag das Mittel aller ANDEREN Tage),
+  sonst kennte die Referenz den Tag, den sie vorhersagen soll.
   **Beim Niederschlag ist der mittlere Fehler in mm fast wertlos**, und das ist
   der Grund für die **kategorische Bewertung** (`contingency`/`pod`/`far`/
   `frequencyBias`/`ets`, Block unter der Tabelle): gemessen sind 174 von 300
