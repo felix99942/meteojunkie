@@ -648,9 +648,21 @@ npm run preview   # gebautes dist/ servieren
   eher Modellrauschen als Wetterlage.
   Eigener Endpunkt (`ensemble-api.open-meteo.com`), aber derselbe `apiGet`-Pfad
   (mock-fähig, im Verbrauchszähler sichtbar). Modelle: `ecmwf_ifs025` und
-  `ecmwf_aifs025` (je 51 Member, 15 Tage) plus `gfs_seamless` (NOAA GEFS,
+  `ecmwf_aifs025` (je 51 Member, 15 Tage), `gfs_seamless` (NOAA GEFS,
   31 Member, ~34 Tage — der einzige Weg über 15 Tage hinaus; bis +240 h 0,25°,
-  danach 0,5°, deshalb genau EIN GEFS-Eintrag statt gfs025/gfs05 daneben).
+  danach 0,5°, deshalb genau EIN GEFS-Eintrag statt gfs025/gfs05 daneben) und
+  seit 2026-09-16 **`icon_d2_eps`** (20 Member, 2,2 km, ~48 h) — das erste
+  LOKALensemble hier, Streuung auf der Skala, die Täler auflöst. Es steht ANS
+  ENDE der Liste, weil `DEFAULT_ENSEMBLE_MODEL` = `ENSEMBLE_MODELS[0]` ist:
+  als Voreinstellung wäre ein 48-h-Ensemble falsch, eine Plume lebt von der
+  Auffächerung über Tage (ein Test hält Voreinstellung und Mindesthorizont des
+  ersten Eintrags fest). **ICON-CH1-EPS und ICON-CH2-EPS stehen bewusst NICHT
+  hier**, obwohl der Föhn-Bereich sie benutzt: live geprüft (2026-09-16)
+  liefern beide `temperature_850hPa` und `geopotential_height_500hPa`
+  durchgehend `null` (HTTP 200, die Falle aus SPEC §6) — und 850 hPa ist der
+  STARTparameter dieses Bereichs, die Plume öffnete sich also leer. Sie
+  bräuchten erst eine Größen-Beschränkung je Modell in der Ensemble-Registry.
+  ICON-D2-EPS liefert dagegen alle neun Größen und braucht keine.
   **Eine KI-Version des GFS gibt es nicht** — `gfs_graphcast025` liefert auf
   beiden APIs durchgehend null, die übrigen Namen sind ungültige IDs; nicht
   erneut aus der Doku übernehmen. **`deterministicDays` ist getrennt von

@@ -96,6 +96,35 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     deterministicModel: 'gfs_seamless',
     note: 'NOAA GEFS, 31 Mitglieder. Seamless: bis +240 h 0,25°, danach 0,5° bis ~34 Tage. Deutlich weniger Mitglieder als ECMWF, dafür der einzige Weg über 15 Tage hinaus. Der deterministische Hauptlauf endet bei 16 Tagen (API-Grenze).',
   },
+  /**
+   * Das erste LOKALensemble hier — 2,2 km gegen 25 km der drei Globalen.
+   *
+   * Steht ANS ENDE, weil `DEFAULT_ENSEMBLE_MODEL` = `ENSEMBLE_MODELS[0]` ist:
+   * als Voreinstellung wäre ein 48-h-Ensemble falsch, eine Plume lebt von der
+   * Auffächerung über Tage. Als WAHL ist es dafür das Interessanteste, was die
+   * Liste hat — Streuung auf der Skala, die Täler auflöst.
+   *
+   * Live geprüft (2026-09-16, Innsbruck): 20 Reihen, ALLE neun
+   * Ensemble-Größen vorhanden, auch `temperature_850hPa` und
+   * `geopotential_height_500hPa`. Damit braucht es keine Größen-Beschränkung
+   * je Modell — anders als ICON-CH1-EPS/CH2-EPS, die beide Drucklevel
+   * durchgehend `null` liefern (HTTP 200, die Falle aus SPEC §6) und deshalb
+   * weiterhin nur im Föhn-Bereich stehen, wo `pressure_msl` genügt.
+   *
+   * Horizont gemessen: letzter Wert bei +61 h ab Rasterbeginn, vom
+   * 12-UTC-Lauf also die ~48 h des deterministischen ICON-D2.
+   */
+  {
+    id: 'icon_d2_eps',
+    label: 'ICON-D2-EPS',
+    members: 20,
+    forecastDays: 3,
+    deterministicDays: 3,
+    updateIntervalHours: 3,
+    resolutionKm: 2.2,
+    deterministicModel: 'icon_d2',
+    note: 'DWD ICON-D2-EPS, 20 Mitglieder auf 2,2 km — das einzige Lokalensemble hier. Reicht nur ~48 h, löst dafür Täler und Konvektion auf: brauchbar für die Frage, wie sicher ein Gewittertag oder ein Föhndurchbruch ist, nicht für die Wochentendenz. Alle Größen inklusive 850 hPa live geprüft.',
+  },
 ]
 
 export const DEFAULT_ENSEMBLE_MODEL = ENSEMBLE_MODELS[0].id
