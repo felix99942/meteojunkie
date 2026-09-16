@@ -1367,7 +1367,17 @@ npm run preview   # gebautes dist/ servieren
   über `*.local`, Vorlage `.env.example`), im Deploy aus
   GitHub-Actions-Secrets (`IMPRESSUM_*`, gesetzt in `deploy.yml`). Im fertigen
   Bundle stehen sie im Klartext — richtig so, eine Pflichtangabe muss lesbar
-  sein; verborgen werden sie nur vor dem Repository. Fehlt eine Angabe, baut
+  sein; verborgen werden sie nur vor dem Repository. **Ein LEERER Wert zählt als FEHLEND, nicht als
+  Angabe** (`given()` in `config/impressum.ts`, mit Tests) — der Unterschied zu
+  `??` hat live geschadet: ein NICHT GESETZTES GitHub-Secret kommt als LEERER
+  STRING an (`${{ secrets.FOO }}` expandiert zu `''`), nicht als `undefined`.
+  Mit `??` rendert das Impressum dann ein leeres Adressfeld UND unterdrückt die
+  Warnung, weil `''.includes('⟨')` falsch ist; die Selbstdiagnose war damit
+  blind für genau ihren Anwendungsfall, und so ging sie am 2026-09-16 auf
+  meteojunkie.com live. Die Angaben liegen deshalb in `config/impressum.ts`
+  statt in der Komponente: `Impressum.tsx` darf für React Fast Refresh nur
+  Komponenten exportieren, und geprüft werden kann die Regel nur als reine
+  Funktion. Fehlt eine Angabe, baut
   die Seite trotzdem und zeigt SELBST eine Warnung (`DETAILS_MISSING`) —
   dieselbe Regel wie beim Preset-Laden: Fehlendes wird nie still übergangen.
   `_CAREOF` ist optional und löst keine Warnung aus (nicht jeder Anbieter hat

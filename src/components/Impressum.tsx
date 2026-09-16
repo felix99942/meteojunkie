@@ -36,50 +36,8 @@
 // keine Cookies und keine Tracker (nachgeprüft), aber der Browser kontaktiert
 // die Datenanbieter DIREKT — das ist eine Übermittlung und gehört genannt.
 
+import { DETAILS_MISSING, OWNER } from '../config/impressum'
 import { MODELS } from '../config/models'
-
-/**
- * Angaben des Anbieters (§ 18 Abs 1 MStV) und Verantwortlichen
- * (Art. 4 Nr. 7 DSGVO) — dieselbe Person, deshalb eine Konstante.
- *
- * NICHT IM QUELLCODE, und das gilt für JEDE Postadresse des Anbieters — auch
- * für die einer Impressumsvertretung, nicht nur für eine Wohnadresse. Das
- * Repository ist öffentlich; die Pflichtangabe gehört auf die ausgelieferte
- * Seite, aber nicht in einen öffentlichen Git-Verlauf, aus dem man sie nur
- * mit einem History-Rewrite wieder herausbekommt — und bis dahin kann das
- * Repo geforkt oder gespiegelt sein. Sie kommt deshalb erst beim BAUEN herein:
- *
- *   lokal    `.env.local` (gitignored über `*.local` in .gitignore)
- *   Deploy   GitHub-Actions-Secrets, siehe .github/workflows/deploy.yml
- *
- * Im fertigen Bundle steht sie dann im Klartext — das ist richtig so, eine
- * Pflichtangabe muss lesbar sein. Verborgen wird sie nur vor dem Repository.
- *
- * Der PREIS dieser Trennung: was die Seite als Anschrift zeigt, steht nicht
- * mehr im Code, sondern in der Deploy-Konfiguration. Ein falsch gesetztes
- * Secret ersetzt die Adresse still durch eine andere, ohne dass ein Diff es
- * zeigt. Gegen das Fehlen hilft die Warnung unten, gegen ein falsch GESETZTES
- * Secret nur ein Blick auf die ausgelieferte Seite nach dem Deploy.
- *
- * `careOf` ist optional (nicht jeder Anbieter hat eine Vertretung) und löst
- * deshalb KEINE Warnung aus; Name, Anschrift und E-Mail schon. Eine
- * Kundennummer im Zustellzusatz gehört ZUR Adresse — ohne sie kommt bei einer
- * Vertretung keine Post an.
- */
-const OWNER = {
-  name: import.meta.env.VITE_IMPRESSUM_NAME ?? '⟨Name⟩',
-  careOf: import.meta.env.VITE_IMPRESSUM_CAREOF ?? '',
-  street: import.meta.env.VITE_IMPRESSUM_STREET ?? '⟨Straße und Hausnummer⟩',
-  city: import.meta.env.VITE_IMPRESSUM_CITY ?? '⟨PLZ und Ort⟩',
-  country: 'Deutschland',
-  email: import.meta.env.VITE_IMPRESSUM_EMAIL ?? '⟨E-Mail-Adresse⟩',
-}
-
-/** Platzhalter sind an den spitzen Klammern erkennbar. */
-const isPlaceholder = (s: string) => s.includes('⟨')
-
-/** `careOf` ist optional und zählt nicht als fehlende Pflichtangabe. */
-const DETAILS_MISSING = [OWNER.name, OWNER.street, OWNER.city, OWNER.email].some(isPlaceholder)
 
 /** Wetterdienste hinter den Modellen — aus der Registry, nicht gepflegt. */
 const PROVIDERS = [...new Set(Object.values(MODELS).map((m) => m.provider))]
