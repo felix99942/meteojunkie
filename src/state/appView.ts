@@ -72,6 +72,12 @@ interface AppViewStore {
 }
 
 export const useAppView = create<AppViewStore>((set) => ({
-  view: 'workbench',
+  /**
+   * Startbereich: das klassische Meteogramm. Es war früher `workbench`, und
+   * das wäre in der veröffentlichten Version ein Start in einem Bereich, den
+   * die Navigation gar nicht mehr zeigt (`POINT_FORECASTS_ENABLED`). „Wie
+   * man's kennt" ist ohnehin der bessere erste Blick.
+   */
+  view: 'classic',
   setView: (view) => set({ view }),
 }))

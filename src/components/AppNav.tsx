@@ -4,6 +4,7 @@
 // Alle drei Panel-Bereiche teilen sich dieselben sechs Panel-Configs, es geht
 // beim Wechseln also nichts verloren.
 
+import { POINT_FORECASTS_ENABLED } from '../config/features'
 import { useAppView, type AppView } from '../state/appView'
 
 const TABS: { id: AppView; label: string; title: string }[] = [
@@ -44,9 +45,16 @@ const TABS: { id: AppView; label: string; title: string }[] = [
 export function AppNav() {
   const view = useAppView((s) => s.view)
   const setView = useAppView((s) => s.setView)
+  /**
+   * „Punktprognosen" fällt in der veröffentlichten Version VOLLSTÄNDIG weg,
+   * nicht bloß ausgegraut: ein deaktivierter Menüpunkt wirft die Frage auf,
+   * was da fehlt. Der Bereich selbst bleibt im Code und im Zustand — Ensemble
+   * und Vertikalprofil teilen seine Panel-Configs (siehe `config/features.ts`).
+   */
+  const tabs = POINT_FORECASTS_ENABLED ? TABS : TABS.filter((t) => t.id !== 'workbench')
   return (
     <nav className="appnav">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <button
           key={t.id}
           type="button"

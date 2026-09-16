@@ -8,6 +8,7 @@ import { VerifyPanel } from './components/VerifyPanel'
 import { FoehnPanel } from './components/FoehnPanel'
 import { Impressum } from './components/Impressum'
 import { OpenMeteoAttribution } from './components/Attribution'
+import { POINT_FORECASTS_ENABLED } from './config/features'
 import { isPanelSection, useAppView } from './state/appView'
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
@@ -16,7 +17,14 @@ import { isPanelSection, useAppView } from './state/appView'
 // state/appView.ts). Das klassische Meteogramm und die Klimakarte bringen
 // ihr eigenes, schlankeres Gerüst mit.
 export default function App() {
-  const view = useAppView((s) => s.view)
+  const stored = useAppView((s) => s.view)
+  /**
+   * Sicherheitsnetz: steht der Bereich „Punktprognosen" trotz abgeschalteter
+   * Navigation im Zustand (alter Zustand, direkter `setView`-Aufruf), wird
+   * das klassische Meteogramm gezeigt statt eines Bereichs, den es in dieser
+   * Version nicht gibt.
+   */
+  const view = !POINT_FORECASTS_ENABLED && stored === 'workbench' ? 'classic' : stored
   return (
     <div className="app">
       <AppNav />

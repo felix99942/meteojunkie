@@ -1569,6 +1569,26 @@ npm run preview   # gebautes dist/ servieren
   Der einzige Bereich mit FLIESSTEXT: `.legal-body` setzt die Grundschrift von
   12 auf 14 px hoch und deckelt die Satzbreite auf 78ch — die Dichte der
   Workbench ist für Prosa falsch. Ein Scroll-Container, wie in der Verifikation.
+- **„Punktprognosen" ist in der veröffentlichten Version AUSGEBLENDET**
+  (`POINT_FORECASTS_ENABLED` in `config/features.ts`, gesetzt über
+  `VITE_ENABLE_POINT_FORECASTS=false` in `npm run build:web`): der Bereich hat
+  sich neben klassischem Meteogramm, Ensemble, Vertikalprofil und Verifikation
+  nicht als eigener Nutzen gezeigt — dieselben Punktabfragen, nur mit mehr
+  Bedienung davor. **NICHT gelöscht, sondern abgeschaltet**, und das ist
+  wichtig: Ensemble und Vertikalprofil teilen sich seine sechs
+  `PanelConfig`s, die gespeicherten Presets und das Layout je Bereich hängen
+  daran, und die KARTE ist nur von hier aus erreichbar. Ein Entfernen hätte
+  all das mitgerissen. Anders als bei der Karte (`MAP_ENABLED`, dort ein
+  ausgegrauter Eintrag mit Hinweis) fällt er VOLLSTÄNDIG aus der Navigation —
+  ein deaktivierter Menüpunkt wirft die Frage auf, was da fehlt. Im Web-Build
+  ist die Bedingung wegoptimiert, dort steht unbedingt
+  `TABS.filter((t) => t.id !== 'workbench')` (im Bundle verifiziert); der
+  volle Build behält den Eintrag. Dazu zwei Folgeänderungen: der
+  **Startbereich ist jetzt `classic`** statt `workbench` — sonst startete die
+  Seite in einem Bereich, den ihre Navigation nicht zeigt —, und `App.tsx`
+  hat einen Rückfall, falls `workbench` trotzdem im Zustand steht.
+  Wiedereinschalten ist das Entfernen einer Umgebungsvariable aus
+  `build:web`.
 - **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
   Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
   „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil · Föhn ·
