@@ -42,6 +42,7 @@ import {
 } from '../config/models'
 import { OpenMeteoAttribution } from './Attribution'
 import {
+  climatologyForecast,
   contingency,
   dailyValues,
   dayRange,
@@ -49,8 +50,11 @@ import {
   events,
   EXTREME_DAY_OFFSET_H,
   far,
+  distinguishable,
   frequencyBias,
   leadsFor,
+  PAIRED_Z,
+  pairedMae,
   persistenceForecast,
   pod,
   PRECIP_DAY_OFFSET_H,
@@ -58,6 +62,7 @@ import {
   skillScore,
   type Contingency,
   type DailyMode,
+  type Paired,
   type Scores,
   type Skill,
 } from './verify'
@@ -98,6 +103,26 @@ const SPANS: { days: number; label: string; hint: string }[] = [
     hint:
       'für die kategorische Bewertung des Niederschlags — erst hier kommen genug Regentage ' +
       'zusammen, dass ETS und Trefferquote etwas heißen (rund 25 statt 8)',
+  },
+  // Die langen Zeiträume sind die Voraussetzung dafür, dass die Rangliste
+  // überhaupt Modelle TRENNEN kann: bei 20 Tagen liegt der gepaarte
+  // Unterschied zweier Globalmodelle regelmäßig innerhalb der Unsicherheit.
+  // Kosten: ein Request je Modell für ALLE Vorlaufzeiten, danach für immer im
+  // IndexedDB-Cache — ein einmal geholter größerer Zeitraum wird beim
+  // Zurückschalten zugeschnitten (`sliceRuns`), kostet also nichts mehr.
+  {
+    days: 90,
+    label: '90 Tage',
+    hint:
+      'ab hier wächst der Fehler bei jedem Modell monoton mit dem Vorlauf (gemessen) — die ' +
+      'erste Länge, bei der die Rangliste mehr als eine Momentaufnahme ist',
+  },
+  {
+    days: 180,
+    label: '180 Tage',
+    hint:
+      'halbes Jahr: genug, dass gepaarte Unterschiede zwischen ähnlichen Modellen aus der ' +
+      'Unsicherheit herauskommen — und die Grundlage für einen Vergleich nach Wetterlagen',
   },
 ]
 /** Ab hier taugt die Fehlerzeile wenigstens als grobe Reihung. */
@@ -269,6 +294,197 @@ function errColor(err: number, steps: number[]): string {
   if (!Number.isFinite(err)) return 'transparent'
   for (let i = 0; i < steps.length; i++) if (err < steps[i]) return ERR_COLORS[i]
   return ERR_COLOR_OVER
+}
+
+interface RankRow {
+  model: ModelInfo
+  scores: Scores
+  skill: Skill
+  climSkill: Skill
+  /** Gepaarter Unterschied zum besten Modell; null beim Besten selbst. */
+  paired: Paired | null
+  /** Unterschied zum Besten größer als zwei Standardfehler? */
+  distinct: boolean
+}
+
+/**
+ * RANGLISTE über den ganzen Zeitraum — der „auf einen Blick"-Teil, über der
+ * Tag-für-Tag-Tabelle.
+ *
+ * Bewusst KEINE Rangliste nach MAE allein. Der mittlere Fehler sagt, wie weit
+ * ein Modell daneben lag, aber nicht, ob der Unterschied zum Nachbarn etwas
+ * bedeutet und woran er liegt. Fünf Spalten beantworten drei verschiedene
+ * Fragen:
+ *
+ *   MAE, Bias          wie groß, und systematisch oder streuend
+ *   σf/σo, r           WORAN es liegt: gedämpfte Amplitude ↔ falscher Verlauf
+ *   Skill Pers./Klim.  war die Aufgabe leicht oder schwer
+ *   Δ zum Besten       ist die Reihenfolge überhaupt belastbar
+ *
+ * Die letzte Spalte ist die wichtigste und der Grund, warum es diesen Block
+ * gibt: über 14 Tage SANK der IFS-Fehler mit längerem Vorlauf (gemessen,
+ * reines Rauschen). Eine Reihung ohne Unsicherheit hätte das als Befund
+ * ausgewiesen. Liegt der gepaarte Unterschied innerhalb von zwei
+ * Standardfehlern, steht „~" statt eines Vorsprungs und die Rangfolge
+ * dahinter ist Zufall.
+ */
+function RankingBlock({
+  rows,
+  spec,
+  lead,
+  leadIsClear,
+}: {
+  rows: RankRow[]
+  spec: Target
+  lead: number
+  leadIsClear: boolean
+}) {
+  if (rows.length === 0) return null
+  const unit = spec.unit
+  return (
+    <div className="verify-rank">
+      <div className="verify-rank-head">
+        <strong>Rangliste bei {leadLabel(lead)}</strong>
+        <span className="label-muted">
+          {rows[0].scores.n} Tage · gereiht nach mittlerem Fehler
+        </span>
+        {/* Ob die Führung belastbar ist, gehört in die Kopfzeile — nicht in
+            eine Fußnote, die niemand liest. */}
+        <span className={leadIsClear ? 'verify-rank-clear' : 'verify-rank-tie'}>
+          {leadIsClear
+            ? `${rows[0].model.label} führt mit belastbarem Abstand`
+            : 'Spitze nicht unterscheidbar — die Reihenfolge oben ist Zufall'}
+        </span>
+      </div>
+      <table className="verify-table verify-rank-table">
+        <thead>
+          <tr>
+            <th>Modell</th>
+            <th title="Mittlerer absoluter Fehler über den ganzen Zeitraum.">MAE</th>
+            <th
+              title={
+                'Mittlerer Fehler MIT Vorzeichen. Derselbe MAE bedeutet bei großem Bias etwas ' +
+                'anderes (systematisch, nachträglich korrigierbar) als bei Bias nahe null ' +
+                '(streut nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und ' +
+                'Messplatz.'
+              }
+            >
+              Bias
+            </th>
+            <th
+              title={
+                'Amplitude: σ(Vorhersage) / σ(Messung). Unter 1 heißt, das Modell schwankt ' +
+                'weniger als die Wirklichkeit — es dämpft den Tagesgang. Genau das ist der ' +
+                'AIFS-Befund dieser Seite (Tagesgang auf zwei Drittel gestaucht); hier fällt es ' +
+                'bei jedem Modell und jeder Station von selbst auf. Über 1 = übertriebene ' +
+                'Schwankung.'
+              }
+            >
+              σf/σo
+            </th>
+            <th
+              title={
+                'Korrelation Vorhersage ↔ Messung. Trennt „richtiger Verlauf, falsches Niveau" ' +
+                '(hohe Korrelation bei großem Bias — korrigierbar) von „falscher Verlauf" ' +
+                '(niedrige Korrelation — das eigentliche Modellversagen).'
+              }
+            >
+              r
+            </th>
+            <th
+              title={
+                'Skill gegen PERSISTENZ („morgen wie heute"): 1 = perfekt, 0 = wie Persistenz, ' +
+                'negativ = schlechter als nichts tun. Sagt, wie schwer die Aufgabe war. GRENZE: ' +
+                'bei langem Vorlauf ist Persistenz trivial zu schlagen, ein hoher Wert heißt ' +
+                'dort nur „besser als raten".'
+              }
+            >
+              SS Pers.
+            </th>
+            <th
+              title={
+                'Skill gegen KLIMATOLOGIE („jeden Tag der Durchschnitt", leave-one-out aus dem ' +
+                'gezeigten Zeitraum): die härtere und bei langem Vorlauf die aussagekräftigere ' +
+                'Referenz — dort, wo der Persistenz-Score sättigt. Unter 0 heißt: das Modell ' +
+                'trägt weniger bei als der Mittelwert der Periode.'
+              }
+            >
+              SS Klim.
+            </th>
+            <th
+              title={
+                'GEPAARTER Unterschied zum besten Modell: Mittel der täglichen ' +
+                'Fehlerdifferenzen ± Standardfehler. Alle Modelle werden an denselben Tagen ' +
+                'geprüft, also kürzt sich heraus, was allen gemeinsam schwerfiel — das macht ' +
+                'den Vergleich trennscharf. Der Standardfehler ist für Autokorrelation ' +
+                'korrigiert (Wetter hält an, aufeinander folgende Tagesfehler sind nicht ' +
+                'unabhängig). „~" = innerhalb von zwei Standardfehlern, also nicht ' +
+                'unterscheidbar.'
+              }
+            >
+              Δ zum Besten
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.model.id} className={i === 0 ? 'is-best' : undefined}>
+              <td className="verify-rank-model" title={r.model.label}>
+                {r.model.label}
+                <span className="label-muted"> {resolutionLabel(r.model)}</span>
+              </td>
+              <td>
+                {fmt1(r.scores.mae)} {unit}
+              </td>
+              <td>
+                {fmtSigned(r.scores.bias)} {unit}
+              </td>
+              {/* Auffällig markieren, wo die Amplitude deutlich daneben liegt —
+                  das ist der Befund, nicht die Zahl. */}
+              <td
+                className={
+                  Number.isFinite(r.scores.sdRatio) &&
+                  (r.scores.sdRatio < 0.85 || r.scores.sdRatio > 1.15)
+                    ? 'verify-flag'
+                    : undefined
+                }
+              >
+                {fmt2(r.scores.sdRatio)}
+              </td>
+              <td>{fmt2(r.scores.corr)}</td>
+              <td>{fmtScore(r.skill.ss)}</td>
+              <td>{fmtScore(r.climSkill.ss)}</td>
+              <td>
+                {r.paired == null ? (
+                  <span className="label-muted">Referenz</span>
+                ) : r.distinct ? (
+                  // Vorzeichen zeigen statt „+" anzunehmen: die Reihung nutzt
+                  // den MAE über ALLE Tage, der gepaarte Vergleich nur die
+                  // GEMEINSAMEN — bei ungleicher Abdeckung kann die Differenz
+                  // der Reihenfolge widersprechen, und dann ist das die
+                  // interessante Information, nicht ein Darstellungsfehler.
+                  <>
+                    {fmtSigned(r.paired.diff)} ± {fmt1(PAIRED_Z * r.paired.se)} {unit}
+                  </>
+                ) : (
+                  <span
+                    className="label-muted"
+                    title={`Unterschied ${fmt1(Math.abs(r.paired.diff))} ${unit} bei ± ${fmt1(
+                      PAIRED_Z * r.paired.se,
+                    )} ${unit} Unsicherheit (${Math.round(r.paired.nEff)} von ${
+                      r.paired.n
+                    } Tagen effektiv unabhängig)`}
+                  >
+                    ~ nicht unterscheidbar
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 /**
@@ -613,6 +829,15 @@ export function VerifyPanel() {
     [observed, dataKey],
   )
 
+  /**
+   * ZWEITE Referenz: Klimatologie („jeden Tag der Durchschnitt"), gebildet aus
+   * den GEZEIGTEN Tagen im Leave-one-out-Verfahren (siehe
+   * `climatologyForecast`). Sie wird gebraucht, weil Persistenz bei +5 bis
+   * +7 Tagen trivial zu schlagen ist: dort sättigt ihr Skill Score und trennt
+   * die Modelle nicht mehr — genau da, wo der Vergleich interessant wird.
+   */
+  const climate = useMemo(() => (obsShown ? climatologyForecast(obsShown) : null), [obsShown])
+
   /** Je Modell und Vorlauf: Tageswerte der damaligen Vorhersage + Bewertung. */
   const table = useMemo(() => {
     // Läufe der vorigen Zielgröße oder Station nicht anfassen — siehe oben,
@@ -622,22 +847,70 @@ export function VerifyPanel() {
       const r = fresh[m.id]
       const cells = new Map<
         number,
-        { daily: Map<string, number>; scores: Scores; skill: Skill; cont: Contingency }
+        {
+          daily: Map<string, number>
+          scores: Scores
+          skill: Skill
+          climSkill: Skill
+          cont: Contingency
+        }
       >()
-      if (r && obsShown && reference) {
+      if (r && obsShown && reference && climate) {
         for (const [n, series] of r.byLead) {
           const daily = dailyValues(r.timeMs, series, spec.mode, spec.offsetH)
           cells.set(n, {
             daily,
             scores: score(daily, obsShown),
             skill: skillScore(daily, obsShown, reference),
+            climSkill: skillScore(daily, obsShown, climate),
             cont: contingency(daily, obsShown, threshold),
           })
         }
       }
       return { model: m, cells }
     })
-  }, [models, runs, dataKey, obsShown, reference, spec, threshold])
+  }, [models, runs, dataKey, obsShown, reference, climate, spec, threshold])
+
+  /**
+   * RANGLISTE über den ganzen Zeitraum — der „auf einen Blick"-Teil.
+   *
+   * Gereiht nach MAE, aber die Reihung allein ist die schwächste Aussage
+   * darin. Entscheidend ist die letzte Spalte: der GEPAARTE Unterschied zum
+   * besten Modell samt Standardfehler. Alle Modelle werden an denselben Tagen
+   * verifiziert, also ist die Differenz der Tagesfehler die richtige Größe —
+   * was allen gemeinsam schwerfiel, kürzt sich heraus. Liegt der Unterschied
+   * innerhalb von zwei Standardfehlern, heißt das Ergebnis „nicht
+   * unterscheidbar", und die Rangfolge dahinter ist Zufall.
+   */
+  const ranking = useMemo(() => {
+    if (!obsShown) return []
+    const rows = table
+      .map((r) => ({ model: r.model, cell: r.cells.get(lead) }))
+      .filter((r): r is { model: ModelInfo; cell: NonNullable<typeof r.cell> } =>
+        r.cell != null && r.cell.scores.n > 0,
+      )
+      .sort((a, b) => a.cell.scores.mae - b.cell.scores.mae)
+    if (rows.length === 0) return []
+    const best = rows[0]
+    return rows.map((r, i) => {
+      const paired: Paired | null =
+        i === 0 ? null : pairedMae(r.cell.daily, best.cell.daily, obsShown)
+      return {
+        model: r.model,
+        scores: r.cell.scores,
+        skill: r.cell.skill,
+        climSkill: r.cell.climSkill,
+        paired,
+        // Das BESTE Modell gilt nur dann als abgesetzt, wenn es sich vom
+        // ZWEITEN unterscheidet — sonst führt es die Liste zwar an, aber die
+        // Führung ist nicht belastbar.
+        distinct: i === 0 ? false : distinguishable(paired!),
+      }
+    })
+  }, [table, lead, obsShown])
+
+  /** Führt das beste Modell mit belastbarem Abstand zum Zweiten? */
+  const leadIsClear = ranking.length > 1 && ranking[1].distinct
 
   const availableLeads = useMemo(() => {
     const s = new Set<number>()
@@ -928,6 +1201,11 @@ export function VerifyPanel() {
               </strong>{' '}
               ({obsCount} Messtage).
             </div>
+            {/* ÜBER der Tag-für-Tag-Tabelle: die Reihung über den ganzen
+                Zeitraum samt Unsicherheit. Die Tabelle darunter bleibt die
+                ehrliche Detailansicht — hier steht die Antwort auf „welches
+                Modell taugt hier", dort die auf „wie lief es diese Woche". */}
+            <RankingBlock rows={ranking} spec={spec} lead={lead} leadIsClear={leadIsClear} />
             <div className="verify-main">
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus

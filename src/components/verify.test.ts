@@ -18,6 +18,10 @@ import {
   score,
   skillScore,
   utcDay,
+  climatologyForecast,
+  distinguishable,
+  pairedMae,
+  PAIRED_Z,
 } from './verify'
 
 const H = 3600_000
@@ -381,5 +385,153 @@ describe('dayRange', () => {
       '2026-09-01',
       '2026-09-02',
     ])
+  })
+})
+
+// --- Block 1 der Verfeinerung: Diagnose statt bloßer Reihung ---------------
+
+const mkDays = (vals: number[], start = 1): Map<string, number> =>
+  new Map(vals.map((v, i) => [`2026-08-${String(start + i).padStart(2, '0')}`, v]))
+
+describe('Murphy-Zerlegung', () => {
+  // Die Identität MSE = Bias² + (σf−σo)² + 2σfσo(1−r) ist exakt. Wenn die
+  // Summe der drei Terme vom MSE abweicht, ist die Rechnung falsch — das ist
+  // der einzige Test, der hier wirklich etwas beweist.
+  it('summiert sich exakt zum MSE', () => {
+    const obs = mkDays([12, 18, 9, 22, 15, 20, 11])
+    const fc = mkDays([13, 16, 11, 19, 16, 18, 13])
+    const s = score(fc, obs)
+    const sum = s.decomp.bias2 + s.decomp.amplitude + s.decomp.phase
+    expect(sum).toBeCloseTo(s.rmse ** 2, 10)
+  })
+
+  it('weist einen reinen Versatz vollständig dem Bias zu', () => {
+    const obs = mkDays([10, 20, 15, 25])
+    const fc = mkDays([12, 22, 17, 27]) // überall +2
+    const s = score(fc, obs)
+    expect(s.decomp.bias2).toBeCloseTo(4, 10)
+    expect(s.decomp.amplitude).toBeCloseTo(0, 10)
+    expect(s.decomp.phase).toBeCloseTo(0, 10)
+    expect(s.sdRatio).toBeCloseTo(1, 10)
+    expect(s.corr).toBeCloseTo(1, 10)
+  })
+
+  // Der AIFS-Fall: richtiger Verlauf, aber gestauchte Amplitude. Muss im
+  // AMPLITUDEN-Term landen, nicht im Bias und nicht in der Phase.
+  it('weist eine gedämpfte Amplitude dem Amplitudenterm zu', () => {
+    const obs = mkDays([10, 20, 10, 20, 10, 20])
+    const mean = 15
+    const fc = mkDays(obs.size ? [...obs.values()].map((v) => mean + 0.6 * (v - mean)) : [])
+    const s = score(fc, obs)
+    expect(s.sdRatio).toBeCloseTo(0.6, 10)
+    expect(s.corr).toBeCloseTo(1, 10)
+    expect(s.decomp.bias2).toBeCloseTo(0, 10)
+    expect(s.decomp.phase).toBeCloseTo(0, 10)
+    expect(s.decomp.amplitude).toBeGreaterThan(0)
+  })
+
+  // Gegenprobe: richtige Amplitude, aber zeitlich verschoben → Phase.
+  it('weist eine Verschiebung der Phase zu', () => {
+    const obs = mkDays([10, 20, 10, 20, 10, 20])
+    const fc = mkDays([20, 10, 20, 10, 20, 10])
+    const s = score(fc, obs)
+    expect(s.sdRatio).toBeCloseTo(1, 10)
+    expect(s.corr).toBeCloseTo(-1, 10)
+    expect(s.decomp.bias2).toBeCloseTo(0, 10)
+    expect(s.decomp.amplitude).toBeCloseTo(0, 10)
+    expect(s.decomp.phase).toBeCloseTo(s.rmse ** 2, 10)
+  })
+
+  it('lässt Verhältnis und Korrelation offen, wenn die Messung nicht schwankt', () => {
+    const obs = mkDays([5, 5, 5, 5])
+    const s = score(mkDays([6, 4, 7, 3]), obs)
+    expect(Number.isNaN(s.sdRatio)).toBe(true)
+    expect(Number.isNaN(s.corr)).toBe(true)
+    // Die Zerlegung bleibt trotzdem vollständig.
+    expect(s.decomp.bias2 + s.decomp.amplitude + s.decomp.phase).toBeCloseTo(s.rmse ** 2, 10)
+  })
+})
+
+describe('climatologyForecast', () => {
+  it('nimmt den Mittelwert ALLER ANDEREN Tage (leave-one-out)', () => {
+    const obs = mkDays([10, 20, 30])
+    const clim = climatologyForecast(obs)
+    expect(clim.get('2026-08-01')).toBeCloseTo(25, 10) // (20+30)/2
+    expect(clim.get('2026-08-02')).toBeCloseTo(20, 10) // (10+30)/2
+    expect(clim.get('2026-08-03')).toBeCloseTo(15, 10) // (10+20)/2
+  })
+
+  it('ist bei weniger als zwei Tagen nicht bildbar', () => {
+    expect(climatologyForecast(mkDays([10])).size).toBe(0)
+  })
+
+  // Der Grund, warum es sie gibt: bei langem Vorlauf ist sie die haertere
+  // Referenz, Persistenz dagegen trivial zu schlagen.
+  it('ist bei stark schwankendem Wetter besser als Persistenz', () => {
+    const obs = mkDays([10, 20, 10, 20, 10, 20, 10, 20])
+    const clim = climatologyForecast(obs)
+    const pers = persistenceForecast(obs)
+    expect(score(clim, obs).rmse).toBeLessThan(score(pers, obs).rmse)
+  })
+})
+
+describe('pairedMae', () => {
+  const obs = mkDays([10, 20, 15, 25, 12, 18, 22, 14])
+
+  it('ist negativ, wenn das erste Modell besser ist', () => {
+    const good = new Map([...obs].map(([d, v]) => [d, v + 0.5]))
+    const bad = new Map([...obs].map(([d, v]) => [d, v + 3]))
+    const p = pairedMae(good, bad, obs)
+    expect(p.diff).toBeCloseTo(0.5 - 3, 10)
+    expect(p.n).toBe(8)
+  })
+
+  // Ein konstanter Vorsprung hat keine Streuung → gesichert, egal wie klein.
+  it('erkennt einen systematischen Vorsprung als unterscheidbar', () => {
+    const good = new Map([...obs].map(([d, v]) => [d, v + 0.4]))
+    const bad = new Map([...obs].map(([d, v]) => [d, v + 0.6]))
+    expect(distinguishable(pairedMae(good, bad, obs))).toBe(true)
+  })
+
+  // Der eigentliche Zweck: ein Unterschied, der nur aus Streuung besteht,
+  // darf NICHT als Vorsprung durchgehen.
+  it('erkennt reines Rauschen als nicht unterscheidbar', () => {
+    const a = mkDays([11, 19, 16, 24, 13, 17, 23, 13])
+    const b = mkDays([9, 21, 14, 26, 11, 19, 21, 15])
+    expect(distinguishable(pairedMae(a, b, obs))).toBe(false)
+  })
+
+  // Autokorrelation: dieselbe Differenzreihe, einmal zufällig geordnet und
+  // einmal in Blöcken. Der Standardfehler MUSS im zweiten Fall größer sein —
+  // sonst wäre die AR(1)-Korrektur unwirksam und der Vergleich zu optimistisch.
+  it('vergrößert den Standardfehler bei autokorrelierten Fehlern', () => {
+    const obsLong = mkDays(Array.from({ length: 16 }, () => 15))
+    // B liegt immer 1 K daneben, A abwechselnd 2 K oder genau richtig. Die
+    // Differenzreihe ist damit ±1 — einmal von Tag zu Tag springend, einmal in
+    // zwei Blöcken. Gleicher Mittelwert, gleiche Streuung, nur die ANORDNUNG
+    // unterscheidet sich: genau das soll die AR(1)-Korrektur erfassen.
+    const b = new Map([...obsLong].map(([d, v]) => [d, v + 1]))
+    const build = (errs: number[]) =>
+      new Map([...obsLong].map(([d, v], i) => [d, v + errs[i]]))
+    const alt = Array.from({ length: 16 }, (_, i) => (i % 2 === 0 ? 2 : 0))
+    const block = Array.from({ length: 16 }, (_, i) => (i < 8 ? 2 : 0))
+    const pAlt = pairedMae(build(alt), b, obsLong)
+    const pBlock = pairedMae(build(block), b, obsLong)
+    // Beide Reihen haben denselben Mittelwert und dieselbe Streuung …
+    expect(pAlt.diff).toBeCloseTo(pBlock.diff, 10)
+    // … aber der geblockte Verlauf ist autokorreliert und darf deshalb NICHT
+    // als 16 unabhängige Tage durchgehen.
+    expect(pBlock.nEff).toBeLessThan(16)
+    expect(pBlock.se).toBeGreaterThan(pAlt.se)
+  })
+
+  it('wertet nur Tage, die beide Modelle führen', () => {
+    const full = new Map([...obs].map(([d, v]) => [d, v + 1]))
+    const partial = new Map([...obs].slice(0, 3).map(([d, v]) => [d, v + 1]))
+    expect(pairedMae(full, partial, obs).n).toBe(3)
+  })
+
+  it('hält die Schwelle als Konstante fest', () => {
+    expect(PAIRED_Z).toBe(2)
   })
 })

@@ -2551,6 +2551,64 @@ button:focus-visible {
 /* Kategorische Bewertung UNTER der Tabelle, nicht daneben: sie hat eigene
    Spaltenkoepfe und waere neben der Tagestabelle zwei konkurrierende Raster
    auf einer Zeile. */
+/* --- Rangliste über der Tag-für-Tag-Tabelle ----------------------------- */
+
+/* Steht ÜBER der Tabelle und ist der „auf einen Blick"-Teil: inhaltsbreit wie
+   alles hier, nicht über die Seite gezogen. */
+.verify-rank {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.verify-rank-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Ob die Führung belastbar ist, ist die wichtigste Aussage des Blocks — grün
+   wenn ja, gedämpft-warnend wenn die Spitze Zufall ist. */
+.verify-rank-clear {
+  color: #6fbf8e;
+}
+
+.verify-rank-tie {
+  color: var(--warn);
+}
+
+.verify-rank-table td:first-child,
+.verify-rank-table th:first-child {
+  text-align: left;
+}
+
+.verify-rank-table td:not(:first-child),
+.verify-rank-table th:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-rank-model {
+  white-space: nowrap;
+}
+
+/* Bestes Modell hervorgehoben — aber nur die Zeile, nicht die Zahlen: ob der
+   Vorsprung etwas bedeutet, sagt die letzte Spalte. */
+.verify-rank-table tr.is-best td {
+  background: rgba(57, 135, 229, 0.1);
+  font-weight: 600;
+}
+
+/* Amplitude deutlich neben 1 — der Befund, nicht die Zahl. */
+.verify-flag {
+  color: var(--warn);
+}
+
 .verify-cat {
   align-self: flex-start;
   margin-top: 14px;

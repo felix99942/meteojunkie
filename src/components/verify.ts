@@ -158,6 +158,33 @@ export interface Scores {
   rmse: number
   /** Größter Einzelfehler samt Tag — die Frage „wann lag es richtig daneben". */
   worst: { day: string; error: number } | null
+  /**
+   * σ(Vorhersage) / σ(Messung) über die gemeinsamen Tage: die AMPLITUDE.
+   *
+   * < 1 heißt, das Modell schwankt weniger als die Wirklichkeit — es dämpft.
+   * Genau das ist der AIFS-Befund (Tagesgang auf zwei Drittel gestaucht), der
+   * hier von Hand herausgerechnet wurde; als Kennzahl fällt er bei JEDEM
+   * Modell und jeder Station von selbst auf. > 1 heißt übertriebene Amplitude.
+   */
+  sdRatio: number
+  /**
+   * Korrelation Vorhersage ↔ Messung. Trennt „richtiger Verlauf, falsches
+   * Niveau" (hohe Korrelation, großer Bias — korrigierbar) von „falscher
+   * Verlauf" (niedrige Korrelation — das eigentliche Modellversagen).
+   */
+  corr: number
+  /**
+   * Zerlegung des MSE nach Murphy (1988):
+   * `MSE = Bias² + (σf − σo)² + 2·σf·σo·(1 − r)`.
+   *
+   * Eine exakte Identität, kein Modell — und sie macht aus einer Rangliste
+   * eine DIAGNOSE: `bias2` ist ein systematischer Versatz (nachträglich
+   * korrigierbar, z. B. Höhenfehler des Modellgitters), `amplitude` eine
+   * falsche Schwankungsbreite (gedämpfter Tagesgang), `phase` der Rest —
+   * richtige Amplitude zur falschen Zeit, also Timing- und Verlaufsfehler.
+   * Zwei Modelle mit demselben MSE können hier völlig verschieden aussehen.
+   */
+  decomp: { bias2: number; amplitude: number; phase: number }
 }
 
 /**
@@ -173,6 +200,13 @@ export function score(
   let sum = 0
   let sumAbs = 0
   let sumSq = 0
+  // Zweite Momente für Amplitude, Korrelation und die Murphy-Zerlegung —
+  // im SELBEN Durchlauf, die Paarung der Tage ist ja schon hier bestimmt.
+  let sf = 0
+  let so = 0
+  let sff = 0
+  let soo = 0
+  let sfo = 0
   let worst: { day: string; error: number } | null = null
   for (const [day, obs] of observed) {
     const fc = forecast.get(day)
@@ -182,10 +216,55 @@ export function score(
     sum += e
     sumAbs += Math.abs(e)
     sumSq += e * e
+    sf += fc
+    so += obs
+    sff += fc * fc
+    soo += obs * obs
+    sfo += fc * obs
     if (!worst || Math.abs(e) > Math.abs(worst.error)) worst = { day, error: e }
   }
-  if (n === 0) return { n: 0, bias: Number.NaN, mae: Number.NaN, rmse: Number.NaN, worst: null }
-  return { n, bias: sum / n, mae: sumAbs / n, rmse: Math.sqrt(sumSq / n), worst }
+  const nan = Number.NaN
+  if (n === 0) {
+    return {
+      n: 0,
+      bias: nan,
+      mae: nan,
+      rmse: nan,
+      worst: null,
+      sdRatio: nan,
+      corr: nan,
+      decomp: { bias2: nan, amplitude: nan, phase: nan },
+    }
+  }
+  const bias = sum / n
+  const mse = sumSq / n
+  // Streuungen als POPULATIONsgrößen (durch n, nicht n−1): nur so gilt die
+  // Murphy-Identität exakt, und genau darauf beruht die Zerlegung unten.
+  const varF = Math.max(0, sff / n - (sf / n) ** 2)
+  const varO = Math.max(0, soo / n - (so / n) ** 2)
+  const sdF = Math.sqrt(varF)
+  const sdO = Math.sqrt(varO)
+  const cov = sfo / n - (sf / n) * (so / n)
+  // Ein konstanter Verlauf (ein einziger Tag, oder Niederschlag 0 überall) hat
+  // keine Streuung — Verhältnis und Korrelation sind dann nicht definiert, und
+  // eine 1 hinzuschreiben wäre eine Aussage, die niemand gemessen hat.
+  const sdRatio = sdO > 0 ? sdF / sdO : nan
+  const corr = sdF > 0 && sdO > 0 ? cov / (sdF * sdO) : nan
+  const bias2 = bias * bias
+  const amplitude = (sdF - sdO) ** 2
+  // Phase als REST, nicht aus r nachgerechnet: so stimmt die Summe der drei
+  // Terme numerisch immer genau mit dem MSE, auch wenn r nicht definiert ist.
+  const phase = Math.max(0, mse - bias2 - amplitude)
+  return {
+    n,
+    bias,
+    mae: sumAbs / n,
+    rmse: Math.sqrt(mse),
+    worst,
+    sdRatio,
+    corr,
+    decomp: { bias2, amplitude, phase },
+  }
 }
 
 /**
@@ -256,6 +335,117 @@ export function skillScore(
   // gemessen hat.
   if (n === 0 || sqRef === 0) return { ss: Number.NaN, n }
   return { ss: 1 - sqFc / sqRef, n }
+}
+
+/**
+ * KLIMATOLOGIE als zweite Vergleichsvorhersage: „jeden Tag der Durchschnitt".
+ *
+ * Warum es sie neben der Persistenz braucht: Persistenz ist nur bei KURZEM
+ * Vorlauf ein ernsthafter Gegner. Bei +5 bis +7 Tagen schlägt sie jedes Modell
+ * mühelos, der Skill Score sättigt gegen 1 und trennt die Modelle nicht mehr —
+ * genau dort, wo der Vergleich am interessantesten wäre. Gegen die
+ * Klimatologie gemessen bleibt der Score über den ganzen Vorlaufbereich
+ * aussagekräftig; das ist auch die Referenz, die die Wetterdienste für
+ * mittelfristige Vorhersagen verwenden.
+ *
+ * Es ist eine STICHPROBEN-Klimatologie (der Mittelwert des ausgewerteten
+ * Zeitraums), keine 30-jährige. Zwei Gründe: sie ist an JEDER Station
+ * definiert (ein echtes Normal gibt es nur für ~207), und die vorhandenen
+ * Normal-Assets führen bei `tlmax` das MONATSMAXIMUM, nicht das Mittel der
+ * Tagesmaxima — als Tagesklimatologie wären sie grob zu hoch und damit
+ * schlechter als keine.
+ *
+ * Gerechnet wird LEAVE-ONE-OUT: für jeden Tag der Mittelwert ALLER ANDEREN
+ * Tage. Sonst kennte die Referenz den Tag, den sie vorhersagen soll, und
+ * bekäme einen Vorteil, den eine echte Vorhersage nie hat. Der Unterschied
+ * ist klein, aber er geht in die richtige Richtung — und er kostet nichts.
+ */
+export function climatologyForecast(observed: Map<string, number>): Map<string, number> {
+  const out = new Map<string, number>()
+  const n = observed.size
+  if (n < 2) return out
+  let total = 0
+  for (const v of observed.values()) total += v
+  for (const [day, v] of observed) out.set(day, (total - v) / (n - 1))
+  return out
+}
+
+/**
+ * GEPAARTER Vergleich zweier Modelle — die Antwort auf „ist A wirklich besser
+ * als B, oder ist das Zufall?"
+ *
+ * Alle Modelle werden an DENSELBEN Tagen verifiziert. Die richtige Statistik
+ * ist deshalb die Differenz der Tagesfehler (|Fehler A| − |Fehler B|) und
+ * deren Streuung, NICHT der Vergleich zweier unabhängig gemittelter MAE: was
+ * beiden Modellen gemeinsam schwerfiel (ein Frontdurchgang) kürzt sich in der
+ * Differenz heraus, und genau das macht den Vergleich trennscharf. Ohne das
+ * stand hier eine Reihung, die bei 0,1 K Unterschied so aussah wie bei 1 K.
+ *
+ * AUTOKORRELATION ist dabei der Fallstrick: Wetter hält an, aufeinander
+ * folgende Tagesfehler sind nicht unabhängig, und der naive Standardfehler
+ * `sd/√n` wäre deshalb zu optimistisch — er würde Unterschiede als gesichert
+ * ausweisen, die es nicht sind. Korrigiert wird über die Autokorrelation
+ * erster Ordnung der Differenzreihe: `nEff = n · (1 − ρ) / (1 + ρ)`, die
+ * übliche AR(1)-Näherung. Bei ρ = 0,5 bleibt von 60 Tagen ein effektives
+ * Drittel.
+ */
+export interface Paired {
+  /** MAE(a) − MAE(b) über die gemeinsamen Tage; NEGATIV = a ist besser. */
+  diff: number
+  /** Standardfehler der Differenz, AR(1)-korrigiert. */
+  se: number
+  /** Gemeinsame Tage. */
+  n: number
+  /** Effektive Stichprobengröße nach der Autokorrelationskorrektur. */
+  nEff: number
+}
+
+/**
+ * Wie viele Standardfehler Abstand ein Unterschied haben muss, um als
+ * gesichert zu gelten. 2 entspricht grob 95 % — eine Konvention, keine
+ * Wahrheit, und bei einem halben Dutzend Modellen im Vergleich ohnehin
+ * optimistisch (Mehrfachvergleiche). Deshalb heißt die Markierung in der UI
+ * „unterscheidbar" und nicht „signifikant".
+ */
+export const PAIRED_Z = 2
+
+export function pairedMae(
+  a: Map<string, number>,
+  b: Map<string, number>,
+  observed: Map<string, number>,
+): Paired {
+  // Tage in ZEITLICHER Ordnung — die Autokorrelation wird über Nachbartage
+  // gebildet, eine beliebige Map-Reihenfolge machte sie bedeutungslos.
+  // ISO-Datumsschlüssel sortieren lexikografisch = chronologisch.
+  const days = [...observed.keys()].sort()
+  const d: number[] = []
+  for (const day of days) {
+    const obs = observed.get(day)!
+    const fa = a.get(day)
+    const fb = b.get(day)
+    if (fa == null || fb == null) continue
+    d.push(Math.abs(fa - obs) - Math.abs(fb - obs))
+  }
+  const n = d.length
+  if (n < 2) return { diff: n === 1 ? d[0] : Number.NaN, se: Number.NaN, n, nEff: n }
+  const mean = d.reduce((x, y) => x + y, 0) / n
+  let ss = 0
+  for (const v of d) ss += (v - mean) ** 2
+  // Stichprobenvarianz (n−1): hier wird eine Unsicherheit geschätzt, nicht
+  // eine Identität aufgelöst wie bei der Murphy-Zerlegung.
+  const variance = ss / (n - 1)
+  let lag = 0
+  for (let i = 1; i < n; i++) lag += (d[i] - mean) * (d[i - 1] - mean)
+  const rho = ss > 0 ? Math.max(0, Math.min(0.95, lag / ss)) : 0
+  const nEff = Math.max(1, Math.min(n, (n * (1 - rho)) / (1 + rho)))
+  return { diff: mean, se: Math.sqrt(variance / nEff), n, nEff }
+}
+
+/** Ist der gepaarte Unterschied größer als `PAIRED_Z` Standardfehler? */
+export function distinguishable(p: Paired): boolean {
+  return Number.isFinite(p.diff) && Number.isFinite(p.se) && p.se > 0
+    ? Math.abs(p.diff) > PAIRED_Z * p.se
+    : false
 }
 
 /**
