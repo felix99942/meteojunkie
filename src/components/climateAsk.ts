@@ -22,6 +22,7 @@
 import type { AtStation } from '../api/geosphere'
 import type { Season } from '../api/atValues'
 import type { Extreme, MaxMin, NormalsEntry, NormalsMap, ParamRecords } from '../api/atValues'
+import { monthOfYearRange, seasonRange } from '../api/atRecords'
 import { getAtParameter, type AtParameterSpec } from '../config/atParameters'
 
 /** Umlaute falten, Kleinschreibung, Satzzeichen weg — Tippfehler bleiben übrig. */
@@ -105,9 +106,30 @@ const SEASONS: Record<string, Season> = {
  * Wörter, die für sich noch keine Größe festlegen — „Temperatur" wird erst
  * durch ein Superlativ zu Maximum oder Minimum.
  */
-const PARAM_WORDS: { words: string[]; code: string; dir?: 'max' | 'min'; generic?: true }[] = [
+const PARAM_WORDS: {
+  words: string[]
+  code: string
+  dir?: 'max' | 'min'
+  generic?: true
+  /**
+   * Die Frage gilt einer NACHT, nicht einem Kalendertag. Ändert nicht die
+   * Größe (das ist `tlmin`), sondern die ANTWORT: eine Nacht spannt zwei
+   * Daten, und welches Fenster gemeint ist, gehört dazugesagt.
+   */
+  night?: true
+}[] = [
   { words: ['tagesmaximum', 'hochsttemperatur', 'maximaltemperatur', 'tmax', 'hitzerekord'], code: 'tlmax', dir: 'max' },
   { words: ['tagesminimum', 'tiefsttemperatur', 'minimaltemperatur', 'tmin', 'kalterekord'], code: 'tlmin', dir: 'min' },
+  // Die NACHT bestimmt die GRÖSSE, nicht die Richtung: „kälteste Nacht" ist
+  // das tiefste Tagesminimum, „wärmste Nacht" das HÖCHSTE (die Tropennacht) —
+  // beides dieselbe Messgröße, nur andere Richtung. Deshalb ohne `dir`, die
+  // kommt aus dem Superlativ. Ohne diesen Eintrag fand „kälteste Nacht in
+  // Salzburg" gar kein Größenwort, fiel auf die Vorgabe `tlmax` zurück und
+  // antwortete mit dem tiefsten Tages-MAXIMUM — also dem kältesten Tag statt
+  // der kältesten Nacht.
+  { words: ['nacht', 'nachte', 'nachts', 'nachtminimum', 'nachttemperatur'], code: 'tlmin', night: true },
+  { words: ['tropennacht', 'tropennachte'], code: 'tlmin', dir: 'max', night: true },
+  { words: ['frostnacht', 'frostnachte'], code: 'tlmin', dir: 'min', night: true },
   { words: ['temperatur', 'mitteltemperatur', 'warm', 'kalt', 'grad'], code: 'tl_mittel', generic: true },
   { words: ['niederschlag', 'regen', 'regenmenge', 'niederschlagsmenge', 'nass'], code: 'rr' },
   // Superlative, die die Größe schon MITNENNEN: „nassester Sommer" fragt nach
@@ -126,6 +148,124 @@ const PARAM_WORDS: { words: string[]; code: string; dir?: 'max' | 'min'; generic
   { words: ['frosttage', 'frosttag'], code: 'tage_frost' },
   { words: ['eistage', 'eistag'], code: 'tage_eis' },
 ]
+
+/**
+ * Wie der gesuchte Extremwert im Antworttext heißt — je Parameter und
+ * Richtung, HANDGESCHRIEBEN.
+ *
+ * Vorher stand dort `richtung + spec.label` mit einem immer maskulinen
+ * „höchster"/„tiefster", und `spec.label` ist ein BEZEICHNER für Dropdowns,
+ * kein Satzteil. Heraus kam „tiefster Temperatur Maximum": falsches Genus,
+ * falsche Flexion, und zusammengeklebt aus zwei Substantiven. Deutsche
+ * Grammatik lässt sich aus einem Registry-Label nicht ableiten — jede Größe
+ * hat ihr eigenes Genus („die Schneehöhe", „das Tagesminimum", „der
+ * Niederschlag") und ihren eigenen passenden Superlativ („längste"
+ * Sonnenscheindauer, nicht „höchste"; „meiste" Frosttage, nicht „höchste").
+ *
+ * Ein Test hält die Tabelle vollständig gegen alle Codes, die das Parsen
+ * überhaupt erzeugen kann.
+ */
+const SUPERLATIVE: Record<string, { max: string; min: string }> = {
+  tlmax: { max: 'höchstes Tagesmaximum', min: 'tiefstes Tagesmaximum' },
+  tlmin: { max: 'höchstes Tagesminimum', min: 'tiefstes Tagesminimum' },
+  tl_mittel: { max: 'höchste Mitteltemperatur', min: 'tiefste Mitteltemperatur' },
+  rr: { max: 'höchste Niederschlagssumme', min: 'geringste Niederschlagssumme' },
+  so_h: { max: 'längste Sonnenscheindauer', min: 'kürzeste Sonnenscheindauer' },
+  sh: { max: 'größte Schneehöhe', min: 'geringste Schneehöhe' },
+  rfb_mittel: { max: 'höchste relative Feuchte', min: 'tiefste relative Feuchte' },
+  tage_sommer: { max: 'meiste Sommertage', min: 'wenigste Sommertage' },
+  tage_tropen: { max: 'meiste Hitzetage', min: 'wenigste Hitzetage' },
+  tage_frost: { max: 'meiste Frosttage', min: 'wenigste Frosttage' },
+  tage_eis: { max: 'meiste Eistage', min: 'wenigste Eistage' },
+  tage_rr_1: { max: 'meiste Niederschlagstage', min: 'wenigste Niederschlagstage' },
+}
+
+/**
+ * Antworttext für den gesuchten Extremwert. Fällt auf eine grammatisch
+ * neutrale Form zurück, falls je ein Parameter ohne Eintrag durchkommt —
+ * „Tiefstwert von …" ist mit jedem Label richtig, nur weniger schön.
+ */
+export function superlativeText(
+  code: string,
+  extreme: 'max' | 'min',
+  label: string,
+  nightly = false,
+): string {
+  // Fragt die Frage nach einer NACHT, dann heißt die Antwort so — „tiefstes
+  // Tagesminimum" ist dieselbe Zahl, aber nicht dieselbe Auskunft.
+  if (nightly && code === 'tlmin') return extreme === 'max' ? 'wärmste Nacht' : 'kälteste Nacht'
+  const p = SUPERLATIVE[code]
+  if (p) return p[extreme]
+  return `${extreme === 'max' ? 'Höchstwert' : 'Tiefstwert'} von ${label}`
+}
+
+/**
+ * Eine Nacht als Spanne über ZWEI Daten: „Nacht vom 11. auf den 12. Jänner
+ * 1940".
+ *
+ * `day` ist der KLIMATAG des Werts (YYYY-MM-DD). GeoSphere bildet die
+ * Tagesextreme von 19 MEZ des Vortags bis 19 MEZ, also 18–18 UTC (in
+ * `verify.ts` gemessen) — die Nacht in diesem Fenster ist damit die von
+ * `day − 1` auf `day`. Genau deshalb existiert diese Konvention: über den
+ * Kalendertag gerechnet schnitte die Tagesgrenze mitten durch den Tiefpunkt,
+ * und eine Nacht hätte zwei Minima. Dieselbe Überlegung steckt im klassischen
+ * Meteogramm hinter der synoptischen Nacht 18–06 UTC (`ExtremeWindow`).
+ *
+ * Über Monats- und Jahresgrenzen wird beidseitig voll ausgeschrieben, sonst
+ * stünde „Nacht vom 31. auf den 1. Jänner" da — und das wäre der 31. Jänner.
+ */
+export function formatNightSpan(day: string): string {
+  const to = new Date(`${day}T12:00:00Z`)
+  const from = new Date(to.getTime() - 86_400_000)
+  const full = new Intl.DateTimeFormat('de-AT', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  const sameMonth =
+    from.getUTCMonth() === to.getUTCMonth() && from.getUTCFullYear() === to.getUTCFullYear()
+  const fromText = sameMonth ? `${from.getUTCDate()}.` : full.format(from)
+  return `Nacht vom ${fromText} auf den ${full.format(to)}`
+}
+
+/**
+ * Hinweis zum Zeitfenster einer Nachtfrage — und er ist je RICHTUNG
+ * verschieden, was beim Nachrechnen überrascht:
+ *
+ * Geantwortet wird mit dem Minimum des KLIMATAGS (18–18 UTC), nicht mit dem
+ * Minimum eines eigenen Nachtfensters (18–06 UTC). Ein solches Fenster ist aus
+ * dem Archiv nicht ableitbar: die Rekorde stehen als Monatswerte in den
+ * Assets, und für eine eigene Nachtauswertung bräuchte man die
+ * 10-Minuten-Reihen — die gibt es erst ab 1992.
+ *
+ * Bei der WÄRMSTEN Nacht ist das unkritisch, und zwar beweisbar: gesucht ist
+ * das höchste Tagesminimum. Läge dieses Minimum ausnahmsweise am Tag (etwa
+ * nachmittags hinter einer Kaltfront), dann war die Nacht NOCH WÄRMER — der
+ * genannte Wert ist also eine untere Schranke für die Nacht, und die Nacht war
+ * in jedem Fall so warm. Die Aussage bleibt richtig.
+ *
+ * Bei der KÄLTESTEN Nacht liegt der Fall umgekehrt: gesucht ist das tiefste
+ * Tagesminimum, und das kann in seltenen Fällen ein NACHMITTAGSwert hinter
+ * einer Kaltfront sein — dann war die eigentliche Nacht wärmer als der
+ * genannte Wert, und der Wert gehört gar nicht in die Nacht. Deshalb steht
+ * dort ein Vorbehalt, bei der wärmsten Nacht nicht.
+ */
+export function nightNote(extreme: 'max' | 'min'): string {
+  const base =
+    'Tiefstwert des Klimatags (19–19 MEZ) — die Nacht davor liegt in diesem Fenster. '
+  return extreme === 'max'
+    ? base +
+        'Fiel das Minimum ausnahmsweise am Tag, war die Nacht noch wärmer: der Wert ist dann ' +
+        'eine untere Schranke.'
+    : base +
+        'In seltenen Fällen (Kaltfront am Nachmittag) fällt dieses Minimum in den Tag und ' +
+        'nicht in die Nacht. Ein eigenes Nachtfenster (18–06 UTC) ist aus dem Monatsarchiv ' +
+        'nicht ableitbar.'
+}
+
+/** Alle Parametercodes mit Superlativ-Phrase — für den Vollständigkeitstest. */
+export const SUPERLATIVE_CODES = Object.keys(SUPERLATIVE)
 
 /** Generisches „Temperatur" + Superlativ → Höchst- bzw. Tiefstwert. */
 const GENERIC_UPGRADE: Record<string, { max: string; min: string }> = {
@@ -377,6 +517,13 @@ export interface AskQuery {
   /** Weitere plausible Stationen — „Salzburg" heißen acht. */
   alternatives: StationMatch[]
   param: string
+  /**
+   * Die Frage gilt einer NACHT („kälteste Nacht", „Tropennacht"). Die GRÖSSE
+   * ist dieselbe wie sonst (`tlmin`, das Minimum des Klimatags) — dieses Feld
+   * ändert nur, wie geantwortet wird: eine Nacht spannt ZWEI Daten, und das
+   * Zeitfenster gehört benannt (siehe `nightNote` und `formatNightSpan`).
+   */
+  nightly?: true
   month: number | null
   season: Season | null
   /**
@@ -407,6 +554,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   let param = 'tlmax'
   let dir: 'max' | 'min' | null = null
   let generic = false
+  let nightly = false
   /** Stand überhaupt ein Größenwort in der Frage? Sonst gilt oben die Vorgabe. */
   let paramFound = false
   outer: for (const t of content) {
@@ -422,6 +570,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
           param = entry.code
           dir = entry.dir ?? null
           generic = entry.generic ?? false
+          nightly = entry.night ?? false
           paramFound = true
           break outer
         }
@@ -480,6 +629,9 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
     station: best,
     alternatives: matches.slice(1),
     param,
+    // Nur setzen, wenn es zutrifft — das Feld ist optional, damit bestehende
+    // Vergleiche auf das Query-Objekt unverändert gelten.
+    ...(nightly ? { nightly: true as const } : {}),
     month,
     season,
     annual,
@@ -592,17 +744,120 @@ export function mergeRecords(
 }
 
 /**
+ * Ist die gefragte RICHTUNG bei dieser Größe überhaupt ein Tagesextrem?
+ *
+ * Die Rekord-Assets stammen aus dem MONATSdatensatz, und der führt bei
+ * Extremgrößen nur EINE Richtung als echtes Tagesextrem:
+ *
+ *   `tlmax` (agg 'max')  Monatswert = HÖCHSTES Tagesmaximum
+ *   `tlmin` (agg 'min')  Monatswert = TIEFSTES Tagesminimum
+ *
+ * Das Extremum über die Monate in der GEGENrichtung ist deshalb etwas völlig
+ * anderes, als die Frage meint — und das war ein echter Fehler: „wärmste Nacht
+ * in Salzburg" antwortete mit 13,4 °C (August 2024). Das ist der höchste
+ * Monats-TIEFSTWERT, also der August, dessen kälteste Nacht die wärmste war —
+ * nicht die wärmste Nacht. Salzburg hat längst Tropennächte über 20 °C gehabt.
+ * Symmetrisch dazu hätte „kältester Tag" −0,4 °C geliefert (Jänner 1940): den
+ * Monat, dessen wärmster Tag am kältesten blieb.
+ *
+ * Diese Werte sind KEIN Datenfehler — die Karte im Zeitbezug „Allzeit" zeigt
+ * sie bewusst und benennt sie über `valueCaption` korrekt als
+ * Monats-Höchst-/Tiefstwerte. Nur als ANTWORT auf eine Frage nach einem Tag
+ * oder einer Nacht sind sie falsch, und dann gibt es hier lieber keine Zahl.
+ *
+ * Bei Summen, Mitteln und Kenntagen (`rr`, `so_h`, `tl_mittel`, `tage_*`) sind
+ * beide Richtungen sinnvoll: der nasseste UND der trockenste Monat sind echte
+ * Monatswerte.
+ *
+ * Der Monatsdatensatz führt das fehlende Gegenstück auch nicht unter anderem
+ * Namen — geprüft (2026-09-15, 420 Parameter): es gibt `tlmin`, `tlmax` und
+ * die Mittel `tlmin_mittel`/`tlmax_mittel`, aber kein „monatlich höchstes
+ * Tagesminimum". Dafür bräuchte es die TAGESreihe.
+ */
+export function directionDerivable(spec: AtParameterSpec, extreme: 'max' | 'min'): boolean {
+  if (spec.agg === 'max') return extreme === 'max'
+  if (spec.agg === 'min') return extreme === 'min'
+  return true
+}
+
+/**
+ * Klartext, warum es zu dieser Frage keine Zahl gibt — und was stattdessen im
+ * Archiv steht. „Keine Daten" wäre hier die falsche Auskunft: die Daten sind
+ * da, sie beantworten nur eine andere Frage.
+ */
+export function directionNote(
+  spec: AtParameterSpec,
+  extreme: 'max' | 'min',
+  nightly = false,
+): string {
+  const gefragt = nightly && spec.code === 'tlmin'
+    ? extreme === 'max'
+      ? 'Die wärmste Nacht'
+      : 'Die kälteste Nacht'
+    : `Dieser Wert`
+  const vorhanden =
+    spec.agg === 'min'
+      ? 'je Monat nur den TIEFSTEN Tagesminimalwert, nicht den höchsten'
+      : 'je Monat nur den HÖCHSTEN Tagesmaximalwert, nicht den tiefsten'
+  const falsch =
+    spec.agg === 'min'
+      ? 'der Monat, dessen kälteste Nacht die wärmste war'
+      : 'der Monat, dessen wärmster Tag am kältesten blieb'
+  return (
+    `${gefragt} lässt sich aus dem Monatsarchiv nicht bestimmen: es führt ${vorhanden}. ` +
+    `Das Extremum in der Gegenrichtung wäre ${falsch} — eine andere Aussage, und als Antwort ` +
+    `auf diese Frage falsch. Dafür bräuchte es die Tagesreihe der ganzen Messreihe.`
+  )
+}
+
+/**
+ * Zeitraum, in dem der EXAKTE Rekordtag zu suchen ist.
+ *
+ * Die Rekord-Assets kennen nur Monat und Jahr („Jänner 1940") — bei `tlmax`
+ * und `tlmin` IST der Monatswert aber ein Tagesextrem, der genaue Tag steckt
+ * also in der Tagesreihe und lässt sich nachschlagen (`resolveExtremeDay`, ein
+ * Request, für immer gecacht). Diese Funktion sagt nur, WO gesucht wird; ob
+ * überhaupt gesucht werden darf, entscheidet die Whitelist `DAY_RESOLVABLE` —
+ * bei Summen und Mitteln gibt es keinen Rekordtag, und `resolveExtremeDay`
+ * lehnt solche Codes ohne Request ab.
+ *
+ * Je enger der Zeitraum, desto billiger und eindeutiger: ein genannter Monat
+ * schlägt die Saison, die Saison das ganze Jahr. Beim absoluten Rekord liefert
+ * das Asset den Monat mit (`recordMonth`), also wird auch dort nur ein Monat
+ * durchsucht und nicht die ganze Reihe.
+ *
+ * `null`, wenn es keinen Zeitpunkt gibt — ein langjähriges Mittel hat kein
+ * Jahr und damit keinen Tag.
+ */
+export function askDayRange(
+  q: AskQuery,
+  answer: AskAnswer,
+): { start: string; end: string } | null {
+  const year = answer.year
+  if (year == null || !Number.isFinite(year)) return null
+  const month = q.month ?? answer.recordMonth
+  if (month != null) return monthOfYearRange(year, month)
+  if (q.season) return seasonRange(q.season, year)
+  // Jahreswert (oder absoluter Rekord ohne Monatsangabe): das ganze Jahr.
+  return { start: `${year}-01-01`, end: `${year}-12-31` }
+}
+
+/**
  * Rekordantwort aus den Stationsassets. Getrennt vom Parsen, damit beides für
  * sich prüfbar bleibt — und weil hier keine Heuristik mehr steckt, sondern
  * nur noch ein Feldzugriff.
  */
 export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): AskAnswer | null {
   if (!rec) return null
+  const spec: AtParameterSpec = getAtParameter(q.param)
+  // Gegenrichtung einer Extremgröße: das Asset hätte hier einen Monats-Höchst-
+  // bzw. -Tiefstwert, und der beantwortet die Frage nicht (siehe
+  // `directionDerivable`). Lieber keine Zahl als eine, die etwas anderes meint.
+  if (!directionDerivable(spec, q.extreme)) return null
   const e = extremeOf(rec, q)
   if (!e || e.v == null) return null
-  const spec: AtParameterSpec = getAtParameter(q.param)
   const period = periodText(q)
-  const richtung = q.extreme === 'max' ? 'höchster' : 'tiefster'
+  const gesucht = superlativeText(q.param, q.extreme, spec.label, q.nightly)
   // `d` steht nur beim absoluten Rekord (YYYY-MM), sonst gibt es das Jahr.
   const year = e.y ?? (e.d ? Number(e.d.slice(0, 4)) : undefined)
   return {
@@ -615,11 +870,14 @@ export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): A
     ...(e.s != null ? { whereId: e.s } : {}),
     what:
       q.area === 'austria'
-        ? `${richtung} ${spec.label} in Österreich – ${period}`
+        ? `${gesucht} in Österreich – ${period}`
         : q.area === 'place' && q.place
-          ? `${richtung} ${spec.label} in ${q.place.label} – ${period}`
-          : `${richtung} ${spec.label} – ${period}`,
+          ? `${gesucht} in ${q.place.label} – ${period}`
+          : `${gesucht} – ${period}`,
     year: Number.isFinite(year) ? year : undefined,
+    // Nachtfrage: WELCHES Zeitfenster geantwortet wird, gehört dazu — und der
+    // Vorbehalt gilt nur für die kälteste Nacht (siehe `nightNote`).
+    ...(q.nightly && q.param === 'tlmin' ? { note: nightNote(q.extreme) } : {}),
     // Beim ABSOLUTEN Rekord steckt im Datum auch der Monat — den will die
     // Karte kennen, sonst zeigt sie das richtige Jahr im falschen Monat.
     ...(q.month == null && q.season == null && e.d

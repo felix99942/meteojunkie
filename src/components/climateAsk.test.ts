@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { AtStation } from '../api/geosphere'
+import { getAtParameter } from '../config/atParameters'
 import {
   answerFromNormals,
   answerFromNormalsRange,
@@ -13,6 +14,13 @@ import {
   mergeRecords,
   normalize,
   parseQuestion,
+  askDayRange,
+  superlativeText,
+  SUPERLATIVE_CODES,
+  formatNightSpan,
+  nightNote,
+  directionDerivable,
+  directionNote,
 } from './climateAsk'
 
 const st = (id: number, name: string, isActive = true, validFrom = '1980-01-01'): AtStation =>
@@ -609,5 +617,230 @@ describe('mergeRecords', () => {
     expect(a?.value).toBe(41)
     expect(a?.where).toBe('Wien Stammersdorf')
     expect(a?.what).toContain('in Wien')
+  })
+})
+
+// --- Nacht, Grammatik und exaktes Datum ------------------------------------
+
+describe('Nacht als Größenwort', () => {
+  // Der gemeldete Fehler: „kälteste Nacht" fand gar kein Größenwort, fiel auf
+  // die Vorgabe tlmax zurück und antwortete mit dem tiefsten Tages-MAXIMUM —
+  // also dem kältesten TAG statt der kältesten NACHT.
+  it('„kälteste Nacht" fragt nach dem Tagesminimum, Richtung min', () => {
+    const q = ask('kälteste nacht in salzburg')
+    expect(q.param).toBe('tlmin')
+    expect(q.extreme).toBe('min')
+  })
+
+  // Die Nacht bestimmt die GRÖSSE, nicht die Richtung: die wärmste Nacht ist
+  // das HÖCHSTE Tagesminimum (die Tropennacht), dieselbe Messgröße.
+  it('„wärmste Nacht" fragt dieselbe Größe in der anderen Richtung', () => {
+    const q = ask('wärmste nacht in salzburg')
+    expect(q.param).toBe('tlmin')
+    expect(q.extreme).toBe('max')
+  })
+
+  it('erkennt Tropen- und Frostnacht mit eigener Richtung', () => {
+    expect(ask('tropennacht in wien').param).toBe('tlmin')
+    expect(ask('tropennacht in wien').extreme).toBe('max')
+    expect(ask('frostnacht in wien').extreme).toBe('min')
+  })
+
+  // Gegenprobe: der kälteste TAG bleibt eine andere Frage und darf nicht
+  // mitverändert werden.
+  it('lässt das Tagesmaximum unberührt', () => {
+    expect(ask('tiefstes tagesmaximum in salzburg').param).toBe('tlmax')
+  })
+})
+
+describe('superlativeText', () => {
+  // Der zweite gemeldete Fehler: „tiefster Temperatur Maximum" — maskuliner
+  // Superlativ vor einem Registry-Bezeichner.
+  it('formuliert grammatisch richtig statt Label und Superlativ zu kleben', () => {
+    expect(superlativeText('tlmax', 'min', 'Temperatur Maximum')).toBe('tiefstes Tagesmaximum')
+    expect(superlativeText('tlmin', 'min', 'Temperatur Minimum')).toBe('tiefstes Tagesminimum')
+    expect(superlativeText('tlmin', 'max', 'Temperatur Minimum')).toBe('höchstes Tagesminimum')
+  })
+
+  // Jede Größe hat ihr eigenes Genus UND ihren eigenen passenden Superlativ:
+  // „längste" Sonnenscheindauer, nicht „höchste"; „meiste" Frosttage.
+  it('nimmt je Größe den passenden Superlativ', () => {
+    expect(superlativeText('so_h', 'max', '')).toBe('längste Sonnenscheindauer')
+    expect(superlativeText('sh', 'max', '')).toBe('größte Schneehöhe')
+    expect(superlativeText('tage_frost', 'max', '')).toBe('meiste Frosttage')
+    expect(superlativeText('rr', 'min', '')).toBe('geringste Niederschlagssumme')
+  })
+
+  it('bleibt bei unbekanntem Code grammatisch richtig', () => {
+    expect(superlativeText('gibtsnicht', 'min', 'Irgendwas')).toBe('Tiefstwert von Irgendwas')
+  })
+
+  // Die Tabelle muss jeden Code abdecken, den das Parsen erzeugen kann —
+  // sonst rutscht still die Ersatzformulierung durch.
+  it('deckt alle Parameter ab, die eine Frage ergeben kann', () => {
+    const fragen = [
+      'höchste temperatur in wien',
+      'kälteste nacht in wien',
+      'wärmstes jahr in wien',
+      'nassester juli in wien',
+      'sonnigster sommer in wien',
+      'schneereichster winter in wien',
+      'meiste frosttage in wien',
+      'meiste sommertage in wien',
+      'meiste hitzetage in wien',
+      'meiste eistage in wien',
+      'höchste luftfeuchte in wien',
+    ]
+    for (const f of fragen) {
+      expect(SUPERLATIVE_CODES, `Parameter aus „${f}"`).toContain(ask(f).param)
+    }
+  })
+})
+
+describe('askDayRange', () => {
+  const answer = (year: number, recordMonth?: number) =>
+    ({ value: 1, unit: '°C', when: null, what: '', year, ...(recordMonth ? { recordMonth } : {}) })
+
+  it('sucht im genannten Monat', () => {
+    const q = { ...ask('kälteste nacht im jänner in salzburg'), month: 1 }
+    expect(askDayRange(q, answer(1940) as never)).toEqual({
+      start: '1940-01-01',
+      end: '1940-01-31',
+    })
+  })
+
+  // Beim absoluten Rekord liefert das Asset den Monat mit — dann wird auch nur
+  // dieser durchsucht und nicht die ganze Reihe.
+  it('nutzt den Monat des absoluten Rekords', () => {
+    const q = ask('kälteste nacht in salzburg')
+    expect(askDayRange(q, answer(1940, 2) as never)).toEqual({
+      start: '1940-02-01',
+      end: '1940-02-29', // 1940 war ein Schaltjahr
+    })
+  })
+
+  // Winter beginnt im Dezember des VORJAHRS — mit einer anderen Zuordnung
+  // findet der Tagesabruf den Rekordwert schlicht nicht.
+  it('legt den Winter über die Jahresgrenze', () => {
+    const q = { ...ask('kälteste nacht im winter in salzburg'), season: 'DJF' as const, month: null }
+    expect(askDayRange(q, answer(1940) as never)).toEqual({
+      start: '1939-12-01',
+      end: '1940-02-29',
+    })
+  })
+
+  it('nimmt sonst das ganze Jahr', () => {
+    const q = { ...ask('kälteste nacht in salzburg'), month: null, season: null }
+    expect(askDayRange(q, answer(1940) as never)).toEqual({
+      start: '1940-01-01',
+      end: '1940-12-31',
+    })
+  })
+
+  // Ein langjähriges Mittel hat kein Jahr und damit keinen Tag.
+  it('gibt null ohne Jahr', () => {
+    const q = ask('durchschnittliche temperatur in salzburg')
+    expect(askDayRange(q, { value: 1, unit: '°C', when: null, what: '' } as never)).toBeNull()
+  })
+})
+
+describe('Nacht als ZEITRAUM', () => {
+  it('markiert Nachtfragen, andere nicht', () => {
+    expect(ask('kälteste nacht in salzburg').nightly).toBe(true)
+    expect(ask('wärmste nacht in salzburg').nightly).toBe(true)
+    expect(ask('tropennacht in wien').nightly).toBe(true)
+    expect(ask('tiefstes tagesminimum in salzburg').nightly).toBeUndefined()
+    expect(ask('höchste temperatur in wien').nightly).toBeUndefined()
+  })
+
+  it('antwortet bei einer Nachtfrage auch sprachlich mit der Nacht', () => {
+    expect(superlativeText('tlmin', 'min', '', true)).toBe('kälteste Nacht')
+    expect(superlativeText('tlmin', 'max', '', true)).toBe('wärmste Nacht')
+    // Ohne Nachtbezug bleibt es die Messgröße.
+    expect(superlativeText('tlmin', 'min', '')).toBe('tiefstes Tagesminimum')
+  })
+
+  // Der Klimatag läuft 19–19 MEZ (18–18 UTC, in verify.ts gemessen). Das
+  // Minimum des Klimatags D gehört damit zur Nacht von D−1 auf D — NICHT zur
+  // Nacht von D auf D+1. Eine Verwechslung wäre um 24 h daneben.
+  it('spannt die Nacht auf den Vortag zurück', () => {
+    expect(formatNightSpan('1940-01-12')).toBe('Nacht vom 11. auf den 12. Jänner 1940')
+  })
+
+  // Über die Monatsgrenze muss beidseitig ausgeschrieben werden: „Nacht vom
+  // 31. auf den 1. Jänner" läse sich als der 31. Jänner.
+  it('schreibt über Monatsgrenzen beide Daten voll aus', () => {
+    expect(formatNightSpan('1940-01-01')).toBe(
+      'Nacht vom 31. Dezember 1939 auf den 1. Jänner 1940',
+    )
+  })
+
+  // 1940 war ein Schaltjahr — der Vortag des 1. März ist der 29. Februar, nicht
+  // der 28. Und weil es über die Monatsgrenze geht, steht er voll da.
+  it('kommt mit dem Schalttag zurecht', () => {
+    expect(formatNightSpan('1940-03-01')).toBe('Nacht vom 29. Februar 1940 auf den 1. März 1940')
+  })
+
+  // Innerhalb eines Monats bleibt die erste Hälfte kurz — sonst stünde das
+  // Datum zweimal fast gleich da.
+  it('kürzt innerhalb eines Monats die erste Hälfte', () => {
+    expect(formatNightSpan('1940-02-29')).toBe('Nacht vom 28. auf den 29. Februar 1940')
+  })
+
+  // Die Richtungen sind NICHT symmetrisch, und das ist der inhaltliche Kern:
+  // beim höchsten Tagesminimum ist ein am Tag gefallenes Minimum eine untere
+  // SCHRANKE (die Nacht war dann noch wärmer) — die Aussage bleibt richtig.
+  // Beim tiefsten Tagesminimum kann der Wert dagegen aus dem Tag stammen und
+  // gehört dann gar nicht in die Nacht.
+  it('formuliert den Vorbehalt nur für die kälteste Nacht', () => {
+    expect(nightNote('max')).toContain('untere Schranke')
+    expect(nightNote('max')).not.toContain('nicht in die Nacht')
+    expect(nightNote('min')).toContain('nicht in die Nacht')
+    expect(nightNote('min')).toContain('18–06 UTC')
+  })
+})
+
+describe('Gegenrichtung einer Extremgröße', () => {
+  const spec = (code: string) => getAtParameter(code)
+
+  // Der gemeldete Fehler: „wärmste Nacht in Salzburg" antwortete mit 13,4 °C
+  // (August 2024) — dem höchsten MONATS-Tiefstwert, also dem August, dessen
+  // kälteste Nacht die wärmste war. Salzburg hat längst Tropennächte > 20 °C.
+  it('erkennt, welche Richtung ein echtes Tagesextrem ist', () => {
+    expect(directionDerivable(spec('tlmin'), 'min')).toBe(true) // kälteste Nacht ✓
+    expect(directionDerivable(spec('tlmin'), 'max')).toBe(false) // wärmste Nacht ✗
+    expect(directionDerivable(spec('tlmax'), 'max')).toBe(true) // heißester Tag ✓
+    expect(directionDerivable(spec('tlmax'), 'min')).toBe(false) // kältester Tag ✗
+  })
+
+  // Bei Summen, Mitteln und Kenntagen sind BEIDE Richtungen echte Monatswerte —
+  // der nasseste und der trockenste Monat sind gleichermaßen sinnvoll.
+  it('lässt Summen, Mittel und Kenntage in beiden Richtungen zu', () => {
+    for (const code of ['rr', 'so_h', 'tl_mittel', 'tage_frost']) {
+      expect(directionDerivable(spec(code), 'max'), code).toBe(true)
+      expect(directionDerivable(spec(code), 'min'), code).toBe(true)
+    }
+  })
+
+  // Lieber keine Zahl als eine, die etwas anderes meint.
+  it('gibt in der Gegenrichtung KEINE Antwort statt einer falschen', () => {
+    const rec = {
+      abs: { max: { v: 13.4, d: '2024-08' }, min: { v: -30.6, d: '1956-02' } },
+      ann: { max: { v: -6.8, y: 1916 }, min: { v: -30.6, y: 1956 } },
+      mon: [],
+      sea: [],
+    }
+    const warm = { ...ask('wärmste nacht in salzburg'), area: 'station' as const }
+    expect(answerFromRecords(warm, rec as never)).toBeNull()
+    // Die richtige Richtung antwortet weiter.
+    const kalt = { ...ask('kälteste nacht in salzburg'), area: 'station' as const }
+    expect(answerFromRecords(kalt, rec as never)?.value).toBe(-30.6)
+  })
+
+  it('erklärt im Klartext, warum es keine Zahl gibt', () => {
+    const note = directionNote(spec('tlmin'), 'max', true)
+    expect(note).toContain('wärmste Nacht')
+    expect(note).toContain('Monatsarchiv')
+    expect(note).toContain('Tagesreihe')
   })
 })

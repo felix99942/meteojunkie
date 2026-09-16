@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { AtStation } from '../api/geosphere'
+import { resolveExtremeDay, type ExtremeDay } from '../api/atRecords'
 import {
   loadNationalRecords,
   loadNormals,
@@ -41,6 +42,10 @@ import {
   type AskArea,
   type AskQuery,
   type AskScope,
+  askDayRange,
+  formatNightSpan,
+  directionDerivable,
+  directionNote,
 } from './climateAsk'
 
 const MONTH_NAMES = [
@@ -58,6 +63,9 @@ const EXAMPLES = [
   'höchste je gemessene temperatur in österreich',
   'höchste temperatur in wien',
   'kälteste temperatur im jänner in innsbruck',
+  // Die NACHT ist eine eigene Größe (tiefstes Tagesminimum), nicht der
+  // kälteste Tag — und die Antwort nennt das exakte Datum.
+  'kälteste nacht in salzburg',
   'nassester sommer in villach',
   'höchster jahresniederschlag in salzburg',
   'meiste hitzetage österreichweit',
@@ -231,6 +239,81 @@ export function AtAskBox({
   /** Zielstation für „In der Karte zeigen" — beim Landesrekord die, die ihn hält. */
   const showStation =
     (answer?.whereId != null ? stations.find((s) => s.id === answer.whereId) : null) ?? station
+
+  /**
+   * EXAKTER Rekordtag, nachgeladen.
+   *
+   * Die Assets kennen nur Monat und Jahr („Jänner 1940"). Bei `tlmax`/`tlmin`
+   * ist der Monatswert aber ein Tagesextrem — der genaue Tag steht in der
+   * Tagesreihe und kostet EINEN Request, der für immer gecacht wird. „Das
+   * kälteste war der Jänner 1940" ist die halbe Antwort; gefragt ist die
+   * kälteste NACHT, und die hat ein Datum.
+   *
+   * Bei Summen und Mitteln gibt es keinen Rekordtag (ein Monatsniederschlag
+   * fällt nicht an einem Tag) — `resolveExtremeDay` lehnt solche Codes ohne
+   * Request ab, deshalb braucht es hier keine zweite Whitelist.
+   */
+  const [recordDay, setRecordDay] = useState<ExtremeDay | null>(null)
+  /**
+   * Was aufzulösen ist, als SCHLÜSSEL aus Primitiven — nicht als Objekt.
+   *
+   * `query` wird bei jedem Render neu gebaut (Zeile 113: `{...parsed,
+   * ...override}`), ein Effekt mit `query` in den Abhängigkeiten liefe also
+   * jede Runde erneut: `setRecordDay(null)` → Render → Effekt → … eine
+   * Endlosschleife, die der Linter zu Recht angemahnt hat. Ein String aus den
+   * Primitiven ist über Renderrunden hinweg stabil, solange sich inhaltlich
+   * nichts ändert — dasselbe Muster wie `dataKey` in `VerifyPanel`.
+   */
+  const dayTarget = (() => {
+    if (!query || !answer || answer.year == null) return null
+    const id = answer.whereId ?? showStation?.id
+    if (id == null) return null
+    const range = askDayRange(query, answer)
+    if (!range) return null
+    return { code: query.param, id, start: range.start, end: range.end, value: answer.value }
+  })()
+  const dayKey = dayTarget
+    ? `${dayTarget.code}|${dayTarget.id}|${dayTarget.start}|${dayTarget.end}|${dayTarget.value}`
+    : null
+  useEffect(() => {
+    setRecordDay(null)
+    if (!dayTarget) return
+    let alive = true
+    void resolveExtremeDay(
+      dayTarget.code,
+      dayTarget.id,
+      dayTarget.start,
+      dayTarget.end,
+      dayTarget.value,
+    ).then((d) => {
+      // Überholte Antwort verwerfen: beim Weitertippen kommt die langsamere
+      // ältere sonst nach der neueren an (dieselbe Falle wie in der Ortssuche).
+      if (alive) setRecordDay(d)
+    })
+    return () => {
+      alive = false
+    }
+    // Absichtlich nur der Schlüssel: `dayTarget` ist jede Renderrunde ein
+    // neues Objekt, sein INHALT steht vollständig in `dayKey`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayKey])
+
+  /**
+   * „12. Jänner 1940" statt „Jänner 1940" — bei einer NACHTfrage dagegen als
+   * Spanne über zwei Daten: eine Nacht gehört zu zwei Kalendertagen, und der
+   * aufgelöste Tag ist der Klimatag, in dessen Fenster (19–19 MEZ) die Nacht
+   * DAVOR liegt.
+   */
+  const exactWhen = useMemo(() => {
+    if (!recordDay) return null
+    if (query?.nightly && query.param === 'tlmin') return formatNightSpan(recordDay.day)
+    return new Intl.DateTimeFormat('de-AT', {
+      timeZone: 'UTC',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(`${recordDay.day}T12:00:00Z`))
+  }, [recordDay, query?.nightly, query?.param])
 
   function set(patch: Partial<AskQuery>) {
     setOverride((o) => ({ ...o, ...patch }))
@@ -415,7 +498,24 @@ export function AtAskBox({
                 </div>
                 <div className="atask-what">
                   {answer.what}
-                  {answer.when && <> · <strong>{answer.when}</strong></>}
+                  {(exactWhen ?? answer.when) && (
+                    <>
+                      {' · '}
+                      <strong>{exactWhen ?? answer.when}</strong>
+                      {/* Derselbe Wert an mehreren Tagen: dann ist das
+                          gezeigte Datum das ERSTE Auftreten, und das gehört
+                          dazugesagt statt es als einzigen Tag auszugeben. */}
+                      {recordDay && recordDay.ties > 1 && (
+                        <span
+                          className="label-muted"
+                          title={`Der Wert wurde im Zeitraum an ${recordDay.ties} Tagen erreicht — gezeigt ist der erste.`}
+                        >
+                          {' '}
+                          (erstmals)
+                        </span>
+                      )}
+                    </>
+                  )}
                   {' · '}
                   {/* Beim Landeswert ist die Station Teil der ANTWORT, bei der
                       Stationsfrage stand sie schon in der Frage. */}
@@ -424,14 +524,27 @@ export function AtAskBox({
                 {answer.note && <div className="atask-note label-muted">{answer.note}</div>}
               </>
             )}
-            {areaResolved && !answer && hasParam === false && spec && (
+            {/* GEGENRICHTUNG einer Extremgröße: das Archiv hätte hier eine
+                Zahl, aber sie beantwortet eine andere Frage („wärmste Nacht"
+                → höchster Monats-Tiefstwert). Statt der falschen Zahl die
+                Erklärung — „keine Daten" wäre hier ebenfalls unzutreffend. */}
+            {areaResolved && !answer && spec && query && !directionDerivable(spec, query.extreme) && (
+              <span className="atask-note label-muted">
+                {directionNote(spec, query.extreme, query.nightly)}
+              </span>
+            )}
+            {areaResolved &&
+              !answer &&
+              hasParam === false &&
+              spec &&
+              directionDerivable(spec, query.extreme) && (
               <span className="label-muted">
                 Für „{spec.label}" gibt es{' '}
                 {query.area === 'station' ? 'an dieser Station keine' : 'keine'} vorberechneten{' '}
                 {query.scope === 'normal' ? 'Normale' : 'Rekorde'}.
               </span>
             )}
-            {areaResolved && !answer && hasParam && (
+            {areaResolved && !answer && hasParam && directionDerivable(spec!, query.extreme) && (
               <span className="label-muted">Für diesen Zeitraum liegt kein Wert vor.</span>
             )}
           </div>
