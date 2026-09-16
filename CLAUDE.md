@@ -952,6 +952,20 @@ npm run preview   # gebautes dist/ servieren
   sie außerhalb der Fläche und verdeckt keine Symbole. Symboldichte an der
   Breite orientiert (~30 px Mindestabstand), Radius zusätzlich am Abstand
   gedeckelt, damit sich die Kreise nie berühren.
+- **Windfahnen im Skew-T sind von der API begrenzt, nicht vom Code**
+  (`BARB_MIN_GAP`/`BARB_LEN` in `SkewTPanel.tsx`): Open-Meteo liefert genau die
+  19 Drucklevel aus `PRESSURE_LEVELS`, davon 16 im Achsenbereich (1050–100 hPa).
+  **Die Zwischenlevel 750/650/550/450/350 hPa gibt es NICHT** — live geprüft
+  (2026-09-16): HTTP 200 mit lauter `null`, während 700 und 600 im SELBEN
+  Request Werte liefern. Das ist die Falle aus SPEC §6; nicht erneut aus der
+  Doku ergänzen. Gerechnet für eine 420-px-Achse zeichnet der adaptive Abstand
+  bei 13 px 12 Fahnen, bei 8 px 14 — und tiefer bringt NICHTS mehr, weil
+  1000/975/950/925 auf der logarithmischen Druckachse nur 4,5–4,9 px
+  auseinanderliegen. Steht er auf 8, ist praktisch jedes verfügbare Level
+  gezeichnet. Die Schaftlänge muss mitskalieren (`drawWindBarb(..., len)`),
+  sonst greifen die Fiedern der Nachbarn ineinander. Wer WIRKLICH mehr Fahnen
+  will, müsste sie zwischen den Leveln INTERPOLIEREN — das sähe wie ein
+  echtes Radiosondenprofil aus, wäre aber erfunden; bewusst nicht gemacht.
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
   einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
   UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:

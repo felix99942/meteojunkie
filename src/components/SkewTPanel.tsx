@@ -30,7 +30,27 @@ import { useWorkbench, type PanelConfig } from '../state/workbench'
 const KMH_TO_KT = 1 / 1.852
 const MS_TO_KT = 1.94384
 /** Mindest-Pixelabstand zwischen Windbarben (verhindert Überlappung, thint adaptiv). */
-const BARB_MIN_GAP = 13
+/**
+ * Mindestabstand der Windfahnen in px — und damit die Dichte der Spalte.
+ *
+ * DIE ZAHL DER FAHNEN IST NACH OBEN HART BEGRENZT, und zwar nicht hier,
+ * sondern von der API: Open-Meteo liefert genau die 19 Drucklevel aus
+ * `PRESSURE_LEVELS`, davon 16 im Achsenbereich (1050–100 hPa). Die
+ * Zwischenlevel 750/650/550/450/350 hPa gibt es NICHT — live geprüft
+ * (2026-09-16): HTTP 200 mit lauter `null`, während 700 und 600 im selben
+ * Request Werte liefern. Das ist die Falle aus SPEC §6, nicht ein Tippfehler.
+ *
+ * Gerechnet für eine 420-px-Achse: bei 13 px werden 12 Fahnen gezeichnet, bei
+ * 8 px sind es 14 — mehr geht nicht, weil 1000/975/950/925 nur 4,5–4,9 px
+ * auseinanderliegen (logarithmische Druckachse). Tiefer als 8 px zu gehen
+ * bringt deshalb KEINE weitere Fahne, nur Überlappung.
+ */
+const BARB_MIN_GAP = 8
+/**
+ * Schaftlänge, passend zum Abstand: bei 8 px Abstand sind 30 px Schaft zu
+ * lang, die Fiedern der Nachbarn greifen ineinander.
+ */
+const BARB_LEN = 22
 
 const dash = (v: string | number | null | undefined): string =>
   v == null ? '–' : typeof v === 'number' ? String(v) : v
@@ -201,7 +221,9 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         const { profile, color } = barb as { profile: Profile; color: string }
         const ti = Math.min(timeIdx, profile.times.length - 1)
         const bx = g.left + g.width + 20
-        // So viele Level wie ohne Überlappung passen (adaptiv statt fester Liste)
+        // So viele Level wie ohne Überlappung passen (adaptiv statt fester
+        // Liste). Die Obergrenze setzt die API, nicht diese Schleife — siehe
+        // BARB_MIN_GAP.
         let lastBarbY = Infinity
         for (let i = 0; i < profile.levels.length; i++) {
           const y = yFromP(g, profile.levels[i])
@@ -209,7 +231,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           const ws = profile.windSpeed[i]?.[ti]
           const wd = profile.windDirection[i]?.[ti]
           if (ws == null || wd == null) continue
-          drawWindBarb(ctx, bx, y, ws * KMH_TO_KT, wd, color)
+          drawWindBarb(ctx, bx, y, ws * KMH_TO_KT, wd, color, BARB_LEN)
           lastBarbY = y
         }
       }

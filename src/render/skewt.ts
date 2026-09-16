@@ -113,6 +113,12 @@ export function drawWindBarb(
   speedKt: number,
   dirFrom: number,
   color: string,
+  /**
+   * Schaftlänge in px. Muss mitskalieren, wenn die Fahnen dichter stehen —
+   * sonst laufen Schaft und Fiedern der Nachbarn ineinander und die Spalte
+   * wird unlesbar. Fahnen und Abstände darauf folgen proportional.
+   */
+  len = 30,
 ): void {
   ctx.save()
   ctx.strokeStyle = color
@@ -120,12 +126,12 @@ export function drawWindBarb(
   ctx.lineWidth = 1.2
   if (speedKt < 2.5) {
     ctx.beginPath()
-    ctx.arc(x, y, 3, 0, 2 * Math.PI)
+    ctx.arc(x, y, len * 0.1, 0, 2 * Math.PI)
     ctx.stroke()
     ctx.restore()
     return
   }
-  const L = 30 // Schaftlänge px
+  const L = len
   const ang = (dirFrom * Math.PI) / 180
   const ux = Math.sin(ang) // Einheitsvektor zur Herkunft (Nord oben)
   const uy = -Math.cos(ang)
@@ -135,10 +141,10 @@ export function drawWindBarb(
   ctx.stroke()
   const bx = uy // senkrecht zum Schaft (Barbenseite)
   const by = -ux
-  const BARB = 11
+  const BARB = len * 0.37
   let rem = Math.round(speedKt / 5) * 5
   let pos = L
-  const step = 6
+  const step = len * 0.2
   while (rem >= 50) {
     const ax = x + ux * pos
     const ay = y + uy * pos
