@@ -30,6 +30,21 @@ export interface AtStation {
   /** Station liefert auch 10-Minuten-Messwerte (klima-v2-10min) — Basis der Tagesaktualität. */
   has10min: boolean
   /**
+   * Station im MONATSdatensatz (klima-v2-1m) vorhanden.
+   *
+   * Dieselbe Falle wie `has10min`, nur an einem anderen Datensatz: GeoSphere
+   * lehnt einen Bulk-Request KOMPLETT ab (HTTP 403, „Violation for
+   * station_ids"), wenn EINE ID dort unbekannt ist. Gemessen (2026-09-15)
+   * fehlt genau eine der 514 im Monatsdatensatz — und damit war jeder
+   * Monats-, Saison- und Jahresabruf der Klimakarte tot.
+   *
+   * OPTIONAL, weil älter erzeugte `stations.json` das Feld nicht haben: dort
+   * ist es `undefined`, und gefiltert wird nur auf ein ausdrückliches `false`
+   * (siehe `monthlyIds`). Ein veraltetes Asset verhält sich damit wie vorher
+   * statt plötzlich alle Stationen wegzufiltern.
+   */
+  hasMonthly?: boolean
+  /**
    * Standortgeschichte einer ZUSAMMENGEFÜHRTEN Reihe, chronologisch. GeoSphere
    * führt jede verlegte Station doppelt: als Einzelstandort (`INDIVIDUAL`) und
    * als fortgeführte Reihe (`COMBINED`) — der Ingest behält nur die Reihe und

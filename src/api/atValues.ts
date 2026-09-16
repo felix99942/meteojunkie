@@ -367,6 +367,20 @@ async function fetchRunningMonthPartial(
  * „Aktuell"-Knopf wirklich den jüngsten Messpunkt holt. Historische Perioden
  * sind statisch und bleiben gecacht.
  */
+/**
+ * Stationen, die der MONATSdatensatz kennt (`hasMonthly`).
+ *
+ * Muss vor jedem Bulk-Request auf klima-v2-1m angewandt werden: GeoSphere
+ * lehnt die ganze Anfrage mit HTTP 403 ab, wenn EINE ID dort unbekannt ist —
+ * dieselbe Regel wie bei `has10min` für den 10-Minuten-Datensatz. Gefiltert
+ * wird nur auf ein ausdrückliches `false`, damit eine älter erzeugte
+ * `stations.json` ohne das Feld sich wie bisher verhält und nicht plötzlich
+ * alle Stationen wegfallen.
+ */
+export function monthlyIds(stations: AtStation[]): number[] {
+  return stations.filter((s) => s.hasMonthly !== false).map((s) => s.id)
+}
+
 export async function fetchPeriodValues(
   spec: AtParameterSpec,
   period: Period,
@@ -446,7 +460,16 @@ export async function fetchPeriodValues(
     end = `${period.year}-12-01`
   }
 
-  const s = await fetchStationSeries(spec.monthlyCode, start, end, ids, DATASET_MONTHLY, recentPeriodTtl(end))
+  const s = await fetchStationSeries(
+    spec.monthlyCode,
+    start,
+    end,
+    // NICHT `ids`: eine im Monatsdatensatz unbekannte Station reißt den
+    // ganzen Request mit HTTP 403 ab (siehe `monthlyIds`).
+    monthlyIds(stations),
+    DATASET_MONTHLY,
+    recentPeriodTtl(end),
+  )
   if (period.kind === 'month') {
     let hasAny = false
     for (const id of ids) {

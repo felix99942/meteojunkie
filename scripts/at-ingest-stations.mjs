@@ -43,6 +43,15 @@ const META_URL =
 // HTTP 400 scheitern, das Frontend muss vorher filtern können.
 const META_10MIN_URL =
   'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-10min/metadata'
+// DASSELBE Problem beim MONATSdatensatz, und es hat länger gebraucht, bis es
+// auffiel: klima-v2-1m kennt nicht jede Station aus klima-v2-1d. Gemessen
+// (2026-09-15): genau eine der 514 fehlt dort — 610 „Meires" (1971–1974,
+// stillgelegt) — und GeoSphere lehnt deswegen den GANZEN Bulk-Request mit
+// HTTP 403 ab („Violation for station_ids"). Damit war jeder Monats-,
+// Saison- und Jahresabruf der Klimakarte tot, nicht nur diese eine Station.
+// Deshalb als `hasMonthly` mitgeschrieben, genau wie `has10min`.
+const META_1M_URL =
+  'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1m/metadata'
 
 // Österreich-Bounding-Box (grob, mit Puffer) — Plausibilitätsprüfung der Koordinaten.
 const AT_BBOX = { latMin: 46.0, latMax: 49.2, lonMin: 9.3, lonMax: 17.3 }
@@ -59,6 +68,11 @@ async function main() {
   const res10 = await fetch(META_10MIN_URL)
   if (!res10.ok) throw new Error(`10min-Metadaten-Fetch fehlgeschlagen: HTTP ${res10.status}`)
   const ids10min = new Set(((await res10.json()).stations ?? []).map((s) => s.id))
+
+  process.stdout.write(`Lade Metadaten … ${META_1M_URL}\n`)
+  const res1m = await fetch(META_1M_URL)
+  if (!res1m.ok) throw new Error(`1m-Metadaten-Fetch fehlgeschlagen: HTTP ${res1m.status}`)
+  const ids1m = new Set(((await res1m.json()).stations ?? []).map((s) => s.id))
 
   const rawStations = meta.stations ?? []
   const rawParams = meta.parameters ?? []
@@ -99,6 +113,7 @@ async function main() {
       hasSunshine: Boolean(s.has_sunshine),
       hasRadiation: Boolean(s.has_global_radiation),
       has10min: ids10min.has(s.id),
+      hasMonthly: ids1m.has(s.id),
       // Nur bei zusammengeführten Reihen gesetzt: die Standorte, die sie
       // fortführt. Erklärt den frühen Reihenbeginn und gehört ins Detail.
       ...(sitesByGroup.has(s.id) ? { sites: sitesByGroup.get(s.id) } : {}),
@@ -124,10 +139,22 @@ async function main() {
       s.lon > AT_BBOX.lonMax,
   )
   const live = active.filter((s) => s.has10min)
+  // Fehlt im Monatsdatensatz → darf nicht in den Monats-Bulk-Request. Die Zahl
+  // gehört in die Ausgabe: wächst sie, ist das eine Änderung an GeoSphere und
+  // keine an diesem Skript.
+  const noMonthly = stations.filter((s) => !s.hasMonthly)
   const merged = stations.filter((s) => s.sites)
+  if (noMonthly.length > 0) {
+    process.stdout.write(
+      `Ohne Monatsdatensatz (${noMonthly.length}): ` +
+        noMonthly.map((s) => `${s.id} ${s.name}`).join(', ') +
+        ` — werden aus Monats-/Saison-/Jahresabrufen gefiltert\n`,
+    )
+  }
   process.stdout.write(
     `Stationen: ${stations.length} gesamt, ${active.length} aktiv ` +
-      `(davon ${live.length} mit 10-Minuten-Daten) · ` +
+      `(davon ${live.length} mit 10-Minuten-Daten, ` +
+      `${stations.length - noMonthly.length} mit Monatsdaten) · ` +
       `${merged.length} zusammengeführte Reihen über ` +
       `${merged.reduce((n, s) => n + s.sites.length, 0)} Standorte · ` +
       `Parameter (ohne Flags): ${parameters.length}\n`,

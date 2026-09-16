@@ -1,5 +1,6 @@
 // Tests der reinen Normal-Auflösung (Klimaperioden-Zeitbezug).
 
+import type { AtStation } from './geosphere'
 import { describe, expect, it } from 'vitest'
 import {
   hasRecords,
@@ -11,6 +12,7 @@ import {
   type NormalsMap,
   type Period,
   type RecordIndex,
+  monthlyIds,
 } from './atValues'
 import { comparePeriod, normalPeriod } from '../config/atNormals'
 import { AT_PARAMETERS, getAtParameter } from '../config/atParameters'
@@ -192,5 +194,29 @@ describe('histalpCovers', () => {
     expect(histalpCovers(tmean, { kind: 'year', year: 2024 })).toBe(false)
     expect(histalpCovers(tmean, { kind: 'month', year: 2024, month: 7 })).toBe(false)
     expect(histalpCovers(tmean, { kind: 'day', day: '2024-07-01' })).toBe(false)
+  })
+})
+
+describe('monthlyIds', () => {
+  const st = (id: number, hasMonthly?: boolean) =>
+    ({ id, name: `S${id}`, lat: 47, lon: 13, has10min: false, ...(hasMonthly === undefined ? {} : { hasMonthly }) }) as AtStation
+
+  // Der Fehlerfall, um den es geht: EINE unbekannte Station lässt GeoSphere den
+  // GANZEN Monats-Bulk-Request mit HTTP 403 scheitern („Violation for
+  // station_ids"). Live gemessen (2026-09-15): 610 „Meires" fehlt in
+  // klima-v2-1m, und damit war jeder Monats-, Saison- und Jahresabruf tot.
+  it('filtert Stationen ohne Monatsdaten heraus', () => {
+    expect(monthlyIds([st(1, true), st(610, false), st(2, true)])).toEqual([1, 2])
+  })
+
+  // Ältere stations.json kennt das Feld nicht. Dann darf NICHT alles
+  // wegfallen — ein veraltetes Asset soll sich wie vorher verhalten, nicht die
+  // Karte leeren.
+  it('behält Stationen, bei denen das Feld fehlt', () => {
+    expect(monthlyIds([st(1), st(2), st(3)])).toEqual([1, 2, 3])
+  })
+
+  it('behält die Reihenfolge der Eingabe', () => {
+    expect(monthlyIds([st(9, true), st(4, true), st(7, true)])).toEqual([9, 4, 7])
   })
 })
