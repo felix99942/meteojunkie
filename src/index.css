@@ -2972,7 +2972,8 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 26px;
+  /* Breit genug für die breiteste Klassengrenze der dBZ-Skala („50,5"). */
+  width: 30px;
 }
 
 .radar-legend-step i {

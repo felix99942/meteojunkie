@@ -10,7 +10,7 @@
 // Zeit abseits des 5-Minuten-Rasters beantwortet der Dienst mit einer
 // ServiceException statt mit einem Bild.
 
-import { maskRadarEdge } from '../render/radarImage'
+import { applyCoverageStencil, coverageStencil, maskRadarEdge } from '../render/radarImage'
 import {
   parseRadarCapabilities,
   radarCapabilitiesUrl,
@@ -63,15 +63,23 @@ export function frameLoadOrder(count: number, startIndex: number): number[] {
 }
 
 /**
- * PNG → fertige Bild-URL, mit der magentafarbenen Randlinie des Produkts
- * ausgeräumt (Begründung in `render/radarImage.ts`).
+ * PNG → fertige Bild-URL, nachbearbeitet (Randlinie und festgehaltene
+ * Abdeckung, Begründung in `render/radarImage.ts`).
  *
  * Ergebnis ist eine **Data-URL**, kein Blob: `toDataURL()` ist synchron, die
- * Umfärbung läuft also in EINEM Block mit dem Zeichnen — bei vier parallel
- * ladenden Bildern kann kein zweites dazwischen auf dieselbe Leinwand malen.
- * Ein eigenes Canvas je Bild kostet nichts, es wird sofort wieder freigegeben.
+ * Nachbearbeitung läuft also in EINEM Block mit dem Zeichnen — bei vier
+ * parallel ladenden Bildern kann kein zweites dazwischen auf dieselbe Leinwand
+ * malen. Ein eigenes Canvas je Bild kostet nichts, es wird sofort wieder
+ * freigegeben.
+ *
+ * Gibt zusätzlich die Pixeldaten zurück, damit der Aufrufer daraus den
+ * Abdeckungs-Stencil bilden kann (nur beim Analysebild gebraucht).
  */
-async function toCleanImageUrl(blob: Blob): Promise<string> {
+async function toCleanImageUrl(
+  blob: Blob,
+  maskOpacity: number,
+  stencil: Uint8Array | null,
+): Promise<{ url: string; data: Uint8ClampedArray }> {
   const bitmap = await createImageBitmap(blob)
   const canvas = document.createElement('canvas')
   canvas.width = bitmap.width
@@ -84,8 +92,14 @@ async function toCleanImageUrl(blob: Blob): Promise<string> {
   ctx.drawImage(bitmap, 0, 0)
   bitmap.close()
   const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  if (maskRadarEdge(frame.data) > 0) ctx.putImageData(frame, 0, 0)
-  return canvas.toDataURL('image/png')
+  let changed = maskRadarEdge(frame.data, maskOpacity)
+  // Der Stencil gilt nur für dieselbe Bildgröße; passt sie nicht, wird lieber
+  // nichts überschrieben als etwas Verschobenes.
+  if (stencil && stencil.length === frame.data.length / 4) {
+    changed += applyCoverageStencil(frame.data, stencil, maskOpacity)
+  }
+  if (changed > 0) ctx.putImageData(frame, 0, 0)
+  return { url: canvas.toDataURL('image/png'), data: frame.data }
 }
 
 export interface RadarImageLoadOptions {
@@ -93,6 +107,12 @@ export interface RadarImageLoadOptions {
   height: number
   /** Startindex der Ladereihenfolge (siehe `frameLoadOrder`). */
   startIndex?: number
+  /**
+   * Index des ANALYSEbildes. Es wird ZUERST und allein geholt, weil aus ihm
+   * die Abdeckung festgehalten wird, die auf alle übrigen Bilder kommt (siehe
+   * `render/radarImage.ts`). Ohne Angabe entfällt das Festhalten.
+   */
+  stencilIndex?: number
   /**
    * Gleichzeitige Abrufe. Vier ist ein Kompromiss: schnell genug, um die
    * Schleife in wenigen Sekunden vollständig zu haben, und zurückhaltend
@@ -117,7 +137,45 @@ export async function loadRadarImages(
   frames: RadarFrame[],
   opts: RadarImageLoadOptions,
 ): Promise<void> {
-  const order = frameLoadOrder(frames.length, opts.startIndex ?? 0)
+  const urlFor = (idx: number) =>
+    radarImageUrl(product, meta, {
+      time: frames[idx].time,
+      width: opts.width,
+      height: opts.height,
+    })
+
+  const fetchFrame = async (idx: number, stencil: Uint8Array | null) => {
+    const res = await fetch(urlFor(idx), { signal: opts.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    // Eine ServiceException kommt als XML mit HTTP 200 — das ist genau die
+    // Falle aus SPEC §6, nur bei einem anderen Dienst.
+    if (!blob.type.startsWith('image/')) {
+      throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
+    }
+    return toCleanImageUrl(blob, product.maskOpacity, stencil)
+  }
+
+  // Das Analysebild geht VOR allen anderen raus: es ist das zuerst gezeigte
+  // und liefert die Abdeckung für die Vorhersagebilder. Scheitert es, laufen
+  // die übrigen ohne Festhalten weiter — ein fehlendes Bild ist schlimmer als
+  // eine wandernde Abdeckungsgrenze.
+  let stencil: Uint8Array | null = null
+  const anchor = opts.stencilIndex
+  if (anchor !== undefined && anchor >= 0 && anchor < frames.length) {
+    try {
+      const { url, data } = await fetchFrame(anchor, null)
+      if (opts.signal?.aborted) return
+      stencil = coverageStencil(data)
+      opts.onLoaded(anchor, url)
+    } catch (err) {
+      if (opts.signal?.aborted) return
+      console.error('[radar] Analysebild', err)
+      opts.onError?.(anchor, err)
+    }
+  }
+
+  const order = frameLoadOrder(frames.length, opts.startIndex ?? 0).filter((i) => i !== anchor)
   const concurrency = Math.max(1, opts.concurrency ?? 4)
   let next = 0
 
@@ -127,21 +185,10 @@ export async function loadRadarImages(
       const slot = next++
       if (slot >= order.length) return
       const idx = order[slot]
-      const url = radarImageUrl(product, meta, {
-        time: frames[idx].time,
-        width: opts.width,
-        height: opts.height,
-      })
       try {
-        const res = await fetch(url, { signal: opts.signal })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const blob = await res.blob()
-        // Eine ServiceException kommt als XML mit HTTP 200 — das ist genau die
-        // Falle aus SPEC §6, nur bei einem anderen Dienst.
-        if (!blob.type.startsWith('image/')) throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
-        const imageUrl = await toCleanImageUrl(blob)
+        const { url } = await fetchFrame(idx, frames[idx].forecast ? stencil : null)
         if (opts.signal?.aborted) return
-        opts.onLoaded(idx, imageUrl)
+        opts.onLoaded(idx, url)
       } catch (err) {
         if (opts.signal?.aborted) return
         opts.onError?.(idx, err)

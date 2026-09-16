@@ -25,8 +25,8 @@ import {
   analysisTime,
   DEFAULT_RADAR_PRODUCT,
   nearestFrame,
+  MASK_COLOR,
   RADAR_IMAGE_WIDTH,
-  RADAR_LEGEND,
   RADAR_PRODUCTS,
   radarFrames,
   radarImageCoordinates,
@@ -36,6 +36,9 @@ import {
 } from '../config/radar'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
 
+// Die Produkt-IDs sind bewusst die DWD-Produktnamen in Kleinschreibung
+// (`wn`, `rv`) — so steht in der Quellenzeile ohne zweites Feld der Name, unter
+// dem der Dienst das Komposit selbst führt.
 const RADAR_SOURCE_ID = 'radar'
 const RADAR_LAYER_ID = 'radar'
 /** Kräftig, aber nicht deckend — Grenzen und Städte bleiben lesbar. */
@@ -155,6 +158,9 @@ export function RadarPanel() {
       width: RADAR_IMAGE_WIDTH,
       height: radarImageHeight(meta),
       startIndex: startIdx,
+      // `startIdx` IST das Analysebild (letzter Analysezeitpunkt) — es hält
+      // die Abdeckung für die Vorhersagebilder fest.
+      stencilIndex: startIdx,
       signal: ac.signal,
       onLoaded: (i, url) => {
         setUrls((prev) => {
@@ -348,7 +354,7 @@ export function RadarPanel() {
         </label>
         <label
           className="radar-opt"
-          title="Der RV-Nowcast rechnet die Echos 2 Stunden voraus — reine Verlagerung, kein Modell. Er ist im Diagramm hell abgesetzt."
+          title="Die Vorhersage ist eine VERLAGERUNGSRECHNUNG (DWD RADVOR), kein Wettermodell: aus zwei aufeinanderfolgenden Radarbildern wird ein Verlagerungsvektorfeld bestimmt und das Echofeld in 5-Minuten-Schritten bis +2 h verschoben. Keine Entstehung, kein Zerfall. Die Vorhersageschritte sind am Zeitregler hell abgesetzt."
         >
           <input
             type="checkbox"
@@ -411,19 +417,22 @@ export function RadarPanel() {
           ))}
         </div>
         <div className="radar-legend">
-          <span className="radar-legend-cap">mm/h</span>
+          <span className="radar-legend-cap">{product.unit}</span>
           <div className="radar-legend-scale">
-            {RADAR_LEGEND.slice(1).map((s) => (
-              <span key={s.color} className="radar-legend-step">
-                <i style={{ background: s.color }} />
-                <em>{s.label}</em>
+            {product.legend.map((step) => (
+              <span key={step.color} className="radar-legend-step">
+                <i style={{ background: step.color }} />
+                <em>{step.label}</em>
               </span>
             ))}
           </div>
           {/* Die Maske ist die ABDECKUNGSGRENZE und braucht diesen Satz: ohne
               ihn liest man das Grau als „kein Niederschlag". */}
-          <span className="radar-legend-nodata" title="Reichweite der deutschen Radare. Gemessen 2026-09-16: die Maske beginnt je nach Breite zwischen 13,2 °O (47 °N) und 14,4 °O (49 °N) — Vorarlberg, Tirol und das Land Salzburg sind erfasst, Linz, Wien, Graz und Klagenfurt nicht.">
-            <i style={{ background: RADAR_LEGEND[0].color, opacity: RADAR_LEGEND[0].opacity }} />
+          <span
+            className="radar-legend-nodata"
+            title="Reichweite der deutschen Radare. Gemessen 2026-09-16: die Maske beginnt je nach Breite zwischen 13,2 °O (47 °N) und 14,4 °O (49 °N) — Vorarlberg, Tirol und das Land Salzburg sind erfasst, Linz, Wien, Graz und Klagenfurt nicht. In den Vorhersagebildern wird die Abdeckung aus dem Analysebild festgehalten: die Verlagerungsrechnung verschiebt sonst auch die „keine Daten“-Kennung, und die Radarkreise wandern mit dem Wind mit."
+          >
+            <i style={{ background: MASK_COLOR, opacity: product.maskOpacity }} />
             keine Radardaten — die Abdeckung endet im Osten Österreichs
           </span>
         </div>
@@ -435,15 +444,23 @@ export function RadarPanel() {
           href="https://www.dwd.de/DE/leistungen/opendata/opendata.html"
           target="_blank"
           rel="noreferrer"
-          title="Deutsches Radarkomposit RV: Analyse und 2-Stunden-Nowcast, 1 km, alle 5 Minuten — als fertig eingefärbte Karte über den WMS von maps.dwd.de"
+          title={product.note}
         >
           Deutscher Wetterdienst
         </a>
-        {' '}— Radarkomposit RV über{' '}
-        <a href="https://maps.dwd.de/geoserver/dwd/wms?service=WMS&version=1.3.0&request=GetCapabilities" target="_blank" rel="noreferrer">
+        {' '}— Radarkomposit {product.id.toUpperCase()} über{' '}
+        <a
+          href="https://maps.dwd.de/geoserver/dwd/wms?service=WMS&version=1.3.0&request=GetCapabilities"
+          target="_blank"
+          rel="noreferrer"
+        >
           maps.dwd.de
         </a>
-        , Nutzung nach{' '}
+        , Vorhersage als Verlagerungsrechnung (
+        <a href="https://www.dwd.de/DE/leistungen/radvor/radvor.html" target="_blank" rel="noreferrer">
+          RADVOR
+        </a>
+        ). Nutzung nach{' '}
         <a
           href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
           target="_blank"

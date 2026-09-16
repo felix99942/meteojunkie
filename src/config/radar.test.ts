@@ -8,6 +8,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   analysisTime,
+  RADAR_PRODUCTS,
+  RV_LEGEND,
+  WN_LEGEND,
   DEFAULT_RADAR_PRODUCT,
   nearestFrame,
   parseIsoDuration,
@@ -164,7 +167,7 @@ describe('radarImageUrl', () => {
   })
 
   it('bleibt beim transparenten PNG des Produktstils', () => {
-    expect(q.get('layers')).toBe('dwd:Radar_rv_product_1x1km_ger')
+    expect(q.get('layers')).toBe('dwd:Radar_wn-product_1x1km_ger')
     expect(q.get('format')).toBe('image/png')
     expect(q.get('transparent')).toBe('true')
   })
@@ -180,5 +183,46 @@ describe('Bildgeometrie', () => {
     const c = radarImageCoordinates(META)
     expect(c[0]).toEqual([META.geo.west, META.geo.north])
     expect(c[2]).toEqual([META.geo.east, META.geo.south])
+  })
+})
+
+describe('Produkt-Registry', () => {
+  // Die Vorgabe ist die MESSGRÖSSE des Radars, nicht die daraus abgeleitete
+  // Rate: mm/h setzt eine Z-R-Beziehung voraus, dBZ nicht.
+  it('zeigt Reflektivität in dBZ als Vorgabe', () => {
+    expect(DEFAULT_RADAR_PRODUCT.id).toBe('wn')
+    expect(DEFAULT_RADAR_PRODUCT.unit).toBe('dBZ')
+    expect(DEFAULT_RADAR_PRODUCT.legend).toBe(WN_LEGEND)
+  })
+
+  it('führt beide Produkte mit Vorhersageteil und 5-Minuten-Takt', () => {
+    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv'])
+    for (const p of RADAR_PRODUCTS) {
+      expect(p.stepMs, p.id).toBe(300_000)
+      expect(p.forecastMs, p.id).toBe(7_200_000)
+      expect(p.legend.length, p.id).toBeGreaterThan(10)
+      // Die Maskendeckkraft steht im Produktstil und unterscheidet sich —
+      // geraten werden darf sie nicht, die Nachbearbeitung färbt darauf um.
+      expect(p.maskOpacity, p.id).toBeGreaterThan(0)
+      expect(p.maskOpacity, p.id).toBeLessThan(1)
+    }
+    expect(RADAR_PRODUCTS[0].maskOpacity).toBe(0.5)
+    expect(RADAR_PRODUCTS[1].maskOpacity).toBe(0.3)
+  })
+
+  it('hat in jeder Skala eindeutige Farben (React-Key und Legende)', () => {
+    for (const legend of [WN_LEGEND, RV_LEGEND]) {
+      const colors = legend.map((s) => s.color)
+      expect(new Set(colors).size).toBe(colors.length)
+      for (const s of legend) expect(s.color).toMatch(/^#[0-9A-F]{6}$/)
+    }
+  })
+
+  // Die Maske ist KEIN Skalenschritt — sie markiert die Abdeckungsgrenze und
+  // steht als eigene Zeile in der Legende.
+  it('führt die Maskenfarbe nicht als Skalenschritt', () => {
+    for (const legend of [WN_LEGEND, RV_LEGEND]) {
+      expect(legend.map((s) => s.color)).not.toContain('#7D7D7D')
+    }
   })
 })

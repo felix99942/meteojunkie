@@ -1035,10 +1035,20 @@ npm run preview   # gebautes dist/ servieren
 - **Niederschlagsradar** (`RadarPanel.tsx`, Registry/Kern `config/radar.ts` und
   `api/dwdRadar.ts` mit Tests, AppView `radar`) — der erste Bereich, der
   überhaupt keine Zahlen holt, sondern FERTIGE KARTEN: der **WMS des DWD**
-  (`maps.dwd.de/geoserver/dwd/wms`) liefert das deutsche Radarkomposit **RV**
-  (1 km, alle 5 Minuten, Analyse ~4 Tage rückwärts PLUS 2 h Nowcast) als
+  (`maps.dwd.de/geoserver/dwd/wms`) liefert das deutsche Radarkomposit
+  (1 km, alle 5 Minuten, Analyse ~4 Tage rückwärts PLUS 2 h Verlagerung) als
   eingefärbtes, transparentes PNG, schickt `Access-Control-Allow-Origin: *` und
-  braucht keinen Key. Deshalb: direkt aus dem Browser, **kein Proxy, kein
+  braucht keinen Key.
+  **Gezeigt wird die REFLEKTIVITÄT in dBZ** (Produkt **WN**,
+  `Radar_wn-product_1x1km_ger`), nicht die Niederschlagsrate: dBZ ist die
+  Messgröße des Radars, mm/h erst das Ergebnis einer Z-R-Beziehung, die über
+  Tropfengrößenverteilung, Hagel und Schmelzschicht annimmt, was sie nicht
+  messen kann. Das mm/h-Produkt **RV** bleibt als zweiter Eintrag der Registry
+  wählbar — dasselbe Feld, nur durch diese Annahme gedreht. Beide führen
+  Analyse UND Verlagerung, beide dieselbe Zeitmechanik; unterschiedlich sind
+  Farbskala (17 bzw. 15 Stufen) und die Deckkraft der „Keine Daten"-Maske
+  (WN 0,5 · RV 0,3, deshalb `RadarProduct.maskOpacity` — die Nachbearbeitung
+  färbt darauf um und darf sie nicht raten). Deshalb: direkt aus dem Browser, **kein Proxy, kein
   eigenes Rendering, kein Open-Meteo-Budget** (läuft über plain `fetch`, nicht
   über `apiGet` — dieselbe Trennung wie die Ortssuche). Nutzung nach GeoNutzV,
   Quellenzeile im Bereich; `maps.dwd.de` steht als einziger DWD-Host jetzt auch
@@ -1073,6 +1083,38 @@ npm run preview   # gebautes dist/ servieren
   je Pixel, also etwa die Produktauflösung (gemessen 1000 px → 63 KB, 1400 px →
   111 KB, 1800 px → 166 KB je Bild) — weiter hineinzoomen darf man, es wird nur
   weich (`maxZoom: 11`).
+  **DIE VORHERSAGE IST KEIN MODELL, sondern eine VERLAGERUNGSRECHNUNG**
+  (DWD **RADVOR**): ähnliche Niederschlagsstrukturen zweier aufeinander
+  folgender Komposite werden wiedererkannt, daraus ein flächendeckendes
+  Verlagerungsvektorfeld bestimmt und das Echofeld in 5-Minuten-Schritten bis
+  +2 h verschoben — keine Entstehung, kein Zerfall, keine NWV-Physik. Gemessen
+  bestätigt: alle Vorhersageschritte tragen dieselbe `REFERENCE_TIME` wie die
+  Analyse (GetFeatureInfo), sind also EIN Nowcast vom Analysezeitpunkt.
+  **Daraus folgt eine Korrektur, die sichtbar war**: verschoben wird das GANZE
+  Feld, einschliesslich der „keine Daten"-Kennung — die Radarkreise der
+  Abdeckungsgrenze wandern mit dem Wind mit. Gemessen (2026-09-16, 1200-px-
+  Bild, +120 min): 50.342 Pixel, die in der Analyse Maske sind, zeigen im
+  Vorhersagebild Inhalt, der aus dem Inneren über unbeobachtetes Gebiet
+  geschoben wurde; der Schwerpunkt der Maske verschiebt sich um 60 px nach
+  Westen. Die Abdeckung wird deshalb aus dem ANALYSEBILD festgehalten
+  (`coverageStencil`/`applyCoverageStencil`) und auf jedes Vorhersagebild
+  gelegt — nachgerechnet bleiben danach 0 solcher Pixel. Die umgekehrte
+  Richtung wird ABSICHTLICH nicht angefasst: die Maske, die INNERHALB der
+  Abdeckung wächst (76.121 px bei +120 min, 13 % der Analysemaske), ist die
+  ehrliche Aussage „hier hat die Verlagerung nichts, woraus sie fortschreiben
+  könnte" — sie wegzurechnen würde Vorhersage erfinden. Deshalb wird das
+  Analysebild ZUERST und allein geholt (`stencilIndex`), erst danach laufen die
+  vier parallelen Lader.
+  **Interpolation: KEINE — der Dienst rastert nearest neighbour**, und das ist
+  gemessen, nicht angenommen: 90-fach überzoomt (~11 m/px) stehen entlang einer
+  Zeile durch ein Echo Blöcke von 101–102 Pixeln in EINER Klassenfarbe mit
+  harten Kanten (also genau eine 1-km-Zelle je Block), ohne einen einzigen
+  Zwischenton, und benachbarte Blöcke springen über Klassen hinweg (7–9,5 dBZ
+  direkt auf 14,5–19 dBZ). Der GeoServer-Vendorparameter
+  `interpolations=nearest neighbor` änderte entsprechend nichts — Byte für Byte
+  dieselbe Antwort. Selbst interpoliert wird auch nicht: das Bild kommt in
+  Web-Mercator, also im Zielraster. Die einzige Weichzeichnung ist die ~1 px
+  Kantenglättung des Renderers.
   **Die Zeitschritte werden GEHOLT, nicht gerechnet**: eine Zeit abseits des
   5-Minuten-Rasters beantwortet der Dienst mit einer ServiceException statt mit
   einem Bild. Sie stehen in der Zeitdimension des GetCapabilities — und zwar
@@ -1093,7 +1135,13 @@ npm run preview   # gebautes dist/ servieren
   Farbtabelle; die Linie steht bei 110 m/px genauso da wie bei 1,1 km/px, ist
   also im Produkt und kein Artefakt der Anfrage). Sie liest sich GENAU FALSCH:
   Magenta sitzt in jeder Niederschlagsskala am oberen Ende, hier markiert es
-  den Rand des unbekannten Gebiets. Jedes Bild läuft deshalb einmal über ein
+  den Rand des unbekannten Gebiets. **Geprüft wird die MISCHLINIE zwischen
+  Maskengrau und #FB00FF, nicht „irgendwie magenta"** — und daran hängt mehr,
+  als es aussieht: die dBZ-Skala führt **#FF33FF für 75–85 dBZ**, eine echte
+  Klassenfarbe, die jeder „rot hoch, grün niedrig, blau hoch"-Regel zum Opfer
+  fällt (die erste Fassung hätte sie stillschweigend gelöscht). Auf der
+  Mischlinie liegt sie nicht — bei ihrem Grünwert wären rund 200 statt 255 im
+  Rotkanal zu erwarten. Ein Test fährt alle Farben BEIDER Skalen dagegen. Jedes Bild läuft deshalb einmal über ein
   Canvas und wird als Data-URL weitergegeben (`toDataURL()` ist synchron —
   bei vier parallel ladenden Bildern kann so kein zweites dazwischen auf
   dieselbe Leinwand malen). Die Farbskala selbst ist NICHT erfunden, sondern
@@ -1105,8 +1153,9 @@ npm run preview   # gebautes dist/ servieren
   Fläche gibt der Dienst vor; ein zweites Städteverzeichnis wäre schlechter);
   ausgedünnt wird hier nach ZOOM, nicht nach Panelbreite.
   Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
-  `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` — kostet aber einen Abruf je
-  Abfrage) und weitere Produkte desselben Dienstes (`RADOLAN-RW` angeeichte
+  `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
+  kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
+  Echo**, gemessen) und weitere Produkte desselben Dienstes (`RADOLAN-RW` angeeichte
   Stundensummen, `RADOLAN-RY`) — die Registry `RADAR_PRODUCTS` ist dafür schon
   eine Liste.
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der

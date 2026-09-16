@@ -1,5 +1,12 @@
 // Niederschlagsradar (DWD) — Registry, Zeitdimension und Farbskala.
 //
+// GEZEIGT WIRD DIE REFLEKTIVITÄT IN dBZ (Produkt WN), nicht die abgeleitete
+// Niederschlagsrate: dBZ ist die Messgröße des Radars, mm/h erst das Ergebnis
+// einer Z-R-Beziehung, die über Tropfengrößenverteilung, Hagel und
+// Schmelzschicht annimmt, was sie nicht messen kann. Die mm/h-Variante (RV)
+// bleibt als zweites Produkt wählbar — sie ist DASSELBE Feld, nur durch diese
+// Annahme gedreht.
+//
 // QUELLE ist der **WMS des Deutschen Wetterdienstes** (`maps.dwd.de`), und das
 // ist der ganze Trick dieses Bereichs: der Dienst liefert FERTIG EINGEFÄRBTE
 // PNGs, schickt `Access-Control-Allow-Origin: *` mit und braucht keinen Key —
@@ -18,6 +25,40 @@
 // Reichweite der deutschen Radare — deshalb wird die Maske NICHT ausgeblendet,
 // sondern in der Legende erklärt.
 //
+// DIE VORHERSAGE IST KEIN MODELL, sondern eine VERLAGERUNGSRECHNUNG (DWD
+// RADVOR): im Radarfeld werden ähnliche Niederschlagsstrukturen zweier
+// aufeinanderfolgender Komposite wiedererkannt, daraus ein flächendeckendes
+// Verlagerungsvektorfeld bestimmt und das Feld in 5-Minuten-Schritten bis
+// +2 h verschoben. Keine Entstehung, kein Zerfall, keine NWV-Physik — reine
+// Fortschreibung des Beobachteten. Gemessen bestätigt: alle Vorhersageschritte
+// tragen dieselbe `REFERENCE_TIME` wie die Analyse (GetFeatureInfo), sind also
+// EIN Nowcast, der zum Analysezeitpunkt losgeschickt wurde.
+//
+// **Daraus folgt der Grund für `coverageStencil`**: verschoben wird das ganze
+// Feld, einschliesslich der „keine Daten"-Kennung. Die Radarkreise der
+// Abdeckungsgrenze WANDERN dadurch mit dem Wind — gemessen (2026-09-16,
+// 1200-px-Bild): bei +120 min sind 50.533 Pixel nicht mehr maskiert, die in
+// der Analyse maskiert waren, und 76.559 neu maskiert; der Schwerpunkt der
+// Maske verschiebt sich um 60 px nach Westen. Dort, wo die Analyse keine Daten
+// hat, kann auch die Verlagerung keine haben — was der Nowcast dort malt, ist
+// aus dem Inneren herangeschobener Inhalt über einem Gebiet, das kein Radar
+// sieht. Die Abdeckung wird deshalb aus dem ANALYSEBILD festgehalten und auf
+// alle Vorhersagebilder gelegt. Umgekehrt bleibt die Maske, die INNERHALB der
+// Abdeckung wächst, stehen: dort hat die Verlagerung wirklich nichts, woraus
+// sie fortschreiben könnte, und das ist eine ehrliche Aussage.
+//
+// **Interpolation: KEINE — der Dienst rastert nearest neighbour.** Live
+// nachgemessen (2026-09-16, 90-fach überzoomt auf ~11 m/px): entlang einer
+// Zeile durch ein Echo stehen Blöcke von 101–102 Pixeln in EINER Klassenfarbe
+// mit harten Kanten, also genau eine 1-km-Gitterzelle je Block, ohne einen
+// einzigen Zwischenton; benachbarte Blöcke springen auch über Klassen hinweg
+// (7–9,5 dBZ direkt auf 14,5–19 dBZ). Der GeoServer-Vendorparameter
+// `interpolations=nearest neighbor` änderte entsprechend nichts — Byte für
+// Byte dieselbe Antwort. Wir interpolieren auch selbst nicht: das Bild wird in
+// Web-Mercator angefordert und liegt damit im Zielraster (siehe
+// `radarImageUrl`). Die einzige Weichzeichnung ist die ~1 px Kantenglättung
+// des Renderers.
+//
 // Für den fehlenden Osten Österreichs gibt es aus der GeoSphere-API keinen
 // gangbaren Ersatz: das Nowcast-Gitter (`grid/forecast/nowcast-v1-15min-1km`,
 // 1 km / 15 min, `rr`) ist inhaltlich genau richtig, aber nur als GeoJSON oder
@@ -28,6 +69,71 @@
 
 /** Basis-URL des DWD-GeoServers (Workspace `dwd`). */
 export const DWD_WMS_BASE = 'https://maps.dwd.de/geoserver/dwd/wms'
+
+// --- Farbskalen ------------------------------------------------------------
+
+export interface RadarLegendStep {
+  color: string
+  /** UNTERE Grenze der Klasse, wie der Dienst sie beschriftet. */
+  label: string
+}
+
+/**
+ * Die Farbskalen sind NICHT erfunden, sondern 1:1 aus
+ * `request=GetLegendGraphic&format=application/json` des jeweiligen Layers
+ * (abgerufen 2026-09-16). Hier fest hinterlegt statt zur Laufzeit geholt, weil
+ * sie sich nicht täglich ändern und die Legende sonst einen zweiten Abruf
+ * kostet, bevor das erste Bild steht. Ändert der DWD die Stufen, ist der
+ * JSON-Abruf oben die Quelle für die Aktualisierung.
+ *
+ * GeoServers `type="intervals"` gibt je Eintrag die OBERE Grenze an; die Farbe
+ * gilt also von der vorigen Grenze bis dorthin. Beschriftet wird hier die
+ * UNTERE Grenze unter dem jeweiligen Feld — so steht die Zahl am Anfang der
+ * Klasse, die sie benennt. Die „Keine Daten"-Maske (#7D7D7D) ist bewusst
+ * KEIN Skalenschritt: sie steht als eigene Zeile in der Legende, weil sie die
+ * Abdeckungsgrenze markiert und nicht einen Messwert.
+ */
+export const MASK_COLOR = '#7D7D7D'
+
+/** Reflektivität in dBZ (Produkt WN) — 7 dBZ bis ≥ 85 dBZ. */
+export const WN_LEGEND: RadarLegendStep[] = [
+  { color: '#99FFFF', label: '7' },
+  { color: '#33FFFF', label: '9,5' },
+  { color: '#00CACA', label: '12' },
+  { color: '#009934', label: '14,5' },
+  { color: '#4DBF1A', label: '19' },
+  { color: '#99CC00', label: '23,5' },
+  { color: '#CCE600', label: '28' },
+  { color: '#FFFF00', label: '32,5' },
+  { color: '#FFC400', label: '37' },
+  { color: '#FF8900', label: '41,5' },
+  { color: '#FF0000', label: '46' },
+  { color: '#B40000', label: '50,5' },
+  { color: '#4848FF', label: '55' },
+  { color: '#0000CA', label: '60' },
+  { color: '#990099', label: '65' },
+  { color: '#FF33FF', label: '75' },
+  { color: '#000000', label: '85' },
+]
+
+/** Niederschlagsrate in mm/h (Produkt RV). */
+export const RV_LEGEND: RadarLegendStep[] = [
+  { color: '#33FFFF', label: '0,1' },
+  { color: '#1ACC9A', label: '0,2' },
+  { color: '#019934', label: '0,4' },
+  { color: '#4DB31B', label: '1' },
+  { color: '#99CC01', label: '2' },
+  { color: '#CCE601', label: '3' },
+  { color: '#FFFF01', label: '5' },
+  { color: '#FFC401', label: '7,5' },
+  { color: '#FF8901', label: '10' },
+  { color: '#FF4501', label: '15' },
+  { color: '#FE0000', label: '30' },
+  { color: '#E5004C', label: '45' },
+  { color: '#CC0098', label: '75' },
+  { color: '#6600CB', label: '100' },
+  { color: '#0000FE', label: '150' },
+]
 
 export interface RadarProduct {
   id: string
@@ -50,30 +156,60 @@ export interface RadarProduct {
    * RV-Layers (21:30/23:30 und 21:40/23:40 UTC).
    */
   forecastMs: number
+  /** Einheit der Skala — Beschriftung der Legende. */
   unit: string
+  /**
+   * Deckkraft der „Keine Daten"-Maske im Produktstil (WN 0,5 · RV 0,3). Wird
+   * gebraucht, weil die Nachbearbeitung Pixel auf die Maske umfärbt und dabei
+   * nicht raten darf, wie kräftig sie hier ist.
+   */
+  maskOpacity: number
+  /** Farbstufen, 1:1 aus dem GetLegendGraphic des Layers (siehe unten). */
+  legend: RadarLegendStep[]
   /** Kurzbeschreibung für den Tooltip der Produktauswahl. */
   note: string
 }
 
 /**
- * Bewusst EIN Produkt: RV ist das Radarkomposit MIT Nowcast (5 min, 1 km,
- * Analyse ~4 Tage rückwärts plus 2 h vorwärts) und damit das, was man unter
- * „Radar" erwartet. Weitere Kandidaten am selben Dienst, falls sie je
- * gebraucht werden — alle mit derselben Mechanik, nur andere Farbskala:
- * `dwd:RADOLAN-RW` (an Stationen ANGEEICHTE Stundensummen, 10 min, nur
- * Deutschland), `dwd:RADOLAN-RY` (qualitätsgeprüfte 5-min-Mengen),
- * `dwd:Radar_wn-analysis_1x1km_ger` (RV ohne Vorhersageteil).
+ * ZWEI Produkte, dasselbe Radarkomposit in zwei Größen — und die Reihenfolge
+ * ist die Aussage: **WN (Reflektivität in dBZ) ist die Vorgabe.** Das ist, was
+ * das Radar misst. RV (mm/h) entsteht daraus über eine Z-R-Beziehung, die
+ * annimmt, was sie nicht messen kann (Tropfengrößenverteilung, Hagel,
+ * Schmelzschicht) — eine nützliche Ableitung, aber eine Annahme mehr zwischen
+ * Messung und Bild. Beide führen Analyse UND 2-h-Verlagerung, 1 km, 5 min, und
+ * beide haben dieselbe Zeitdimension-Mechanik.
+ *
+ * Weitere Kandidaten am selben Dienst, falls sie je gebraucht werden — gleiche
+ * Mechanik, nur andere Skala: `dwd:RADOLAN-RW` (an Stationen ANGEEICHTE
+ * Stundensummen, 10 min, nur Deutschland), `dwd:RADOLAN-RY`
+ * (qualitätsgeprüfte 5-min-Mengen), `dwd:Radar_wn-analysis_1x1km_ger`
+ * (WN ohne Vorhersageteil — dessen Zeitdimension endet genau 120 min früher
+ * und war die Gegenprobe für `analysisTime`).
  */
 export const RADAR_PRODUCTS: RadarProduct[] = [
   {
+    id: 'wn',
+    label: 'Reflektivität (dBZ)',
+    layer: 'dwd:Radar_wn-product_1x1km_ger',
+    capsLayer: 'Radar_wn-product_1x1km_ger',
+    stepMs: 5 * 60_000,
+    forecastMs: 120 * 60_000,
+    unit: 'dBZ',
+    maskOpacity: 0.5,
+    legend: WN_LEGEND,
+    note: 'Deutsches Radarkomposit WN: Reflektivität in dBZ — die Messgröße des Radars. Analyse und 2-h-Verlagerung, 1 km, alle 5 Minuten',
+  },
+  {
     id: 'rv',
-    label: 'Radar + Nowcast (RV)',
+    label: 'Niederschlagsrate (mm/h)',
     layer: 'dwd:Radar_rv_product_1x1km_ger',
     capsLayer: 'Radar_rv_product_1x1km_ger',
     stepMs: 5 * 60_000,
     forecastMs: 120 * 60_000,
     unit: 'mm/h',
-    note: 'Deutsches Radarkomposit RV: Analyse und Vorhersage, 1 km, alle 5 Minuten, Niederschlagsrate in mm/h',
+    maskOpacity: 0.3,
+    legend: RV_LEGEND,
+    note: 'Dasselbe Komposit als Niederschlagsrate (Produkt RV) — aus der Reflektivität über eine Z-R-Beziehung abgeleitet',
   },
 ]
 
@@ -309,44 +445,3 @@ export function radarImageCoordinates(
     [west, south],
   ]
 }
-
-// --- Farbskala -------------------------------------------------------------
-
-export interface RadarLegendStep {
-  color: string
-  /** Beschriftung, wie der Dienst sie selbst führt. */
-  label: string
-  /** Deckkraft, falls abweichend von 1 (nur die „Keine Daten"-Maske). */
-  opacity?: number
-}
-
-/**
- * Die Farbskala des Produkts, NICHT selbst erfunden: sie stammt 1:1 aus
- * `request=GetLegendGraphic&format=application/json` desselben Layers
- * (abgerufen 2026-09-16). Hier fest hinterlegt statt zur Laufzeit geholt, weil
- * sie sich nicht täglich ändert und die Legende sonst einen zweiten Abruf
- * kostet, bevor das erste Bild steht. Ändert der DWD die Stufen, ist der
- * JSON-Abruf oben die Quelle für die Aktualisierung.
- *
- * Erster Eintrag ist die Maske: das halbtransparente Grau heißt „Keine Daten"
- * — der Bereich erklärt das in der Legende, weil es genau die Abdeckungsgrenze
- * ist (siehe Kopf dieser Datei).
- */
-export const RADAR_LEGEND: RadarLegendStep[] = [
-  { color: '#7D7D7D', label: 'keine Daten', opacity: 0.3 },
-  { color: '#33FFFF', label: '0,1' },
-  { color: '#1ACC9A', label: '0,2' },
-  { color: '#019934', label: '0,4' },
-  { color: '#4DB31B', label: '1' },
-  { color: '#99CC01', label: '2' },
-  { color: '#CCE601', label: '3' },
-  { color: '#FFFF01', label: '5' },
-  { color: '#FFC401', label: '7,5' },
-  { color: '#FF8901', label: '10' },
-  { color: '#FF4501', label: '15' },
-  { color: '#FE0000', label: '30' },
-  { color: '#E5004C', label: '45' },
-  { color: '#CC0098', label: '75' },
-  { color: '#6600CB', label: '100' },
-  { color: '#0000FE', label: '150' },
-]
