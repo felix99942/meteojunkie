@@ -25,3 +25,12 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/**
+ * Build-Kennung, von `vite.config.ts` zur Bauzeit eingesetzt (`define`).
+ * Beantwortet „welcher Stand ist das hier" ohne Bundle-Suche.
+ */
+declare const __BUILD_COMMIT__: string
+declare const __BUILD_DATE__: string
+/** Build aus einem geänderten Arbeitsbaum — nur lokal je wahr. */
+declare const __BUILD_DIRTY__: boolean

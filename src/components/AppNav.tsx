@@ -4,6 +4,7 @@
 // Alle drei Panel-Bereiche teilen sich dieselben sechs Panel-Configs, es geht
 // beim Wechseln also nichts verloren.
 
+import { buildLabel, buildTitle } from '../config/build'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
 import { useAppView, type AppView } from '../state/appView'
 
@@ -72,6 +73,14 @@ export function AppNav() {
           erreichbar sein (§ 18 MStV: „leicht erkennbar, unmittelbar
           erreichbar und ständig verfügbar") —
           deshalb abgesetzt am rechten Rand, unauffällig, aber immer da. */}
+      {/* BUILD-KENNUNG neben dem Impressum. Beantwortet „ist das schon der
+          neue Stand?" — an diesem Projekt war das mehrfach nicht zu sagen,
+          ohne das ausgelieferte Bundle zu durchsuchen (Re-Run eines alten
+          Laufs, gecachte index.html). Kommt aus GIT, ist also keine
+          gepflegte Nummer, die driften kann. */}
+      <span className="appnav-build label-muted" title={buildTitle()}>
+        {buildLabel()}
+      </span>
       <button
         type="button"
         className={`appnav-legal${view === 'impressum' ? ' is-active' : ''}`}

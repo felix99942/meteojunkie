@@ -1182,8 +1182,17 @@ button:focus-visible {
 
 /* Impressum-Link: abgesetzt am rechten Rand, kleiner und stiller als die
    Werkzeug-Tabs — erreichbar aus jedem Bereich, aber nicht gleichrangig. */
-.appnav-legal {
+/* Build-Kennung schiebt sich mit dem Impressum-Link nach rechts; sie tragt
+   jetzt den auto-Rand, damit beide als Block am Ende stehen. */
+.appnav-build {
   margin-left: auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.appnav-legal {
   padding: 4px 10px;
   font-size: 11px;
   color: var(--ink-muted);

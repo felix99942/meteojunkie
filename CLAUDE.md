@@ -1463,6 +1463,23 @@ npm run preview   # gebautes dist/ servieren
   Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
   der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
   über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
+- **Die BUILD-KENNUNG steht in der Navigation neben dem Impressum**
+  (`config/build.ts`, Werte aus `vite.config.ts` über `define`): kurzer
+  Commit-Hash und Commit-Datum, im Tooltip mit Uhrzeit. Der Zweck ist
+  Vergleichbarkeit — „ist das schon der neue Stand?" war an diesem Projekt
+  mehrfach nicht zu beantworten, ohne das ausgelieferte Bundle zu durchsuchen:
+  beim Re-Run eines ALTEN Laufs (#287 baute den Stand von gestern), beim leeren
+  Impressum, bei einer gecachten `index.html`. **Aus GIT, nicht aus
+  `package.json`**: eine gepflegte Versionsnummer driftet, der Commit kann
+  nicht lügen. In GitHub Actions liefert `GITHUB_SHA` den Stand, lokal `git
+  rev-parse`; fehlt beides (Tarball ohne `.git`), steht „unbekannt" da — eine
+  erfundene Nummer wäre schlimmer als keine. Das **`+`** hinter dem Hash
+  markiert einen Build aus einem GEÄNDERTEN Arbeitsbaum: der gehört zu keinem
+  Commit und ist gegen `git log` nicht prüfbar. Gezeigt wird das
+  COMMIT-Datum, nicht die Bauzeit — ein Re-Run baut denselben Stand neu, und
+  dann identifiziert nur das Commit-Datum den Stand. Dieselbe Angabe steht als
+  eigener Abschnitt „Stand dieser Seite" im Impressum, wo man sie zuerst
+  sucht.
 - **Attribution ist Lizenzbedingung, nicht Höflichkeit** (`Attribution.tsx`,
   `.attribution` in `index.css`): Open-Meteo (CC BY 4.0), GeoSphere (CC BY 4.0)
   und DWD (GeoNutzV) verlangen Namensnennung, SPEC §13 führte das als offen.

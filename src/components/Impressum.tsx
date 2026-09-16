@@ -36,6 +36,7 @@
 // keine Cookies und keine Tracker (nachgeprüft), aber der Browser kontaktiert
 // die Datenanbieter DIREKT — das ist eine Übermittlung und gehört genannt.
 
+import { buildLabel, buildTitle } from '../config/build'
 import { DETAILS_MISSING, OWNER } from '../config/impressum'
 import { MODELS } from '../config/models'
 
@@ -383,6 +384,18 @@ export function Impressum() {
               Liste der zuständigen Aufsichtsbehörden
             </a>{' '}
             führt der Bundesbeauftragte für den Datenschutz und die Informationsfreiheit.
+          </p>
+        </section>
+
+        {/* --- Stand dieser Seite -------------------------------------- */}
+        <section>
+          <h2>Stand dieser Seite</h2>
+          <p>
+            Diese Seite wird automatisch aus dem Quellcode gebaut. Ausgeliefert wird der
+            Stand <strong title={buildTitle()}>{buildLabel()}</strong> (Commit-Kennung und
+            Datum) — damit ist nachprüfbar, welche Fassung man gerade vor sich hat. Die
+            Wetter- und Klimadaten darin sind dagegen tagesaktuell; ihr jeweiliger
+            Modelllauf steht in den Vorhersagebereichen.
           </p>
         </section>
 
