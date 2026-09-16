@@ -26,6 +26,7 @@ import {
   getEnsembleModel,
   getEnsembleVariable,
   parseEnsembleVariableValue,
+  ensembleVariableFor,
 } from '../config/ensemble'
 import { isPanelSection, useAppView } from '../state/appView'
 import { useWorkbench, type PanelConfig, type PanelMode } from '../state/workbench'
@@ -50,6 +51,20 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
   // ließ die Modellliste offen stehen und über das Panel darunter liegen.
   // Deshalb hier von Hand: Klick außerhalb oder Escape schließt sie.
   const pickerRef = useRef<HTMLDetailsElement>(null)
+  /**
+   * Gespeicherte Presets können eine Größe mit einem Modell kombinieren, das
+   * sie nicht liefert (850 hPa + ICON-Ensemble). Dann hier korrigieren, statt
+   * eine leere Plume zu zeigen — dasselbe Muster wie die Schwellen-Korrektur
+   * in `VerifyPanel`. Ein Modellwechsel über das Dropdown ist schon
+   * abgefangen; das hier fängt alles, was von außen in den Zustand kommt.
+   */
+  const fixedEnsembleVariable = ensembleVariableFor(panel.ensembleModel, panel.ensembleVariable)
+  useEffect(() => {
+    if (fixedEnsembleVariable !== panel.ensembleVariable) {
+      updatePanel(index, { ensembleVariable: fixedEnsembleVariable })
+    }
+  }, [fixedEnsembleVariable, panel.ensembleVariable, index, updatePanel])
+
   useEffect(() => {
     const close = () => {
       if (pickerRef.current?.open) pickerRef.current.open = false
@@ -147,11 +162,24 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
             className="panel-map-model"
             value={panel.ensembleModel}
             title={getEnsembleModel(panel.ensembleModel).note}
-            onChange={(e) => updatePanel(index, { ensembleModel: e.target.value })}
+            onChange={(e) => {
+              // Größe MIT umstellen: die ICON-Ensembles haben kein 850 hPa,
+              // also ausgerechnet nicht den Startparameter. Ohne Rückfall
+              // wechselt man das Modell und sieht ein leeres Diagramm, ohne
+              // zu erfahren warum (siehe `ensembleVariableFor`).
+              const ensembleModel = e.target.value
+              updatePanel(index, {
+                ensembleModel,
+                ensembleVariable: ensembleVariableFor(ensembleModel, panel.ensembleVariable),
+              })
+            }}
           >
+            {/* Auflösung UND Mitgliederzahl: die Liste mischt jetzt 1 km mit
+                11 Mitgliedern und 25 km mit 51 — beides entscheidet, was die
+                Plume aussagt, und beides gehört an den Eintrag. */}
             {ENSEMBLE_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.label} · {m.members} Member
+                {m.label} · {m.members} Member · {m.resolutionKm === 0 ? 'variabel' : `${String(m.resolutionKm).replace('.', ',')} km`}
               </option>
             ))}
           </select>
@@ -169,7 +197,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
               updatePanel(index, { ensembleVariable: variable, ensembleAccumView: view })
             }}
           >
-            {ensembleVariableOptions().map((o) => (
+            {ensembleVariableOptions(panel.ensembleModel).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

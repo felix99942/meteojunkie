@@ -56,8 +56,46 @@ export interface EnsembleModelInfo {
    * suffixlose Reihe ist der Kontrolllauf, nicht der Hauptlauf.
    */
   deterministicModel: string
+  /**
+   * Die Größen, die dieses Ensemble WIRKLICH liefert — alle live gemessen
+   * (2026-09-16, Innsbruck, je ein Abruf über alle Kandidaten).
+   *
+   * Nötig, weil die API fehlende Größen NICHT als Fehler meldet: sie
+   * antwortet mit HTTP 200 und lauter `null` (die Falle aus SPEC §6). Ohne
+   * diese Liste stand im Dropdown jede Größe für jedes Modell, und die Plume
+   * öffnete sich leer — bei AIFS heute schon für Böen und CAPE, bei den
+   * ICON-Ensembles für 850 hPa und 500 hPa, also ausgerechnet für den
+   * STARTparameter des Bereichs.
+   *
+   * Gemessen fehlen:
+   *   AIFS             wind_gusts_10m, cape (wie beim deterministischen AIFS)
+   *   ICON-EU-EPS      dew_point_2m, temperature_850hPa, geopotential_500hPa
+   *   ICON Seamless    temperature_850hPa, geopotential_500hPa
+   *   ICON-CH1/CH2     temperature_850hPa, geopotential_500hPa
+   * Alles andere liefern alle. `dew_point_2m` steht (noch) nicht in
+   * ENSEMBLE_VARIABLES, ist hier aber der Vollständigkeit wegen mit erfasst.
+   */
+  availableVariables: string[]
   note: string
 }
+
+/** Die neun Größen, die IFS, GEFS und ICON-D2-EPS vollständig liefern. */
+const ENS_ALL = [
+  'temperature_2m',
+  'precipitation',
+  'snowfall',
+  'wind_speed_10m',
+  'wind_gusts_10m',
+  'cloud_cover',
+  'pressure_msl',
+  'cape',
+  'temperature_850hPa',
+  'geopotential_height_500hPa',
+]
+/** Ohne Drucklevel — alle ICON-Ensembles ausser D2 (live gemessen). */
+const ENS_NO_LEVELS = ENS_ALL.filter(
+  (v) => v !== 'temperature_850hPa' && v !== 'geopotential_height_500hPa',
+)
 
 export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
   {
@@ -69,6 +107,7 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     updateIntervalHours: 6,
     resolutionKm: 25,
     deterministicModel: 'ecmwf_ifs025',
+    availableVariables: ENS_ALL,
     note: 'Physikalisches ECMWF-Ensemble, 0,25°. Nativ 3-stündlich (ab +144 h 6-stündlich), von Open-Meteo auf 1 h interpoliert.',
   },
   {
@@ -80,6 +119,9 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     updateIntervalHours: 6,
     resolutionKm: 25,
     deterministicModel: 'ecmwf_aifs025_single',
+    // Gemessen: Böen und CAPE durchgehend null — genau wie beim
+    // deterministischen AIFS (siehe config/models.ts).
+    availableVariables: ENS_ALL.filter((v) => v !== 'wind_gusts_10m' && v !== 'cape'),
     note: 'KI-Ensemble von ECMWF, 0,25°. Nativ 6-stündlich. Interessant als zweite Meinung zum IFS — nicht als Ersatz.',
   },
   {
@@ -94,6 +136,7 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     updateIntervalHours: 6,
     resolutionKm: 25,
     deterministicModel: 'gfs_seamless',
+    availableVariables: ENS_ALL,
     note: 'NOAA GEFS, 31 Mitglieder. Seamless: bis +240 h 0,25°, danach 0,5° bis ~34 Tage. Deutlich weniger Mitglieder als ECMWF, dafür der einzige Weg über 15 Tage hinaus. Der deterministische Hauptlauf endet bei 16 Tagen (API-Grenze).',
   },
   /**
@@ -123,7 +166,83 @@ export const ENSEMBLE_MODELS: EnsembleModelInfo[] = [
     updateIntervalHours: 3,
     resolutionKm: 2.2,
     deterministicModel: 'icon_d2',
+    // Das EINZIGE ICON-Ensemble mit Druckleveln (live gemessen).
+    availableVariables: ENS_ALL,
     note: 'DWD ICON-D2-EPS, 20 Mitglieder auf 2,2 km — das einzige Lokalensemble hier. Reicht nur ~48 h, löst dafür Täler und Konvektion auf: brauchbar für die Frage, wie sicher ein Gewittertag oder ein Föhndurchbruch ist, nicht für die Wochentendenz. Alle Größen inklusive 850 hPa live geprüft.',
+  },
+  /**
+   * ICON-EU-EPS — mit 40 Mitgliedern das mitgliederstärkste Ensemble hier
+   * nach den beiden ECMWF-Läufen, und das einzige REGIONALE.
+   *
+   * ACHTUNG bei der ID: auf dem Ensemble-Endpunkt heißt es `icon_eu`, also
+   * wie das deterministische Modell — und `icon_eu_eps` ist ein ALIAS darauf
+   * (live geprüft: Wert für Wert identisch). Dieselbe Sorte Falle wie bei
+   * AIFS, nur umgekehrt: dort sind zwei IDs NICHT austauschbar, hier sind
+   * zwei Namen dasselbe.
+   *
+   * Horizont gemessen: letzter Wert bei +133 h ab Rasterbeginn, vom
+   * geschätzten 09-UTC-Lauf also die ~120 h des deterministischen ICON-EU.
+   */
+  {
+    id: 'icon_eu',
+    label: 'ICON-EU-EPS',
+    members: 40,
+    forecastDays: 6,
+    deterministicDays: 6,
+    updateIntervalHours: 6,
+    resolutionKm: 7,
+    deterministicModel: 'icon_eu',
+    availableVariables: ENS_NO_LEVELS,
+    note: 'DWD ICON-EU-EPS, 40 Mitglieder auf 7 km, ~120 h. Das mitgliederstärkste Ensemble nach den ECMWF-Läufen und das einzige regionale: feiner als die Globalen, deutlich länger als ICON-D2-EPS. KEINE Drucklevel — 850 hPa und 500 hPa liefert es durchgehend null (live geprüft).',
+  },
+  /**
+   * ICON Seamless EPS — der Blend: startet Wert für Wert wie ICON-EU-EPS und
+   * läuft bis ~192 h weiter (live geprüft, dieselbe Bauart wie GFS Seamless).
+   * Deshalb genau EIN Eintrag dafür und NICHT zusätzlich `icon_global`: das
+   * liefert bei gleichem Horizont weder Böen noch Drucklevel und brächte
+   * nichts Eigenes.
+   */
+  {
+    id: 'icon_seamless',
+    label: 'ICON Seamless EPS',
+    members: 40,
+    forecastDays: 8,
+    deterministicDays: 8,
+    updateIntervalHours: 6,
+    resolutionKm: 0,
+    deterministicModel: 'icon_seamless',
+    availableVariables: ENS_NO_LEVELS,
+    note: 'DWD ICON Seamless EPS, 40 Mitglieder, ~192 h. Blend: früh ICON-EU (7 km), später ICON Global (13 km) — die Auflösung ist deshalb variabel. KEINE Drucklevel (live geprüft).',
+  },
+  /**
+   * Die beiden MeteoSchweiz-Lokalensembles. Der Föhn-Bereich benutzt sie über
+   * seine eigene Registry (`config/foehn.ts`); hier stehen sie für die
+   * allgemeine Plume. Feinste Gitter der Liste, dafür die kürzesten Reihen
+   * und die wenigsten Mitglieder.
+   */
+  {
+    id: 'meteoswiss_icon_ch2_ensemble',
+    label: 'ICON-CH2-EPS',
+    members: 21,
+    forecastDays: 6,
+    deterministicDays: 6,
+    updateIntervalHours: 6,
+    resolutionKm: 2.1,
+    deterministicModel: 'meteoswiss_icon_ch2',
+    availableVariables: ENS_NO_LEVELS,
+    note: 'MeteoSchweiz ICON-CH2-EPS, 21 Mitglieder auf 2,1 km, ~120 h. KEINE Drucklevel (live geprüft). Im Föhn-Bereich die Voreinstellung für die ΔP-Plume.',
+  },
+  {
+    id: 'meteoswiss_icon_ch1_ensemble',
+    label: 'ICON-CH1-EPS',
+    members: 11,
+    forecastDays: 3,
+    deterministicDays: 3,
+    updateIntervalHours: 3,
+    resolutionKm: 1,
+    deterministicModel: 'meteoswiss_icon_ch1',
+    availableVariables: ENS_NO_LEVELS,
+    note: 'MeteoSchweiz ICON-CH1-EPS, 11 Mitglieder auf 1 km — das feinste Gitter hier, dafür die wenigsten Mitglieder und nur ~33 h. Mit 11 Mitgliedern ist eine Wahrscheinlichkeit grob gestuft: ein Mitglied sind 9 Prozentpunkte. KEINE Drucklevel (live geprüft).',
   },
 ]
 
@@ -202,13 +321,44 @@ export function parseEnsembleVariableValue(value: string): {
 }
 
 /**
+ * Liefert das Modell diese Größe? Grundlage des Rückfalls beim Modellwechsel.
+ */
+export function ensembleHasVariable(modelId: string, variable: string): boolean {
+  return getEnsembleModel(modelId).availableVariables.includes(variable)
+}
+
+/**
+ * Größe, die nach einem Modellwechsel gelten soll: die bisherige, wenn das
+ * neue Modell sie liefert — sonst der Startparameter, und wenn auch der fehlt,
+ * die erste verfügbare Größe.
+ *
+ * Gebraucht, weil der STARTparameter `temperature_850hPa` ist und die
+ * ICON-Ensembles genau den nicht haben. Ohne Rückfall wechselt man auf
+ * ICON-EU-EPS und sieht ein leeres Diagramm, ohne zu erfahren warum.
+ */
+export function ensembleVariableFor(modelId: string, wanted: string): string {
+  if (ensembleHasVariable(modelId, wanted)) return wanted
+  if (ensembleHasVariable(modelId, DEFAULT_ENSEMBLE_VARIABLE)) return DEFAULT_ENSEMBLE_VARIABLE
+  const first = ENSEMBLE_VARIABLES.find((v) =>
+    getEnsembleModel(modelId).availableVariables.includes(v.id),
+  )
+  return first?.id ?? DEFAULT_ENSEMBLE_VARIABLE
+}
+
+/**
  * Dropdown-Einträge des Ensembles. Summengrößen stehen zweimal drin — als
  * kumulierte Summe und als 6-h-Mengen je Mitglied. Die Ansicht ist Teil der
  * Auswahl, nicht ein separater Umschalter daneben.
  */
-export function ensembleVariableOptions(): EnsembleVariableOption[] {
+export function ensembleVariableOptions(modelId?: string): EnsembleVariableOption[] {
+  // Nur Größen, die das MODELL liefert. Ohne diesen Filter stand jede Größe
+  // für jedes Modell im Dropdown und die Plume öffnete sich leer — die API
+  // meldet Fehlendes nicht, sie antwortet mit HTTP 200 und lauter null
+  // (SPEC §6). Ohne Modell-Angabe bleibt alles drin (Aufrufer ohne Kontext).
+  const allowed = modelId ? new Set(getEnsembleModel(modelId).availableVariables) : null
   const out: EnsembleVariableOption[] = []
   for (const v of ENSEMBLE_VARIABLES) {
+    if (allowed && !allowed.has(v.id)) continue
     if (v.kind !== 'accum') {
       out.push({ value: v.id, label: `${v.label} (${v.unit})`, variable: v.id, view: 'sum' })
       continue

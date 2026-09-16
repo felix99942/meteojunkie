@@ -660,9 +660,33 @@ npm run preview   # gebautes dist/ servieren
   hier**, obwohl der Föhn-Bereich sie benutzt: live geprüft (2026-09-16)
   liefern beide `temperature_850hPa` und `geopotential_height_500hPa`
   durchgehend `null` (HTTP 200, die Falle aus SPEC §6) — und 850 hPa ist der
-  STARTparameter dieses Bereichs, die Plume öffnete sich also leer. Sie
-  bräuchten erst eine Größen-Beschränkung je Modell in der Ensemble-Registry.
-  ICON-D2-EPS liefert dagegen alle neun Größen und braucht keine.
+  STARTparameter dieses Bereichs, die Plume öffnete sich also leer. Deshalb hat
+  `EnsembleModelInfo` jetzt **`availableVariables`** — je Modell die Größen, die
+  es WIRKLICH liefert, alle live gemessen (2026-09-16, Innsbruck). Damit stehen
+  auch die ICON-Ensembles ohne Drucklevel in der Liste:
+  **`icon_eu`** (ICON-EU-EPS, 40 Member, 7 km, ~120 h — das
+  mitgliederstärkste nach den ECMWF-Läufen und das einzige regionale),
+  **`icon_seamless`** (40 Member, ~192 h, Blend aus EU und Global),
+  **`meteoswiss_icon_ch2_ensemble`** (21, 2,1 km) und
+  **`meteoswiss_icon_ch1_ensemble`** (11, 1 km).
+  **Zwei ID-Fallen dabei, beide gemessen**: auf dem Ensemble-Endpunkt heißt
+  ICON-EU-EPS `icon_eu`, also wie das deterministische Modell, und
+  `icon_eu_eps` ist ein ALIAS darauf (Wert für Wert identisch) — die
+  Umkehrung der AIFS-Falle, wo zwei IDs NICHT austauschbar sind. `icon_global`
+  bleibt bewusst draußen: gleicher Horizont wie Seamless, aber weder Böen noch
+  Drucklevel.
+  **Von allen DWD-Ensembles hat nur ICON-D2 Drucklevel** — deshalb war es das
+  einzige, das ohne die Beschränkung passte.
+  **Die Beschränkung deckt einen ALTEN Fehler mit auf**: AIFS liefert im
+  Ensemble weder Böen noch CAPE (dasselbe wie sein deterministischer Lauf),
+  beides stand aber im Dropdown und ergab eine leere Plume.
+  Dazu zwei Absicherungen, damit nie eine leere Plume erscheint:
+  `ensembleVariableOptions(modelId)` filtert das Dropdown, und
+  `ensembleVariableFor()` stellt die Größe beim Modellwechsel mit um
+  (Startparameter ist 850 hPa — genau den haben die ICON-Ensembles nicht). Ein
+  Korrektur-Effekt in `PanelHeader` fängt zusätzlich, was aus gespeicherten
+  Presets in den Zustand kommt, dasselbe Muster wie die Schwellen-Korrektur in
+  `VerifyPanel`. Sechs Tests halten die Messwerte fest.
   **Eine KI-Version des GFS gibt es nicht** — `gfs_graphcast025` liefert auf
   beiden APIs durchgehend null, die übrigen Namen sind ungültige IDs; nicht
   erneut aus der Doku übernehmen. **`deterministicDays` ist getrennt von
