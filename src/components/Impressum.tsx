@@ -86,15 +86,23 @@ export function Impressum() {
             <br />
             <a href={`mailto:${OWNER.email}`}>{OWNER.email}</a>
           </address>
-          {DETAILS_MISSING && (
+          {/* NUR im Dev-Build. Auf der ausgelieferten Seite hat dieser Hinweis
+              nichts zu suchen: er nennt interne Variablennamen und richtet
+              sich an den Entwickler, nicht an den Leser eines Impressums. Als
+              Selbstdiagnose bleibt er trotzdem wertvoll — er hat das Fehlen
+              der Angaben am 2026-09-16 überhaupt erst sichtbar gemacht.
+              Die PLATZHALTER (⟨Name⟩ …) stehen weiter in beiden Builds: sie
+              sind das eigentliche Signal und brauchen keine Erklärung. */}
+          {DETAILS_MISSING && import.meta.env.DEV && (
             <p className="legal-warn">
-              ⚠ Die Angaben des Anbieters fehlen in diesem Build. § 18 Abs 1 MStV verlangt
-              Name <em>und</em> Anschrift. Sie stehen absichtlich nicht im Quellcode (das
-              Repository ist öffentlich), sondern kommen aus den Umgebungsvariablen{' '}
-              <code>VITE_IMPRESSUM_NAME</code>, <code>VITE_IMPRESSUM_STREET</code>,{' '}
-              <code>VITE_IMPRESSUM_CITY</code>, <code>VITE_IMPRESSUM_EMAIL</code> und
-              optional <code>VITE_IMPRESSUM_CAREOF</code> — lokal aus{' '}
-              <code>.env.local</code>, im Deploy aus den GitHub-Actions-Secrets.
+              ⚠ <strong>Nur im Dev-Build sichtbar.</strong> Die Angaben des Anbieters
+              fehlen: § 18 Abs 1 MStV verlangt Name <em>und</em> Anschrift. Sie stehen
+              absichtlich nicht im Quellcode (das Repository ist öffentlich), sondern
+              kommen aus <code>VITE_IMPRESSUM_NAME</code>,{' '}
+              <code>VITE_IMPRESSUM_STREET</code>, <code>VITE_IMPRESSUM_CITY</code>,{' '}
+              <code>VITE_IMPRESSUM_EMAIL</code> und optional{' '}
+              <code>VITE_IMPRESSUM_CAREOF</code> — lokal aus <code>.env.local</code>, im
+              Deploy aus Repository-Variables bzw. -Secrets.
             </p>
           )}
           <p className="legal-note">

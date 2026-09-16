@@ -1389,7 +1389,13 @@ npm run preview   # gebautes dist/ servieren
   statt in der Komponente: `Impressum.tsx` darf für React Fast Refresh nur
   Komponenten exportieren, und geprüft werden kann die Regel nur als reine
   Funktion. Fehlt eine Angabe, baut
-  die Seite trotzdem und zeigt SELBST eine Warnung (`DETAILS_MISSING`) —
+  die Seite trotzdem und zeigt SELBST eine Warnung (`DETAILS_MISSING`), aber
+  **NUR im Dev-Build** (`import.meta.env.DEV`): auf der ausgelieferten Seite
+  hat der Hinweis nichts zu suchen, er nennt interne Variablennamen und
+  richtet sich an den Entwickler, nicht an den Leser eines Impressums. Im
+  Produktions-Bundle entfernt Vite ihn als toten Code (geprüft: 0 Vorkommen).
+  Die PLATZHALTER (`⟨Name⟩` …) bleiben in BEIDEN Builds — sie sind das
+  eigentliche Signal und brauchen keine Erklärung. —
   dieselbe Regel wie beim Preset-Laden: Fehlendes wird nie still übergangen.
   `_CAREOF` ist optional und löst keine Warnung aus (nicht jeder Anbieter hat
   eine Vertretung); eine Kundennummer darin gehört ZUR Adresse, ohne sie kommt
