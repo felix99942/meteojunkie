@@ -35,9 +35,11 @@ import {
 } from '../config/chartDef'
 import {
   getModel,
+  groupModelsByScale,
   isInCoverage,
   modelHorizonEnd,
   resolutionLabel,
+  SCALE_LABELS,
   SELECTABLE_MODELS,
 } from '../config/models'
 import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
@@ -473,16 +475,24 @@ export function ClassicMeteogram() {
         <label className="atclima-ctrl">
           <span className="label-muted">Modell</span>
           <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
-            {SELECTABLE_MODELS.map((m) => (
-              // Auflösung MIT ins Etikett: ohne sie ist nicht zu sehen, warum
-              // ein Globalmodell im Alpental danebenliegt — und genau das ist
-              // hier die Information (siehe der AIFS-Befund in der
-              // Verifikation). Im nativen <option> geht nur Text, deshalb als
-              // Trennpunkt und nicht als eigenes Element.
-              <option key={m.id} value={m.id}>
-                {m.label} · {resolutionLabel(m)}
-                {location !== null && !isInCoverage(m, location.lat, location.lon) ? ' ⚠' : ''}
-              </option>
+            {/* Nach SKALA gruppiert wie in der Verifikation — eine flache
+                Liste stellte AROME neben ARPEGE und IFS neben GFS. Im nativen
+                <select> macht das `optgroup`; innerhalb einer Gruppe ordnet
+                die Modellfamilie (siehe `compareModelsByScale`).
+                Die Auflösung steht an jedem Eintrag, sonst ist nicht zu sehen,
+                warum ein Globalmodell im Alpental danebenliegt — im <option>
+                geht nur Text, deshalb als Trennpunkt. */}
+            {groupModelsByScale([...SELECTABLE_MODELS]).map((group) => (
+              <optgroup key={group.scale} label={SCALE_LABELS[group.scale]}>
+                {group.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} · {resolutionLabel(m)}
+                    {location !== null && !isInCoverage(m, location.lat, location.lon)
+                      ? ' ⚠'
+                      : ''}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>

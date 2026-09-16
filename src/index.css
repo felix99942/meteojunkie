@@ -416,6 +416,21 @@ button:focus-visible {
   background: var(--bg-control-hover);
 }
 
+/* Gruppenkopf im Modell-Picker (Lokal/Regional/Global/Mischungen) — dieselbe
+   Gliederung wie in der Verifikation und im klassischen Meteogramm. */
+.model-picker-group {
+  display: block;
+  margin: 6px 0 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: help;
+}
+
+.model-picker-group:first-child {
+  margin-top: 0;
+}
+
 .model-picker-list {
   position: absolute;
   top: 100%;

@@ -1,9 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import {
+  compareModelsByScale,
   getModel,
+  groupModelsByScale,
   isDomainInCoverage,
   isInCoverage,
   resolutionLabel,
+  SCALE_HINTS,
+  SCALE_LABELS,
   SELECTABLE_MODELS,
 } from '../config/models'
 import { MAP_ENABLED } from '../config/features'
@@ -181,7 +185,12 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
           const recommended = domain.recommendedModels
             .map((id) => eligible.find((m) => m.id === id))
             .filter((m) => m !== undefined)
-          const others = eligible.filter((m) => !domain.recommendedModels.includes(m.id))
+          const others = eligible
+            .filter((m) => !domain.recommendedModels.includes(m.id))
+            // Sortiert wie überall: Skala, darin Familie, darin Auflösung.
+            // „Empfohlen" behält dagegen die Reihenfolge der Domain — das ist
+            // eine Priorisierung, keine Sortierung.
+            .sort(compareModelsByScale)
           const currentIneligible = !eligible.some((m) => m.id === panel.mapModel)
           return (
             <select
@@ -223,7 +232,15 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
             {panel.models.length} {panel.models.length === 1 ? 'Modell' : 'Modelle'} ▾
           </summary>
           <div className="model-picker-list">
-            {SELECTABLE_MODELS.map((m) => {
+            {/* Nach SKALA gruppiert wie in der Verifikation und im
+                klassischen Meteogramm — eine flache Registry-Liste stellte
+                AROME neben ARPEGE und IFS neben GFS. */}
+            {groupModelsByScale([...SELECTABLE_MODELS]).map((group) => (
+              <Fragment key={group.scale}>
+                <span className="model-picker-group label-muted" title={SCALE_HINTS[group.scale]}>
+                  {SCALE_LABELS[group.scale]}
+                </span>
+                {group.models.map((m) => {
               const selected = panel.models.includes(m.id)
               const outside = location !== null && !isInCoverage(m, location.lat, location.lon)
               return (
@@ -256,8 +273,10 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
                     </span>
                   )}
                 </label>
-              )
-            })}
+                  )
+                })}
+              </Fragment>
+            ))}
           </div>
         </details>
       )}
