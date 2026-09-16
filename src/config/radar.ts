@@ -138,34 +138,65 @@ export const RV_LEGEND: RadarLegendStep[] = [
   { color: '#0000FE', label: '150' },
 ]
 
-export interface RadarProduct {
+/**
+ * Alles, was eine WMS-Bildquelle dieses Bereichs braucht — das Radarprodukt
+ * UND jedes Overlay. Bewusst EIN Typ: der Abruf (`api/dwdRadar.ts`), die
+ * Nachbearbeitung und der Zeitschieber behandeln beide gleich, sie
+ * unterscheiden sich nur in Layer, Stil und Legende.
+ */
+export interface WmsImageSource {
+  /** Layername für GetMap, mit Workspace-Präfix; KOMMAGETRENNT für mehrere. */
+  layer: string
+  /**
+   * Stilname(n), leer = Vorgabestil des Dienstes. GeoServer führt für dieselben
+   * Daten mehrere Stile — bei den KONRAD-Zellen ist genau das der Unterschied
+   * zwischen „deckend gefüllt" (verdeckt das Radar) und „nur Umriss".
+   */
+  style?: string
+  /**
+   * Layername OHNE Präfix für den **layer-eigenen virtuellen WMS**
+   * (`/geoserver/dwd/<Layer>/wms`): dessen GetCapabilities ist 18 KB statt
+   * 862 KB für den ganzen Workspace — und nur dort steht, welche Zeitschritte
+   * es gerade gibt. Bei mehreren Layern der ERSTE (sie laufen im gleichen Takt).
+   */
+  capsLayer: string
+  /** Schrittweite der Zeitdimension. */
+  stepMs: number
+  /**
+   * Länge eines VORHERSAGE-Teils am Ende der Zeitdimension, der abgeschnitten
+   * wird (WN/RV: 2 h Verlagerungsrechnung; Overlays: 0).
+   */
+  forecastMs: number
+  /**
+   * Deckkraft der „Keine Daten"-Maske im Produktstil — **oder `null`, wenn die
+   * Quelle keine hat**. Das ist gleichzeitig der Schalter für die
+   * Nachbearbeitung: die Randlinien-Regel darf NUR auf die Radarprodukte
+   * laufen. Die Blitzdichte führt mit #DA28C6 eine Skalenfarbe, die der Regel
+   * bis auf 3 Einheiten nahekommt — auf einem Overlay hätte sie nichts zu
+   * suchen und würde irgendwann genau dort zuschlagen.
+   */
+  maskOpacity: number | null
+  /**
+   * Breite des angeforderten Bildes. Vorgabe ist `RADAR_IMAGE_WIDTH`; die
+   * SYMBOL-Overlays brauchen mehr, weil ihre Kreise und Pfeile in Pixeln des
+   * angeforderten Bildes gezeichnet werden und beim Hochskalieren sonst
+   * unscharf und zu groß auf der Karte stehen.
+   */
+  imageWidth?: number
+}
+
+export interface RadarProduct extends WmsImageSource {
   id: string
   label: string
-  /** Layername für GetMap (mit Workspace-Präfix). */
-  layer: string
   /**
    * Layername OHNE Präfix für den **layer-eigenen virtuellen WMS**
    * (`/geoserver/dwd/<Layer>/wms`): dessen GetCapabilities ist 18 KB statt
    * 862 KB für den ganzen Workspace — und nur dort steht, welche Zeitschritte
    * es gerade gibt.
    */
-  capsLayer: string
-  /** Schrittweite der Zeitdimension. */
-  stepMs: number
-  /**
-   * Länge des VORHERSAGE-Teils am Ende der Zeitdimension. Beim RV-Produkt
-   * +2 h; gemessen, nicht angenommen: die Zeitdimension des Analyse-Layers
-   * (`Radar_wn-analysis_1x1km_ger`) endete zweimal exakt 120 min vor der des
-   * RV-Layers (21:30/23:30 und 21:40/23:40 UTC).
-   */
-  forecastMs: number
   /** Einheit der Skala — Beschriftung der Legende. */
   unit: string
-  /**
-   * Deckkraft der „Keine Daten"-Maske im Produktstil (WN 0,5 · RV 0,3). Wird
-   * gebraucht, weil die Nachbearbeitung Pixel auf die Maske umfärbt und dabei
-   * nicht raten darf, wie kräftig sie hier ist.
-   */
+  /** Deckkraft der Maske; bei den Radarprodukten immer gesetzt. */
   maskOpacity: number
   /** Farbstufen, 1:1 aus dem GetLegendGraphic des Layers (siehe unten). */
   legend: RadarLegendStep[]
@@ -217,6 +248,203 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
 ]
 
 export const DEFAULT_RADAR_PRODUCT = RADAR_PRODUCTS[0]
+
+// --- Overlays --------------------------------------------------------------
+//
+// Alles vom SELBEN Dienst und mit derselben Mechanik wie das Radar: eigene
+// Zeitdimension im 5-Minuten-Takt, CORS offen, GeoNutzV. Nur GEMESSENES bzw.
+// aktuell Erkanntes — die `fcst_*`-Layer des KONRAD-Verfahrens (Prognosekegel,
+// Vorhersagespuren) bleiben draußen, wie die Radarvorhersage auch.
+//
+// **Die Abdeckung ist je Overlay ANDERS als beim Radar**, und das ist kein
+// Detail (Werte aus dem jeweiligen GetCapabilities, 2026-09-16):
+//   Blitzdichte      lon 1,7–18,5 · lat 46,95–54,91  → ganz Österreich in der
+//                    Länge, im Süden fehlt Kärnten (Klagenfurt 46,62 °N)
+//   Gewitterzellen   lon 3,76–15,47 · lat 47,20–54,82 → Wien liegt draußen
+//   Gewittercluster  lon 5,0–16,0 · lat 47,0–55,30
+//   KONRAD-Zellen    lon 4,03–16,21 · lat 46,36–55,45 → am weitesten nach
+//                    Süden und Osten, deckt fast ganz Österreich
+// Deshalb hat jedes Overlay seine EIGENE `RadarMeta` (Fläche und Zeitschritte
+// aus seinem eigenen Capabilities) und seine eigenen Bildecken.
+
+export type OverlayLegend =
+  /** Kreuze nach Alter (Blitze) — die Farbe IST die Information. */
+  | { kind: 'crosses'; items: { color: string; label: string }[]; caption: string }
+  /** Symbolklassen (Zellen, Cluster, KONRAD): Punkt bzw. Umriss je Stufe. */
+  | { kind: 'dots'; items: { color: string; label: string }[]; caption: string }
+  | { kind: 'rings'; items: { color: string; label: string }[]; caption: string }
+
+/**
+ * Altersstufen der Blitz-Kreuze, je 5 Minuten, jüngste zuerst. Gezeichnet wird
+ * von ALT nach NEU, das jüngste Kreuz liegt also oben.
+ *
+ * Gelb → Orange → Rot → Violett ist die übliche Leserichtung solcher
+ * Darstellungen (frisch = heiß). **Die Stufen sind durch das Produkt auf
+ * 15 Minuten gerundet**: jedes Bild fasst die Blitze der letzten 15 Minuten
+ * zusammen, eine Zelle kann also in drei aufeinanderfolgenden Bildern stehen.
+ * Feiner geht es mit dieser Quelle nicht — und Einzelblitze mit Zeitstempel
+ * gibt der DWD gar nicht heraus.
+ */
+export const LIGHTNING_AGES: { color: string; label: string }[] = [
+  { color: '#FFF44F', label: '0–5' },
+  { color: '#FFA726', label: '5–10' },
+  { color: '#EF5350', label: '10–15' },
+  { color: '#AB47BC', label: '15–20' },
+]
+
+/**
+ * Armlänge eines Blitz-Kreuzes bei `RADAR_IMAGE_WIDTH`: Grundmaß plus Zuschlag
+ * je Stufe der Blitzrate. **Die Größe trägt die Rate, die Farbe das Alter** —
+ * ohne die Staffelung stand über einem großen Gewittercluster ein
+ * gleichförmiges Kreuzgitter, in dem die elektrisch aktiven Kerne nicht mehr
+ * herausstachen (nachgestellt an der Böenlinie vom 16.09.2026, 15 UTC).
+ * Die Maße sind an genau dieser Lage nachgestellt und nicht geschätzt: bei
+ * 1.200 px Bildbreite liegen die 10-km-Zellen rund 9,6 px auseinander, ein
+ * Kreuz darf also höchstens ~6 px breit werden, sonst entsteht ein
+ * geschlossenes Gitter, das das Radarecho zudeckt. Mit 1,6 + 0,35 je Stufe
+ * bleiben die beobachteten Stufen 4–10 bei 3,0 bis 5,1 px Armlänge.
+ */
+export const LIGHTNING_ARM = 1.6
+export const LIGHTNING_ARM_PER_LEVEL = 0.35
+
+/**
+ * Farbstufen der Blitzdichte, 1:1 aus `GetLegendGraphic&format=application/json`
+ * des Layers (2026-09-16), von schwach nach stark: 0,1 · 0,2 · 0,5 · 1 · 2 · 5 ·
+ * 10 · 15 · 25 · 40 · 60 · 80 · >100 Blitze pro Minute und 100 km².
+ *
+ * Gezeigt wird die Skala NICHT (die Karte trägt Kreuze, keine Dichtefläche) —
+ * gebraucht wird sie, um aus der Pixelfarbe die STUFE zurückzulesen, denn die
+ * Rate steckt im Bild und nirgends sonst.
+ */
+export const LIGHTNING_DENSITY_COLORS = [
+  '#FCFFC1',
+  '#FBFF5C',
+  '#DFFC26',
+  '#A0D626',
+  '#45C379',
+  '#00D6D8',
+  '#11A1D6',
+  '#0702FC',
+  '#9232B7',
+  '#DA28C6',
+  '#E70D0C',
+  '#880E0D',
+  '#4F0E0D',
+]
+
+/**
+ * Pixelblock, mit dem die Zellen aus dem grob angeforderten Dichtebild
+ * zusammengefasst werden (siehe `render/lightning.ts`): eine 10-km-Zelle deckt
+ * bei ~4,7 km/px je nach Breite 3 bis 4 Pixel ab.
+ */
+export const LIGHTNING_BLOCK_PX = 4
+
+export interface RadarOverlay extends WmsImageSource {
+  id: string
+  /** Kurzer Name für das Häkchen in der Leiste. */
+  label: string
+  legend: OverlayLegend
+  /** Deckkraft des Bildes auf der Karte. */
+  opacity: number
+  /** Beim Öffnen des Bereichs schon an? */
+  defaultOn: boolean
+  note: string
+}
+
+/**
+ * Farbstufen der Gewitterintensität, 1:1 aus den GetLegendGraphic-Regeln der
+ * NowCastMIX-Layer (Punktsymbole, gefiltert über das Intensitätskennzeichen
+ * `II`): 31 leicht · 33–38 Gewitter · 40–46 schwer · 48/95 extrem.
+ */
+const STORM_CLASSES = [
+  { color: '#FFEB3B', label: 'leicht' },
+  { color: '#FB8C00', label: 'Gewitter' },
+  { color: '#E53935', label: 'schwer' },
+  { color: '#880E4F', label: 'extrem' },
+]
+
+export const RADAR_OVERLAYS: RadarOverlay[] = [
+  {
+    id: 'blitze',
+    label: 'Blitze',
+    layer: 'dwd:Blitzdichte',
+    capsLayer: 'Blitzdichte',
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    maskOpacity: null,
+    // GROB angefordert, und das mit Absicht: gezeichnet werden Kreuze je
+    // 10-km-Zelle (siehe `render/lightning.ts`), ein feineres Bild trägt
+    // keine zusätzliche Information und kostet nur Bytes. 400 px über die
+    // 1.864 km der Produktfläche sind ~4,7 km je Pixel.
+    imageWidth: 400,
+    opacity: 1,
+    defaultOn: true,
+    legend: {
+      kind: 'crosses',
+      caption: 'Blitze, Minuten zurück',
+      items: LIGHTNING_AGES,
+    },
+    note: 'NowCastMIX-Blitzdichte als Kreuze: FARBE = Alter, GRÖSSE = Blitzrate. Der DWD veröffentlicht keine Einzelblitze — ein Kreuz steht für eine 10-km-Zelle mit Blitzen, und die Altersstufe ist produktbedingt auf 15 Minuten gerundet (jedes Bild fasst die Blitze der letzten 15 Minuten zusammen)',
+  },
+  {
+    id: 'zellen',
+    imageWidth: 1600,
+    label: 'Zellen',
+    layer: 'dwd:Gewitterzellen',
+    capsLayer: 'Gewitterzellen',
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    maskOpacity: null,
+    opacity: 1,
+    defaultOn: true,
+    legend: { kind: 'dots', caption: 'Gewitterzellen', items: STORM_CLASSES },
+    note: 'NowCastMIX-Gewitterzellen: automatisch erkannte konvektive Zellen aus CellMOS, KONRAD und Blitzen — Kreis nach Intensität, Pfeil = Verlagerungsrichtung',
+  },
+  {
+    id: 'cluster',
+    imageWidth: 1600,
+    label: 'Cluster',
+    layer: 'dwd:Gewittercluster',
+    capsLayer: 'Gewittercluster',
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    maskOpacity: null,
+    opacity: 1,
+    defaultOn: false,
+    legend: { kind: 'dots', caption: 'Zellverbände', items: STORM_CLASSES },
+    note: 'NowCastMIX-Gewittercluster: Zentroide und Spuren erkannter Zellverbände samt Verlagerung',
+  },
+  {
+    id: 'konrad',
+    imageWidth: 1600,
+    // ZWEI Layer in EINEM Bild (kommagetrennt, mit passender Stilliste): die
+    // Zellumrisse und die bisherigen Spuren gehören zusammen und kosten so
+    // einen Abruf statt zwei.
+    label: 'KONRAD',
+    layer: 'dwd:K3D_EVAL_current_cells,dwd:K3D_EVAL_cur_track_lines',
+    // NICHT der Vorgabestil: der füllt die Zellen DECKEND (fill-opacity 1) und
+    // verdeckt damit genau das Radarecho, um das es geht.
+    style: 'k3d_eval_current_cells_unfilled_polygons_colored_border,',
+    capsLayer: 'K3D_EVAL_current_cells',
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    maskOpacity: null,
+    opacity: 1,
+    defaultOn: false,
+    legend: {
+      kind: 'rings',
+      caption: 'KONRAD3D-Zellen (Umriss + bisherige Spur)',
+      items: [
+        { color: '#25A700', label: '0' },
+        { color: '#FDE333', label: '1' },
+        { color: '#F1393B', label: '2' },
+        { color: '#FE32D4', label: '3' },
+      ],
+    },
+    note: 'KONRAD3D: Umrisse der aktuell erkannten Gewitterzellen (Farbe = Schwerestufe 0–3) samt ihrer bisherigen Zugspuren. Prognosekegel und Vorhersagespuren des Verfahrens sind bewusst nicht dabei.',
+  },
+]
+
 
 // --- Zeitdimension ---------------------------------------------------------
 
@@ -338,7 +566,7 @@ export function parseRadarCapabilities(xml: string): RadarMeta | null {
  * reinen Analyse-Layers (`Radar_wn-analysis_1x1km_ger`) endete genau
  * `forecastMs` vor der des Produkt-Layers.
  */
-export function analysisTime(meta: RadarMeta, product: RadarProduct): number {
+export function analysisTime(meta: RadarMeta, product: WmsImageSource): number {
   return meta.extent.end - product.forecastMs
 }
 
@@ -352,7 +580,7 @@ export function analysisTime(meta: RadarMeta, product: RadarProduct): number {
  */
 export function radarTimes(
   meta: RadarMeta,
-  product: RadarProduct,
+  product: WmsImageSource,
   historyMs: number,
 ): number[] {
   const step = meta.extent.stepMs || product.stepMs
@@ -380,9 +608,9 @@ export function nearestFrame(times: number[], t: number): number {
 
 // --- URLs ------------------------------------------------------------------
 
-export function radarCapabilitiesUrl(product: RadarProduct): string {
+export function radarCapabilitiesUrl(source: WmsImageSource): string {
   return (
-    `https://maps.dwd.de/geoserver/dwd/${product.capsLayer}/wms` +
+    `https://maps.dwd.de/geoserver/dwd/${source.capsLayer}/wms` +
     '?service=WMS&version=1.3.0&request=GetCapabilities'
   )
 }
@@ -400,7 +628,7 @@ export function radarCapabilitiesUrl(product: RadarProduct): string {
  * der Dimension kommen und dürfen nicht geraten werden.
  */
 export function radarImageUrl(
-  product: RadarProduct,
+  source: WmsImageSource,
   meta: RadarMeta,
   opts: { time: number; width: number; height: number },
 ): string {
@@ -409,9 +637,13 @@ export function radarImageUrl(
     service: 'WMS',
     version: '1.3.0',
     request: 'GetMap',
-    layers: product.layer,
-    styles: '',
-    format: 'image/png',
+    layers: source.layer,
+    styles: source.style ?? '',
+    // **PNG8 statt PNG24**, und das ist gemessen: dieselbe Farbanzahl (83 im
+    // Radarbild, der Stil hat ohnehin unter 256 Farben), aber die halbe Größe
+    // — Radar 44 statt 93 KB, ein LEERES Symbol-Overlay 1,1 statt 37,7 KB.
+    // GeoServer antwortet darauf mit `image/png; mode=8bit`.
+    format: 'image/png8',
     transparent: 'true',
     crs: 'EPSG:3857',
     bbox: `${minx},${miny},${maxx},${maxy}`,
@@ -430,7 +662,12 @@ export function radarImageUrl(
  */
 export const RADAR_IMAGE_WIDTH = 1200
 
-/** Bildhöhe aus dem Seitenverhältnis der Mercator-Fläche (nie krumm skalieren). */
+/** Breite, die diese Quelle anfordert. */
+export function sourceImageWidth(source: WmsImageSource): number {
+  return source.imageWidth ?? RADAR_IMAGE_WIDTH
+}
+
+/** Bildhöhe aus dem Seitenverhältnis DIESER Fläche (nie krumm skalieren). */
 export function radarImageHeight(meta: RadarMeta, width = RADAR_IMAGE_WIDTH): number {
   const { minx, miny, maxx, maxy } = meta.merc
   return Math.max(1, Math.round((width * (maxy - miny)) / (maxx - minx)))

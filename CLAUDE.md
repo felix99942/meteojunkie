@@ -1114,6 +1114,60 @@ npm run preview   # gebautes dist/ servieren
   auf dem neuesten Bild steht oder die Schleife läuft (`atLiveEdge`) — wer ein
   älteres Bild ansieht, wird nicht weggerissen und bekommt den Knopf
   „● neuer Stand".
+  **OVERLAYS vom selben Dienst** (`RADAR_OVERLAYS`, Häkchen in der Leiste):
+  **Blitze** (`Blitzdichte`) und **Gewitterzellen** (`Gewitterzellen`) sind
+  voreingestellt an, **Cluster** (`Gewittercluster`) und **KONRAD**
+  (`K3D_EVAL_current_cells` + `K3D_EVAL_cur_track_lines`) auf Wunsch. Alles
+  5-Minuten-Takt, CORS offen, GeoNutzV — und alles NUR Gegenwart: die
+  `fcst_*`-Layer des KONRAD-Verfahrens (Prognosekegel, Vorhersagespuren)
+  bleiben draußen wie die Radarvorhersage auch.
+  **Jedes Overlay hat seine EIGENE Fläche und eigene Zeitschritte**, deshalb je
+  Overlay eine eigene `RadarMeta`, eigene Bildecken und eigene Bild-Map
+  (gemessen 2026-09-16: Blitze lon 1,7–18,5/lat 46,95–54,91 — ganz Österreich
+  in der Länge, im Süden fehlt Kärnten; Zellen lon 3,76–15,47/lat 47,20–54,82 —
+  Wien liegt draußen; Cluster lon 5–16/lat 47–55,3; KONRAD lon 4,03–16,21/lat
+  46,36–55,45, also am weitesten nach Süden und Osten). Angefragt werden nur
+  Zeiten, die in der jeweiligen Dimension stehen, und **gescheiterte Zeiten
+  werden gemerkt** (`failedRef`): die Symbol-Layer haben DISKRETE Zeitpunkte —
+  wo nichts erkannt wurde, fehlt der Zeitstempel und der Dienst antwortet mit
+  `InvalidDimensionValue` (live gesehen für 15:00 UTC, während die Cluster
+  dieselbe Minute hatten). Ohne das Merken liefe der Nachlade-Effekt endlos auf
+  dieselbe Zeit. Die Legendenzeile sagt dann „nichts gemeldet", nicht „Fehler".
+  **`format=image/png8` für ALLES**, gemessen: gleiche Farbanzahl (der Stil hat
+  unter 256 Farben), aber halbe Größe — Radar 44 statt 93 KB, ein LEERES
+  Symbol-Overlay **1,1 statt 37,7 KB**. Bei 13 Bildern je Schleife und bis zu
+  vier Quellen ist das der Unterschied zwischen 0,6 und 2,5 MB.
+  Die **Symbol-Overlays werden GRÖSSER angefordert** (1600 px statt 1200): ihre
+  Kreise und Pfeile werden in Pixeln des Bildes gezeichnet und stehen sonst
+  hochskaliert und unscharf auf der Karte. Der Vorgabestil der KONRAD-Zellen
+  ist bewusst NICHT genommen — er füllt sie deckend und verdeckt genau das
+  Radarecho; stattdessen `..._unfilled_polygons_colored_border`, und die
+  Zugspuren kommen als ZWEITER Layer im selben Bild (kommagetrennt, mit
+  passender Stilliste) statt als zweiter Abruf.
+  **BLITZE SIND KREUZE, keine Dichtefläche** (`render/lightning.ts`, mit
+  Tests) — auf Wunsch, und der Wunsch hat recht: die Dichteskala läuft über
+  Gelb, Grün und Türkis, sieht also aus wie ein zweites Radarecho und legt sich
+  als Schleier über das, was man lesen will (im Vergleich nachgestellt).
+  **Der DWD gibt keine Einzelblitze heraus** — was es gibt, ist die
+  NowCastMIX-Dichte, und deren Kornung ist gemessen **10 km × 10 km** (bei
+  50 m/px überzoomt hält eine Farbfläche über 10,4 km; passt zur Einheit
+  „Blitze/min je 100 km²"). Ein Kreuz steht deshalb für EINE ZELLE mit Blitzen,
+  nicht für einen Einschlag; die Legende sagt das. **Farbe = Alter**
+  (`LIGHTNING_AGES`, vier Stufen à 5 min, gelb → orange → rot → violett,
+  gezeichnet von ALT nach NEU, damit das jüngste oben liegt), **Größe =
+  Blitzrate** (Stufe aus der PIXELFARBE zurückgelesen, `LIGHTNING_DENSITY_
+  COLORS`). Beides ist nötig: ohne die Größenstaffelung stand über einer
+  Böenlinie ein gleichförmiges Kreuzgitter, in dem die aktiven Kerne
+  verschwanden. Die Maße (`LIGHTNING_ARM` 1,6 + 0,35 je Stufe) sind an der Lage
+  vom 16.09.2026, 15 UTC nachgestellt: die 10-km-Zellen liegen bei 1.200 px
+  Bildbreite ~9,6 px auseinander, ein Kreuz darf also höchstens ~6 px breit
+  werden, sonst schließt sich das Gitter. **Die Altersstufe ist
+  produktbedingt auf 15 Minuten gerundet** (jedes Bild fasst die Blitze der
+  letzten 15 Minuten zusammen) — steht so im Tooltip, feiner gibt es die Quelle
+  nicht. Das Blitzbild wird deshalb GROB geholt (400 px, ~4,7 km/px) und die
+  Zellen daraus einmal beim Laden extrahiert (`loadLightningCells` speichert
+  Positionen, kein PNG); gezeichnet wird ein eigenes Canvas über vier
+  Altersstufen, das als image-Source auf die Karte geht.
   **Interpolation: KEINE — der Dienst rastert nearest neighbour**, und das ist
   gemessen, nicht angenommen: 90-fach überzoomt (~11 m/px) stehen entlang einer
   Zeile durch ein Echo Blöcke von 101–102 Pixeln in EINER Klassenfarbe mit

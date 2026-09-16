@@ -10,13 +10,16 @@
 // Zeit abseits des 5-Minuten-Rasters beantwortet der Dienst mit einer
 // ServiceException statt mit einem Bild.
 
+import { extractLightningCells, toPalette, type LightningCell } from '../render/lightning'
 import { maskRadarEdge } from '../render/radarImage'
 import {
+  LIGHTNING_BLOCK_PX,
+  LIGHTNING_DENSITY_COLORS,
   parseRadarCapabilities,
   radarCapabilitiesUrl,
   radarImageUrl,
   type RadarMeta,
-  type RadarProduct,
+  type WmsImageSource,
 } from '../config/radar'
 
 /**
@@ -27,21 +30,22 @@ import {
  * gecacht (sonst hängt der Bereich minutenlang an einem Aussetzer fest).
  */
 const META_TTL_MS = 60_000
+/** Schlüssel ist der CAPS-LAYER: mehrere Quellen dürfen sich einen teilen. */
 const metaCache = new Map<string, { at: number; meta: RadarMeta }>()
 
 export async function fetchRadarMeta(
-  product: RadarProduct,
+  source: WmsImageSource,
   opts: { force?: boolean; signal?: AbortSignal } = {},
 ): Promise<RadarMeta> {
-  const hit = metaCache.get(product.id)
+  const hit = metaCache.get(source.capsLayer)
   if (!opts.force && hit && Date.now() - hit.at < META_TTL_MS) return hit.meta
 
-  const res = await fetch(radarCapabilitiesUrl(product), { signal: opts.signal })
+  const res = await fetch(radarCapabilitiesUrl(source), { signal: opts.signal })
   if (!res.ok) throw new Error(`DWD-WMS: HTTP ${res.status}`)
   const xml = await res.text()
   const meta = parseRadarCapabilities(xml)
   if (!meta) throw new Error('DWD-WMS: Zeitdimension nicht lesbar')
-  metaCache.set(product.id, { at: Date.now(), meta })
+  metaCache.set(source.capsLayer, { at: Date.now(), meta })
   return meta
 }
 
@@ -67,7 +71,7 @@ export function newestFirst(times: number[]): number[] {
  * malen. Ein eigenes Canvas je Bild kostet nichts, es wird sofort wieder
  * freigegeben.
  */
-async function toCleanImageUrl(blob: Blob, maskOpacity: number): Promise<string> {
+async function toCleanImageUrl(blob: Blob, maskOpacity: number | null): Promise<string> {
   const bitmap = await createImageBitmap(blob)
   const canvas = document.createElement('canvas')
   canvas.width = bitmap.width
@@ -79,8 +83,12 @@ async function toCleanImageUrl(blob: Blob, maskOpacity: number): Promise<string>
   }
   ctx.drawImage(bitmap, 0, 0)
   bitmap.close()
-  const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  if (maskRadarEdge(frame.data, maskOpacity) > 0) ctx.putImageData(frame, 0, 0)
+  // Nur die Radarprodukte tragen die Randlinie; auf einem Overlay hätte die
+  // Regel nichts zu suchen (siehe `WmsImageSource.maskOpacity`).
+  if (maskOpacity !== null) {
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    if (maskRadarEdge(frame.data, maskOpacity) > 0) ctx.putImageData(frame, 0, 0)
+  }
   return canvas.toDataURL('image/png')
 }
 
@@ -110,7 +118,7 @@ export interface RadarImageLoadOptions {
  * einen neuen Stand ist das genau ein Bild, nicht die ganze Schleife.
  */
 export async function loadRadarImages(
-  product: RadarProduct,
+  source: WmsImageSource,
   meta: RadarMeta,
   times: number[],
   opts: RadarImageLoadOptions,
@@ -125,7 +133,7 @@ export async function loadRadarImages(
       const slot = next++
       if (slot >= order.length) return
       const time = order[slot]
-      const url = radarImageUrl(product, meta, {
+      const url = radarImageUrl(source, meta, {
         time,
         width: opts.width,
         height: opts.height,
@@ -139,9 +147,85 @@ export async function loadRadarImages(
         if (!blob.type.startsWith('image/')) {
           throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
         }
-        const imageUrl = await toCleanImageUrl(blob, product.maskOpacity)
+        const imageUrl = await toCleanImageUrl(blob, source.maskOpacity)
         if (opts.signal?.aborted) return
         opts.onLoaded(time, imageUrl)
+      } catch (err) {
+        if (opts.signal?.aborted) return
+        opts.onError?.(time, err)
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, worker))
+}
+
+/** Einmal umgerechnet, nicht je Bild (13 Farben). */
+const DENSITY_PALETTE = toPalette(LIGHTNING_DENSITY_COLORS)
+
+/**
+ * Blitze werden NICHT als Bild behalten, sondern zu ZELLEN eingekocht
+ * (`render/lightning.ts`): gezeichnet wird daraus später ein Kreuzbild über
+ * mehrere Altersstufen, und dafür braucht es die Positionen, nicht das
+ * Dichtebild. Nebeneffekt: je Zeitschritt bleiben ein paar Dutzend Zahlen im
+ * Speicher statt eines PNG.
+ */
+export async function loadLightningCells(
+  source: WmsImageSource,
+  meta: RadarMeta,
+  times: number[],
+  opts: {
+    width: number
+    height: number
+    concurrency?: number
+    signal?: AbortSignal
+    onLoaded: (time: number, cells: LightningCell[]) => void
+    onError?: (time: number, err: unknown) => void
+  },
+): Promise<void> {
+  const order = newestFirst(times)
+  const concurrency = Math.max(1, opts.concurrency ?? 3)
+  let next = 0
+
+  const worker = async () => {
+    for (;;) {
+      if (opts.signal?.aborted) return
+      const slot = next++
+      if (slot >= order.length) return
+      const time = order[slot]
+      const url = radarImageUrl(source, meta, {
+        time,
+        width: opts.width,
+        height: opts.height,
+      })
+      try {
+        const res = await fetch(url, { signal: opts.signal })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const blob = await res.blob()
+        if (!blob.type.startsWith('image/')) {
+          throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
+        }
+        const bitmap = await createImageBitmap(blob)
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        if (!ctx) {
+          bitmap.close()
+          throw new Error('Canvas-Kontext nicht verfügbar')
+        }
+        ctx.drawImage(bitmap, 0, 0)
+        bitmap.close()
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const cells = extractLightningCells(
+          frame.data,
+          canvas.width,
+          canvas.height,
+          LIGHTNING_BLOCK_PX,
+          DENSITY_PALETTE,
+        )
+        if (opts.signal?.aborted) return
+        opts.onLoaded(time, cells)
       } catch (err) {
         if (opts.signal?.aborted) return
         opts.onError?.(time, err)

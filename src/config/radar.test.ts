@@ -8,8 +8,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   analysisTime,
+  LIGHTNING_AGES,
+  RADAR_IMAGE_WIDTH,
+  RADAR_OVERLAYS,
   RADAR_PRODUCTS,
   RV_LEGEND,
+  sourceImageWidth,
   WN_LEGEND,
   DEFAULT_RADAR_PRODUCT,
   nearestFrame,
@@ -176,8 +180,14 @@ describe('radarImageUrl', () => {
 
   it('bleibt beim transparenten PNG des Produktstils', () => {
     expect(q.get('layers')).toBe('dwd:Radar_wn-product_1x1km_ger')
-    expect(q.get('format')).toBe('image/png')
     expect(q.get('transparent')).toBe('true')
+  })
+
+  // PNG8 ist gemessen die halbe Größe bei gleicher Farbanzahl (Radar 44 statt
+  // 93 KB, ein leeres Symbol-Overlay 1,1 statt 37,7 KB) — nicht auf
+  // `image/png` zurückdrehen, das kostet bei 13 Bildern je Schleife.
+  it('fordert die Palettenvariante PNG8 an', () => {
+    expect(q.get('format')).toBe('image/png8')
   })
 })
 
@@ -232,5 +242,65 @@ describe('Produkt-Registry', () => {
     for (const legend of [WN_LEGEND, RV_LEGEND]) {
       expect(legend.map((s) => s.color)).not.toContain('#7D7D7D')
     }
+  })
+})
+
+describe('Overlays', () => {
+  it('sind alle vom DWD-WMS und ohne Vorhersageteil', () => {
+    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'zellen', 'cluster', 'konrad'])
+    for (const o of RADAR_OVERLAYS) {
+      expect(o.layer, o.id).toMatch(/^dwd:/)
+      expect(o.stepMs, o.id).toBe(300_000)
+      // Die `fcst_*`-Layer bleiben draußen, wie die Radarvorhersage auch.
+      expect(o.forecastMs, o.id).toBe(0)
+      expect(o.layer, o.id).not.toMatch(/fcst/)
+    }
+  })
+
+  // Die Randlinien-Regel darf NUR auf die Radarprodukte laufen: die
+  // Blitzskala führt mit #DA28C6 eine Farbe, die ihr bis auf drei Einheiten
+  // nahekommt. `maskOpacity: null` ist der Schalter dafür.
+  it('sind von der Randlinien-Nachbearbeitung ausgenommen', () => {
+    for (const o of RADAR_OVERLAYS) expect(o.maskOpacity, o.id).toBeNull()
+  })
+
+  // Der Vorgabestil der KONRAD-Zellen füllt sie DECKEND und verdeckt damit
+  // das Radarecho — deshalb der Umriss-Stil, und deshalb zwei Layer in einem
+  // Bild (Zellen plus bisherige Spuren).
+  it('zeichnet die KONRAD-Zellen als Umriss samt Spur', () => {
+    const k = RADAR_OVERLAYS.find((o) => o.id === 'konrad')!
+    expect(k.layer.split(',')).toHaveLength(2)
+    expect(k.style).toContain('unfilled_polygons_colored_border')
+    expect(k.style!.split(',')).toHaveLength(2) // Stil je Layer, zweiter = Vorgabe
+    expect(k.capsLayer).toBe('K3D_EVAL_current_cells')
+  })
+
+  it('fordert die Symbol-Overlays GRÖSSER und das Blitzraster KLEINER an', () => {
+    // Kreise und Pfeile werden in Pixeln des BILDES gezeichnet; zu klein
+    // angefordert stehen sie hochskaliert und unscharf auf der Karte.
+    for (const id of ['zellen', 'cluster', 'konrad']) {
+      const o = RADAR_OVERLAYS.find((x) => x.id === id)!
+      expect(sourceImageWidth(o), id).toBeGreaterThan(RADAR_IMAGE_WIDTH)
+    }
+    // Die Blitzdichte dagegen wird bewusst grob geholt: gezeichnet werden
+    // Kreuze je 10-km-Zelle, ein feineres Bild trägt keine Information.
+    const blitze = RADAR_OVERLAYS.find((o) => o.id === 'blitze')!
+    expect(sourceImageWidth(blitze)).toBeLessThan(RADAR_IMAGE_WIDTH / 2)
+    expect(sourceImageWidth(DEFAULT_RADAR_PRODUCT)).toBe(RADAR_IMAGE_WIDTH)
+  })
+
+  // Die Farbe IST die Information: vier Stufen à 5 Minuten, jüngste zuerst.
+  it('führt die Blitze als Kreuze mit Altersstufen', () => {
+    const blitze = RADAR_OVERLAYS.find((o) => o.id === 'blitze')!
+    expect(blitze.legend.kind).toBe('crosses')
+    expect(blitze.legend.items).toBe(LIGHTNING_AGES)
+    expect(LIGHTNING_AGES).toHaveLength(4)
+    expect(LIGHTNING_AGES[0].label).toBe('0–5')
+    expect(new Set(LIGHTNING_AGES.map((a) => a.color)).size).toBe(4)
+  })
+
+  it('schaltet Blitze und Zellen von vornherein ein', () => {
+    const on = RADAR_OVERLAYS.filter((o) => o.defaultOn).map((o) => o.id)
+    expect(on).toEqual(['blitze', 'zellen'])
   })
 })

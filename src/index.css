@@ -3004,3 +3004,69 @@ button:focus-visible {
 .radar-attribution {
   flex: 0 0 auto;
 }
+
+/* Overlay-Häkchen (Blitze, Zellen, Cluster, KONRAD) als eine Gruppe in der
+   Radarleiste — sie gehören zusammen und sollen beim Umbruch nicht
+   auseinanderfallen. */
+.radar-overlays {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+/* Eine kompakte Zeile je eingeschaltetem Overlay unter der Radarskala. */
+.radar-legend-overlay {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--ink-secondary);
+  pointer-events: auto;
+  cursor: help;
+}
+
+.radar-legend-overlay em {
+  font-style: normal;
+  color: var(--ink-muted);
+}
+
+.radar-legend-overlay em.is-error {
+  color: var(--warn);
+}
+
+/* Symbolklassen: gefüllter Punkt (Zellen/Cluster) bzw. Ring (KONRAD-Umrisse) —
+   dieselbe Form wie auf der Karte, damit die Zuordnung ohne Text klappt. */
+.radar-legend-overlay i.is-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+.radar-legend-overlay i.is-ring {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1.5px solid;
+  background: transparent;
+}
+
+/* Blitze: Kreuz je Altersstufe, beschriftet mit den Minuten zurück — dieselbe
+   Form und Farbe wie auf der Karte, damit die Zuordnung ohne Text klappt. */
+.radar-legend-age {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.radar-legend-overlay i.is-cross {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1;
+  text-shadow:
+    0 0 2px #000,
+    0 0 2px #000;
+}

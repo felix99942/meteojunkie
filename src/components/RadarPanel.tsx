@@ -19,9 +19,18 @@
 // ansieht, wird nicht weggerissen (siehe `atLiveEdge`).
 //
 // AUFBAU der Karte (unten → oben): lokaler Kartenhintergrund → RADARBILD →
-// Gradnetz/Grenzen → Städte als DOM-Marker. Das Radarbild liegt also UNTER den
-// Grenzlinien: ein Echo über der Grenze soll die Grenze nicht verschlucken
-// (dieselbe Reihenfolge wie beim Feld in `MapPanel`).
+// OVERLAYS (Blitze, Zellen, Cluster, KONRAD) → Gradnetz/Grenzen → Städte als
+// DOM-Marker. Das Radarbild liegt also UNTER den Grenzlinien: ein Echo über
+// der Grenze soll die Grenze nicht verschlucken (dieselbe Reihenfolge wie beim
+// Feld in `MapPanel`).
+//
+// **JEDES OVERLAY HAT SEINE EIGENE FLÄCHE UND SEINE EIGENEN ZEITSCHRITTE**
+// (Registry und gemessene Abdeckungen in `config/radar.ts`) — deshalb je
+// Overlay eine eigene `RadarMeta`, eigene Bildecken und eine eigene
+// Bild-Map. Angefragt werden nur Zeiten, die im jeweiligen Capabilities auch
+// stehen: die Blitzdichte hängt einen Schritt hinter dem Radar zurück, und
+// eine Zeit abseits der Dimension beantwortet der Dienst mit einer
+// ServiceException.
 //
 // Das Bild ist eine MapLibre-image-Source über die ganze Produktfläche, in
 // **Web-Mercator angefordert** — MapLibre spannt eine image-Source linear im
@@ -32,19 +41,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { fetchRadarMeta, loadRadarImages } from '../api/dwdRadar'
+import { fetchRadarMeta, loadLightningCells, loadRadarImages } from '../api/dwdRadar'
 import { CITIES } from '../config/cities'
 import {
+  analysisTime,
   DEFAULT_RADAR_PRODUCT,
+  LIGHTNING_AGES,
+  LIGHTNING_ARM,
+  LIGHTNING_ARM_PER_LEVEL,
   MASK_COLOR,
   nearestFrame,
   RADAR_IMAGE_WIDTH,
+  RADAR_OVERLAYS,
   RADAR_PRODUCTS,
   radarImageCoordinates,
   radarImageHeight,
   radarTimes,
+  sourceImageWidth,
   type RadarMeta,
+  type RadarOverlay,
 } from '../config/radar'
+import { drawLightningCrosses, type LightningCell } from '../render/lightning'
 import {
   BASE_STYLE,
   buildGraticuleBox,
@@ -110,6 +127,161 @@ function frameLabel(time: number, latest: number): string {
   return `${clock} · −${rel}`
 }
 
+interface OverlayState {
+  meta?: RadarMeta
+  /** Symbol-Overlays: fertige Bild-URL je Zeitschritt. */
+  images: Record<number, string>
+  /** Blitze: Zellen je Zeitschritt — daraus wird das Kreuzbild gezeichnet. */
+  cells: Record<number, LightningCell[]>
+  error?: string
+}
+
+/** Blitze sind der EINZIGE Sonderfall: Kreuze statt Dichtefläche. */
+const LIGHTNING_ID = 'blitze'
+
+/**
+ * Metadaten und Bilder aller EINGESCHALTETEN Overlays.
+ *
+ * Bewusst EIN Hook mit einem Zustandsobjekt über alle Overlays statt ein Hook
+ * je Overlay: die Zahl der Overlays ist eine Registry-Frage, und Hooks in
+ * einer Schleife aufzurufen ist genau der Weg, auf dem die Reihenfolge der
+ * Hooks kippt, sobald jemand die Registry erweitert.
+ *
+ * Gescheiterte Zeiten werden GEMERKT (`failedRef`) und nicht erneut versucht —
+ * sonst läuft der Nachlade-Effekt bei jedem Zustandswechsel wieder auf
+ * dieselbe Zeit, die es dort nicht gibt.
+ */
+function useOverlays(active: RadarOverlay[], times: number[]): Record<string, OverlayState> {
+  const [state, setState] = useState<Record<string, OverlayState>>({})
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const failedRef = useRef<Set<string>>(new Set())
+  const activeKey = active.map((o) => o.id).join(',')
+
+  // Zeitdimension und Fläche je Overlay — einmal je Overlay, danach aus dem
+  // TTL-Cache des API-Layers.
+  useEffect(() => {
+    const ac = new AbortController()
+    for (const overlay of active) {
+      if (stateRef.current[overlay.id]?.meta) continue
+      fetchRadarMeta(overlay, { signal: ac.signal })
+        .then((meta) =>
+          setState((prev) => ({
+            ...prev,
+            [overlay.id]: {
+              images: prev[overlay.id]?.images ?? {},
+              cells: prev[overlay.id]?.cells ?? {},
+              meta,
+              error: undefined,
+            },
+          })),
+        )
+        .catch((err: unknown) => {
+          if (ac.signal.aborted) return
+          setState((prev) => ({
+            ...prev,
+            [overlay.id]: {
+              images: prev[overlay.id]?.images ?? {},
+              cells: prev[overlay.id]?.cells ?? {},
+              meta: prev[overlay.id]?.meta,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          }))
+        })
+    }
+    return () => ac.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey])
+
+  // Fehlende Bilder nachladen, je Overlay nur innerhalb SEINER Zeitdimension.
+  useEffect(() => {
+    if (times.length === 0) return
+    const ac = new AbortController()
+    for (const overlay of active) {
+      const st = stateRef.current[overlay.id]
+      const meta = st?.meta
+      if (!meta) continue
+      const last = analysisTime(meta, overlay)
+      const lightning = overlay.id === LIGHTNING_ID
+      const have = lightning ? st.cells : st.images
+      const missing = times.filter(
+        (t) =>
+          t >= meta.extent.start &&
+          t <= last &&
+          have[t] === undefined &&
+          !failedRef.current.has(`${overlay.id}|${t}`),
+      )
+      if (missing.length === 0) continue
+      // Fläche und Seitenverhältnis kommen aus DER META DES OVERLAYS — jedes
+      // hat eine andere Fläche, mit der Radar-Höhe wäre das Bild verzerrt.
+      const width = sourceImageWidth(overlay)
+      const size = { width, height: radarImageHeight(meta, width) }
+      const onError = (time: number, err: unknown) => {
+        failedRef.current.add(`${overlay.id}|${time}`)
+        console.error('[radar]', overlay.id, new Date(time).toISOString(), err)
+      }
+      if (lightning) {
+        loadLightningCells(overlay, meta, missing, {
+          ...size,
+          signal: ac.signal,
+          onLoaded: (time, cells) =>
+            setState((prev) => ({
+              ...prev,
+              [overlay.id]: {
+                ...prev[overlay.id],
+                cells: { ...prev[overlay.id]?.cells, [time]: cells },
+              },
+            })),
+          onError,
+        }).catch((err: unknown) => console.error('[radar]', overlay.id, err))
+      } else {
+        loadRadarImages(overlay, meta, missing, {
+          ...size,
+          concurrency: 3,
+          signal: ac.signal,
+          onLoaded: (time, url) =>
+            setState((prev) => ({
+              ...prev,
+              [overlay.id]: {
+                ...prev[overlay.id],
+                images: { ...prev[overlay.id]?.images, [time]: url },
+              },
+            })),
+          onError,
+        }).catch((err: unknown) => console.error('[radar]', overlay.id, err))
+      }
+    }
+    return () => ac.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey, times, state])
+
+  return state
+}
+
+/**
+ * Welches Overlay-Bild gehört zum angezeigten Zeitpunkt? Genau dieses — und
+ * wenn es fehlt, das letzte davor, aber höchstens zwei Schritte zurück.
+ *
+ * Grund ist die Blitzdichte: sie hängt einen 5-Minuten-Schritt hinter dem
+ * Radar zurück, das neueste Radarbild hätte also nie Blitze, und beim
+ * Abspielen blinkte das Overlay am Ende der Schleife weg. Zwei Schritte
+ * Toleranz sind vertretbar, weil das Produkt selbst die Blitze der letzten
+ * 15 Minuten zusammenfasst — angezeigt wird die tatsächlich benutzte Zeit
+ * aber trotzdem (in der Legendenzeile), sonst wäre es eine falsche
+ * Zeitangabe.
+ */
+function pickOverlayTime(
+  images: Record<number, string>,
+  time: number,
+  stepMs: number,
+): number | null {
+  for (let k = 0; k <= 2; k++) {
+    const t = time - k * stepMs
+    if (images[t] !== undefined) return t
+  }
+  return null
+}
+
 export function RadarPanel() {
   const [productId, setProductId] = useState(DEFAULT_RADAR_PRODUCT.id)
   const product = RADAR_PRODUCTS.find((p) => p.id === productId) ?? DEFAULT_RADAR_PRODUCT
@@ -120,6 +292,9 @@ export function RadarPanel() {
   const [pending, setPending] = useState<RadarMeta | null>(null)
 
   const [historyMin, setHistoryMin] = useState(60)
+  const [overlayOn, setOverlayOn] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(RADAR_OVERLAYS.map((o) => [o.id, o.defaultOn])),
+  )
 
   /**
    * Bilder über ihren ZEITSTEMPEL, nicht über den Index: beim Nachrücken auf
@@ -225,6 +400,13 @@ export function RadarPanel() {
   }, [current])
 
   const loaded = times.filter((t) => images[t] !== undefined).length
+
+  // --- Overlays -------------------------------------------------------------
+  const activeOverlays = useMemo(
+    () => RADAR_OVERLAYS.filter((o) => overlayOn[o.id]),
+    [overlayOn],
+  )
+  const overlays = useOverlays(activeOverlays, times)
 
   // --- Schleife -------------------------------------------------------------
   useEffect(() => {
@@ -361,6 +543,94 @@ export function RadarPanel() {
     }
   }, [currentUrl, mapReady, meta])
 
+  // --- Blitz-Kreuze ---------------------------------------------------------
+  // Aus den Zellen mehrerer Zeitschritte wird EIN Bild: je Altersstufe eine
+  // Farbe, von ALT nach NEU gezeichnet, damit das jüngste Kreuz obenliegt.
+  // Gezeichnet wird in die Fläche des BLITZ-Layers (eigene Ecken!), nicht in
+  // die des Radars.
+  const lightningCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const lightningUrl = useMemo(() => {
+    const st = overlays[LIGHTNING_ID]
+    if (!st?.meta || !current || !overlayOn[LIGHTNING_ID]) return null
+    const overlay = RADAR_OVERLAYS.find((o) => o.id === LIGHTNING_ID)
+    if (!overlay) return null
+    const buckets = LIGHTNING_AGES.map((_, k) => st.cells[current - k * overlay.stepMs] ?? [])
+    if (buckets.every((b) => b.length === 0)) return null
+
+    const width = RADAR_IMAGE_WIDTH
+    const height = radarImageHeight(st.meta, width)
+    const canvas = lightningCanvasRef.current ?? document.createElement('canvas')
+    lightningCanvasRef.current = canvas
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.clearRect(0, 0, width, height)
+    for (let k = buckets.length - 1; k >= 0; k--) {
+      drawLightningCrosses(ctx, buckets[k], { width, height }, LIGHTNING_AGES[k].color, {
+        base: LIGHTNING_ARM,
+        perLevel: LIGHTNING_ARM_PER_LEVEL,
+      })
+    }
+    return canvas.toDataURL('image/png')
+  }, [overlays, current, overlayOn])
+
+  // Overlay-Bilder einhängen bzw. austauschen. Jedes Overlay ist eine eigene
+  // image-Source mit EIGENEN Ecken (eigene Fläche!) und liegt ÜBER dem Radar,
+  // aber unter Gradnetz und Grenzen — eingefügt wird deshalb jedes vor
+  // `OVERLAY_INSERT_BEFORE`, in Registry-Reihenfolge.
+  const overlayShown = useMemo(() => {
+    const out: Record<string, number | null> = {}
+    for (const o of RADAR_OVERLAYS) {
+      const st = overlays[o.id]
+      if (o.id === LIGHTNING_ID) {
+        // Die Blitze tragen ihr Alter in der FARBE — ein Rückgriff auf einen
+        // älteren Zeitschritt wäre hier eine falsche Aussage.
+        out[o.id] = st && current && st.cells[current] !== undefined ? current : null
+        continue
+      }
+      out[o.id] = st && current ? pickOverlayTime(st.images, current, o.stepMs) : null
+    }
+    return out
+  }, [overlays, current])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    for (const o of RADAR_OVERLAYS) {
+      const sourceId = `overlay-${o.id}`
+      const st = overlays[o.id]
+      const shownAt = overlayShown[o.id]
+      const url =
+        o.id === LIGHTNING_ID
+          ? (lightningUrl ?? undefined)
+          : st && shownAt != null
+            ? st.images[shownAt]
+            : undefined
+      const source = map.getSource(sourceId) as maplibregl.ImageSource | undefined
+      if (!url || !st?.meta || !overlayOn[o.id]) {
+        if (map.getLayer(sourceId)) map.removeLayer(sourceId)
+        if (source) map.removeSource(sourceId)
+        continue
+      }
+      const coordinates = radarImageCoordinates(st.meta)
+      if (source) {
+        source.updateImage({ url, coordinates })
+      } else {
+        map.addSource(sourceId, { type: 'image', url, coordinates })
+        map.addLayer(
+          {
+            id: sourceId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': o.opacity, 'raster-fade-duration': 0 },
+          },
+          OVERLAY_INSERT_BEFORE,
+        )
+      }
+    }
+  }, [overlays, overlayShown, overlayOn, lightningUrl, mapReady])
+
   const applyPending = useCallback(() => {
     if (!pending) return
     setMeta(pending)
@@ -409,6 +679,23 @@ export function RadarPanel() {
             ))}
           </select>
         </label>
+        {/* Overlays: alles vom SELBEN Dienst, jedes mit eigener Fläche und
+            eigenem Takt. Blitze und Zellen sind an, Cluster und KONRAD auf
+            Wunsch — die drei Symbol-Overlays kosten als leeres PNG8 nur
+            ~1 KB je Bild, tragen aber bei Konvektion die eigentliche
+            Information. */}
+        <span className="radar-overlays">
+          {RADAR_OVERLAYS.map((o) => (
+            <label key={o.id} className="radar-opt" title={o.note}>
+              <input
+                type="checkbox"
+                checked={overlayOn[o.id] ?? false}
+                onChange={(e) => setOverlayOn((prev) => ({ ...prev, [o.id]: e.target.checked }))}
+              />{' '}
+              {o.label}
+            </label>
+          ))}
+        </span>
         <button
           type="button"
           className="radar-play"
@@ -477,6 +764,60 @@ export function RadarPanel() {
               </span>
             ))}
           </div>
+          {/* Je eingeschaltetes Overlay eine kompakte Zeile — MIT der Zeit, die
+              wirklich gezeigt wird, sobald sie von der Bildzeit abweicht
+              (die Blitzdichte hängt einen Schritt zurück, siehe
+              `pickOverlayTime`). */}
+          {RADAR_OVERLAYS.filter((o) => overlayOn[o.id]).map((o) => {
+            const shownAt = overlayShown[o.id]
+            const st = overlays[o.id]
+            const lag = shownAt != null && current != null && shownAt !== current
+            return (
+              <span key={o.id} className="radar-legend-overlay" title={o.note}>
+                {o.legend.kind === 'crosses' ? (
+                  <>
+                    {o.legend.items.map((it) => (
+                      <span key={it.color} className="radar-legend-age">
+                        <i className="is-cross" style={{ color: it.color }}>
+                          +
+                        </i>
+                        <em>{it.label}</em>
+                      </span>
+                    ))}
+                    <em>{o.legend.caption}</em>
+                  </>
+                ) : (
+                  <>
+                    {o.legend.items.map((it) => (
+                      <i
+                        key={it.color}
+                        className={o.legend.kind === 'rings' ? 'is-ring' : 'is-dot'}
+                        style={
+                          o.legend.kind === 'rings'
+                            ? { borderColor: it.color }
+                            : { background: it.color }
+                        }
+                        title={it.label}
+                      />
+                    ))}
+                    <em>{o.legend.caption}</em>
+                  </>
+                )}
+                {st?.error ? (
+                  <em className="is-error">⚠ {st.error}</em>
+                ) : shownAt == null ? (
+                  // Bei den Symbol-Overlays fehlt der Zeitschritt in der
+                  // Dimension, wenn GAR NICHTS erkannt wurde — der Dienst
+                  // antwortet dann mit „InvalidDimensionValue" statt mit einem
+                  // leeren Bild. „Nichts gemeldet" ist deshalb die richtige
+                  // Auskunft, nicht „Fehler".
+                  <em>{o.id === LIGHTNING_ID ? 'keine Blitze' : 'nichts gemeldet'}</em>
+                ) : lag ? (
+                  <em>{fmtTime.format(new Date(shownAt))} UTC</em>
+                ) : null}
+              </span>
+            )
+          })}
           {/* Die Maske ist die ABDECKUNGSGRENZE und braucht diesen Satz: ohne
               ihn liest man das Grau als „kein Niederschlag". */}
           <span
@@ -507,6 +848,9 @@ export function RadarPanel() {
         >
           maps.dwd.de
         </a>
+        {activeOverlays.length > 0 && (
+          <> · Overlays: {activeOverlays.map((o) => o.note.split(':')[0]).join(', ')}</>
+        )}
         , Nutzung nach{' '}
         <a
           href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
