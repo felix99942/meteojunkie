@@ -1240,9 +1240,40 @@ export function ChartRow({
       lanes || symbols ? [xs, placeholder] : [xs, ...chart.curves.map((s) => s.values)]
     const u = new uPlot(opts, data as uPlot.AlignedData, el)
     plotRef.current = u
-    const ro = new ResizeObserver(() => u.setSize({ width: el.clientWidth, height: el.clientHeight }))
+    /**
+     * Größenänderungen NUR weitergeben, wenn sich die gerundete Größe
+     * wirklich geändert hat — und gebündelt im nächsten Frame.
+     *
+     * Ohne diese Bremse flimmert der Stapel: die Zeilen sind
+     * `flex: 1 1 0`, ihre Höhen sind deshalb GEBROCHEN (110,4 px), und
+     * `clientHeight` rundet. uPlots `setSize` schreibt die gerundete Höhe in
+     * sein eigenes Element, das Layout rundet erneut — der ResizeObserver
+     * feuert wieder, und bei sechs Zeilen mit gemeinsamem Cursor sieht das
+     * nach heftigem Flackern aus. Chromium meldet Sub-Pixel-Änderungen, Edge
+     * und Chrome sind davon gleich betroffen; ein Neuzeichnen je Frame ist
+     * die Obergrenze, die hier nötig ist.
+     *
+     * Der Vergleich mit dem letzten Stand bricht zusätzlich jede Schleife, in
+     * der die Größe auf einen schon gesehenen Wert zurückfällt.
+     */
+    let lastW = -1
+    let lastH = -1
+    let pending = 0
+    const ro = new ResizeObserver(() => {
+      if (pending) return
+      pending = requestAnimationFrame(() => {
+        pending = 0
+        const w = Math.round(el.clientWidth)
+        const h = Math.round(el.clientHeight)
+        if (w === lastW && h === lastH) return
+        lastW = w
+        lastH = h
+        u.setSize({ width: w, height: h })
+      })
+    })
     ro.observe(el)
     return () => {
+      if (pending) cancelAnimationFrame(pending)
       ro.disconnect()
       u.destroy()
       plotRef.current = null

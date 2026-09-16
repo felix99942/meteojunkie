@@ -1693,6 +1693,14 @@ button:focus-visible {
   /* Sicherheitsnetz bei sehr kleinen Fenstern — normalerweise füllen die
      Zeilen die Höhe per Flex-Grow, ohne dass hier je gescrollt wird. */
   overflow-y: auto;
+  /* Platz für den Scrollbalken IMMER reservieren. Sonst schaukelt das Layout,
+     wenn die Gesamthöhe genau an der Kante liegt: Balken erscheint → Breite
+     schrumpft → die sechs Diagramme werden neu vermessen → Höhe ändert sich →
+     Balken verschwindet → und so weiter. Das ist die zweite Flimmerquelle
+     neben dem ResizeObserver (siehe ChartStack), und die einzige, die ein
+     Vergleich mit der letzten Größe NICHT abfängt: die Breite wechselt dabei
+     zwischen zwei gültigen Werten. */
+  scrollbar-gutter: stable;
 }
 
 /* Jede Zeile bekommt einen Anteil der verfügbaren Höhe (flex-basis 0, nicht

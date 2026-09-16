@@ -840,6 +840,23 @@ npm run preview   # gebautes dist/ servieren
   die Symbolzeile) sind NUR das Sicherheitsnetz für kleine Fenster — zu groß
   gesetzt reißt ihre Summe über die Fensterhöhe, `.meteo-stack` scrollt, und
   dann wächst KEINE Zeile mehr per Flex, obwohl Platz da wäre.
+  **Der ResizeObserver jeder Zeile ist GEBREMST, und das ist kein
+  Feinschliff**: Größenmeldungen gehen nur weiter, wenn sich die GERUNDETE
+  Größe geändert hat, und gebündelt im nächsten Frame
+  (`requestAnimationFrame`). Ohne die Bremse flimmert der Stapel sichtbar: die
+  Zeilen sind `flex: 1 1 0`, ihre Höhen also gebrochen (110,4 px),
+  `clientHeight` rundet, uPlots `setSize` schreibt die gerundete Höhe zurück,
+  das Layout rundet erneut — und bei sechs Zeilen mit gemeinsamem Cursor
+  entsteht daraus ein Dauerlauf. Chromium meldet Sub-Pixel-Änderungen, Edge
+  und Chrome sind gleich betroffen.
+  **Zweite Flimmerquelle ist der SCROLLBALKEN**, und die fängt der
+  Größenvergleich NICHT ab: liegt die Gesamthöhe genau an der Kante,
+  erscheint der Balken → Breite schrumpft → Diagramme werden neu vermessen →
+  Höhe ändert sich → Balken verschwindet. Die Breite wechselt dabei zwischen
+  zwei GÜLTIGEN Werten, der Vergleich mit der letzten Größe greift also nicht.
+  Dagegen `scrollbar-gutter: stable` auf `.meteo-stack` — der Platz ist immer
+  reserviert. Wer einen weiteren Diagrammstapel in einen scrollbaren
+  Container setzt, braucht dasselbe.
   **Alle Zeilen eines Stapels reservieren links UND rechts dieselbe
   Achsenbreite** (`Y_AXIS_SIZE`/`RIGHT_AXIS_SIZE`, blind beschriftet, wo nichts
   steht) — Achsen einfach auszublenden (`show: false`) hat die Zeitachsen der
