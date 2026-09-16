@@ -64,11 +64,11 @@ export interface ModelInfo {
 /**
  * SKALENKLASSE eines Modells — die Ordnung, in der man Modelle vergleicht.
  *
- * Eine alphabetische Liste stellt AROME Austria neben ARPEGE und IFS neben
- * GFS; interessant ist aber die Gegenüberstellung nach AUFLÖSUNG: das
- * 2,5-km-Lokalmodell gegen das 25-km-Globalmodell, und innerhalb davon die
- * beiden ECMWF-Läufe (IFS gegen AIFS) direkt nebeneinander — das ist der
- * Vergleich, der in der Verifikation etwas aussagt.
+ * Eine rein alphabetische Liste stellt AROME Austria neben ARPEGE und IFS
+ * neben GFS; interessant ist die Gegenüberstellung nach SKALA: das
+ * 1–2,5-km-Lokalmodell gegen das 25-km-Globalmodell — das ist der Vergleich,
+ * der in der Verifikation etwas aussagt. INNERHALB einer Gruppe stehen dann
+ * die Modellfamilien zusammen (`compareModelsByScale`).
  *
  * `resolutionKm === 0` heißt „variabel" (Blend/Seamless): diese Einträge sind
  * keine Modelle, sondern Mischungen mehrerer, und gehören deshalb in eine
@@ -107,16 +107,42 @@ export function modelScale(m: ModelInfo): ModelScale {
 const SCALE_ORDER: ModelScale[] = ['local', 'regional', 'global', 'blend']
 
 /**
- * Sortierung: erst die Skalenklasse, darin nach Auflösung (fein → grob), bei
- * gleicher Auflösung nach Anbieter. Der letzte Schritt ist der Grund, warum
- * `ecmwf_ifs025` und `ecmwf_aifs025_single` (beide 25 km) nebeneinander landen
- * und GFS mit denselben 25 km nicht dazwischenrutscht.
+ * MODELLFAMILIE aus dem Etikett: alles bis zum ersten Leerzeichen oder
+ * Bindestrich. „ICON-CH1", „ICON-D2", „ICON-EU", „ICON Global" und
+ * „ICON Seamless" ergeben damit alle `ICON`, „AROME France"/„AROME Austria"
+ * beide `AROME`, die beiden ECMWF-Läufe `ECMWF`.
+ *
+ * Abgeleitet statt als Registry-Feld gepflegt: die Familie IST der
+ * Etikettanfang, ein zusätzliches Feld könnte nur davon abweichen. Ein Test
+ * hält die erwartete Reihenfolge fest und fängt damit eine Umbenennung, die
+ * die Gruppierung zerreißen würde.
+ */
+export function modelFamily(m: ModelInfo): string {
+  return m.label.split(/[\s-]/)[0]
+}
+
+/**
+ * Sortierung: erst die Skalenklasse, darin nach FAMILIE, dann nach Auflösung
+ * (fein → grob), zuletzt nach Etikett.
+ *
+ * Die Familie vor der Auflösung, damit verwandte Modelle beieinanderstehen —
+ * ICON-CH1/CH2/D2 als Block, AROME France und Austria als Block. Der Preis
+ * ist, dass eine Gruppe nicht mehr durchgehend fein → grob läuft (im
+ * Regionalblock steht ARPEGE mit 11 km vor ICON-EU mit 7 km). Die Auflösung
+ * steht dafür an JEDEM Eintrag sichtbar dabei, die Information geht also
+ * nicht verloren.
+ *
+ * Das Etikett als letzter Stichentscheid ist der Grund, warum
+ * `ecmwf_ifs025` und `ecmwf_aifs025_single` (beide 25 km, dieselbe Familie)
+ * nebeneinander landen und GFS mit denselben 25 km nicht dazwischenrutscht.
  */
 export function compareModelsByScale(a: ModelInfo, b: ModelInfo): number {
   const d = SCALE_ORDER.indexOf(modelScale(a)) - SCALE_ORDER.indexOf(modelScale(b))
   if (d !== 0) return d
+  const f = modelFamily(a).localeCompare(modelFamily(b), 'de')
+  if (f !== 0) return f
   if (a.resolutionKm !== b.resolutionKm) return a.resolutionKm - b.resolutionKm
-  return a.provider.localeCompare(b.provider, 'de') || a.label.localeCompare(b.label, 'de')
+  return a.label.localeCompare(b.label, 'de')
 }
 
 /** Modelle nach Skalenklasse gruppiert, in der Reihenfolge von SCALE_ORDER. */
@@ -323,7 +349,10 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: 'ukmo_global_deterministic_10km',
-    label: 'UKMO Global 10 km',
+    // Auflösung NICHT im Etikett: sie steht seit der Umstellung an jedem
+    // Eintrag automatisch dabei (`resolutionLabel`), sonst stünde „UKMO
+    // Global 10 km — 10 km".
+    label: 'UKMO Global',
     provider: 'UK Met Office',
     resolutionKm: 10,
     updateIntervalHours: 6,

@@ -10,6 +10,7 @@ import {
   SELECTABLE_MODELS,
   getModel,
   type ModelInfo,
+  modelFamily,
 } from './models'
 
 const m = (id: string) => getModel(id) as ModelInfo
@@ -35,10 +36,27 @@ describe('modelScale', () => {
 })
 
 describe('Reihenfolge im Modellvergleich', () => {
-  it('sortiert von fein nach grob', () => {
-    const global = [m('ecmwf_ifs025'), m('ukmo_global_deterministic_10km'), m('icon_global')]
-    const order = [...global].sort(compareModelsByScale).map((x) => x.resolutionKm)
-    expect(order).toEqual([...order].sort((a, b) => a - b))
+  // Innerhalb EINER Familie gilt weiter fein → grob. Über Familien hinweg
+  // nicht mehr: dort ordnet der Familienname (siehe compareModelsByScale), und
+  // die Auflösung steht sichtbar an jedem Eintrag.
+  it('sortiert innerhalb einer Familie von fein nach grob', () => {
+    const icon = [m('meteoswiss_icon_ch2'), m('meteoswiss_icon_ch1'), m('icon_d2')]
+    const order = [...icon].sort(compareModelsByScale).map((x) => x.resolutionKm)
+    expect(order).toEqual([1, 2.1, 2.2])
+  })
+
+  it('stellt Modelle DERSELBEN Familie zusammen', () => {
+    const local = groupModelsByScale([...SELECTABLE_MODELS]).find((g) => g.scale === 'local')
+    const families = local!.models.map(modelFamily)
+    // Jede Familie darf nur EINEN zusammenhängenden Block bilden.
+    const blocks = families.filter((f, i) => f !== families[i - 1])
+    expect(new Set(blocks).size).toBe(blocks.length)
+    // Und konkret: die drei ICON-Lokalmodelle hintereinander.
+    const ids = local!.models.map((x) => x.id)
+    const icon = ['meteoswiss_icon_ch1', 'meteoswiss_icon_ch2', 'icon_d2'].map((id) =>
+      ids.indexOf(id),
+    )
+    expect(icon).toEqual([icon[0], icon[0] + 1, icon[0] + 2])
   })
 
   it('stellt IFS und AIFS NEBENEINANDER', () => {
@@ -114,12 +132,13 @@ describe('ICON-CH1/CH2', () => {
     }
   })
 
-  // Die Auflösung ordnet sie an die Spitze der Lokalmodelle — CH1 mit 1 km ist
-  // das feinste Modell der Registry.
-  it('stehen als feinste Lokalmodelle vorn', () => {
+  // Sie stehen als ICON-Block in den Lokalmodellen, CH1 (1 km) vor CH2
+  // (2,1 km) — nicht mehr an der Spitze der Gruppe, weil dort die FAMILIE
+  // ordnet und „AROME" alphabetisch vor „ICON" kommt.
+  it('stehen als ICON-Block unter den Lokalmodellen', () => {
     const local = groupModelsByScale([...SELECTABLE_MODELS]).find((g) => g.scale === 'local')
-    expect(local?.models[0].id).toBe('meteoswiss_icon_ch1')
-    expect(local?.models.map((m) => m.id)).toContain('meteoswiss_icon_ch2')
+    const ids = local!.models.map((x) => x.id)
+    expect(ids.indexOf('meteoswiss_icon_ch2')).toBe(ids.indexOf('meteoswiss_icon_ch1') + 1)
   })
 
   // Drucklevel haben sie NICHT — das gatet levels.ts unabhängig von

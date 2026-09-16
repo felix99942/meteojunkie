@@ -1313,14 +1313,23 @@ npm run preview   # gebautes dist/ servieren
   **Die Modell-Liste ist nach SKALA gruppiert, nicht alphabetisch**
   (`modelScale`/`groupModelsByScale`/`compareModelsByScale` in `config/
   models.ts`, mit Tests): Lokalmodelle (regional, ≤ 4 km) · Regionalmodelle ·
-  Globalmodelle · Mischungen, darin nach Gitterweite fein → grob. Interessant
-  ist der Vergleich 2,5-km-Lokalmodell gegen 25-km-Global — und der Anbieter
-  als Stichentscheid bei gleicher Auflösung sorgt dafür, dass `ecmwf_ifs025`
-  und `ecmwf_aifs025_single` NEBENEINANDER stehen und GFS mit denselben 25 km
-  nicht dazwischenrutscht (ein Test hält das fest). Die **Auflösung steht
-  sichtbar an jedem Eintrag** und in jedem Modell-Tooltip (`resolutionLabel`,
-  `resolutionKm = 0` → „variabel"): ohne sie ist nicht zu sehen, warum ein
-  Globalmodell im Alpental danebenliegt — siehe der AIFS-Befund oben.
+  Globalmodelle · Mischungen. Interessant ist der Vergleich
+  1–2,5-km-Lokalmodell gegen 25-km-Global. **INNERHALB einer Gruppe ordnet die
+  MODELLFAMILIE, dann die Auflösung** (`modelFamily` = Etikett bis zum ersten
+  Leerzeichen/Bindestrich): ICON-CH1/CH2/D2 stehen als Block, AROME France und
+  Austria als Block. Der Preis ist, dass eine Gruppe nicht mehr durchgehend
+  fein → grob läuft (ARPEGE 11 km steht vor ICON-EU 7 km) — dafür steht die
+  Auflösung an jedem Eintrag, die Information geht also nicht verloren. Das
+  Etikett als letzter Stichentscheid sorgt dafür, dass `ecmwf_ifs025` und
+  `ecmwf_aifs025_single` NEBENEINANDER stehen und GFS mit denselben 25 km
+  nicht dazwischenrutscht (ein Test hält das fest, ein zweiter, dass jede
+  Familie nur EINEN zusammenhängenden Block bildet). Die **Auflösung steht
+  sichtbar an JEDEM Eintrag JEDER Auswahl** — klassisches Meteogramm,
+  Karten-Dropdown, Modell-Picker, Föhn und Verifikation, überall über
+  `resolutionLabel` (`resolutionKm = 0` → „variabel"), deshalb trägt auch kein
+  Etikett mehr seine Gitterweite im Namen. Ohne die Angabe ist nicht zu sehen,
+  warum ein Globalmodell im Alpental danebenliegt — siehe der AIFS-Befund
+  oben.
   Der **Bias** steht klein unter jedem Wert: derselbe Fehlerbetrag bedeutet bei
   +2 K Schieflage etwas anderes (systematisch, korrigierbar) als bei 0 K (streut
   nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und

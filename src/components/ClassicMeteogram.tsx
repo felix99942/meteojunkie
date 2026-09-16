@@ -33,7 +33,13 @@ import {
   type ChartDef,
   type PointMark,
 } from '../config/chartDef'
-import { getModel, isInCoverage, modelHorizonEnd, SELECTABLE_MODELS } from '../config/models'
+import {
+  getModel,
+  isInCoverage,
+  modelHorizonEnd,
+  resolutionLabel,
+  SELECTABLE_MODELS,
+} from '../config/models'
 import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { timeGridMs } from '../config/time'
 import { useWorkbench } from '../state/workbench'
@@ -468,8 +474,13 @@ export function ClassicMeteogram() {
           <span className="label-muted">Modell</span>
           <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
             {SELECTABLE_MODELS.map((m) => (
+              // Auflösung MIT ins Etikett: ohne sie ist nicht zu sehen, warum
+              // ein Globalmodell im Alpental danebenliegt — und genau das ist
+              // hier die Information (siehe der AIFS-Befund in der
+              // Verifikation). Im nativen <option> geht nur Text, deshalb als
+              // Trennpunkt und nicht als eigenes Element.
               <option key={m.id} value={m.id}>
-                {m.label}
+                {m.label} · {resolutionLabel(m)}
                 {location !== null && !isInCoverage(m, location.lat, location.lon) ? ' ⚠' : ''}
               </option>
             ))}

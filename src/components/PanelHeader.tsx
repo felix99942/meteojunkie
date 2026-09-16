@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { getModel, isDomainInCoverage, isInCoverage, SELECTABLE_MODELS } from '../config/models'
+import {
+  getModel,
+  isDomainInCoverage,
+  isInCoverage,
+  resolutionLabel,
+  SELECTABLE_MODELS,
+} from '../config/models'
 import { MAP_ENABLED } from '../config/features'
 import { getColorScale } from '../config/colorscales'
 import {
@@ -187,17 +193,19 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
                   : updatePanel(index, { mapModel: e.target.value })
               }
             >
+              {/* Auflösung an jedem Eintrag: sie erklärt, warum ein Feld
+                  glatter oder körniger aussieht als das daneben. */}
               <optgroup label="Empfohlen">
                 {recommended.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label}
+                    {m.label} · {resolutionLabel(m)}
                   </option>
                 ))}
               </optgroup>
               <optgroup label="Weitere Modelle">
                 {others.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label}
+                    {m.label} · {resolutionLabel(m)}
                   </option>
                 ))}
               </optgroup>
@@ -239,8 +247,7 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
                   {m.label}
                   <span className="label-muted">
                     {' '}
-                    {m.provider}
-                    {m.resolutionKm > 0 ? ` · ${m.resolutionKm} km` : ''}
+                    {m.provider} · {resolutionLabel(m)}
                   </span>
                   {outside && (
                     <span title="Standort außerhalb der Modellabdeckung" className="model-warn">
