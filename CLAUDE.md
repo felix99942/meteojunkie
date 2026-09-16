@@ -250,6 +250,44 @@ npm run preview   # gebautes dist/ servieren
   die Vorgabe `tlmax`. Nennt die Frage die Größe ausdrücklich („höchste
   TEMPERATUR im Juli", „Tagesmaximum"), bleibt es beim Extremwert — das ist die
   Grenze, und sie hängt daran, ob überhaupt ein Größenwort gefunden wurde.
+  **Der einzelne TAG ist eine eigene EBENE** (`AskQuery.daily`, beantwortet aus
+  `ParamRecords.day`): „höchste Regensumme an einem Tag in Salzburg" gab
+  38,6 °C aus — zwei Fehler in einer Frage. Erstens wurde `regensumme` nicht
+  als Größenwort erkannt (siehe `measureStem` unten) und fiel auf die Vorgabe
+  `tlmax`. Zweitens, und das war der größere: auch das erkannte „höchster
+  Tagesniederschlag" antwortete aus `abs`, dem besten MONAT — 404 mm (Juli
+  1954) statt des nassesten TAGES. Eine Größenordnung daneben, und anders als
+  bei den 38,6 °C sieht man das der Zahl nicht an. Der Tagespass des Ingests
+  bildet deshalb auch `rr` (nur die NASS-Richtung: der trockenste Tag ist
+  überall 0 mm). Richtig ist jetzt **135 mm am 08.07.1954** — und der Tag liegt
+  im Rekordmonat Juli 1954, was die Rechnung gleich mit bestätigt.
+  **Bei EXTREMgrößen ist die Tagesebene gegenstandslos und wird unterdrückt**
+  (`dailyLevelApplies`): der Monatswert von `tlmax`/`tlmin` IST ein
+  Tagesextrem, `abs` also schon die Antwort auf „heißester Tag". Ohne diese
+  Ausnahme las sich die Beispielfrage „was war das TAGESMAXIMUM im Juli seit
+  Messbeginn" als Tagesfrage und griff in den Tagesblock, wo für `tlmax` nur
+  die GEGENrichtung liegt — die Antwort wäre der kälteste Tag gewesen (vier
+  Tests brachen sofort, der Fall steht jetzt als Regression fest). Gebraucht
+  wird die Ebene nur, wo der Monatswert eine SUMME oder ein MITTEL ist.
+  **Messgrößen-Komposita werden über eine REGEL getrennt, nicht über eine
+  Wortliste** (`measureStem`): `…summe`, `…menge`, `…höhe`, `…dauer`,
+  `…anzahl`, `…wert` sind im Deutschen produktiv, jede Aufzählung wäre
+  unvollständig. „regensumme" → „regen", „niederschlagssumme" →
+  „niederschlag" (Fugen-s fällt mit). Nötig, weil die Kompositum-Regel unten
+  erst ab sechs Zeichen greift und „regen" fünf hat — die Ähnlichkeit zu
+  „regenmenge" liegt bei 0,60.
+  **Beim Tagesniederschlag NICHT gefiltert, nur berichtet**: wo der
+  Tagesrekord den Monatsrekord übersteigt, stimmt etwas nicht zusammen — aber
+  dasselbe Signal kommt von einer LÜCKE in der Monatsreihe, und beides ist
+  nicht unterscheidbar. Gemessen: genau eine von 494 Stationen (Podersdorf
+  Strandbad, Messbeginn 22.07.2014, Tagesrekord am 30.07.2014 — der Juli ist
+  ein Teilmonat und fehlt im Monatsdatensatz). Ein Filter hätte dort einen
+  echten Rekord weggeworfen; der Ingest gibt solche Fälle deshalb als HINWEIS
+  aus. Ebenso bewusst behalten: der nationale Tagesrekord von **353 mm
+  (26.11.1998)** stammt von Sonnblick Fensterhütte, einer Messstelle auf
+  3105 m mit nur fünf Jahren Reihe (1996–2001), die alle zwölf Monatsrekorde
+  hält — intern konsistent (353 mm Tag < 1441 mm Monat) und genau der Fall,
+  für den die Karte „Rekord, Reihenlänge beachten" sagt.
   **Deutsche KOMPOSITA zählen als Treffer** (enthaltenes Parameterwort ab
   sechs Zeichen): „durchschnittlicher Jahresniederschlag" ist die normale Form
   der Frage, liegt von „niederschlag" aber sechs Zeichen entfernt (Ähnlichkeit

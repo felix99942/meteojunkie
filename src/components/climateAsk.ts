@@ -288,6 +288,44 @@ const ALLTIME = ['messbeginn', 'jemals', 'je', 'allzeit', 'aufzeichnung', 'aufze
  * Stoppwörtern).
  */
 const ANNUAL_PREFIX = 'jahres'
+
+/**
+ * Endungen deutscher Messgrößen-Komposita. Wird die Endung abgetrennt, bleibt
+ * das Größenwort übrig: „regensumme" → „regen", „niederschlagssumme" →
+ * „niederschlag" (Fugen-s fällt mit).
+ *
+ * Gebraucht, weil „höchste REGENSUMME an einem Tag in Salzburg" mit 38,6 °C
+ * antwortete: kein Größenwort erkannt, also die Vorgabe `tlmax`. Die
+ * Kompositum-Regel im Abgleich greift erst ab sechs Zeichen (kürzere
+ * Fragmente stecken zufällig in vielen Wörtern) — „regen" hat fünf, und die
+ * Ähnlichkeit zu „regenmenge" liegt bei 0,60, weit unter der Schwelle.
+ *
+ * Bewusst eine REGEL und keine längere Wortliste: „…summe", „…menge",
+ * „…höhe", „…dauer" sind im Deutschen produktiv, jede Aufzählung wäre
+ * unvollständig. Ein Mindestrest von drei Zeichen verhindert, dass aus
+ * „summe" allein ein Treffer wird.
+ */
+const MEASURE_SUFFIXES = ['summe', 'menge', 'hohe', 'dauer', 'anzahl', 'wert', 'werte']
+
+/** Größenwort aus einem Kompositum, oder null. */
+export function measureStem(t: string): string | null {
+  for (const suf of MEASURE_SUFFIXES) {
+    if (t.length >= suf.length + 3 && t.endsWith(suf)) {
+      const base = t.slice(0, t.length - suf.length)
+      return base.endsWith('s') && base.length > 3 ? base.slice(0, -1) : base
+    }
+  }
+  return null
+}
+
+/**
+ * Marker für die TAGESebene: „an einem Tag", „Tagesniederschlag",
+ * „Tagessumme". Nur `tag` und die Vorsilbe `tages` — NICHT `tage`/`tagen`,
+ * sonst würde „meiste Niederschlagstage" (ein Kenntag über einen Monat) als
+ * Tagesfrage gelesen.
+ */
+const DAILY_WORDS = ['tag', 'tages']
+const DAILY_PREFIX = 'tages'
 const ANNUAL_WORDS = ['jahrlich', 'jahrliche', 'jahrlicher', 'jahrliches']
 
 /**
@@ -518,6 +556,20 @@ export interface AskQuery {
   alternatives: StationMatch[]
   param: string
   /**
+   * TAGESebene: „höchste Regensumme an einem TAG", „höchster
+   * Tagesniederschlag". Das ist eine andere EBENE, nicht eine andere Größe —
+   * und sie fehlte: die Rekord-Assets stammen aus dem Monatsdatensatz, `abs`
+   * ist dort der beste MONAT. „Höchster Tagesniederschlag in Salzburg"
+   * antwortete deshalb mit 404 mm (nassester Juli 1954) statt mit dem
+   * nassesten TAG. Beantwortet wird sie aus `ParamRecords.day`, dem
+   * Tagespass des Rekord-Ingests.
+   *
+   * Schließt `annual` aus (ein Tag ist kein Jahr), verträgt sich aber mit
+   * Monat und Saison: „nassester Tag im Juli" ist eine Tagesfrage mit
+   * Monatsausschnitt und landet auf `day.mon[6]`.
+   */
+  daily?: true
+  /**
    * Die Frage gilt einer NACHT („kälteste Nacht", „Tropennacht"). Die GRÖSSE
    * ist dieselbe wie sonst (`tlmin`, das Minimum des Klimatags) — dieses Feld
    * ändert nur, wie geantwortet wird: eine Nacht spannt ZWEI Daten, und das
@@ -566,7 +618,10 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
         // enthaltenes Wort zählt deshalb als Treffer, aber erst ab sechs
         // Zeichen: kürzere Fragmente stecken zufällig in vielen Wörtern.
         const compound = w.length >= 6 && t.length > w.length && t.includes(w)
-        if (compound || (t.length <= 3 ? t === w : similarity(t, w) >= 0.84)) {
+        // Zusätzlich der abgetrennte Stamm: „regensumme" → „regen".
+        const stem = measureStem(t)
+        const stemHit = stem != null && (stem.length <= 3 ? stem === w : similarity(stem, w) >= 0.84)
+        if (compound || stemHit || (t.length <= 3 ? t === w : similarity(t, w) >= 0.84)) {
           param = entry.code
           dir = entry.dir ?? null
           generic = entry.generic ?? false
@@ -606,7 +661,37 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
         : 'station'
   // Jahreswert nur, wenn kein engerer Zeitraum genannt ist: „nassester Juli"
   // bleibt eine Monatsfrage, auch wenn irgendwo „Jahr" fällt.
+  /**
+   * TAGESebene. Auf der VOLLEN Tokenliste geprüft, weil „tag" ein
+   * Funktionswort ist und in den Stoppwörtern steht — dieselbe Ausnahme wie
+   * beim Jahresbezug. Eine Jahreszahl danach macht daraus keinen Zeitpunkt
+   * (anders als bei „im Jahr 1954"), „an einem Tag" ist immer die Ebene.
+   */
+  const dailyMentioned =
+    tokens.some((t) => DAILY_WORDS.includes(t) || t.startsWith(DAILY_PREFIX)) ||
+    content.some((t) => {
+      const stem = measureStem(t)
+      return stem != null && stem.startsWith(DAILY_PREFIX)
+    })
+  /**
+   * Bei EXTREMgrößen ist die Tagesebene gegenstandslos: der Monatswert von
+   * `tlmax`/`tlmin` IST schon ein Tagesextrem (höchstes Tagesmaximum des
+   * Monats), `abs` also bereits die Antwort auf „heißester Tag". Ohne diese
+   * Ausnahme las sich „was war das TAGESMAXIMUM im Juli seit Messbeginn" als
+   * Tagesfrage und griff in den Tagesblock, wo für `tlmax` nur die
+   * GEGENrichtung liegt — die Antwort wäre der kälteste Tag gewesen.
+   *
+   * Gebraucht wird die Ebene nur, wo der Monatswert eine SUMME oder ein
+   * MITTEL ist: dort steckt der einzelne Tag gar nicht drin.
+   */
+  const dailyLevelApplies = (() => {
+    const agg = getAtParameter(param).agg
+    return agg !== 'max' && agg !== 'min'
+  })()
+  const daily = dailyMentioned && dailyLevelApplies
+
   const annual =
+    !daily &&
     month == null &&
     season == null &&
     (content.some((t) => t.startsWith(ANNUAL_PREFIX)) ||
@@ -631,6 +716,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
     param,
     // Nur setzen, wenn es zutrifft — das Feld ist optional, damit bestehende
     // Vergleiche auf das Query-Objekt unverändert gelten.
+    ...(daily ? { daily: true as const } : {}),
     ...(nightly ? { nightly: true as const } : {}),
     month,
     season,
@@ -701,8 +787,12 @@ function extremeOf(rec: ParamRecords, q: AskQuery): Extreme | null {
 /** Zeitraum-Text der Antwort — er muss die Ebene benennen, sonst liest sich ein
  *  Jahresrekord wie ein Monatsrekord. */
 function periodText(q: AskQuery): string {
-  if (q.month != null) return MONTH_NAMES[q.month - 1]
-  if (q.season != null) return SEASON_NAMES[q.season]
+  // Die EBENE gehört in den Text: „einzelner Tag" und „einzelner Monat" sind
+  // beim Niederschlag zwei Antworten, die um eine Größenordnung auseinander
+  // liegen (nassester Tag ~110 mm, nassester Monat 404 mm in Salzburg).
+  if (q.month != null) return q.daily ? `einzelner Tag im ${MONTH_NAMES[q.month - 1]}` : MONTH_NAMES[q.month - 1]
+  if (q.season != null) return q.daily ? `einzelner Tag im ${SEASON_NAMES[q.season]}` : SEASON_NAMES[q.season]
+  if (q.daily) return 'einzelner Tag, aller Zeiten'
   return q.annual ? 'ganzes Jahr' : 'einzelner Monat, aller Zeiten'
 }
 
@@ -873,7 +963,11 @@ export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): A
    * lieber KEINE Zahl als eine, die etwas anderes meint — die UI erklärt das
    * über `directionNote`.
    */
-  const fromDay = !directionDerivable(spec, q.extreme)
+  // Aus dem TAGESblock kommt die Antwort in zwei Fällen: bei der
+  // Gegenrichtung einer Extremgröße (dort ist der Monatswert die falsche
+  // Aussage) UND bei einer ausdrücklichen Tagesfrage (dort ist der
+  // Monatswert die falsche EBENE).
+  const fromDay = q.daily === true || !directionDerivable(spec, q.extreme)
   const src = fromDay ? rec.day : rec
   if (!src) return null
   const e = extremeOf(src, q)

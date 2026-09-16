@@ -85,10 +85,21 @@ const POINT_LIMIT = 1_000_000
  * nachträgliche Tagesauflösung also nicht mehr.
  */
 const DAILY_BASE = 'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d'
-/** Je Code die Richtung, die der Monatsdatensatz NICHT hergibt. */
+/**
+ * Je Code die Richtung, die der Monatsdatensatz NICHT hergibt.
+ *
+ * Bei den Temperaturen ist es die GEGENRICHTUNG (siehe oben). Beim
+ * Niederschlag ist es eine andere EBENE: `rr` ist im Monatsdatensatz die
+ * MONATSSUMME, der nasseste Tag steckt dort gar nicht. „Höchster
+ * Tagesniederschlag in Salzburg" antwortete deshalb mit 404 mm (nassester
+ * Juli 1954) statt mit dem nassesten Tag — eine Größenordnung daneben. Die
+ * TROCKENrichtung fehlt bewusst: der trockenste Tag ist überall 0 mm und
+ * damit keine Auskunft.
+ */
 const DAY_CODES = [
   { code: 'tlmin', dir: 'max' }, // wärmste Nacht = höchstes Tagesminimum
   { code: 'tlmax', dir: 'min' }, // kältester Tag = tiefstes Tagesmaximum
+  { code: 'rr', dir: 'max' }, // nassester Tag = höchste Tagessumme
 ]
 const daysBetween = (a, b) =>
   Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000) + 1
@@ -221,6 +232,8 @@ async function dailyPass(ids, nameById) {
   const nationalDay = {}
   /** Verworfene Tage (Minimum über Maximum) — wird am Ende berichtet. */
   const dropped = []
+  /** Tagesrekord über Monatsrekord — nur Hinweis, siehe unten. */
+  const inconsistent = []
   let touched = 0
 
   for (let i = 0; i < ids.length; i += chunk) {
@@ -287,6 +300,9 @@ async function dailyPass(ids, nameById) {
         for (let k = 0; k < data.length; k++) {
           const v = data[k]
           if (v == null || !Number.isFinite(v)) continue
+          // Ein Tag mit Minimum über Maximum ist als ganzer Datensatz
+          // verdächtig — deshalb fliegt er auch für den Niederschlag heraus,
+          // nicht nur für die Temperatur, aus der die Prüfung stammt.
           if (broken.has(k)) continue
           const cand = { v: r2(v), d: day[k] }
           put(abs, cand)
@@ -298,6 +314,17 @@ async function dailyPass(ids, nameById) {
         // `ann` = `abs`: bei einem Tagesextrem sind beide dasselbe.
         entry.day = { abs, ann: abs, mon, sea }
         changed = true
+
+        // Selbstkonsistenz nur bei SUMMEN prüfbar: ein Tag kann nicht mehr
+        // bringen als sein Monat. Bei Extremgrößen sagt der Vergleich nichts
+        // (dort ist der Monatswert die Gegenrichtung).
+        if (c.code === 'rr') {
+          const monMax = entry.abs?.max
+          const dayMax = abs.max
+          if (monMax && dayMax && dayMax.v > monMax.v + 0.05) {
+            inconsistent.push({ id, code: c.code, day: dayMax.v, d: dayMax.d, mon: monMax.v })
+          }
+        }
 
         const nat = (nationalDay[c.code] ??= { abs: empty(), ann: empty(), mon: Array.from({ length: 12 }, empty), sea: { DJF: empty(), MAM: empty(), JJA: empty(), SON: empty() } })
         const who = { s: id, n: nameById.get(id) ?? String(id) }
@@ -322,6 +349,31 @@ async function dailyPass(ids, nameById) {
       `Tages-Chunk ${Math.floor(i / chunk) + 1}/${total}: ${touched} Stationsdateien ergänzt\n`,
     )
     await sleep(DELAY_MS)
+  }
+
+  /**
+   * HINWEIS, keine Filterung: wo der Tagesrekord den Monatsrekord übersteigt,
+   * stimmt etwas nicht zusammen — ein einzelner Tag kann nicht mehr bringen
+   * als der Monat, in dem er liegt.
+   *
+   * Nicht aussortiert, weil dasselbe Signal von einer LÜCKE in der
+   * Monatsreihe kommt und beides nicht unterscheidbar ist. Gemessen
+   * (2026-09-16): genau eine von 494 Stationen, Podersdorf Strandbad — dort
+   * beginnt die Messung am 22.07.2014 und der Tagesrekord fällt auf den
+   * 30.07.2014; der Juli ist ein Teilmonat und fehlt im Monatsdatensatz,
+   * deshalb kommt der Monatsrekord aus dem September. Ein Filter hätte da
+   * einen echten Rekord weggeworfen.
+   */
+  if (inconsistent.length) {
+    process.stdout.write(
+      `\nHinweis: Tagesrekord über Monatsrekord bei ${inconsistent.length} Station(en) — ` +
+        `meist ein Teilmonat am Reihenbeginn, NICHT gefiltert:\n`,
+    )
+    for (const x of inconsistent.slice(0, 10)) {
+      process.stdout.write(
+        `   Station ${x.id} (${x.code}): Tag ${x.day} mm am ${x.d} > Monat ${x.mon} mm\n`,
+      )
+    }
   }
 
   // Die verworfenen Tage NAMENTLICH ausgeben: es sind Archivfehler, keine

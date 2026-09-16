@@ -22,6 +22,7 @@ import {
   directionDerivable,
   directionNote,
   formatRecordWhen,
+  measureStem,
 } from './climateAsk'
 
 const st = (id: number, name: string, isActive = true, validFrom = '1980-01-01'): AtStation =>
@@ -939,5 +940,115 @@ describe('mergeRecords mit Tagesblock', () => {
     const plain = { abs: { max: null, min: null }, mon: [], sea: {} }
     const merged = mergeRecords([{ id: 1, name: 'A', rec: plain as never }])
     expect(merged?.day).toBeUndefined()
+  })
+})
+
+// --- Komposita mit Messgrößen-Endung und die TAGESebene -------------------
+
+describe('measureStem', () => {
+  // Der gemeldete Fehler: „höchste REGENSUMME an einem Tag in Salzburg"
+  // antwortete mit 38,6 °C — kein Größenwort erkannt, also die Vorgabe tlmax.
+  it('trennt die Messgrößen-Endung ab', () => {
+    expect(measureStem('regensumme')).toBe('regen')
+    expect(measureStem('regenmenge')).toBe('regen')
+    expect(measureStem('schneehohe')).toBe('schnee')
+    expect(measureStem('sonnenscheindauer')).toBe('sonnenschein')
+  })
+
+  // Fugen-s fällt mit: „niederschlagssumme" → „niederschlag", nicht
+  // „niederschlags".
+  it('nimmt das Fugen-s mit', () => {
+    expect(measureStem('niederschlagssumme')).toBe('niederschlag')
+  })
+
+  it('lässt Wörter ohne solche Endung in Ruhe', () => {
+    expect(measureStem('temperatur')).toBeNull()
+    expect(measureStem('niederschlag')).toBeNull()
+  })
+
+  // Mindestrest drei Zeichen: aus der Endung allein darf kein Stamm werden.
+  it('erzeugt keinen Stamm aus der Endung selbst', () => {
+    expect(measureStem('summe')).toBeNull()
+    expect(measureStem('menge')).toBeNull()
+  })
+})
+
+describe('Tagesebene', () => {
+  it('erkennt „Regensumme" als Niederschlag statt als Temperatur', () => {
+    const q = ask('höchste regensumme an einem tag in salzburg')
+    expect(q.param).toBe('rr')
+    expect(q.extreme).toBe('max')
+  })
+
+  // Die EBENE ist der zweite, größere Fehler: `abs` ist der beste MONAT
+  // (404 mm in Salzburg), gefragt ist der nasseste TAG.
+  it('markiert Tagesfragen in allen üblichen Formulierungen', () => {
+    for (const f of [
+      'höchste regensumme an einem tag in salzburg',
+      'höchster tagesniederschlag in salzburg',
+      'nassester tag in salzburg',
+      'höchste niederschlagsmenge an einem tag in salzburg',
+      'höchste tagessumme niederschlag in salzburg',
+    ]) {
+      expect(ask(f).daily, f).toBe(true)
+    }
+  })
+
+  // REGRESSION: „Tagesmaximum" ist selbst ein Größenwort. Der Monatswert von
+  // tlmax IST ein Tagesextrem, `abs` also schon die Antwort auf „heißester
+  // Tag". Ohne diese Ausnahme griff die Frage in den Tagesblock, wo für tlmax
+  // nur die GEGENrichtung liegt — die Antwort wäre der kälteste Tag gewesen.
+  it('liest „Tagesmaximum" und „Tagesminimum" NICHT als Tagesebene', () => {
+    expect(ask('was war das tagesmaximum im juli seit messbeginn in salzburg').daily)
+      .toBeUndefined()
+    expect(ask('tiefstes tagesminimum in salzburg').daily).toBeUndefined()
+    // Auch ohne das Wort „Tages…": ein Superlativ über einen Tag bleibt beim
+    // Monatsblock, weil dessen Wert schon ein Tageswert ist.
+    expect(ask('heißester tag in salzburg').daily).toBeUndefined()
+  })
+
+  // „Niederschlagstage" ist ein KENNTAG über einen Monat, keine Tagesfrage —
+  // deshalb zählt nur `tag`/`tages…`, nicht `tage`.
+  it('liest Kenntage NICHT als Tagesfrage', () => {
+    expect(ask('meiste frosttage in wien').daily).toBeUndefined()
+    expect(ask('meiste sommertage in wien').daily).toBeUndefined()
+  })
+
+  it('schließt den Jahresbezug aus', () => {
+    const q = ask('höchster tagesniederschlag in salzburg')
+    expect(q.annual).toBe(false)
+    // Gegenprobe: die Jahresfrage bleibt eine Jahresfrage.
+    const y = ask('höchster jahresniederschlag in salzburg')
+    expect(y.annual).toBe(true)
+    expect(y.daily).toBeUndefined()
+  })
+
+  // Monatsausschnitt verträgt sich mit der Tagesebene: „nassester Tag im Juli"
+  // landet auf day.mon[6].
+  it('verträgt sich mit einem Monatsausschnitt', () => {
+    const q = ask('nassester tag im juli in salzburg')
+    expect(q.daily).toBe(true)
+    expect(q.month).toBe(7)
+  })
+
+  it('antwortet aus dem Tagesblock, nicht aus dem Monatsblock', () => {
+    const rec = {
+      abs: { max: { v: 404, d: '1954-07' }, min: null },
+      ann: { max: { v: 1835, y: 1912 }, min: null },
+      mon: [],
+      sea: {},
+      day: {
+        abs: { max: { v: 110.4, d: '1899-09-13' }, min: null },
+        ann: { max: { v: 110.4, d: '1899-09-13' }, min: null },
+        mon: [],
+        sea: {},
+      },
+    }
+    const q = { ...ask('höchste regensumme an einem tag in salzburg'), area: 'station' as const }
+    const a = answerFromRecords(q, rec as never)
+    expect(a?.value).toBe(110.4)
+    expect(a?.what).toContain('einzelner Tag')
+    // 404 mm war die Monatssumme — eine Größenordnung daneben.
+    expect(a?.value).not.toBe(404)
   })
 })
