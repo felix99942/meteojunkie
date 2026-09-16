@@ -260,8 +260,7 @@ export const DEFAULT_RADAR_PRODUCT = RADAR_PRODUCTS[0]
 // Detail (Werte aus dem jeweiligen GetCapabilities, 2026-09-16):
 //   Blitzdichte      lon 1,7–18,5 · lat 46,95–54,91  → ganz Österreich in der
 //                    Länge, im Süden fehlt Kärnten (Klagenfurt 46,62 °N)
-//   Gewitterzellen   lon 3,76–15,47 · lat 47,20–54,82 → Wien liegt draußen
-//   Gewittercluster  lon 5,0–16,0 · lat 47,0–55,30
+//   Gewittercluster  lon 5,0–16,0 · lat 47,0–55,30    → Wien liegt knapp draußen
 //   KONRAD-Zellen    lon 4,03–16,21 · lat 46,36–55,45 → am weitesten nach
 //                    Süden und Osten, deckt fast ganz Österreich
 // Deshalb hat jedes Overlay seine EIGENE `RadarMeta` (Fläche und Zeitschritte
@@ -352,9 +351,16 @@ export interface RadarOverlay extends WmsImageSource {
 }
 
 /**
- * Farbstufen der Gewitterintensität, 1:1 aus den GetLegendGraphic-Regeln der
- * NowCastMIX-Layer (Punktsymbole, gefiltert über das Intensitätskennzeichen
+ * Farbstufen der Gewitterintensität, 1:1 aus den GetLegendGraphic-Regeln des
+ * NowCastMIX-Layers (Punktsymbole, gefiltert über das Intensitätskennzeichen
  * `II`): 31 leicht · 33–38 Gewitter · 40–46 schwer · 48/95 extrem.
+ *
+ * **Der Layer `Gewitterzellen` ist auf Wunsch WIEDER RAUS** — er zeigte
+ * dieselben Punktsymbole in derselben Skala wie die Cluster, nur je
+ * Einzelzelle, und trug neben Radarecho, Blitzkreuzen und den
+ * KONRAD-Umrissen nichts bei, was nicht schon dastand. Wieder einschalten
+ * wäre ein Registry-Eintrag (`layer: 'dwd:Gewitterzellen'`, `capsLayer`
+ * ebenso, Fläche lon 3,76–15,47 · lat 47,20–54,82 — Wien liegt draußen).
  */
 const STORM_CLASSES = [
   { color: '#FFEB3B', label: 'leicht' },
@@ -385,20 +391,6 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
       items: LIGHTNING_AGES,
     },
     note: 'NowCastMIX-Blitzdichte als Kreuze: FARBE = Alter, GRÖSSE = Blitzrate. Der DWD veröffentlicht keine Einzelblitze — ein Kreuz steht für eine 10-km-Zelle mit Blitzen, und die Altersstufe ist produktbedingt auf 15 Minuten gerundet (jedes Bild fasst die Blitze der letzten 15 Minuten zusammen)',
-  },
-  {
-    id: 'zellen',
-    imageWidth: 1600,
-    label: 'Zellen',
-    layer: 'dwd:Gewitterzellen',
-    capsLayer: 'Gewitterzellen',
-    stepMs: 5 * 60_000,
-    forecastMs: 0,
-    maskOpacity: null,
-    opacity: 1,
-    defaultOn: true,
-    legend: { kind: 'dots', caption: 'Gewitterzellen', items: STORM_CLASSES },
-    note: 'NowCastMIX-Gewitterzellen: automatisch erkannte konvektive Zellen aus CellMOS, KONRAD und Blitzen — Kreis nach Intensität, Pfeil = Verlagerungsrichtung',
   },
   {
     id: 'cluster',

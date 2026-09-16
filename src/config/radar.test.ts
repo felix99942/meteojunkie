@@ -247,7 +247,7 @@ describe('Produkt-Registry', () => {
 
 describe('Overlays', () => {
   it('sind alle vom DWD-WMS und ohne Vorhersageteil', () => {
-    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'zellen', 'cluster', 'konrad'])
+    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'cluster', 'konrad'])
     for (const o of RADAR_OVERLAYS) {
       expect(o.layer, o.id).toMatch(/^dwd:/)
       expect(o.stepMs, o.id).toBe(300_000)
@@ -278,7 +278,7 @@ describe('Overlays', () => {
   it('fordert die Symbol-Overlays GRÖSSER und das Blitzraster KLEINER an', () => {
     // Kreise und Pfeile werden in Pixeln des BILDES gezeichnet; zu klein
     // angefordert stehen sie hochskaliert und unscharf auf der Karte.
-    for (const id of ['zellen', 'cluster', 'konrad']) {
+    for (const id of ['cluster', 'konrad']) {
       const o = RADAR_OVERLAYS.find((x) => x.id === id)!
       expect(sourceImageWidth(o), id).toBeGreaterThan(RADAR_IMAGE_WIDTH)
     }
@@ -299,8 +299,13 @@ describe('Overlays', () => {
     expect(new Set(LIGHTNING_AGES.map((a) => a.color)).size).toBe(4)
   })
 
-  it('schaltet Blitze und Zellen von vornherein ein', () => {
+  // Die Blitze sind die einzige Vorbelegung: sie ergänzen das Echo um etwas,
+  // was es nicht zeigt. Die Symbol-Overlays bleiben zuschaltbar — und der
+  // frühere Eintrag `zellen` ist bewusst weg (dieselben Symbole wie die
+  // Cluster, nur je Einzelzelle).
+  it('schaltet nur die Blitze von vornherein ein', () => {
     const on = RADAR_OVERLAYS.filter((o) => o.defaultOn).map((o) => o.id)
-    expect(on).toEqual(['blitze', 'zellen'])
+    expect(on).toEqual(['blitze'])
+    expect(RADAR_OVERLAYS.map((o) => o.layer)).not.toContain('dwd:Gewitterzellen')
   })
 })

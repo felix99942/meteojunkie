@@ -1115,18 +1115,22 @@ npm run preview   # gebautes dist/ servieren
   älteres Bild ansieht, wird nicht weggerissen und bekommt den Knopf
   „● neuer Stand".
   **OVERLAYS vom selben Dienst** (`RADAR_OVERLAYS`, Häkchen in der Leiste):
-  **Blitze** (`Blitzdichte`) und **Gewitterzellen** (`Gewitterzellen`) sind
-  voreingestellt an, **Cluster** (`Gewittercluster`) und **KONRAD**
-  (`K3D_EVAL_current_cells` + `K3D_EVAL_cur_track_lines`) auf Wunsch. Alles
-  5-Minuten-Takt, CORS offen, GeoNutzV — und alles NUR Gegenwart: die
-  `fcst_*`-Layer des KONRAD-Verfahrens (Prognosekegel, Vorhersagespuren)
-  bleiben draußen wie die Radarvorhersage auch.
+  **Blitze** (`Blitzdichte`) sind voreingestellt an, **Cluster**
+  (`Gewittercluster`) und **KONRAD** (`K3D_EVAL_current_cells` +
+  `K3D_EVAL_cur_track_lines`) auf Wunsch. Alles 5-Minuten-Takt, CORS offen,
+  GeoNutzV — und alles NUR Gegenwart: die `fcst_*`-Layer des
+  KONRAD-Verfahrens (Prognosekegel, Vorhersagespuren) bleiben draußen wie die
+  Radarvorhersage auch. **`Gewitterzellen` war dabei und ist auf Wunsch wieder
+  raus**: dieselben Punktsymbole in derselben Skala wie die Cluster, nur je
+  Einzelzelle — neben Echo, Blitzkreuzen und KONRAD-Umrissen trug der Layer
+  nichts bei, was nicht schon dastand. Nur die Blitze sind vorbelegt, weil
+  sie das Echo um etwas ergänzen, was es nicht zeigt.
   **Jedes Overlay hat seine EIGENE Fläche und eigene Zeitschritte**, deshalb je
   Overlay eine eigene `RadarMeta`, eigene Bildecken und eigene Bild-Map
   (gemessen 2026-09-16: Blitze lon 1,7–18,5/lat 46,95–54,91 — ganz Österreich
-  in der Länge, im Süden fehlt Kärnten; Zellen lon 3,76–15,47/lat 47,20–54,82 —
-  Wien liegt draußen; Cluster lon 5–16/lat 47–55,3; KONRAD lon 4,03–16,21/lat
-  46,36–55,45, also am weitesten nach Süden und Osten). Angefragt werden nur
+  in der Länge, im Süden fehlt Kärnten; Cluster lon 5–16/lat 47–55,3, Wien
+  liegt knapp draußen; KONRAD lon 4,03–16,21/lat 46,36–55,45, also am
+  weitesten nach Süden und Osten). Angefragt werden nur
   Zeiten, die in der jeweiligen Dimension stehen, und **gescheiterte Zeiten
   werden gemerkt** (`failedRef`): die Symbol-Layer haben DISKRETE Zeitpunkte —
   wo nichts erkannt wurde, fehlt der Zeitstempel und der Dienst antwortet mit
