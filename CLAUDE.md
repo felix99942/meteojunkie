@@ -276,7 +276,46 @@ npm run preview   # gebautes dist/ servieren
   Gegenstück gibt es auch nicht unter anderem Namen** — geprüft (2026-09-15,
   420 Parameter in klima-v2-1m): es gibt `tlmin`, `tlmax` und die Mittel
   `tlmin_mittel`/`tlmax_mittel`, aber kein „monatlich höchstes Tagesminimum".
-  Für die wärmste Nacht bräuchte es die TAGESreihe der ganzen Messreihe.
+  Deshalb hat der Rekord-Ingest einen **ZWEITEN PASS aus dem TAGESdatensatz**
+  (`DAY_CODES`/`dailyPass` in `scripts/at-ingest-records.mjs`): er bildet die
+  fehlende Richtung je Station auf denselben vier Ebenen und schreibt sie als
+  `ParamRecords.day` in die Stationsdateien und nach `_national.json`. Der
+  Block hat ABSICHTLICH dieselbe Form wie der Monatsblock, obwohl nur eine
+  Richtung besetzt ist — so liest `extremeOf` ihn ohne Sonderlogik; einziger
+  Unterschied ist `d` als EXAKTES Datum (`YYYY-MM-DD` statt `YYYY-MM`), womit
+  für diese Rekorde auch die nachträgliche Tagesauflösung im Browser entfällt.
+  `formatRecordWhen` unterscheidet die beiden Genauigkeiten an der LÄNGE, nicht
+  an einem Flag. `mergeRecords` verschmilzt den Block mit — sonst hätte eine
+  ORTSfrage („wärmste Nacht in Salzburg" = acht Stationen) ihn nicht — legt ihn
+  aber nur an, wenn mindestens eine Station ihn führt: ein leerer Block sähe
+  wie „vorhanden, aber ohne Wert" aus und verdeckte die Erklärung. Fehlt er
+  (Assets von vor dem Tagespass), bleibt es bei `directionNote`.
+  **Der Tagespass ist billiger, als er klingt**, weil GeoSphere DATENPUNKTE
+  deckelt und nicht Stationen: ein Chunk trägt ~10 Stationen über 126 Jahre.
+  Gemessen (2026-09-16): 925.580 Punkte, 5,6 MB, 19,6 s je Chunk → 52 Requests
+  für 513 Stationen, rund 20 Minuten, ~290 MB und 22 % des Stundenbudgets von
+  240. Der ganze Ingest (Monatspass ~10 + Tagespass 52 Requests) bleibt damit
+  klar im Limit. Gegenprobe an Salzburg Flughafen: wärmste Nacht
+  **23,8 °C am 3. Juli 1905**, kältester Tag **−19,5 °C am 10. Februar 1956** —
+  vorher stand dort fälschlich 13,4 °C.
+  **Der Tagespass braucht eine PLAUSIBILITÄTSPRÜFUNG, und zwar nachweislich**:
+  ein Tag, an dem das Minimum ÜBER dem Maximum liegt, ist in sich
+  widersprüchlich und darf in keinen Rekord. Ohne sie stand als „wärmste Nacht
+  Österreichs" **37,8 °C am 09.05.1968** (Ybbs Persenbeug) in den Assets — als
+  Tagesminimum im Mai unmöglich, bei `tlmax` = 20,5 °C DESSELBEN Tages und
+  Nachbartagen von 3,8 und 6,5 °C. **Das Qualitätsflag ist dabei LEER** —
+  GeoSpheres QC fängt es nicht, darauf kann man sich also nicht verlassen.
+  Bewusst diese Regel und KEINE absolute Schwelle: sie braucht kein geratenes
+  Limit, gilt an jeder Station und in jeder Jahreszeit und prüft die Daten
+  gegen sich selbst; ihre Grenze ist, dass beide Werte vorliegen müssen.
+  Gemessen: **50 verworfene Tage**, davon fast alle an Station 5320
+  (1968–1969) — dort steckt offenbar ein systematischer Fehler jener Jahre.
+  Der Ingest gibt die verworfenen Tage NAMENTLICH aus: es sind Archivfehler,
+  keine Programmfehler, und wächst die Zahl, hat sich am Datensatz etwas
+  geändert. Danach sind die nationalen Werte plausibel — wärmste Nacht
+  **27,3 °C am 29.06.2026** (Wien Jubiläumswarte), kältester Tag **−33,2 °C am
+  14.02.1940** (Sonnblick), und der Monatsverlauf ist glatt (Jän 13,6 → Jun
+  27,3 → Dez 13,9, Winterwerte von Föhnstationen).
   **Eine NACHT ist ein ZEITRAUM über zwei Kalendertage, und die Antwort muss
   das sagen** (`AskQuery.nightly`, `formatNightSpan`, `nightNote`): GeoSphere
   bildet die Tagesextreme von 19 MEZ des Vortags bis 19 MEZ (18–18 UTC, in

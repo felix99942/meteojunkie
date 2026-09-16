@@ -652,6 +652,11 @@ export interface AskAnswer {
    * leer: ein langjähriges Mittel hat kein Jahr.
    */
   year?: number
+  /**
+   * Exaktes Datum (`YYYY-MM-DD`), wenn der Rekord aus dem Tagespass stammt.
+   * Dann ist `when` schon tagesgenau und die UI muss nichts nachladen.
+   */
+  day?: string
   /** Was der Wert IST, im Klartext. */
   what: string
   /** Monat des absoluten Rekords (die Frage nannte keinen). */
@@ -733,13 +738,23 @@ export function mergeRecords(
     min: pick(get, 'min'),
   })
 
-  return {
-    abs: both((r) => r.abs),
-    ann: both((r) => r.ann),
-    mon: Array.from({ length: 12 }, (_, m) => both((r) => r.mon?.[m])),
+  const level = (get: (r: ParamRecords) => ParamRecords | undefined): ParamRecords => ({
+    abs: both((r) => get(r)?.abs),
+    ann: both((r) => get(r)?.ann),
+    mon: Array.from({ length: 12 }, (_, m) => both((r) => get(r)?.mon?.[m])),
     sea: Object.fromEntries(
-      (['DJF', 'MAM', 'JJA', 'SON'] as Season[]).map((sid) => [sid, both((r) => r.sea?.[sid])]),
+      (['DJF', 'MAM', 'JJA', 'SON'] as Season[]).map((sid) => [sid, both((r) => get(r)?.sea?.[sid])]),
     ) as Record<Season, MaxMin>,
+  })
+
+  return {
+    ...level((r) => r),
+    // Der TAGESblock muss mit verschmelzen, sonst hätte eine ORTSfrage
+    // („wärmste Nacht in Salzburg" = acht Stationen) ihn nicht — und die
+    // Antwort fiele auf die Erklärung zurück, obwohl die Daten je Station da
+    // sind. Nur anlegen, wenn mindestens eine Station ihn führt: ein leerer
+    // Block sähe für `answerFromRecords` wie „vorhanden, aber ohne Wert" aus.
+    ...(have.some((e) => e.rec.day) ? { day: level((r) => r.day) } : {}),
   }
 }
 
@@ -850,11 +865,18 @@ export function askDayRange(
 export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): AskAnswer | null {
   if (!rec) return null
   const spec: AtParameterSpec = getAtParameter(q.param)
-  // Gegenrichtung einer Extremgröße: das Asset hätte hier einen Monats-Höchst-
-  // bzw. -Tiefstwert, und der beantwortet die Frage nicht (siehe
-  // `directionDerivable`). Lieber keine Zahl als eine, die etwas anderes meint.
-  if (!directionDerivable(spec, q.extreme)) return null
-  const e = extremeOf(rec, q)
+  /**
+   * Gegenrichtung einer Extremgröße: der MONATSblock hätte hier einen
+   * Monats-Höchst- bzw. -Tiefstwert, und der beantwortet die Frage nicht
+   * (siehe `directionDerivable`). Dafür gibt es den `day`-Block aus dem
+   * Tagespass des Ingests. Fehlt er (Assets von vor dem Tagespass), gibt es
+   * lieber KEINE Zahl als eine, die etwas anderes meint — die UI erklärt das
+   * über `directionNote`.
+   */
+  const fromDay = !directionDerivable(spec, q.extreme)
+  const src = fromDay ? rec.day : rec
+  if (!src) return null
+  const e = extremeOf(src, q)
   if (!e || e.v == null) return null
   const period = periodText(q)
   const gesucht = superlativeText(q.param, q.extreme, spec.label, q.nightly)
@@ -863,7 +885,10 @@ export function answerFromRecords(q: AskQuery, rec: ParamRecords | undefined): A
   return {
     value: e.v,
     unit: spec.unit,
-    when: e.d ? formatYearMonth(e.d) : e.y != null ? String(e.y) : null,
+    when: e.d ? formatRecordWhen(e.d, q.nightly) : e.y != null ? String(e.y) : null,
+    // Exaktes Datum, wenn das Asset es führt (Tagespass) — dann braucht die UI
+    // die nachträgliche Tagesauflösung über einen Extra-Request nicht mehr.
+    ...(e.d && e.d.length >= 10 ? { day: e.d } : {}),
     // `n`/`s` tragen nur die NATIONALEN Rekorde: dort gehört die Station zur
     // Antwort, bei einer Stationsfrage stünde sie doppelt da.
     ...(e.n ? { where: e.n } : {}),
@@ -987,4 +1012,24 @@ export function answerFromNormalsRange(
 export function formatYearMonth(d: string): string {
   const [y, m] = d.split('-').map(Number)
   return Number.isFinite(m) && m >= 1 && m <= 12 ? `${MONTH_NAMES[m - 1]} ${y}` : d
+}
+
+/**
+ * Zeitpunkt eines Rekords als Text — die Assets führen ZWEI Genauigkeiten:
+ * `YYYY-MM` aus dem Monatsdatensatz und `YYYY-MM-DD` aus dem Tagespass
+ * (`ParamRecords.day`). Unterschieden wird an der LÄNGE, nicht an einem Flag:
+ * so kann kein Aufrufer die beiden verwechseln.
+ *
+ * Bei einer Nachtfrage wird aus dem Tagesdatum eine Spanne über zwei Daten
+ * (siehe `formatNightSpan`) — eine Nacht gehört zu zwei Kalendertagen.
+ */
+export function formatRecordWhen(d: string, nightly = false): string {
+  if (d.length < 10) return formatYearMonth(d)
+  if (nightly) return formatNightSpan(d)
+  return new Intl.DateTimeFormat('de-AT', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(`${d}T12:00:00Z`))
 }

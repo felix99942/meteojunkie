@@ -266,6 +266,10 @@ export function AtAskBox({
    */
   const dayTarget = (() => {
     if (!query || !answer || answer.year == null) return null
+    // Das Asset führt das exakte Datum schon (Tagespass des Rekord-Ingests) —
+    // dann ist nichts nachzuladen. Das gilt für genau die Fälle, die vorher
+    // gar nicht beantwortbar waren (wärmste Nacht, kältester Tag).
+    if (answer.day) return null
     const id = answer.whereId ?? showStation?.id
     if (id == null) return null
     const range = askDayRange(query, answer)
@@ -305,6 +309,9 @@ export function AtAskBox({
    * DAVOR liegt.
    */
   const exactWhen = useMemo(() => {
+    // `answer.when` ist bei einem Asset-Datum schon tagesgenau formatiert
+    // (formatRecordWhen) — hier ist dann nichts zu ergänzen.
+    if (answer?.day) return null
     if (!recordDay) return null
     if (query?.nightly && query.param === 'tlmin') return formatNightSpan(recordDay.day)
     return new Intl.DateTimeFormat('de-AT', {
@@ -313,7 +320,7 @@ export function AtAskBox({
       month: 'long',
       year: 'numeric',
     }).format(new Date(`${recordDay.day}T12:00:00Z`))
-  }, [recordDay, query?.nightly, query?.param])
+  }, [recordDay, query?.nightly, query?.param, answer?.day])
 
   function set(patch: Partial<AskQuery>) {
     setOverride((o) => ({ ...o, ...patch }))

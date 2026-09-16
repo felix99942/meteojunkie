@@ -755,6 +755,23 @@ export interface ParamRecords {
    * Jahres-Erweiterung die Ebene nicht führen.
    */
   ann?: MaxMin
+  /**
+   * GEGENRICHTUNG der Extremgrößen, aus TAGESwerten — nur bei `tlmax`/`tlmin`.
+   *
+   * Der Monatsdatensatz führt bei Extremgrößen nur EINE Richtung als echtes
+   * Tagesextrem (`tlmax` = höchstes Tagesmaximum, `tlmin` = tiefstes
+   * Tagesminimum des Monats). Das Extremum über die Monate in der anderen
+   * Richtung ist deshalb etwas anderes, als eine Frage meint: „wärmste Nacht"
+   * kam so auf den höchsten Monats-TIEFSTWERT. Dieser Block trägt die fehlende
+   * Richtung, im zweiten Pass des Rekord-Ingests aus der Tagesreihe gebildet.
+   *
+   * DIESELBE Form wie der Monatsblock (`abs`/`ann`/`mon`/`sea`), obwohl nur
+   * eine Richtung besetzt ist — damit `extremeOf` ihn ohne Sonderlogik liest.
+   * Unterschied: `d` ist hier das EXAKTE Datum (`YYYY-MM-DD`) statt `YYYY-MM`,
+   * die Tagesreihe kennt den Tag ja. Optional, weil Assets von vor dem
+   * Tagespass ihn nicht führen.
+   */
+  day?: ParamRecords
 }
 /** code → Rekorde einer Station. */
 export type StationRecords = Record<string, ParamRecords>

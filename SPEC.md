@@ -488,25 +488,6 @@ Horizontbehandlung).
   als feste Punkte für Meteogramme
 
 **Weitere offene Punkte**
-- **Rekord-Ingest um die Gegenrichtung der Extremgrößen erweitern**
-  (entschieden am 2026-09-16, noch nicht gebaut). Heute stammen die
-  Rekord-Assets aus dem MONATSdatensatz, und der führt bei Extremgrößen nur
-  eine Richtung als echtes Tagesextrem: `tlmax` das höchste Tagesmaximum,
-  `tlmin` das tiefste Tagesminimum des Monats. Deshalb sind „wärmste Nacht"
-  (höchstes Tagesminimum) und „kältester Tag" (tiefstes Tagesmaximum) aus dem
-  Archiv NICHT beantwortbar — das Klimaarchiv gibt dort bewusst keine Zahl,
-  sondern eine Erklärung (`directionDerivable` in `climateAsk.ts`). Geprüft
-  (2026-09-15, 420 Parameter in `klima-v2-1m`): das fehlende Gegenstück gibt
-  es auch nicht unter anderem Namen.
-  Zu tun: in `scripts/at-ingest-records.mjs` die beiden Größen aus TAGESdaten
-  vorberechnen (monatlich, saisonal, jährlich, absolut — dieselben vier Ebenen
-  wie bisher) und als zusätzliche Richtung in die Assets schreiben; danach den
-  Riegel in `climateAsk.ts` auf die dann wirklich fehlenden Fälle verengen.
-  Kosten: einmaliger Ingest über ~513 Stationen × bis zu 150 Jahre Tageswerte,
-  bei GeoSpheres Limit von 240 Requests/Stunde mehrere Stunden Laufzeit und
-  einige hundert MB Download. Der ALTERNATIVWEG (Tagesreihe live im Browser
-  holen, ~2 MB je Station) wurde verworfen: er löst Österreich-Fragen nicht
-  und belastet jeden Besucher.
 - Backend-Proxy mit serverseitigem Cache (§5)
 - Farbskalen-Wertebereiche festlegen (§11)
 - **Attribution:** Die Daten stehen unter CC BY 4.0, Namensnennung ist

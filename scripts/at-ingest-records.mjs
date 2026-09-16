@@ -60,6 +60,38 @@ const DELAY_MS = 400
  * solange fünf Codes abgefragt wurden, und riss beim elften Code sofort.
  */
 const POINT_LIMIT = 1_000_000
+
+/**
+ * ZWEITER PASS aus dem TAGESdatensatz — die Gegenrichtung der Extremgrößen.
+ *
+ * Der Monatsdatensatz führt bei Extremgrößen nur EINE Richtung als echtes
+ * Tagesextrem: `tlmax` das höchste Tagesmaximum, `tlmin` das tiefste
+ * Tagesminimum des Monats. Das Extremum über die Monate in der GEGENrichtung
+ * ist deshalb etwas anderes, als eine Frage meint — „wärmste Nacht in
+ * Salzburg" kam so auf 13,4 °C (August 2024): den August, dessen kälteste
+ * Nacht die wärmste war. Salzburg hat längst Tropennächte über 20 °C gehabt.
+ *
+ * Das fehlende Gegenstück gibt es im Monatsdatensatz unter keinem Namen
+ * (geprüft 2026-09-15, 420 Parameter: es gibt `tlmin`, `tlmax` und die Mittel,
+ * aber kein „monatlich höchstes Tagesminimum"). Es muss deshalb aus TAGESwerten
+ * gebildet werden — und das ist billiger, als es klingt: das Limit zählt
+ * DATENPUNKTE, nicht Stationen, ein Chunk trägt also ~10 Stationen über 126
+ * Jahre. Gemessen (2026-09-16): 925.580 Punkte, 5,6 MB, 19,6 s je Chunk →
+ * ~52 Requests für 513 Stationen, rund 20 Minuten und 22 % des Stundenbudgets
+ * von 240 Requests.
+ *
+ * Nebengewinn: die Tagesreihe liefert das EXAKTE DATUM mit (`d` als
+ * YYYY-MM-DD statt YYYY-MM) — für diese Rekorde braucht das Frontend die
+ * nachträgliche Tagesauflösung also nicht mehr.
+ */
+const DAILY_BASE = 'https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d'
+/** Je Code die Richtung, die der Monatsdatensatz NICHT hergibt. */
+const DAY_CODES = [
+  { code: 'tlmin', dir: 'max' }, // wärmste Nacht = höchstes Tagesminimum
+  { code: 'tlmax', dir: 'min' }, // kältester Tag = tiefstes Tagesmaximum
+]
+const daysBetween = (a, b) =>
+  Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000) + 1
 const monthsBetween = (a, b) => {
   const [ay, am] = a.split('-').map(Number)
   const [by, bm] = b.split('-').map(Number)
@@ -137,6 +169,174 @@ async function fetchChunk(codes, ids) {
 function bump(rec, value, tag) {
   if (!rec.max || value > rec.max.v) rec.max = { v: r2(value), ...tag }
   if (!rec.min || value < rec.min.v) rec.min = { v: r2(value), ...tag }
+}
+
+/**
+ * Chunk aus dem TAGESdatensatz holen — eigene Funktion, weil der Basis-URL
+ * ein anderer ist. Fehlertoleranz wie beim Monatspass: eine per 403
+ * abgelehnte Station fliegt aus dem Chunk und der Rest läuft weiter
+ * (Stationen fehlen je Datensatz unterschiedlich).
+ */
+async function fetchDailyChunk(codes, ids, start, end) {
+  let current = [...ids]
+  for (let attempt = 0; attempt < 12 && current.length; attempt++) {
+    const url =
+      `${DAILY_BASE}?parameters=${codes}&start=${start}T00:00&end=${end}T00:00` +
+      `&station_ids=${current.join(',')}&output_format=geojson`
+    const res = await fetch(url)
+    if (res.ok) return res.json()
+    const body = await res.text()
+    const bad = body.match(/station_ids:\s*'(\d+)'/)
+    if (res.status === 403 && bad) {
+      current = current.filter((id) => id !== Number(bad[1]))
+      continue
+    }
+    if (res.status === 429 || res.status >= 500) {
+      await sleep(DELAY_MS * (attempt + 1) * 4)
+      continue
+    }
+    throw new Error(`Tages-Abruf HTTP ${res.status}: ${body.slice(0, 120)}`)
+  }
+  return { features: [], timestamps: [] }
+}
+
+/**
+ * Zweiter Pass: die Gegenrichtung der Extremgrößen aus Tageswerten, je Station
+ * in ihre schon geschriebene Datei nachgetragen (`day`-Block je Code).
+ *
+ * Die Form spiegelt absichtlich die des Monatsblocks (`abs`/`ann`/`mon`/`sea`
+ * mit `max`/`min`), obwohl nur EINE Richtung besetzt ist: so liest der
+ * bestehende Zugriff im Frontend sie ohne neue Sonderlogik. `ann` ist bei
+ * einem Tagesextrem dasselbe wie `abs` (das höchste Jahresminimum IST das
+ * höchste Minimum überhaupt) und wird mitgeschrieben, damit eine Jahresfrage
+ * nicht ins Leere greift.
+ */
+async function dailyPass(ids, nameById) {
+  const codesStr = DAY_CODES.map((c) => c.code).join(',')
+  const chunk = Math.max(
+    1,
+    Math.floor((POINT_LIMIT * 0.95) / (DAY_CODES.length * daysBetween(START, END))),
+  )
+  const total = Math.ceil(ids.length / chunk)
+  const nationalDay = {}
+  /** Verworfene Tage (Minimum über Maximum) — wird am Ende berichtet. */
+  const dropped = []
+  let touched = 0
+
+  for (let i = 0; i < ids.length; i += chunk) {
+    const geo = await fetchDailyChunk(codesStr, ids.slice(i, i + chunk), START, END)
+    const ts = geo.timestamps ?? []
+    // Datum als YYYY-MM-DD; Monat und Saison daraus, Dezember zählt zum
+    // Winter des FOLGEjahrs (dieselbe Zuordnung wie im Monatspass).
+    const day = ts.map((t) => t.slice(0, 10))
+    const mo = ts.map((t) => Number(t.slice(5, 7)))
+
+    for (const f of geo.features ?? []) {
+      const id = f.properties.station
+      const file = join(outDir, `${id}.json`)
+      let perCode
+      try {
+        perCode = JSON.parse(await readFile(file, 'utf8'))
+      } catch {
+        continue // keine Monatsdatei → keine Station in den Assets
+      }
+      let changed = false
+
+      /**
+       * PLAUSIBILITÄT: ein Tag, an dem das Minimum ÜBER dem Maximum liegt, ist
+       * in sich widersprüchlich und darf in keinen Rekord.
+       *
+       * Das ist kein theoretischer Fall. Gefunden beim ersten Lauf
+       * (2026-09-16): Ybbs Persenbeug meldet am 09.05.1968 `tlmin` = 37,8 °C
+       * bei `tlmax` = 20,5 °C desselben Tages — Nachbartage 3,8 und 6,5 °C.
+       * Damit wäre das die „wärmste Nacht Österreichs" gewesen, über dem
+       * Allzeit-HÖCHSTWERT des Landes (41,2 °C) und im Mai. Das
+       * Qualitätsflag ist dabei LEER, GeoSpheres QC fängt es also nicht.
+       *
+       * Bewusst diese Regel und keine absolute Schwelle: sie braucht kein
+       * geratenes Limit, gilt an jeder Station und in jeder Jahreszeit, und
+       * sie prüft die Daten gegen sich selbst. Greifen kann sie nur, wenn
+       * BEIDE Werte vorliegen — fehlt einer, bleibt der Tag drin (die Zahl
+       * der Fälle wird am Ende ausgegeben, damit das nicht unbemerkt bleibt).
+       */
+      const tmin = f.properties.parameters?.tlmin?.data
+      const tmax = f.properties.parameters?.tlmax?.data
+      const broken = new Set()
+      if (tmin && tmax) {
+        for (let k = 0; k < tmin.length; k++) {
+          const lo = tmin[k]
+          const hi = tmax[k]
+          if (lo != null && hi != null && lo > hi) {
+            broken.add(k)
+            dropped.push({ id, d: day[k], tlmin: lo, tlmax: hi })
+          }
+        }
+      }
+
+      for (const c of DAY_CODES) {
+        const data = f.properties.parameters?.[c.code]?.data
+        if (!data) continue
+        const better = (a, b) => (c.dir === 'max' ? b.v > a.v : b.v < a.v)
+        const empty = () => ({ max: null, min: null })
+        const abs = empty()
+        const mon = Array.from({ length: 12 }, empty)
+        const sea = { DJF: empty(), MAM: empty(), JJA: empty(), SON: empty() }
+        const put = (slot, cand) => {
+          if (!slot[c.dir] || better(slot[c.dir], cand)) slot[c.dir] = cand
+        }
+        for (let k = 0; k < data.length; k++) {
+          const v = data[k]
+          if (v == null || !Number.isFinite(v)) continue
+          if (broken.has(k)) continue
+          const cand = { v: r2(v), d: day[k] }
+          put(abs, cand)
+          put(mon[mo[k] - 1], cand)
+          put(sea[SEASON[mo[k]][0]], cand)
+        }
+        if (!abs[c.dir]) continue
+        const entry = (perCode[c.code] ??= {})
+        // `ann` = `abs`: bei einem Tagesextrem sind beide dasselbe.
+        entry.day = { abs, ann: abs, mon, sea }
+        changed = true
+
+        const nat = (nationalDay[c.code] ??= { abs: empty(), ann: empty(), mon: Array.from({ length: 12 }, empty), sea: { DJF: empty(), MAM: empty(), JJA: empty(), SON: empty() } })
+        const who = { s: id, n: nameById.get(id) ?? String(id) }
+        const lift = (target, src) => {
+          const cand = src[c.dir]
+          if (cand && (!target[c.dir] || better(target[c.dir], cand))) {
+            target[c.dir] = { ...cand, ...who }
+          }
+        }
+        lift(nat.abs, abs)
+        lift(nat.ann, abs)
+        for (let m = 0; m < 12; m++) lift(nat.mon[m], mon[m])
+        for (const sid of ['DJF', 'MAM', 'JJA', 'SON']) lift(nat.sea[sid], sea[sid])
+      }
+
+      if (changed) {
+        await writeFile(file, JSON.stringify(perCode))
+        touched++
+      }
+    }
+    process.stdout.write(
+      `Tages-Chunk ${Math.floor(i / chunk) + 1}/${total}: ${touched} Stationsdateien ergänzt\n`,
+    )
+    await sleep(DELAY_MS)
+  }
+
+  // Die verworfenen Tage NAMENTLICH ausgeben: es sind Archivfehler, keine
+  // Programmfehler, und sie gehören sichtbar — wächst die Zahl, hat sich am
+  // Datensatz etwas geändert.
+  if (dropped.length) {
+    process.stdout.write(
+      `\nVerworfen (Minimum über Maximum, in sich widersprüchlich): ${dropped.length} Tage\n`,
+    )
+    for (const x of dropped.slice(0, 20)) {
+      process.stdout.write(`   Station ${x.id}  ${x.d}  tlmin ${x.tlmin} > tlmax ${x.tlmax}\n`)
+    }
+    if (dropped.length > 20) process.stdout.write(`   … und ${dropped.length - 20} weitere\n`)
+  }
+  return nationalDay
 }
 
 async function main() {
@@ -238,9 +438,30 @@ async function main() {
     await sleep(DELAY_MS)
   }
 
+  // ZWEITER PASS: Gegenrichtung der Extremgrößen aus TAGESwerten (siehe
+  // DAY_CODES). Läuft nach dem Monatspass, weil er die Stationsdateien
+  // ergänzt, die dort entstanden sind.
+  process.stdout.write(`\nTagespass für ${DAY_CODES.map((c) => c.code).join(', ')} …\n`)
+  const nationalDay = await dailyPass(ids, nameById)
+  for (const [code, block] of Object.entries(nationalDay)) {
+    const nat = (national[code] ??= {})
+    nat.day = block
+  }
+
   await writeFile(
     join(outDir, '_national.json'),
-    JSON.stringify({ meta: { source: BASE, since: START, note: 'Monatsextreme, keine Einzeltag-Rekorde' }, national }),
+    JSON.stringify({
+      meta: {
+        source: BASE,
+        since: START,
+        note:
+          'Monatsextreme, keine Einzeltag-Rekorde — AUSSER im `day`-Block: ' +
+          'der traegt die Gegenrichtung der Extremgroessen aus Tageswerten, ' +
+          'mit exaktem Datum (YYYY-MM-DD).',
+        dailySource: DAILY_BASE,
+      },
+      national,
+    }),
   )
 
   // --- Karten-Index je Parameter --------------------------------------------

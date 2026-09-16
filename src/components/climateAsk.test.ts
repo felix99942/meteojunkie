@@ -21,6 +21,7 @@ import {
   nightNote,
   directionDerivable,
   directionNote,
+  formatRecordWhen,
 } from './climateAsk'
 
 const st = (id: number, name: string, isActive = true, validFrom = '1980-01-01'): AtStation =>
@@ -842,5 +843,101 @@ describe('Gegenrichtung einer Extremgröße', () => {
     expect(note).toContain('wärmste Nacht')
     expect(note).toContain('Monatsarchiv')
     expect(note).toContain('Tagesreihe')
+  })
+})
+
+// --- Gegenrichtung aus dem TAGESpass --------------------------------------
+
+describe('day-Block (Gegenrichtung aus Tageswerten)', () => {
+  // Gemessen am 2026-09-16 aus der echten Tagesreihe von Salzburg Flughafen.
+  const mit = {
+    abs: { max: { v: 13.4, d: '2024-08' }, min: { v: -30.6, d: '1956-02' } },
+    ann: { max: { v: -6.8, y: 1916 }, min: { v: -30.6, y: 1956 } },
+    mon: [],
+    sea: {},
+    day: {
+      abs: { max: { v: 23.8, d: '1905-07-03' }, min: null },
+      ann: { max: { v: 23.8, d: '1905-07-03' }, min: null },
+      mon: [],
+      sea: {},
+    },
+  }
+  const ohne = { ...mit, day: undefined }
+
+  it('antwortet die wärmste Nacht aus dem Tagesblock, nicht den Monats-Tiefstwert', () => {
+    const q = { ...ask('wärmste nacht in salzburg'), area: 'station' as const }
+    const a = answerFromRecords(q, mit as never)
+    expect(a?.value).toBe(23.8)
+    // 13,4 war die falsche Antwort von vorher.
+    expect(a?.value).not.toBe(13.4)
+  })
+
+  it('liefert das exakte Datum mit und formuliert es als Nachtspanne', () => {
+    const q = { ...ask('wärmste nacht in salzburg'), area: 'station' as const }
+    const a = answerFromRecords(q, mit as never)
+    expect(a?.day).toBe('1905-07-03')
+    expect(a?.when).toBe('Nacht vom 2. auf den 3. Juli 1905')
+  })
+
+  // Die richtige Richtung bleibt beim MONATSblock — dort ist der Wert schon
+  // ein echtes Tagesextrem, und ein Tagespass würde nichts verbessern.
+  it('nimmt für die kälteste Nacht weiter den Monatsblock', () => {
+    const q = { ...ask('kälteste nacht in salzburg'), area: 'station' as const }
+    const a = answerFromRecords(q, mit as never)
+    expect(a?.value).toBe(-30.6)
+    expect(a?.day).toBeUndefined() // nur Monatsgenauigkeit
+  })
+
+  // Assets von vor dem Tagespass: lieber keine Zahl als die falsche.
+  it('gibt ohne Tagesblock KEINE Antwort statt einer falschen', () => {
+    const q = { ...ask('wärmste nacht in salzburg'), area: 'station' as const }
+    expect(answerFromRecords(q, ohne as never)).toBeNull()
+  })
+})
+
+describe('formatRecordWhen', () => {
+  it('unterscheidet Monats- und Tagesgenauigkeit an der LÄNGE', () => {
+    expect(formatRecordWhen('2024-08')).toBe('August 2024')
+    expect(formatRecordWhen('1905-07-03')).toBe('3. Juli 1905')
+  })
+
+  it('macht aus einem Tagesdatum bei einer Nachtfrage eine Spanne', () => {
+    expect(formatRecordWhen('1905-07-03', true)).toBe('Nacht vom 2. auf den 3. Juli 1905')
+  })
+
+  // Ein Monatsdatum kann keine Nachtspanne werden — der Tag ist unbekannt.
+  it('bleibt bei Monatsgenauigkeit auch für Nachtfragen beim Monat', () => {
+    expect(formatRecordWhen('2024-08', true)).toBe('August 2024')
+  })
+})
+
+describe('mergeRecords mit Tagesblock', () => {
+  const rec = (v: number, d: string) => ({
+    abs: { max: null, min: null },
+    mon: [],
+    sea: {},
+    day: { abs: { max: { v, d }, min: null }, ann: { max: { v, d }, min: null }, mon: [], sea: {} },
+  })
+
+  // Der ORT ist der Normalfall: „wärmste Nacht in Salzburg" fragt acht
+  // Stationen. Ohne Verschmelzung des Tagesblocks fiele die Antwort auf die
+  // Erklärung zurück, obwohl die Daten je Station da sind.
+  it('verschmilzt den Tagesblock und nennt die haltende Station', () => {
+    const merged = mergeRecords([
+      { id: 131, name: 'Salzburg Flughafen', rec: rec(23.8, '1905-07-03') as never },
+      { id: 145, name: 'Salzburg Freisaal', rec: rec(24.6, '2015-08-07') as never },
+    ])
+    expect(merged?.day?.abs.max?.v).toBe(24.6)
+    expect(merged?.day?.abs.max?.n).toBe('Salzburg Freisaal')
+    expect(merged?.day?.abs.max?.d).toBe('2015-08-07')
+  })
+
+  // Führt KEINE Station den Block, darf auch keiner entstehen: ein leerer
+  // Block sähe wie „vorhanden, aber ohne Wert" aus und verdeckte die
+  // Erklärung.
+  it('legt ohne Tagesdaten keinen leeren Block an', () => {
+    const plain = { abs: { max: null, min: null }, mon: [], sea: {} }
+    const merged = mergeRecords([{ id: 1, name: 'A', rec: plain as never }])
+    expect(merged?.day).toBeUndefined()
   })
 })
