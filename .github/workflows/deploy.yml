@@ -58,22 +58,40 @@ jobs:
             echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
           fi
 
-      # Impressum-Angaben kommen aus Secrets, nicht aus dem Quellcode: das
-      # Repository ist öffentlich, und dort soll KEINE Postadresse des
-      # Anbieters stehen — auch nicht die der Impressumsvertretung. Auf die
-      # ausgelieferte Seite gehört sie (§ 18 Abs 1 MStV), im gebauten Bundle
-      # steht sie deshalb im Klartext. Fehlt ein Secret, baut die Seite
-      # trotzdem und das Impressum warnt sichtbar, statt still eine Lücke zu
-      # lassen. IMPRESSUM_CAREOF ist optional (Zustellzusatz).
+      # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
+      # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE
+      # Postadresse des Anbieters stehen — auch nicht die der
+      # Impressumsvertretung. Auf die ausgelieferte Seite gehört sie
+      # (§ 18 Abs 1 MStV), im gebauten Bundle steht sie deshalb im Klartext.
+      #
+      # `vars` ODER `secrets`, mit Vorrang für `vars` — absichtlich beides:
+      #
+      #   * Sachlich richtig sind VARIABLES. Die Adresse wird ohnehin
+      #     veröffentlicht, ist also kein Geheimnis, und Variables lassen sich
+      #     im GitHub-UI ANSEHEN. Secrets sind schreib-nur: ob eines gesetzt
+      #     ist und was drinsteht, sieht man nicht — genau daran ist es am
+      #     2026-09-16 gescheitert, ohne dass es jemand prüfen konnte.
+      #   * Der Fallback auf `secrets` bleibt, weil die beiden Reiter im UI
+      #     direkt nebeneinander liegen und „Environment" noch daneben. Wer den
+      #     Wert an einer der beiden Stellen einträgt, bekommt ein richtiges
+      #     Impressum, statt die Ursache suchen zu müssen.
+      #
+      # Achtung: REPOSITORY-Ebene, nicht Environment — dieser Job hat keine
+      # Environment-Bindung (nur der Deploy-Job unten hat eine).
+      #
+      # Fehlt ein Wert, baut die Seite trotzdem und das Impressum warnt
+      # sichtbar, statt still eine Lücke zu lassen (`given()` in
+      # src/config/impressum.ts behandelt LEER wie fehlend).
+      # IMPRESSUM_CAREOF ist optional (Zustellzusatz einer Vertretung).
       - name: Web-Version bauen (Karte aus)
         run: npm run build:web
         env:
           VITE_BASE: ${{ steps.base.outputs.base }}
-          VITE_IMPRESSUM_NAME: ${{ secrets.IMPRESSUM_NAME }}
-          VITE_IMPRESSUM_CAREOF: ${{ secrets.IMPRESSUM_CAREOF }}
-          VITE_IMPRESSUM_STREET: ${{ secrets.IMPRESSUM_STREET }}
-          VITE_IMPRESSUM_CITY: ${{ secrets.IMPRESSUM_CITY }}
-          VITE_IMPRESSUM_EMAIL: ${{ secrets.IMPRESSUM_EMAIL }}
+          VITE_IMPRESSUM_NAME: ${{ vars.IMPRESSUM_NAME || secrets.IMPRESSUM_NAME }}
+          VITE_IMPRESSUM_CAREOF: ${{ vars.IMPRESSUM_CAREOF || secrets.IMPRESSUM_CAREOF }}
+          VITE_IMPRESSUM_STREET: ${{ vars.IMPRESSUM_STREET || secrets.IMPRESSUM_STREET }}
+          VITE_IMPRESSUM_CITY: ${{ vars.IMPRESSUM_CITY || secrets.IMPRESSUM_CITY }}
+          VITE_IMPRESSUM_EMAIL: ${{ vars.IMPRESSUM_EMAIL || secrets.IMPRESSUM_EMAIL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

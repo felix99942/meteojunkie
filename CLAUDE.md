@@ -1364,8 +1364,19 @@ npm run preview   # gebautes dist/ servieren
   gespiegelt sein). Name, Zustellzusatz, Straße, Ort und E-Mail kommen erst
   beim BAUEN herein (`VITE_IMPRESSUM_NAME`/`_CAREOF`/`_STREET`/`_CITY`/
   `_EMAIL`, typisiert in `src/env.d.ts`): lokal aus `.env.local` (gitignored
-  über `*.local`, Vorlage `.env.example`), im Deploy aus
-  GitHub-Actions-Secrets (`IMPRESSUM_*`, gesetzt in `deploy.yml`). Im fertigen
+  über `*.local`, Vorlage `.env.example`), im Deploy aus der
+  REPOSITORY-Konfiguration (`IMPRESSUM_*`, eingesetzt in `deploy.yml`).
+  **Dort werden `vars` UND `secrets` gelesen** (`${{ vars.X || secrets.X }}`),
+  mit Vorrang für `vars` — absichtlich beides: sachlich richtig sind
+  VARIABLES, weil die Adresse ohnehin veröffentlicht wird und Variables sich
+  im UI ANSEHEN lassen; Secrets sind schreib-nur, man sieht nicht, ob und was
+  gesetzt ist, und genau daran war nicht zu erkennen, warum das Feld leer
+  blieb. Der Fallback bleibt, weil die beiden Reiter im UI nebeneinander
+  liegen. **Wichtig: REPOSITORY-Ebene, nicht Environment** — der Build-Job hat
+  keine Environment-Bindung (nur der Deploy-Job hat eine), unter
+  Settings → Environments → github-pages eingetragene Werte sieht er NICHT.
+  Das ist die naheliegende Verwechslung, „this environment has no variables"
+  ist genau dieser Irrweg. Im fertigen
   Bundle stehen sie im Klartext — richtig so, eine Pflichtangabe muss lesbar
   sein; verborgen werden sie nur vor dem Repository. **Ein LEERER Wert zählt als FEHLEND, nicht als
   Angabe** (`given()` in `config/impressum.ts`, mit Tests) — der Unterschied zu
