@@ -1393,7 +1393,12 @@ npm run preview   # gebautes dist/ servieren
   dieselbe Regel wie beim Preset-Laden: Fehlendes wird nie still übergangen.
   `_CAREOF` ist optional und löst keine Warnung aus (nicht jeder Anbieter hat
   eine Vertretung); eine Kundennummer darin gehört ZUR Adresse, ohne sie kommt
-  dort keine Post an. Geprüft: ohne Secrets kommt die Anschrift im Bundle
+  dort keine Post an. **Und genau daran ist sie verschwunden**: in einer
+  `.env`-Datei beginnt ein ungeschütztes `#` einen KOMMENTAR, aus
+  `VITE_IMPRESSUM_CAREOF=c/o Autorenglück #91443` wurde still
+  „c/o Autorenglück". Werte mit `#` gehören dort in Anführungszeichen — in
+  GitHub Variables/Secrets gilt die Kommentarregel NICHT, dort wird das Feld
+  genommen, wie es dasteht (ohne Quotes). Steht in `.env.example`. Geprüft: ohne Secrets kommt die Anschrift im Bundle
   nicht vor (nur der Warntext), mit Secrets schon. **Der Preis der Trennung**:
   was die Seite als Anschrift zeigt, steht nicht mehr im Code, sondern in der
   Deploy-Konfiguration — ein falsch GESETZTES Secret ersetzt sie still, ohne
