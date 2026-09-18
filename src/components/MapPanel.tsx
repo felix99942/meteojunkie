@@ -160,8 +160,8 @@ export function MapPanel({ panel }: { panel: PanelConfig }) {
     loadBasemap(domain.id)
       .then((bm) => {
         if (cancelled || mapRef.current !== map) return
-        ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast)
-        ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders)
+        ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast ?? EMPTY_FC)
+        ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders ?? EMPTY_FC)
         ;(map.getSource('admin1') as maplibregl.GeoJSONSource).setData(bm.admin1 ?? EMPTY_FC)
       })
       .catch((err: unknown) => console.error('[basemap]', err))

@@ -1034,8 +1034,47 @@ button:focus-visible {
     -1px 0 2px #000;
 }
 
+/* PANEL-Karten: nur das Label fällt weg, der Punkt bleibt — auf einer
+   Kachel von wenigen hundert Pixeln trägt auch ein namenloser Punkt noch
+   Orientierung, weil man die Lage der Nachbarpunkte kennt. */
 .city-label-hidden .city-label {
   display: none;
+}
+
+/* BILDKARTEN (Radar, Satellit): der ganze Marker verschwindet. Über einem
+   Radarecho oder einem Satellitenbild ist ein Punkt ohne Namen kein Hinweis,
+   sondern ein Fleck mehr — und man verwechselt ihn mit dem Bildinhalt. */
+.city-hidden {
+  display: none;
+}
+
+/* RADAR: größere Punkte und Schrift als in den Panel-Karten. Dort teilen sich
+   bis zu sechs Karten den Bildschirm, hier hat EINE Karte die ganze Fläche —
+   mit 5-px-Punkt und 10-px-Schrift verschwinden die Orte unter dem Echo,
+   und genau an ihnen liest man ab, wo die Zelle gerade steht. Der Halo wächst
+   mit: über einer roten Echofläche trägt ein dünner Schatten nicht. */
+.radar-container .city-marker {
+  gap: 5px;
+}
+
+.radar-container .city-dot {
+  width: 8px;
+  height: 8px;
+  background: #f2f4f8;
+  box-shadow:
+    0 0 0 1.5px rgba(0, 0, 0, 0.75),
+    0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+.radar-container .city-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow:
+    0 1px 3px #000,
+    0 -1px 3px #000,
+    1px 0 3px #000,
+    -1px 0 3px #000,
+    0 0 5px rgba(0, 0, 0, 0.9);
 }
 
 /* --- Zeit-Scrubber --------------------------------------------------------- */

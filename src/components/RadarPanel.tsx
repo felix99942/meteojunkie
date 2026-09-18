@@ -466,24 +466,35 @@ export function RadarPanel() {
       ),
     )
     let cancelled = false
+    // ZWEI Bündel: Küsten und Staatsgrenzen aus 'europe' (die Radarfläche
+    // reicht bis an die Nordsee), die BUNDESLÄNDER und Kantone aus dem
+    // eigenen 'dach'-Bündel. Das Europa-Bündel führt bewusst kein admin1 —
+    // über ganz Europa wären Regionsgrenzen Rauschen, über der Radarfläche
+    // sind sie die Orientierung, an der man eine Zugbahn festmacht.
     loadBasemap('europe')
       .then((bm) => {
         if (cancelled || mapRef.current !== map) return
-        ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast)
-        ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders)
-        ;(map.getSource('admin1') as maplibregl.GeoJSONSource).setData(bm.admin1 ?? EMPTY_FC)
+        ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast ?? EMPTY_FC)
+        ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders ?? EMPTY_FC)
       })
       .catch((err: unknown) => console.error('[basemap]', err))
+    loadBasemap('dach')
+      .then((bm) => {
+        if (cancelled || mapRef.current !== map) return
+        ;(map.getSource('admin1') as maplibregl.GeoJSONSource).setData(bm.admin1 ?? EMPTY_FC)
+      })
+      .catch((err: unknown) => console.error('[basemap dach]', err))
     return () => {
       cancelled = true
     }
   }, [mapReady, meta])
 
-  // Städte als DOM-Marker (Pseudo-Domain 'radar' in config/cities.ts)
+  // Städte als DOM-Marker (Pseudo-Domain 'imagery' in config/cities.ts —
+  // geteilt mit der Satellitenkarte)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    const cities = CITIES.filter((c) => c.domains.includes('radar'))
+    const cities = CITIES.filter((c) => c.domains.includes('imagery'))
     const markers = cities.map((c) => {
       const el = document.createElement('div')
       el.className = 'city-marker'
@@ -493,17 +504,25 @@ export function RadarPanel() {
       label.className = 'city-label'
       label.textContent = c.name
       el.append(dot, label)
-      return new maplibregl.Marker({ element: el, anchor: 'left', offset: [-3, 0] })
+      // Offset = halber Punktdurchmesser: der Punkt sitzt damit MITTIG auf der
+      // Koordinate, obwohl der Marker links verankert ist (Label rechts davon).
+      // Mit dem größeren Punkt wären die alten −3 px sichtbar daneben.
+      return new maplibregl.Marker({ element: el, anchor: 'left', offset: [-4, 0] })
         .setLngLat([c.lon, c.lat])
         .addTo(map)
     })
-    // Beim Hineinzoomen werden die kleineren Orte wieder eingeblendet: aus der
-    // D-A-CH-Übersicht wäre jede Kreisstadt ein Labelteppich.
+    // Ausdünnung nach ZOOM. Zwei Dinge sind hier anders als in den
+    // Panel-Karten: es verschwindet der GANZE Marker (ein Punkt ohne Namen ist
+    // über einem Bild nur ein Fleck mehr, kein Hinweis), und die Leiter reicht
+    // bis Stufe 5 — beim Hineinzoomen sollen mehr Orte kommen, nicht immer
+    // dieselben vierzig. Die Schwellen sind an der Kartenbreite nachgestellt:
+    // in der D-A-CH-Übersicht (z ≈ 5) stehen die Großstädte, ab z 7 die
+    // Regionalzentren, ab z 8 Alpenorte und Grenzstädte.
     const thin = () => {
       const z = map.getZoom()
-      const maxPriority = z < 4.8 ? 1 : z < 6 ? 2 : 3
+      const maxPriority = z < 4.8 ? 1 : z < 6 ? 2 : z < 7 ? 3 : z < 8 ? 4 : 5
       markers.forEach((m, i) => {
-        m.getElement().classList.toggle('city-label-hidden', cities[i].priority > maxPriority)
+        m.getElement().classList.toggle('city-hidden', cities[i].priority > maxPriority)
       })
     }
     thin()

@@ -15,6 +15,7 @@ import type { FeatureCollection } from 'geojson'
 import type { StyleSpecification } from 'maplibre-gl'
 import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
+import dachBasemapUrl from '../mapdata/dach.basemap.json?url'
 
 export const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
@@ -110,15 +111,21 @@ export const OVERLAY_INSERT_BEFORE = 'graticule'
 // --- Basemap-Daten (gebündelt, lazy geladen und gecacht) -------------------
 
 export interface BasemapData {
-  coast: FeatureCollection
-  borders: FeatureCollection
-  /** Bundesland-/Regionsgrenzen — nur in der Österreich-Domain gebündelt. */
+  /** Fehlt im 'dach'-Bündel, das nur admin1 nachliefert. */
+  coast?: FeatureCollection
+  borders?: FeatureCollection
+  /** Bundesland-/Regionsgrenzen — nur in der Österreich- und der Radar-Fläche. */
   admin1?: FeatureCollection
 }
 
 const BASEMAP_URLS: Record<string, string> = {
   europe: europeBasemapUrl,
   austria: austriaBasemapUrl,
+  // Nur admin1 (Bundesländer/Kantone von D, A, CH) über der Radarfläche.
+  // Küsten und Staatsgrenzen holt die Radarkarte aus dem Europa-Bündel — die
+  // beiden Bündel ergänzen sich, deshalb trägt dieses die anderen Ebenen
+  // nicht doppelt. `BasemapData.coast`/`borders` sind dafür optional.
+  dach: dachBasemapUrl,
 }
 
 const basemapCache = new Map<string, Promise<BasemapData>>()
