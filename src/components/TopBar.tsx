@@ -5,6 +5,7 @@ import { MAP_ENABLED } from '../config/features'
 import { MOCK_FOEHN, MOCK_MODE, mockGridDims } from '../api/mock'
 import { isPanelSection, useAppView } from '../state/appView'
 import { LocationPicker } from './LocationPicker'
+import { QuickPoints } from './QuickPoints'
 import { PresetBar } from './PresetBar'
 import { LayoutPicker } from './LayoutPicker'
 
@@ -50,6 +51,12 @@ export function TopBar() {
           )
         })()}
       <LocationPicker />
+      {/* Schnellwahl nur im Profil-Bereich: dort gibt es keine eigene
+          Panel-Leiste, in der sie stehen könnte (das Skew-T ist eine
+          Zeichenfläche). Ensemble und Punktprognosen haben ihre eigene Reihe
+          bzw. brauchen sie nicht — zweimal dieselben acht Knöpfe übereinander
+          wären Platzverschwendung. */}
+      {view === 'profile' && <QuickPoints />}
       <LayoutPicker />
       <PresetBar />
       <span

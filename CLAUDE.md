@@ -1216,15 +1216,146 @@ npm run preview   # gebautes dist/ servieren
   Kartenhintergrund kommt aus `render/basemap.ts` — dafür aus `MapPanel.tsx`
   herausgezogen, damit Radar und Feld-Karte nicht zwei Fassungen derselben
   Linienfarben pflegen. Städte kommen aus `config/cities.ts` über die
-  **Pseudo-Domain `'radar'`** (die Radarkarte hat keine `DomainPreset`, ihre
-  Fläche gibt der Dienst vor; ein zweites Städteverzeichnis wäre schlechter);
-  ausgedünnt wird hier nach ZOOM, nicht nach Panelbreite.
+  **Pseudo-Domain `'imagery'`** (hieß bis 2026-09-19 `'radar'`, trägt seit dem
+  Satellitenbereich ZWEI Karten; beide haben keine `DomainPreset`, ihre Fläche
+  gibt der Dienst bzw. der Ausschnitt vor — ein zweites Städteverzeichnis wäre
+  schlechter); ausgedünnt wird hier nach ZOOM, nicht nach Panelbreite.
+  **In den Bildkarten verschwindet der GANZE Marker, nicht nur das Label**
+  (`.city-hidden` statt `.city-label-hidden`): über einem Radarecho oder einem
+  Satellitenbild ist ein Punkt ohne Namen kein Hinweis, sondern ein Fleck mehr,
+  den man für Bildinhalt hält. In den PANEL-Karten bleibt es beim alten
+  Verhalten (Punkt bleibt, Label fällt) — dort ist die Fläche winzig und die
+  Lage der Nachbarpunkte trägt noch. **Die Zoomleiter reicht bis Priorität 5**
+  (z < 4,8 → 1 · < 6 → 2 · < 7 → 3 · < 8 → 4 · sonst 5): beim Hineinzoomen
+  sollen MEHR Orte kommen, nicht immer dieselben vierzig. Dafür führt die
+  Registry rund 95 Einträge für `'imagery'` — Stufe 4 sind Regionalzentren,
+  Stufe 5 Alpenorte und Grenzstädte (bei Föhn- und Staulagen genau die, an
+  denen man sich orientiert). **Die Koordinaten der Nachträge sind geokodiert,
+  nicht aus dem Kopf**: die erste Abfrage lieferte für „Milano" und „Venezia"
+  gleichnamige Kleinorte in Mittelitalien, 300 km daneben — in der Karte sähe
+  das wie ein Projektionsversatz aus. `cities.test.ts` prüft deshalb die LAGE
+  (alle im Ausschnitt, im Länderumriss, keine doppelten Punkte, jede
+  Zoomstufe besetzt). **Punkte und Labels
+  sind hier GRÖSSER als in den Panel-Karten** (8 statt 5 px, 13 statt 10 px,
+  fetter, kräftigerer Halo — `.radar-container .city-*` in `index.css`): dort
+  teilen sich bis zu sechs Karten den Bildschirm, hier hat eine Karte die
+  ganze Fläche, und über einem roten Echo verschwand die kleine Schrift. Der
+  Marker-Offset ist der halbe Punktdurchmesser (−4 px), sonst säße der größere
+  Punkt sichtbar neben seiner Koordinate.
+  **BUNDESLANDGRENZEN aus einem EIGENEN Bündel** (`dach.basemap.json`, nur
+  admin1, Bundesländer und Kantone von D, A und CH): die Radarkarte lädt
+  seither ZWEI Bündel — Küsten und Staatsgrenzen weiter aus `europe` (die
+  Produktfläche reicht bis an die Nordsee), admin1 aus `dach`. Das
+  Europa-Bündel führt bewusst KEIN admin1, über ganz Europa wäre das Rauschen;
+  über der Radarfläche sind die Landesgrenzen dagegen die Orientierung, an der
+  man eine Zugbahn festmacht. Gefiltert wird über `ADM0_A3` — ungefiltert
+  kämen die Regionen Frankreichs, Italiens, Tschechiens und Polens mit
+  (`ADMIN1_COUNTRIES` in `scripts/build-basemap.mjs`, 224 KB, AT 132 / DE 773 /
+  CH 334 Liniensegmente).
   Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
   `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
   kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
   Echo**, gemessen) und weitere Produkte desselben Dienstes (`RADOLAN-RW` angeeichte
   Stundensummen, `RADOLAN-RY`) — die Registry `RADAR_PRODUCTS` ist dafür schon
   eine Liste.
+- **Satellitenbilder** (`SatellitePanel.tsx`, Registry/Kern `config/satellite.ts`
+  mit Tests, Abruf `api/eumetsat.ts`, AppView `satellite`) — zweiter Bereich,
+  der fertige Karten holt statt Zahlen. Quelle ist **EUMETView**, der
+  öffentliche WMS von EUMETSAT (`view.eumetsat.int/geoserver/wms`): CORS `*`,
+  kein Key, `<Fees>none</Fees>`/`<AccessConstraints>none</AccessConstraints>` —
+  also dieselbe Mechanik wie beim Radar, direkt aus dem Browser, ohne Proxy
+  und ohne Open-Meteo-Budget (plain `fetch`, nicht `apiGet`).
+  **Fünf Produkte, alle live geprüft (2026-09-19)**: Geocolour (MTG/FCI,
+  10 min, Voreinstellung) · **Sichtbar 0,6 µm hochaufgelöst** (MTG HRFI,
+  10 min) · Infrarot 10,5 µm (MTG, 10 min) · Luftmassen-RGB und
+  Konvektions-RGB (beide MSG/SEVIRI, 15 min — für die beiden gibt es am Dienst
+  kein MTG-Gegenstück). Archiv: MTG ab 23.09.2024, **MSG ab 01.09.2020**.
+  **Tagesprodukte nur dort, wo sie etwas können, was kein Tag-und-Nacht-Produkt
+  kann**: `rgb_truecolour`, `rgb_snow` und `rgb_cloudtype` sind draußen (sie
+  zeigen tagsüber nichts, was Geocolour nicht auch zeigt, und nachts ein
+  schwarzes bzw. leeres Bild — gemessen truecolour nachts 3,2 KB transparent,
+  tagsüber 1,16 MB). Geocolour schaltet selbst auf Infrarot um und sieht am Tag
+  wie True Colour aus.
+  **HOCHAUFGELÖST SICHTBAR IST `vis06_hrfi`, NICHT HRV**: MSGs HRV-Kanal (1 km)
+  ist bei EUMETView nicht veröffentlicht — von SEVIRI gibt es nur `vis006`, den
+  3-km-Standardkanal. Der Nachfolger ist da: MTG/FCI liefert VIS 0,6 µm als
+  HRFI (High Resolution Fast Imagery), 500 m am Subsatellitenpunkt, über
+  Mitteleuropa durch den schrägen Blick real ~1 km. Im direkten Vergleich mit
+  Geocolour am selben Zeitpunkt sind Alpentäler, einzelne Cumuluszellen und
+  Cirrenstreifen sichtbar schärfer. Deshalb hat DIESES Produkt eine eigene
+  Anforderungsbreite (`SatelliteProduct.imageWidth` = 1600 statt 1100, also
+  ~1,0 km/px): mit der Vorgabe läge der Vorteil, für den man es nimmt, unter
+  dem Zielraster. Mehr bringt nichts und kostet (gemessen 1100 → 200 KB,
+  1600 → 372 KB, 2200 → 628 KB, 3000 → 1,0 MB). `dayOnly: true` steuert den
+  Hinweis in der Legende — ein schwarzes Nachtbild sieht nach einem Fehler aus
+  und ist keiner; genau ein Produkt darf so aussehen (Test).
+  **DIE ZEITFALLE IST EINE ANDERE ALS BEIM DWD, und die gefährlichere**: die
+  Zeitdimension trägt `nearestValue="1"` — ein Zeitpunkt auf dem Raster, den es
+  noch nicht gibt, wird STILL durch das nächstgelegene Bild beantwortet
+  (gemessen 2026-09-18: die Anfragen für 22:20 und 22:30 kamen byte-identisch
+  zurück, gleiche MD5), erst eine Zeit NEBEN dem Raster (22:35) wirft eine
+  ServiceException. Ein doppeltes Bild in der Schleife sieht aus wie Wetter,
+  das steht. Deshalb kommen die Zeitschritte ausschließlich aus dem
+  GetCapabilities des **layer-eigenen** WMS (`/geoserver/<ws>/<layer>/wms`,
+  6,5 KB statt 282 KB) — dessen Ende hängt dem Verfügbaren eher hinterher
+  (22:10 gemeldet, 22:30 schon abrufbar), was die sichere Richtung ist.
+  Verzug insgesamt unter 10 Minuten.
+  **Die FLÄCHE gibt die Seite vor, nicht der Dienst** (`SATELLITE_AREA`,
+  lon 0–22 / lat 41–56): ein Satellitenlayer meldet im Capabilities die ganze
+  sichtbare Halbkugel (gemessen lon ±81,3, lat ±77,4), ein Bild darüber wäre
+  für Mitteleuropa nutzlos. Der Ausschnitt reicht bewusst von der Nordsee bis
+  in die Po-Ebene und von der Rhône bis zur Weichsel, damit man Systeme
+  HEREINZIEHEN sieht. Projiziert wird selbst (`toMercator`/`mercBox` in
+  `config/wmsTime.ts`, Test gegen die Referenzwerte) — beim Radar kommt die
+  EPSG:3857-Box dagegen aus dem Capabilities, das EUMETSAT-Capabilities führt
+  gar keine.
+  **JPEG, nicht PNG**: bei 1400 px war Geocolour als JPEG 266 KB und als PNG8
+  1,18 MB — Faktor 4,4 bei einem Fotomotiv. `format_options=quality:70` ändert
+  nichts (byte-identisch zu 85), nicht erneut versuchen. `SATELLITE_IMAGE_WIDTH`
+  = 1100 (~1,5 km/px, feiner als MTG mit 2 km) ergibt 70–210 KB je Bild
+  (gemessen über den echten Abrufpfad: Geocolour 206, IR 90, Airmass 101,
+  Konvektion 72) — spürbar mehr als das Radar; deshalb die Nebenläufigkeit 3
+  statt 4.
+  **Die Ziehleiste umfasst IMMER 24 Stunden, ohne Auswahl davor** (auf
+  Wunsch): eine Wetterlage liest man über einen Tag, und jede Auswahl davor
+  ist ein Handgriff, bevor man etwas sieht. Das erzwingt eine ANDERE
+  Ladestrategie als beim Radar — 24 h sind bei MTG **145 Bilder à ~180 KB,
+  also 26 MB**, die kann man nicht vorladen. Geholt wird deshalb nur, was
+  gebraucht wird (`wantedTimes`): die jüngsten 12 Bilder, dazu ein Fenster um
+  den Zeiger (2 zurück, beim Abspielen 8 voraus). Der Rest kommt, wenn man
+  hinzieht — bei ~0,7 s je Bild ist das kein Warten. Dazu eine Obergrenze von
+  48 Bildern im Speicher: wer den ganzen Tag durchzieht, sammelte sonst alle
+  145 Blobs an; verdrängt wird das vom Zeiger am weitesten entfernte, der
+  neueste Stand bleibt immer. **Die SCHLEIFE kreist trotzdem nur über die
+  letzten 3 Stunden** (`LOOP_SPAN_MS`): ein Tag im Zeitraffer wären 145 Abrufe
+  bei einem fremden Dienst, und zwar bei jedem Durchlauf. Wer weiter zurück
+  will, zieht dorthin; die Schleife spielt von dort vorwärts und pendelt sich
+  danach in den jüngsten Abschnitt ein. Die Statuszeile zählt deshalb
+  „geladen", nicht „x von 145" — ein Fortschritt gegen die Gesamtzahl wäre
+  eine Zahl, die nie voll wird.
+  **Kein Canvas** (anders als beim Radar): am Satellitenbild ist nichts zu
+  korrigieren, die Bilder gehen als **Blob-URL** auf die Karte. Der Umweg über
+  `canvas.toDataURL()` würde aus 160 KB JPEG mehrere MB PNG machen — dafür muss
+  der Bereich die URLs selbst wieder freigeben (`urlsRef` + `dropImages`),
+  sonst hält jeder Produktwechsel seine alte Schleife im Speicher.
+  **Geteilt mit dem Radar ist `config/wmsTime.ts`** — Dimension parsen,
+  Zeitraster bilden (`frameTimes`), `nearestFrame`, Mercator und Bildecken.
+  Herausgezogen aus `config/radar.ts`, das die Namen weiter re-exportiert
+  (seine öffentliche Form und seine Tests sind unverändert). Verschieden
+  bleiben genau drei Dinge, jedes mit Grund: die Fläche (s. o.), das fehlende
+  Canvas und der fehlende Vorhersageteil — EUMETView liefert nur Gemessenes,
+  es gibt also kein `forecastMs` abzuschneiden.
+  Karte, Zeitschieber, Schleife, „● neuer Stand" und das selbsttätige
+  Nachrücken sind dieselbe Bedienung wie beim Radar (Bilder liegen über ihren
+  ZEITSTEMPEL, nicht über den Index); CSS teilt sich die `.radar-*`-Klassen,
+  nur die Legende ist eine andere (`.satellite-legend`): ein Satellitenbild hat
+  keine ablesbaren Klassen, dort steht die Erklärung des PRODUKTS — bei einem
+  RGB entscheidet die Kanalkombination, was Gelb oder Rot heißt, und das sieht
+  man dem Bild nicht an.
+  Die Bundesländergrenzen kommen aus demselben `dach`-Bündel wie beim Radar,
+  die Städte über dieselbe Pseudo-Domain `'imagery'` in `config/cities.ts`
+  (ein paar Einträge — Mailand, Venedig, Turin — liegen außerhalb der
+  Radarfläche und tragen nur hier).
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
   einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
   UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:
@@ -1634,7 +1765,7 @@ npm run preview   # gebautes dist/ servieren
   API-Key, kein Fremd-Rate-Limit; MapLibres `load`-Event hinge sonst an
   fremden Tile-Requests, an denen das ganze Panel gegated ist).
   Layer bottom→top: Hintergrund → Feld → Gradnetz → Bundeslandgrenzen
-  (admin1, nur Österreich-Domain) → Küsten → Staatsgrenzen → Städte/Labels
+  (admin1, nur Österreich-Domain und Radarfläche) → Küsten → Staatsgrenzen → Städte/Labels
   (DOM, immer zuoberst). **Grenzen sind Casing-Paare** (breite dunkle Linie +
   schmaler heller Kern) — eine einzelne Linienfarbe ist gegen divergierende
   Farbskalen nie überall lesbar. Hierarchie über Strichart, nicht Helligkeit:
@@ -1643,8 +1774,15 @@ npm run preview   # gebautes dist/ servieren
   unterschiedliche Werte für deckungsgleiche Strichelung. Daten: Natural
   Earth (Küsten/Grenzen 1:50m, admin1 1:10m eng zugeschnitten), gebündelt in
   `src/mapdata/*.basemap.json`; Regeneration mit
-  `node scripts/build-basemap.mjs`. Städte kuratiert in `src/config/cities.ts`
-  (`domains` + `priority`; kleine Panels dünnen Labels aus, Punkte bleiben).
+  `node scripts/build-basemap.mjs [domain …]` — OHNE Argument werden alle
+  Bündel neu geschrieben, also auch gegen einen inzwischen geänderten
+  Natural-Earth-Stand; mit Argument nur das genannte (`dach`). Ein Bündel muss
+  nicht alle Ebenen führen: `dach` trägt nur admin1 für die Radarkarte, die
+  den Rest aus `europe` nimmt — `BasemapData.coast`/`borders` sind deshalb
+  optional. Städte kuratiert in `src/config/cities.ts`
+  (`domains` + `priority` 1–5; kleine Panels dünnen Labels aus und lassen die
+  Punkte stehen, die BILDKARTEN blenden den ganzen Marker aus — Begründung im
+  Radar-Abschnitt).
   Stadt-Labels sind DOM-Marker mit Text-Halo — MapLibre-Symbol-Layer würden
   eine externe Glyphs-Quelle brauchen.
 
@@ -1674,8 +1812,9 @@ npm run preview   # gebautes dist/ servieren
   eigener Abschnitt „Stand dieser Seite" im Impressum, wo man sie zuerst
   sucht.
 - **Attribution ist Lizenzbedingung, nicht Höflichkeit** (`Attribution.tsx`,
-  `.attribution` in `index.css`): Open-Meteo (CC BY 4.0), GeoSphere (CC BY 4.0)
-  und DWD (GeoNutzV) verlangen Namensnennung, SPEC §13 führte das als offen.
+  `.attribution` in `index.css`): Open-Meteo (CC BY 4.0), GeoSphere (CC BY 4.0),
+  DWD (GeoNutzV) und EUMETSAT verlangen Namensnennung, SPEC §13 führte das als
+  offen.
   Jeder Bereich trägt jetzt eine Quellenzeile mit Links. Die Anbieterliste der
   Vorhersagebereiche wird aus der Registry ABGELEITET (`ModelDef.provider`),
   nicht gepflegt — ein neues Modell bringt seinen Anbieter mit. Für eine Seite,
@@ -1799,10 +1938,38 @@ npm run preview   # gebautes dist/ servieren
   hat einen Rückfall, falls `workbench` trotzdem im Zustand steht.
   Wiedereinschalten ist das Entfernen einer Umgebungsvariable aus
   `build:web`.
-- **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`):
-  Meteogramm (klassisch, `classic`) · Punktprognosen (`workbench` — der frühere
-  „Meteogramm"-Bereich, nur umbenannt) · Ensemble · Vertikalprofil · Föhn ·
-  Radar · Österreich-Klima · Verifikation. Ensemble und Profil waren früher Panel-MODI und sind jetzt
+- **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`).
+  **Die Reihe ist GRUPPIERT, und die Farbe trägt die Gruppe** — bei acht
+  Bereichen ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu
+  liest:
+  **mint** Meteogramm (`classic`) · Klima + MOS (`at-klima`) · Ensemble ·
+  Soundings (`profile`) · Föhn — Zahlenwerke aus Modell- und Messreihen;
+  **ocker** Radar · Satellit — fertige Karten fremder Dienste, Zeitschleife
+  statt Zeitraster, kein Open-Meteo-Budget;
+  **rot** Verifikation — der einzige Bereich, der ZURÜCKschaut und die übrigen
+  bewertet. `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.
+  **Die Farbe liegt auf JEDEM Tab, nicht nur auf dem aktiven** — sie ordnet die
+  Reihe in Blöcke, und das tut sie nur, wenn man sie durchgehend sieht. Die
+  Zustände unterscheiden sich deshalb über die INTENSITÄT: ruhig gefärbt →
+  beim Überfahren deutlich kräftiger (Text ins Helle, volle Unterkante) →
+  aktiv am kräftigsten plus Schein nach innen. Der aktive Tab trägt DREI
+  Merkmale (Farbe, getönte Fläche, Unterkante), damit die Reihe auch ohne
+  Farbunterscheidung benutzbar bleibt; die transparente Unterkante der übrigen
+  hält die Reihe beim Wechseln ruhig. **Die Mischungen sind nachgerechnet,
+  nicht geschätzt**: der Textkontrast liegt bei 4,6–5,5:1 (Ruhe) und
+  5,0–5,4:1 (hover/aktiv). Zwei Werte fielen durch und wurden korrigiert — das
+  Rot der Fehlermeldungen (#e0645a) kam ruhend nur auf 4,0:1 und ist hier
+  deshalb heller (#e8776c), und der aktive Text musste weiter ins Weiß, weil
+  die kräftigere Fläche ihn sonst auf 3,7:1 drückte. `color-mix` trägt überall
+  einen Rückfall auf die volle Gruppenfarbe: fällt es aus, ist die Farbe
+  lieber zu kräftig als weg.
+  Punktprognosen (`workbench` — der frühere „Meteogramm"-Bereich, nur
+  umbenannt) steht am ENDE der Registry: in der veröffentlichten Version fällt
+  es ohnehin heraus (`POINT_FORECASTS_ENABLED`), im vollen Build ist es der
+  Werkzeugkasten hinter den fertigen Bereichen. Die Tabs sind bewusst GRÖSSER
+  als der Rest der Leiste (7/16 px, 14 px fett) — sie sind das meistbenutzte
+  Bedienelement der Seite und waren kleiner als jeder Dropdown daneben; die
+  Leiste darf dafür umbrechen. Ensemble und Profil waren früher Panel-MODI und sind jetzt
   eigene Bereiche — `PanelMode` kennt nur noch `'meteogram' | 'map'` (Panel
   zeigt Linienchart vs. Feld-Karte — ACHTUNG, andere Bedeutung als die
   AppView-Id `classic`; deshalb bewusst NICHT `'meteogram'` als AppView-Id
@@ -1828,6 +1995,18 @@ npm run preview   # gebautes dist/ servieren
   ausgeblendet, schaltet parsync ab (`parSyncAfterLayout`), sonst blieben die
   Parameter-Dropdowns der übrigen Panels für immer gesperrt. Getestet in
   `state/workbench.test.ts`.
+- **Schnellwahl des Orts** (`config/quickPoints.ts`, `components/QuickPoints.tsx`):
+  acht Knöpfe — Landeshauptstädte plus **Sonnblick** — die `lockedLocation`
+  setzen. Sie stehen in JEDEM punktbasierten Bereich: klassisches Meteogramm
+  und Ensemble in deren eigener Werkzeugleiste, Soundings in der TopBar
+  (`view === 'profile'`), weil das Skew-T eine reine Zeichenfläche ohne eigene
+  Leiste ist. Entstanden sind sie im Ensemble-Panel (`ENSEMBLE_QUICK_POINTS`)
+  und sind von dort herausgezogen: der Ort ist GLOBALER Zustand, drei
+  Fassungen derselben Reihe wären drei Gelegenheiten auseinanderzulaufen. Der
+  Sonnblick ist bewusst dabei — an ihm wird die Höhenabhängigkeit sichtbar, an
+  der Globalmodelle scheitern (siehe den Höhenbefund in der Verifikation). In
+  der TopBar steht die Reihe NUR im Profil-Bereich: Ensemble hat seine eigene,
+  und zweimal dieselben acht Knöpfe übereinander wären Platzverschwendung.
 - **Vorgabe-Ort ist SALZBURG** (`lockedLocation` in `state/workbench.ts`), und
   das ist keine Geschmacksfrage: die frühere Vorgabe Berlin liegt AUSSERHALB
   der Abdeckung sämtlicher Lokalmodelle dieser Workbench — AROME Austria und

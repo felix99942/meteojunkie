@@ -16,7 +16,6 @@ import 'uplot/dist/uPlot.min.css'
 import { useDeterministicSeries, useEnsembleSeries } from '../api/queries'
 import {
   ENSEMBLE_BUCKET_HOURS,
-  ENSEMBLE_QUICK_POINTS,
   getEnsembleModel,
   getEnsembleVariable,
 } from '../config/ensemble'
@@ -24,6 +23,7 @@ import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { TIME_RANGE } from '../config/time'
 import { accumulateMembers, bucketMembers, plumeStats, readoutAt } from '../render/plume'
 import { cursorRangeEnd, useWorkbench, type PanelConfig } from '../state/workbench'
+import { QuickPoints } from './QuickPoints'
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
@@ -61,7 +61,6 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   // Lesen und Navigieren sind zwei verschiedene Handgriffe.
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const setCursorTime = useWorkbench((s) => s.setCursorTime)
-  const setLockedLocation = useWorkbench((s) => s.setLockedLocation)
 
   const model = getEnsembleModel(panel.ensembleModel)
   const variable = getEnsembleVariable(panel.ensembleVariable)
@@ -345,24 +344,9 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   return (
     <div className="ens">
       <div className="ens-bar">
-        <span className="ens-quickcap label-muted">Punkt</span>
-        {ENSEMBLE_QUICK_POINTS.map((p) => (
-          <button
-            key={p.label}
-            type="button"
-            className={
-              location && Math.abs(location.lat - p.lat) < 0.02 && Math.abs(location.lon - p.lon) < 0.02
-                ? 'ens-quick is-active'
-                : 'ens-quick'
-            }
-            onClick={() => setLockedLocation(p)}
-            title={`${p.label} — ${p.lat.toFixed(2)}°N ${p.lon.toFixed(2)}°O`}
-          >
-            {p.label}
-          </button>
-        ))}
+        <QuickPoints />
         {zoomed && (
-          <button type="button" className="ens-quick" onClick={resetZoom} title="Ganzen Horizont zeigen">
+          <button type="button" className="quickpt" onClick={resetZoom} title="Ganzen Horizont zeigen">
             ⤢ Zoom zurück
           </button>
         )}

@@ -46,6 +46,7 @@ import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { timeGridMs } from '../config/time'
 import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
+import { QuickPoints } from './QuickPoints'
 import { OpenMeteoAttribution } from './Attribution'
 
 const DEFAULT_MODEL = 'ecmwf_ifs025'
@@ -472,6 +473,10 @@ export function ClassicMeteogram() {
       <div className="atclima-bar">
         <span className="atclima-title">Meteogramm</span>
         <LocationPicker />
+        {/* Schnellwahl NEBEN der Suche, nicht statt ihr: die acht Punkte sind
+            der Alltag, das Suchfeld der Rest der Welt. Derselbe Baustein wie
+            im Ensemble und in den Soundings — der Ort ist global. */}
+        <QuickPoints />
         <label className="atclima-ctrl">
           <span className="label-muted">Modell</span>
           <select value={modelId} onChange={(e) => setModelId(e.target.value)}>

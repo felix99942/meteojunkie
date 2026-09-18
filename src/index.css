@@ -556,17 +556,27 @@ button:focus-visible {
   font-size: 11px;
 }
 
-.ens-quickcap {
+/* SCHNELLWAHL des Orts (`components/QuickPoints.tsx`) — dieselbe Reihe im
+   klassischen Meteogramm, im Ensemble und in den Soundings. Sie war mit
+   1/6 px und 11 px Schrift das kleinste Ziel der ganzen Oberfläche, obwohl
+   man sie am häufigsten trifft; jetzt auf Augenhöhe mit den Dropdowns
+   daneben. */
+.quickpt-cap {
   margin-right: 2px;
 }
 
-.ens-quick {
-  padding: 1px 6px;
-  font-size: 11px;
-  color: var(--ink-muted);
+.quickpt {
+  padding: 3px 10px;
+  font-size: 13px;
+  color: var(--ink-secondary);
 }
 
-.ens-quick.is-active {
+.quickpt:hover {
+  color: var(--ink);
+  background: var(--bg-control-hover);
+}
+
+.quickpt.is-active {
   color: var(--ink);
   border-color: var(--accent);
   background: var(--bg-control-hover);
@@ -1202,21 +1212,94 @@ button:focus-visible {
 
 .appnav {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   flex: 0 0 auto;
+  /* Acht größere Knöpfe plus Impressum passen auf einem schmalen Fenster nicht
+     mehr in eine Zeile — umbrechen ist besser als abschneiden. */
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
+/* Die Tabs sind das meistbenutzte Bedienelement der Seite und waren mit 4/12 px
+   und Grundschriftgröße kleiner als jeder Dropdown daneben — hier darf man
+   nicht zielen müssen. */
 .appnav-tab {
-  padding: 4px 12px;
+  padding: 7px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--ink-muted);
   background: var(--bg-control);
+  /* Platzhalter für die Unterkante des aktiven Tabs: ohne ihn springt die
+     Reihe beim Wechseln um 2 px. */
+  border-bottom: 2px solid transparent;
 }
 
+/* FARBE = GRUPPE (Begründung im Kopf von AppNav.tsx). `--nav` trägt die
+   Gruppenfarbe, alles Übrige leitet sich daraus ab — so bleibt der Unterschied
+   zwischen den Gruppen an EINER Stelle einstellbar.
+
+   Die Farbe liegt auf JEDEM Tab, nicht nur auf dem aktiven: sie ordnet die
+   Reihe in drei Blöcke, und das tut sie nur, wenn man sie durchgehend sieht.
+   Unterschieden werden die Zustände deshalb über die INTENSITÄT — ruhig
+   gefärbt, beim Überfahren deutlich kräftiger, aktiv am kräftigsten plus
+   durchgehende Unterkante. Drei Merkmale (Farbe, Fläche, Kante), damit die
+   Reihe auch ohne Farbunterscheidung benutzbar bleibt. */
+.appnav-tab.is-forecast {
+  --nav: #3fbf94;
+}
+
+.appnav-tab.is-imagery {
+  --nav: #d59220;
+}
+
+/* Etwas heller als das Rot der Fehlermeldungen (#e0645a): auf der getönten
+   Ruhefläche kam das dunklere nur auf 4,0:1 Kontrast, dieses auf 4,6:1. */
+.appnav-tab.is-verify {
+  --nav: #e8776c;
+}
+
+/* Ruhezustand: gefärbt, aber zurückgenommen — acht Knöpfe in Vollfarbe
+   nebeneinander wären ein Jahrmarkt. */
+.appnav-tab.is-forecast,
+.appnav-tab.is-imagery,
+.appnav-tab.is-verify {
+  /* Rückfall für Browser ohne color-mix: lieber die volle Gruppenfarbe als
+     gar keine — hier trägt die Farbe die Einteilung, nicht die Dekoration. */
+  color: var(--nav);
+  color: color-mix(in srgb, var(--nav) 82%, var(--ink-muted));
+  background: color-mix(in srgb, var(--nav) 8%, var(--bg-control));
+  border-color: color-mix(in srgb, var(--nav) 26%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--nav) 42%, transparent);
+}
+
+/* Überfahren: knallig. Der Text geht ins Helle, die Fläche trägt die Farbe
+   deutlich, die Unterkante steht voll. */
+.appnav-tab:hover {
+  color: var(--nav);
+  color: color-mix(in srgb, var(--nav) 55%, #ffffff);
+  background: color-mix(in srgb, var(--nav) 26%, var(--bg-control-hover));
+  border-color: color-mix(in srgb, var(--nav) 75%, transparent);
+  border-bottom-color: var(--nav);
+}
+
+/* Aktiv: die kräftigste Fläche und eine volle Unterkante — muss sich auch von
+   einem überfahrenen Nachbarn unterscheiden, deshalb zusätzlich der Schein
+   nach innen statt nur mehr Farbe. Der Text geht dabei WEITER ins Helle als
+   beim Überfahren: auf der kräftigeren Fläche hielte die Ruhefarbe den
+   Kontrast nicht (nachgerechnet: 3,7–4,0:1, so 5,0–5,2:1). */
 .appnav-tab.is-active {
-  color: var(--ink);
-  background: var(--bg-control-hover);
-  border-color: var(--accent);
+  color: var(--nav);
+  color: color-mix(in srgb, var(--nav) 45%, #ffffff);
+  background: color-mix(in srgb, var(--nav) 34%, var(--bg-control-hover));
+  border-color: color-mix(in srgb, var(--nav) 85%, transparent);
+  border-bottom-color: var(--nav);
+  box-shadow: inset 0 -2px 0 var(--nav);
+}
+
+.appnav-tab.is-active:hover {
+  background: color-mix(in srgb, var(--nav) 42%, var(--bg-control-hover));
 }
 
 /* Impressum-Link: abgesetzt am rechten Rand, kleiner und stiller als die

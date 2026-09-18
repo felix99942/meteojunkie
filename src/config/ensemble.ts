@@ -30,7 +30,6 @@
 // Tagesbudgets — pro Feld. Deshalb ist der Ensemble-Modus punktbasiert und
 // bekommt bewusst keine Kartenvariante.
 
-import type { LatLon } from '../state/workbench'
 
 export interface EnsembleModelInfo {
   id: string
@@ -383,14 +382,8 @@ export function getEnsembleVariable(id: string): EnsembleVariableInfo {
   return ENSEMBLE_VARIABLES.find((v) => v.id === id) ?? ENSEMBLE_VARIABLES[0]
 }
 
-/** Kuratierte Punkte für die Schnellwahl — Landeshauptstädte plus Sonnblick. */
-export const ENSEMBLE_QUICK_POINTS: LatLon[] = [
-  { lat: 48.21, lon: 16.37, label: 'Wien' },
-  { lat: 47.07, lon: 15.44, label: 'Graz' },
-  { lat: 48.31, lon: 14.29, label: 'Linz' },
-  { lat: 47.8, lon: 13.04, label: 'Salzburg' },
-  { lat: 47.27, lon: 11.39, label: 'Innsbruck' },
-  { lat: 46.62, lon: 14.31, label: 'Klagenfurt' },
-  { lat: 47.5, lon: 9.75, label: 'Bregenz' },
-  { lat: 47.05, lon: 12.96, label: 'Sonnblick' },
-]
+/**
+ * Die Schnellwahl-Punkte standen früher HIER; sie setzen `lockedLocation` und
+ * gelten damit für alle punktbasierten Bereiche — deshalb jetzt in
+ * `config/quickPoints.ts`, gerendert von `components/QuickPoints.tsx`.
+ */
