@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SATELLITE_PRODUCT,
+  PREFETCH_RECENT,
+  wantedTimes,
   SATELLITE_IMAGE_WIDTH,
   productImageWidth,
   SATELLITE_AREA,
@@ -177,5 +179,55 @@ describe('URLs', () => {
 
   it('setzt den Layernamen mit Workspace zusammen', () => {
     expect(satelliteLayer(p)).toBe('mtg_fd:rgb_geocolour')
+  })
+})
+
+describe('wantedTimes', () => {
+  // 24 Stunden sind bei MTG 145 Bilder à ~180 KB — vorladen scheidet aus.
+  // Diese Funktion entscheidet, was stattdessen geholt wird.
+  const times = Array.from({ length: 145 }, (_, i) => i * 10 * MIN)
+  const last = times.length - 1
+
+  it('holt immer die jüngsten Bilder', () => {
+    const w = wantedTimes(times, last, false)
+    for (let i = times.length - PREFETCH_RECENT; i < times.length; i++) {
+      expect(w).toContain(times[i])
+    }
+  })
+
+  // Der Fehler, den es beim Aufbau gab: ohne diese Regel lud der Bereich ein
+  // Fenster um Index 0 — den Stand von vor 24 Stunden, den in dem Moment
+  // niemand sehen will.
+  it('holt vor dem ersten Zeigerstand NUR die jüngsten', () => {
+    const w = wantedTimes(times, -1, false)
+    expect(w).toHaveLength(PREFETCH_RECENT)
+    expect(w).not.toContain(times[0])
+  })
+
+  it('holt ein Fenster um den Zeiger', () => {
+    const w = wantedTimes(times, 40, false)
+    expect(w).toContain(times[40])
+    expect(w).toContain(times[38])
+    expect(w).not.toContain(times[20])
+  })
+
+  // Beim Abspielen zählt der Vorlauf: sonst bleibt die Schleife bei jedem
+  // Bild stehen und wartet.
+  it('schaut beim Abspielen weiter voraus als beim Ziehen', () => {
+    const still = wantedTimes(times, 40, false).length
+    const playing = wantedTimes(times, 40, true).length
+    expect(playing).toBeGreaterThan(still)
+  })
+
+  it('bleibt innerhalb der Reihe und ohne Doppelte', () => {
+    for (const idx of [0, 1, 72, last]) {
+      const w = wantedTimes(times, idx, true)
+      expect(new Set(w).size).toBe(w.length)
+      for (const t of w) expect(times).toContain(t)
+    }
+  })
+
+  it('liefert für eine leere Reihe nichts', () => {
+    expect(wantedTimes([], 0, false)).toEqual([])
   })
 })

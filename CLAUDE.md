@@ -1323,7 +1323,14 @@ npm run preview   # gebautes dist/ servieren
   also 26 MB**, die kann man nicht vorladen. Geholt wird deshalb nur, was
   gebraucht wird (`wantedTimes`): die jüngsten 12 Bilder, dazu ein Fenster um
   den Zeiger (2 zurück, beim Abspielen 8 voraus). Der Rest kommt, wenn man
-  hinzieht — bei ~0,7 s je Bild ist das kein Warten. Dazu eine Obergrenze von
+  hinzieht — bei ~0,7 s je Bild ist das kein Warten. `wantedTimes` steht
+  deshalb als reine Funktion in der Registry und ist getestet, samt des
+  Fehlers, den sie beim Aufbau hatte: vor dem ersten Zeigerstand (`idx < 0`)
+  darf sie NUR die jüngsten Bilder wollen, sonst holt der Bereich beim Öffnen
+  ein Fenster um Index 0 — den Stand von vor 24 Stunden. Beim ZIEHEN ist sie
+  zusätzlich gebremst (`SETTLE_MS`, 220 ms): ohne das forderte jede
+  Zwischenstellung des Reglers ihr eigenes Fenster an und brach das vorherige
+  ab, eine Salve halbfertiger Abrufe bei einem fremden Dienst. Dazu eine Obergrenze von
   48 Bildern im Speicher: wer den ganzen Tag durchzieht, sammelte sonst alle
   145 Blobs an; verdrängt wird das vom Zeiger am weitesten entfernte, der
   neueste Stand bleibt immer. **Die SCHLEIFE kreist trotzdem nur über die
@@ -1333,6 +1340,17 @@ npm run preview   # gebautes dist/ servieren
   danach in den jüngsten Abschnitt ein. Die Statuszeile zählt deshalb
   „geladen", nicht „x von 145" — ein Fortschritt gegen die Gesamtzahl wäre
   eine Zahl, die nie voll wird.
+  **Die Leiste hat FESTE Breiten, und das ist eine Fehlerbehebung**: Schieber,
+  Zeitangabe und Statuszeile liegen in EINER umbruchfähigen Flex-Zeile, und
+  der Schieber ist das einzige flexible Element darin. Wechselte die
+  Statuszeile beim Ziehen zwischen „lädt Bild …" und dem langen Text, änderte
+  sich damit seine Breite — die Leiste zuckte, und bei knappem Platz sprangen
+  die Angaben rechts in die nächste Zeile und schienen zu verschwinden. Jetzt
+  steht immer derselbe Satz (`.radar-step`/`.radar-sub` mit `min-width` auf
+  die längste Form, Ziffern tabellarisch), der Ladezustand ist ein Punkt in
+  einem reservierten Platz (`.radar-load`, `visibility` statt `display`), und
+  der Zähler sitzt in einem Feld fester Breite (`.radar-num`). Wer hier etwas
+  ergänzt, das seine Länge ändert, bringt das Zucken zurück.
   **Kein Canvas** (anders als beim Radar): am Satellitenbild ist nichts zu
   korrigieren, die Bilder gehen als **Blob-URL** auf die Karte. Der Umweg über
   `canvas.toDataURL()` würde aus 160 KB JPEG mehrere MB PNG machen — dafür muss

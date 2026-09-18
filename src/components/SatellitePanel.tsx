@@ -32,6 +32,7 @@ import { fetchSatelliteExtent, loadSatelliteImages } from '../api/eumetsat'
 import { CITIES } from '../config/cities'
 import {
   DEFAULT_SATELLITE_PRODUCT,
+  MAX_CACHED,
   SATELLITE_AREA,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
@@ -39,6 +40,7 @@ import {
   satelliteImageCoordinates,
   satelliteImageHeight,
   satelliteTimes,
+  wantedTimes,
 } from '../config/satellite'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
 import {
@@ -80,37 +82,6 @@ const VIEWS: { id: string; label: string; bounds: [[number, number], [number, nu
 const HISTORY_MS = 24 * 3_600_000
 
 /**
- * Was geladen wird: die jüngsten `PREFETCH_RECENT` Bilder (der Teil, den fast
- * jeder ansieht) plus ein Fenster um den Zeiger — zwei Schritte zurück, damit
- * kurzes Zurückziehen sofort etwas zeigt, und `LOOKAHEAD` voraus, damit die
- * Schleife nicht bei jedem Bild stehenbleibt.
- */
-const PREFETCH_RECENT = 12
-const LOOKAHEAD = 8
-const LOOKBEHIND = 2
-
-/**
- * Obergrenze der im Speicher gehaltenen Bilder. Ohne sie sammelt eine Sitzung,
- * in der jemand den ganzen Tag durchzieht, alle 145 Blobs an (~26 MB); über
- * dieser Zahl werden die ältesten wieder freigegeben, die gerade niemand
- * braucht.
- */
-const MAX_CACHED = 48
-
-/** Zeitpunkte, die zum aktuellen Zustand geladen sein sollten. */
-function wantedTimes(times: number[], idx: number, playing: boolean): number[] {
-  if (times.length === 0) return []
-  const want = new Set<number>()
-  for (let i = Math.max(0, times.length - PREFETCH_RECENT); i < times.length; i++) {
-    want.add(times[i])
-  }
-  const from = Math.max(0, idx - LOOKBEHIND)
-  const to = Math.min(times.length - 1, idx + (playing ? LOOKAHEAD : LOOKBEHIND))
-  for (let i = from; i <= to; i++) want.add(times[i])
-  return [...want]
-}
-
-/**
  * Zeitraum, in dem die SCHLEIFE kreist, nachdem sie am neuesten Bild
  * angekommen ist. Bewusst kürzer als die Ziehleiste: ein Tag im Zeitraffer
  * wären 145 Abrufe bei einem fremden Dienst, bei jedem Durchlauf. Wer weiter
@@ -124,6 +95,8 @@ const FRAME_MS = 320
 const END_DWELL_MS = 1400
 /** Wartezeit, wenn das nächste Bild noch nicht geladen ist. */
 const WAIT_MS = 250
+/** Ruhe am Zeiger, bevor nachgeladen wird (siehe `settledIdx`). */
+const SETTLE_MS = 220
 /** Takt, in dem die Zeitdimension nachgefragt wird (Quelle: 10 bzw. 15 min). */
 const POLL_MS = 60_000
 
@@ -237,11 +210,28 @@ export function SatellitePanel() {
   }, [product, dropImages])
   useEffect(() => dropImages, [dropImages])
 
+  /**
+   * Beim ZIEHEN läuft der Zeiger über Dutzende Stellungen. Ohne Bremse würde
+   * jede davon ihr eigenes Ladefenster anfordern und das vorherige abbrechen —
+   * eine Salve halbfertiger Abrufe bei einem fremden Dienst, und die Anzeige
+   * flackert zwischen „lädt" und „da". Geladen wird deshalb erst, wenn der
+   * Zeiger kurz steht; beim Abspielen sofort, dort ist jede Stellung gewollt.
+   */
+  const [settledIdx, setSettledIdx] = useState(-1)
+  useEffect(() => {
+    if (playing) {
+      setSettledIdx(idx)
+      return
+    }
+    const t = setTimeout(() => setSettledIdx(idx), SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [idx, playing])
+
   const imagesRef = useRef(images)
   imagesRef.current = images
   useEffect(() => {
     if (!extent || times.length === 0) return
-    const wanted = wantedTimes(times, Math.min(idx, times.length - 1), playing)
+    const wanted = wantedTimes(times, settledIdx < 0 ? -1 : Math.min(settledIdx, times.length - 1), playing)
     const missing = wanted.filter((t) => imagesRef.current[t] === undefined)
     if (missing.length === 0) return
     const ac = new AbortController()
@@ -261,7 +251,7 @@ export function SatellitePanel() {
           // Blob-URL sofort — sonst hält der Browser sie bis zum Neuladen.
           const keys = Object.keys(next).map(Number)
           if (keys.length > MAX_CACHED) {
-            const cursor = times[Math.min(idx, times.length - 1)] ?? time
+            const cursor = times[Math.max(0, Math.min(settledIdx, times.length - 1))] ?? time
             const newest = times[times.length - 1]
             keys
               .filter((t) => t !== newest)
@@ -283,7 +273,7 @@ export function SatellitePanel() {
       },
     }).catch((err: unknown) => console.error('[satellit]', err))
     return () => ac.abort()
-  }, [extent, product, times, idx, playing])
+  }, [extent, product, times, settledIdx, playing])
 
   // Zeiger auf dem neuesten Bild halten, solange er dort war. Beim ersten
   // Laden und nach jedem Nachrücken springt er mit, sonst bleibt seine ZEIT.
@@ -465,15 +455,18 @@ export function SatellitePanel() {
   }, [])
 
   const stepMin = extent ? Math.round(extent.stepMs / 60_000) : 0
-  // Absichtlich NICHT „x von 145": geladen wird nach Bedarf, ein Fortschritt
-  // gegen die Gesamtzahl wäre eine Zahl, die nie voll wird.
-  const status = error
-    ? `⚠ ${error}`
-    : !extent
-      ? 'lädt Zeitschritte …'
-      : currentUrl === undefined
-        ? `lädt Bild …${failed ? ` · ${failed} fehlgeschlagen` : ''}`
-        : `24 h · ${times.length} Bilder à ${stepMin} min · ${loaded} geladen · neuester Stand ${fmtTime.format(new Date(latest))} UTC`
+  /**
+   * Die Statuszeile hat ein FESTES Skelett, und das ist kein Stil, sondern ein
+   * Fehler von vorher: sie wechselte beim Ziehen zwischen „lädt Bild …" und
+   * dem langen Text, und weil sie mit dem Schieber in derselben
+   * umbruchfähigen Zeile steht, änderte sich dabei dessen Breite — die Leiste
+   * zuckte und die Angaben rechts sprangen in die nächste Zeile. Jetzt steht
+   * immer derselbe Satz; der Ladezustand ist ein Punkt in einem Platz, der
+   * auch dann reserviert bleibt, wenn nichts lädt, und die Zahl der geladenen
+   * Bilder sitzt in einem Feld fester Breite.
+   */
+  const loading = currentUrl === undefined
+  const stand = extent ? `${fmtTime.format(new Date(latest))} UTC` : '—'
 
   return (
     <div className="radar satellite">
@@ -525,9 +518,29 @@ export function SatellitePanel() {
         <span className="radar-step">{current ? frameLabel(current, latest) : '—'}</span>
         <span
           className={`radar-sub${error ? ' is-error' : ''}`}
-          title="MTG liefert alle 10 Minuten, MSG alle 15; das fertige Bild steht unter 10 Minuten nach der Aufnahme bereit (gemessen). Der Bereich fragt jede Minute nach und rückt selbst nach, solange der Zeiger auf dem neuesten Bild steht."
+          title={
+            error
+              ? error
+              : `MTG liefert alle 10 Minuten, MSG alle 15; das fertige Bild steht unter 10 Minuten nach der Aufnahme bereit (gemessen). Der Bereich fragt jede Minute nach und rückt selbst nach, solange der Zeiger auf dem neuesten Bild steht.\n\nGeladen wird nach Bedarf: die jüngsten Bilder und ein Fenster um den Zeiger, höchstens ${MAX_CACHED} gleichzeitig.${
+                  failed ? `\n\n${failed} Bild(er) konnten nicht geladen werden.` : ''
+                }`
+          }
         >
-          {status}
+          {error ? (
+            `⚠ ${error}`
+          ) : !extent ? (
+            'lädt Zeitschritte …'
+          ) : (
+            <>
+              {/* Platz bleibt reserviert, auch wenn nichts lädt — sonst
+                  wandert bei jedem Bildwechsel die halbe Leiste. */}
+              <span className="radar-load" data-on={loading || failed > 0}>
+                {failed > 0 && !loading ? '⚠' : '●'}
+              </span>
+              24 h · {times.length} Bilder à {stepMin} min ·{' '}
+              <span className="radar-num">{loaded}</span> geladen · Stand {stand}
+            </>
+          )}
         </span>
         {pending && (
           <button

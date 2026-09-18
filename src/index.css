@@ -3009,15 +3009,46 @@ button:focus-visible {
   background: var(--ink);
 }
 
+/* Zeitangabe und Statuszeile liegen MIT dem Schieber in einer umbruchfähigen
+   Zeile. Ändert einer der Texte seine Länge, ändert sich damit die Breite des
+   Schiebers (er ist das einzige flexible Element) — oder die Zeile bricht um
+   und die Angaben rechts verschwinden nach unten. Beim Ziehen passiert das
+   im Sekundentakt, und die Leiste zuckt.
+   Deshalb: feste Mindestbreiten für beide Texte, Ziffern tabellarisch. Die
+   Breiten sind auf die LÄNGSTE Form gesetzt („… · neuester Stand" bzw. die
+   volle Statuszeile des Satelliten), damit sich nichts mehr bewegt. */
 .radar-step {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: 34ch;
 }
 
 .radar-sub {
   color: var(--ink-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  min-width: 46ch;
+}
+
+/* Ladepunkt: belegt seinen Platz auch im Ruhezustand. */
+.radar-load {
+  visibility: hidden;
+  margin-right: 5px;
+  color: var(--accent);
+}
+
+.radar-load[data-on='true'] {
+  visibility: visible;
+}
+
+/* Zähler fester Breite — sonst schiebt jede zweite Ziffer den Rest. */
+.radar-num {
+  display: inline-block;
+  min-width: 2.5ch;
+  text-align: right;
 }
 
 .radar-sub.is-error {

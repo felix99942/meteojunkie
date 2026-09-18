@@ -288,3 +288,45 @@ export function satelliteImageCoordinates(): [
 ] {
   return imageCoordinates(SATELLITE_AREA)
 }
+
+// --- Ladepolitik der Schleife ---------------------------------------------
+//
+// Reine Funktion, damit sie prüfbar ist: WELCHE Bilder zu einem Zustand
+// geladen sein sollen, ist die eine Entscheidung, an der bei einer
+// 24-Stunden-Leiste alles hängt — Bandbreite, Wartezeit und die Frage, ob
+// beim Aufbau versehentlich der Stand von gestern geholt wird.
+
+/**
+ * Was geladen wird: die jüngsten `PREFETCH_RECENT` Bilder (der Teil, den fast
+ * jeder ansieht) plus ein Fenster um den Zeiger — zwei Schritte zurück, damit
+ * kurzes Zurückziehen sofort etwas zeigt, und `LOOKAHEAD` voraus, damit die
+ * Schleife nicht bei jedem Bild stehenbleibt.
+ */
+export const PREFETCH_RECENT = 12
+export const LOOKAHEAD = 8
+export const LOOKBEHIND = 2
+
+/**
+ * Obergrenze der im Speicher gehaltenen Bilder. Ohne sie sammelt eine Sitzung,
+ * in der jemand den ganzen Tag durchzieht, alle 145 Blobs an (~26 MB); über
+ * dieser Zahl werden die ältesten wieder freigegeben, die gerade niemand
+ * braucht.
+ */
+export const MAX_CACHED = 48
+
+/** Zeitpunkte, die zum aktuellen Zustand geladen sein sollten. */
+export function wantedTimes(times: number[], idx: number, playing: boolean): number[] {
+  if (times.length === 0) return []
+  const want = new Set<number>()
+  for (let i = Math.max(0, times.length - PREFETCH_RECENT); i < times.length; i++) {
+    want.add(times[i])
+  }
+  // idx < 0: der Zeiger hat sich noch nicht gesetzt (erster Aufbau). Dann nur
+  // die jüngsten Bilder holen — ein Fenster um Index 0 wäre der Stand von vor
+  // 24 Stunden, den in dem Moment niemand sehen will.
+  if (idx < 0) return [...want]
+  const from = Math.max(0, idx - LOOKBEHIND)
+  const to = Math.min(times.length - 1, idx + (playing ? LOOKAHEAD : LOOKBEHIND))
+  for (let i = from; i <= to; i++) want.add(times[i])
+  return [...want]
+}
