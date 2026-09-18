@@ -15,6 +15,9 @@ import { isPanelSection, useAppView } from './state/appView'
 // Der Radarbereich zieht MapLibre nach — wie die Feld-Karte per `lazy`
 // abgetrennt, damit das Hauptbündel der übrigen Bereiche davon frei bleibt.
 const RadarPanel = lazy(() => import('./components/RadarPanel').then((m) => ({ default: m.RadarPanel })))
+const SatellitePanel = lazy(() =>
+  import('./components/SatellitePanel').then((m) => ({ default: m.SatellitePanel })),
+)
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
 // (TopBar, Panel-Raster, Zeit-Scrubber) und dieselben Panel-Configs — sie
@@ -49,6 +52,10 @@ export default function App() {
       ) : view === 'radar' ? (
         <Suspense fallback={<div className="panel-placeholder">Lade Radar…</div>}>
           <RadarPanel />
+        </Suspense>
+      ) : view === 'satellite' ? (
+        <Suspense fallback={<div className="panel-placeholder">Lade Satellit…</div>}>
+          <SatellitePanel />
         </Suspense>
       ) : view === 'impressum' ? (
         <Impressum />

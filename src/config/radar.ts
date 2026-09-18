@@ -70,6 +70,17 @@
 // Live-Layer im Browser tot, und NetCDF-4 ist HDF5, bräuchte also zusätzlich
 // einen Binärparser. Nicht erneut als „vielleicht doch"-Weg prüfen.
 
+import {
+  extractTimeDimension,
+  frameTimes,
+  imageCoordinates,
+  imageHeightFor,
+  parseTimeExtent,
+  type GeoBox,
+  type MercBox,
+  type TimeExtent,
+} from './wmsTime'
+
 /** Basis-URL des DWD-GeoServers (Workspace `dwd`). */
 export const DWD_WMS_BASE = 'https://maps.dwd.de/geoserver/dwd/wms'
 
@@ -439,62 +450,22 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
 
 
 // --- Zeitdimension ---------------------------------------------------------
+//
+// Parser, Zeitraster und Mercator-Rechnung liegen in `config/wmsTime.ts` —
+// derselbe Kern trägt den Satellitenbereich (EUMETSAT). Hier stehen nur noch
+// die Teile, die WIRKLICH radarspezifisch sind: der Vorhersageteil am Ende der
+// Dimension und die Fläche, die dieser Dienst selbst mitliefert.
+//
+// Re-exportiert, damit die öffentliche Form dieses Moduls unverändert bleibt.
 
-export interface TimeExtent {
-  /** Erster verfügbarer Zeitschritt. */
-  start: number
-  /** Letzter verfügbarer Zeitschritt — beim RV-Produkt das Ende der Vorhersage. */
-  end: number
-  stepMs: number
-}
-
-/**
- * ISO-8601-Dauer, wie sie in der WMS-Zeitdimension steht. Nur die Formen, die
- * dieser Dienst wirklich schickt (`PT5M`, `PT10M`, `PT1H`, `P1D`) — ein
- * vollständiger Dauer-Parser wäre hier Beiwerk.
- */
-export function parseIsoDuration(raw: string): number | null {
-  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(raw.trim())
-  if (!m) return null
-  const [, d, h, min, s] = m
-  const ms =
-    (d ? Number(d) * 86_400_000 : 0) +
-    (h ? Number(h) * 3_600_000 : 0) +
-    (min ? Number(min) * 60_000 : 0) +
-    (s ? Number(s) * 1000 : 0)
-  return ms > 0 ? ms : null
-}
-
-/**
- * Die Zeitdimension kommt als `Anfang/Ende/Schritt` (ein einziges Intervall,
- * keine Aufzählung). Mehrere durch Komma getrennte Intervalle sind im Standard
- * erlaubt — dann gilt das LETZTE, weil uns die aktuellen Schritte interessieren.
- */
-export function parseTimeExtent(raw: string): TimeExtent | null {
-  const part = raw.split(',').map((s) => s.trim()).filter(Boolean).pop()
-  if (!part) return null
-  const [from, to, dur] = part.split('/')
-  if (!from || !to || !dur) return null
-  const start = Date.parse(from)
-  const end = Date.parse(to)
-  const stepMs = parseIsoDuration(dur)
-  if (!Number.isFinite(start) || !Number.isFinite(end) || !stepMs || end < start) return null
-  return { start, end, stepMs }
-}
-
-export interface GeoBox {
-  west: number
-  east: number
-  south: number
-  north: number
-}
-
-export interface MercBox {
-  minx: number
-  miny: number
-  maxx: number
-  maxy: number
-}
+export {
+  imageCoordinates,
+  imageHeightFor,
+  nearestFrame,
+  parseIsoDuration,
+  parseTimeExtent,
+} from './wmsTime'
+export type { GeoBox, MercBox, TimeExtent } from './wmsTime'
 
 export interface RadarMeta {
   extent: TimeExtent
@@ -520,8 +491,8 @@ export interface RadarMeta {
  * Parser ein reiner String→Objekt-Kern, der ohne DOM in Vitest läuft.
  */
 export function parseRadarCapabilities(xml: string): RadarMeta | null {
-  const dim = /<Dimension[^>]*name="time"[^>]*>([\s\S]*?)<\/Dimension>/.exec(xml)
-  const extent = dim ? parseTimeExtent(dim[1]) : null
+  const dim = extractTimeDimension(xml)
+  const extent = dim ? parseTimeExtent(dim) : null
   if (!extent) return null
 
   const num = (tag: string): number | null => {
@@ -575,27 +546,8 @@ export function radarTimes(
   product: WmsImageSource,
   historyMs: number,
 ): number[] {
-  const step = meta.extent.stepMs || product.stepMs
-  const last = analysisTime(meta, product)
-  const from = Math.max(meta.extent.start, last - historyMs)
-  const times: number[] = []
-  for (let t = from; t <= last + 1; t += step) times.push(t)
-  return times
-}
-
-/** Index der Zeit, die einem Zeitpunkt am nächsten liegt. */
-export function nearestFrame(times: number[], t: number): number {
-  if (times.length === 0) return 0
-  let best = 0
-  let bestDist = Infinity
-  for (let i = 0; i < times.length; i++) {
-    const d = Math.abs(times[i] - t)
-    if (d < bestDist) {
-      bestDist = d
-      best = i
-    }
-  }
-  return best
+  const extent = { ...meta.extent, stepMs: meta.extent.stepMs || product.stepMs }
+  return frameTimes(extent, analysisTime(meta, product), historyMs)
 }
 
 // --- URLs ------------------------------------------------------------------
@@ -661,19 +613,12 @@ export function sourceImageWidth(source: WmsImageSource): number {
 
 /** Bildhöhe aus dem Seitenverhältnis DIESER Fläche (nie krumm skalieren). */
 export function radarImageHeight(meta: RadarMeta, width = RADAR_IMAGE_WIDTH): number {
-  const { minx, miny, maxx, maxy } = meta.merc
-  return Math.max(1, Math.round((width * (maxy - miny)) / (maxx - minx)))
+  return imageHeightFor(meta.merc, width)
 }
 
 /** Ecken für die MapLibre-image-Source (im Uhrzeigersinn ab oben links). */
 export function radarImageCoordinates(
   meta: RadarMeta,
 ): [[number, number], [number, number], [number, number], [number, number]] {
-  const { west, east, south, north } = meta.geo
-  return [
-    [west, north],
-    [east, north],
-    [east, south],
-    [west, south],
-  ]
+  return imageCoordinates(meta.geo)
 }

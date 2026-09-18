@@ -2903,6 +2903,21 @@ button:focus-visible {
   border-radius: 1px;
 }
 
+/* Satellit: die Ziehleiste umfasst 24 Stunden, also über hundert Marken —
+   ohne Lücke dazwischen und mit einer breiteren Marke für den Zeiger, der
+   sonst bei rund einem Pixel verschwindet. */
+.radar-ticks.is-dense {
+  gap: 0;
+}
+
+.radar-ticks.is-dense .radar-tick {
+  border-radius: 0;
+}
+
+.radar-ticks.is-dense .radar-tick.is-current {
+  min-width: 3px;
+}
+
 .radar-tick.is-loaded {
   background: #2f6fb5;
 }
@@ -2990,6 +3005,24 @@ button:focus-visible {
   border-radius: 3px;
   padding: 5px 7px;
   max-width: calc(100% - 12px);
+}
+
+/* SATELLIT: derselbe Rahmen wie die Radarlegende, aber keine Farbskala — ein
+   Satellitenbild hat keine Klassen, die man ablesen könnte. Was dasteht, ist
+   die Erklärung DES PRODUKTS: bei einem RGB entscheidet die Kombination der
+   Kanäle, was Gelb oder Rot bedeutet, und das sieht man dem Bild nicht an. */
+.satellite-legend {
+  max-width: min(520px, 46vw);
+}
+
+.satellite-dayonly {
+  color: #f0c04a;
+}
+
+.satellite-note {
+  color: var(--ink-secondary);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .radar-legend-cap {

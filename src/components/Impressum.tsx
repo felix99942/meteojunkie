@@ -65,6 +65,12 @@ const THIRD_PARTY_HOSTS = [
     href: 'https://www.dwd.de/DE/service/datenschutz/datenschutz_node.html',
     hrefLabel: 'Datenschutzerklärung des DWD',
   },
+  {
+    host: 'view.eumetsat.int',
+    what: 'Satellitenbilder von Meteosat (nur im Bereich „Satellit")',
+    href: 'https://www.eumetsat.int/data-privacy-statement',
+    hrefLabel: 'Datenschutzerklärung von EUMETSAT',
+  },
 ]
 
 export function Impressum() {
@@ -241,6 +247,13 @@ export function Impressum() {
               .
             </li>
             <li>
+              <a href="https://www.eumetsat.int/" target="_blank" rel="noreferrer">
+                EUMETSAT
+              </a>{' '}
+              — Satellitenbilder von Meteosat Third Generation (FCI) und Meteosat Second
+              Generation (SEVIRI) über <code>view.eumetsat.int</code> (EUMETView).
+            </li>
+            <li>
               <a
                 href="https://www.dwd.de/DE/leistungen/opendata/opendata.html"
                 target="_blank"
@@ -345,7 +358,8 @@ export function Impressum() {
             ausgeliefert. Die Radarbilder dagegen holt der Browser direkt bei{' '}
             <code>maps.dwd.de</code> — sie sind minutenaktuell und lassen sich nicht
             vorverarbeiten; Abrufe dorthin entstehen also nur, solange der Bereich „Radar"
-            offen ist.
+            offen ist. Für die Satellitenbilder gilt dasselbe: sie kommen direkt von{' '}
+            <code>view.eumetsat.int</code>, und nur, solange der Bereich „Satellit" offen ist.
           </p>
 
           <h3>Speicherung auf dem Endgerät</h3>

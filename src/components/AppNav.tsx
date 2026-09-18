@@ -40,6 +40,12 @@ const TABS: { id: AppView; label: string; title: string }[] = [
     title:
       'Niederschlagsradar: DWD-Komposit im 5-Minuten-Takt plus 2-Stunden-Nowcast — Deutschland, Schweiz und Westösterreich',
   },
+  {
+    id: 'satellite',
+    label: 'Satellit',
+    title:
+      'Satellitenbilder von EUMETSAT: Meteosat Third Generation alle 10 Minuten (Geocolour, sichtbar hochaufgelöst, Infrarot), MSG alle 15 (Luftmassen, Konvektion)',
+  },
   { id: 'at-klima', label: 'Österreich-Klima', title: 'Klimakarte und MOS-Vorhersage' },
   {
     id: 'verify',

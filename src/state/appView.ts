@@ -52,6 +52,13 @@ export type AppView =
    */
   | 'radar'
   /**
+   * Satellitenbilder (EUMETSAT/EUMETView): MTG alle 10 Minuten, MSG alle 15.
+   * Eigener Bereich mit demselben Gerüst wie das Radar — er teilt sich dessen
+   * Zeit- und Bildmechanik (`config/wmsTime.ts`), hängt aber an einer anderen
+   * Quelle und zeigt eine andere Fläche (siehe `config/satellite.ts`).
+   */
+  | 'satellite'
+  /**
    * Impressum/Offenlegung. Kein Werkzeug-Bereich — steht nicht in der
    * Tab-Reihe, sondern hinter dem kleinen Link am rechten Rand der Navigation
    * (siehe AppNav). Als AppView geführt, weil die Anbieterkennzeichnung
