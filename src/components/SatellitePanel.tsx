@@ -34,6 +34,7 @@ import {
   DEFAULT_SATELLITE_PRODUCT,
   MAX_CACHED,
   SATELLITE_AREA,
+  SATELLITE_CENTER,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
   productImageWidth,
@@ -43,6 +44,7 @@ import {
   wantedTimes,
 } from '../config/satellite'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
+import { hasDaylight, solarElevationDeg } from '../lib/solar'
 import {
   BASE_STYLE,
   buildGraticuleBox,
@@ -244,28 +246,7 @@ export function SatellitePanel() {
       signal: ac.signal,
       onLoaded: (time, url) => {
         urlsRef.current.push(url)
-        setImages((prev) => {
-          const next = { ...prev, [time]: url }
-          // Verdrängung: das am weitesten vom Zeiger entfernte Bild fliegt
-          // zuerst, der neueste Stand bleibt immer. Freigegeben wird die
-          // Blob-URL sofort — sonst hält der Browser sie bis zum Neuladen.
-          const keys = Object.keys(next).map(Number)
-          if (keys.length > MAX_CACHED) {
-            const cursor = times[Math.max(0, Math.min(settledIdx, times.length - 1))] ?? time
-            const newest = times[times.length - 1]
-            keys
-              .filter((t) => t !== newest)
-              .sort((a, b) => Math.abs(b - cursor) - Math.abs(a - cursor))
-              .slice(0, keys.length - MAX_CACHED)
-              .forEach((t) => {
-                const dead = next[t]
-                if (dead) URL.revokeObjectURL(dead)
-                urlsRef.current = urlsRef.current.filter((u) => u !== dead)
-                delete next[t]
-              })
-          }
-          return next
-        })
+        setImages((prev) => ({ ...prev, [time]: url }))
       },
       onError: (time, err) => {
         console.error('[satellit]', new Date(time).toISOString(), err)
@@ -274,6 +255,49 @@ export function SatellitePanel() {
     }).catch((err: unknown) => console.error('[satellit]', err))
     return () => ac.abort()
   }, [extent, product, times, settledIdx, playing])
+
+  /**
+   * VERDRÄNGUNG — eigener Effekt, und das aus zwei Gründen, die beide Fehler
+   * waren:
+   *
+   * 1. Sie stand vorher IM State-Updater. Ein Updater muss frei von
+   *    Nebenwirkungen sein; React ruft ihn im Entwicklungsmodus (StrictMode)
+   *    doppelt auf, und `URL.revokeObjectURL` doppelt heißt, dass die zweite
+   *    Runde freigibt, was die erste gerade eingetragen hat.
+   * 2. Sie maß den Abstand am GEBREMSTEN Zeiger und schützte nur den neuesten
+   *    Stand. Beim Ziehen läuft der echte Zeiger dem gebremsten voraus — die
+   *    gerade geladenen Bilder der neuen Stelle waren damit die „am weitesten
+   *    entfernten" und flogen sofort wieder raus. Das Ergebnis war ein
+   *    Kreislauf aus Laden und Wegwerfen: die Karte blieb leer, weil zum
+   *    angezeigten Zeitpunkt nie ein Bild überlebte.
+   *
+   * Geschützt ist deshalb alles, was gerade GEBRAUCHT wird (das Ladefenster
+   * plus das angezeigte Bild); weggeworfen wird nur darüber hinaus, und zwar
+   * das vom angezeigten Bild am weitesten entfernte.
+   */
+  useEffect(() => {
+    const keys = Object.keys(images).map(Number)
+    if (keys.length <= MAX_CACHED) return
+    const keep = new Set(wantedTimes(times, Math.min(idx, times.length - 1), playing))
+    if (current) keep.add(current)
+    const anchor = current ?? times[times.length - 1] ?? 0
+    const drop = keys
+      .filter((t) => !keep.has(t))
+      .sort((a, b) => Math.abs(b - anchor) - Math.abs(a - anchor))
+      .slice(0, keys.length - MAX_CACHED)
+    if (drop.length === 0) return
+    setImages((prev) => {
+      const next = { ...prev }
+      for (const t of drop) delete next[t]
+      return next
+    })
+    for (const t of drop) {
+      const dead = images[t]
+      if (!dead) continue
+      URL.revokeObjectURL(dead)
+      urlsRef.current = urlsRef.current.filter((u) => u !== dead)
+    }
+  }, [images, times, idx, playing, current])
 
   // Zeiger auf dem neuesten Bild halten, solange er dort war. Beim ersten
   // Laden und nach jedem Nachrücken springt er mit, sonst bleibt seine ZEIT.
@@ -288,6 +312,23 @@ export function SatellitePanel() {
   }, [current])
 
   const loaded = times.filter((t) => images[t] !== undefined).length
+
+  /**
+   * TAGESLICHT über der Fläche. Der sichtbare Kanal misst reflektiertes
+   * Sonnenlicht — nachts ist sein Bild schwarz, und zwar zu Recht. Ohne diese
+   * Rechnung sieht das aus wie ein Fehler (so wurde es auch gemeldet): die
+   * Karte zeigt nur noch Grenzlinien, und niemand kommt darauf, dass das Bild
+   * in Ordnung ist. Jetzt sagt der Bereich es und bietet den Sprung zum
+   * letzten Tageslicht an.
+   */
+  const daylight = useMemo(
+    () => times.map((t) => hasDaylight(t, SATELLITE_CENTER.lat, SATELLITE_CENTER.lon)),
+    [times],
+  )
+  const darkNow = product.dayOnly && current != null && daylight[Math.min(idx, times.length - 1)] === false
+  const lastDaylightIdx = useMemo(() => daylight.lastIndexOf(true), [daylight])
+  /** Wie tief die Sonne gerade steht — die Zahl macht aus „schwarz" eine Aussage. */
+  const solarDepth = current == null ? 0 : solarElevationDeg(current, SATELLITE_CENTER.lat, SATELLITE_CENTER.lon)
 
   // --- Schleife -------------------------------------------------------------
   useEffect(() => {
@@ -510,7 +551,9 @@ export function SatellitePanel() {
             {times.map((t, i) => (
               <span
                 key={t}
-                className={`radar-tick${images[t] ? ' is-loaded' : ''}${i === idx ? ' is-current' : ''}`}
+                className={`radar-tick${images[t] ? ' is-loaded' : ''}${
+                  i === idx ? ' is-current' : ''
+                }${product.dayOnly && !daylight[i] ? ' is-night' : ''}`}
               />
             ))}
           </div>
@@ -556,6 +599,34 @@ export function SatellitePanel() {
 
       <div className="radar-body">
         <div className="radar-container" ref={containerRef} />
+        {/* Nacht ist kein Fehler, sieht aber wie einer aus — deshalb steht es
+            MITTEN im Bild und nicht klein in der Legende. */}
+        {darkNow && (
+          <div className="satellite-night">
+            <strong>Nacht über dem Gebiet</strong>
+            <span>
+              {product.label} misst reflektiertes Sonnenlicht — um{' '}
+              {fmtTime.format(new Date(current))} UTC steht die Sonne hier{' '}
+              {Math.round(-solarDepth)}° unter dem Horizont, das Bild ist deshalb schwarz.
+            </span>
+            <span className="satellite-night-actions">
+              {lastDaylightIdx >= 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlaying(false)
+                    setIdx(lastDaylightIdx)
+                  }}
+                >
+                  ↦ letztes Tageslicht ({fmtTime.format(new Date(times[lastDaylightIdx]))} UTC)
+                </button>
+              )}
+              <button type="button" onClick={() => setProductId(DEFAULT_SATELLITE_PRODUCT.id)}>
+                ↦ Geocolour (zeigt die Nacht)
+              </button>
+            </span>
+          </div>
+        )}
         <div className="radar-views">
           {VIEWS.map((v) => (
             <button key={v.id} type="button" onClick={() => jumpToView(v.bounds)}>

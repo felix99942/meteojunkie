@@ -1316,6 +1316,25 @@ npm run preview   # gebautes dist/ servieren
   (gemessen über den echten Abrufpfad: Geocolour 206, IR 90, Airmass 101,
   Konvektion 72) — spürbar mehr als das Radar; deshalb die Nebenläufigkeit 3
   statt 4.
+  **NACHT IST KEIN FEHLER, sieht aber wie einer aus** (`lib/solar.ts`,
+  `.satellite-night`): der hochaufgelöste sichtbare Kanal misst reflektiertes
+  Sonnenlicht, sein Bild ist nachts vollständig schwarz — gemeldet wurde das
+  als „plötzlich gar nichts mehr", und im Browser nachgestellt stimmte das
+  Bild: nur noch Grenzlinien über Schwarz. Der Hinweis in der Legende reichte
+  nicht, er steht klein unten links. Jetzt rechnet der Bereich den SONNENSTAND
+  über der Mitte der Fläche (`SATELLITE_CENTER`) und sagt es mitten im Bild,
+  mit der Zahl dazu („die Sonne steht 37° unter dem Horizont"), plus zwei
+  Auswegen: Sprung zum letzten Tageslicht und Wechsel auf Geocolour. Die
+  Nachtabschnitte sind zusätzlich in der Ziehleiste markiert, man sieht also,
+  wo überhaupt Bilder zu erwarten sind.
+  **Die Schwelle ist +5°, nicht der Horizont**, und das ist am Bild gemessen:
+  mit „über dem Horizont" sprang der Bereich auf 17:20 UTC, wo die Sonne
+  −0,4° bis +3° steht — das Bild dort ist praktisch schwarz und als Sprungziel
+  wertlos. Mit 5° landet der Sprung bei 16:40 UTC, und da ist Struktur zu
+  sehen. `solarElevationDeg` ist eine Näherung (Zehntelgrad) und gegen
+  GEOMETRISCHE Identitäten getestet, nicht gegen die eigene Ausgabe:
+  Mittagshöhe = 90° − Breite ± 23,44° zu den Sonnenwenden, Mitternachtssonne
+  und Polarnacht auf Spitzbergen.
   **Die Ziehleiste umfasst IMMER 24 Stunden, ohne Auswahl davor** (auf
   Wunsch): eine Wetterlage liest man über einen Tag, und jede Auswahl davor
   ist ein Handgriff, bevor man etwas sieht. Das erzwingt eine ANDERE
@@ -1323,7 +1342,14 @@ npm run preview   # gebautes dist/ servieren
   also 26 MB**, die kann man nicht vorladen. Geholt wird deshalb nur, was
   gebraucht wird (`wantedTimes`): die jüngsten 12 Bilder, dazu ein Fenster um
   den Zeiger (2 zurück, beim Abspielen 8 voraus). Der Rest kommt, wenn man
-  hinzieht — bei ~0,7 s je Bild ist das kein Warten. `wantedTimes` steht
+  hinzieht — bei ~0,7 s je Bild ist das kein Warten. **Die Verdrängung ist ein
+  eigener Effekt und schützt, was gebraucht wird** — beides waren Fehler: sie
+  stand im State-Updater (React ruft den im Entwicklungsmodus doppelt auf, und
+  `URL.revokeObjectURL` doppelt gibt frei, was die erste Runde eingetragen
+  hat), und sie maß den Abstand am GEBREMSTEN Zeiger, während der echte beim
+  Ziehen vorauslief: die eben geladenen Bilder der neuen Stelle waren damit
+  die „am weitesten entfernten" und flogen sofort wieder raus — ein Kreislauf
+  aus Laden und Wegwerfen, bei dem die Karte leer blieb. `wantedTimes` steht
   deshalb als reine Funktion in der Registry und ist getestet, samt des
   Fehlers, den sie beim Aufbau hatte: vor dem ersten Zeigerstand (`idx < 0`)
   darf sie NUR die jüngsten Bilder wollen, sonst holt der Bereich beim Öffnen

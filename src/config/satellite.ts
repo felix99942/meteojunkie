@@ -82,6 +82,17 @@ export const EUMETSAT_WMS_BASE = 'https://view.eumetsat.int/geoserver/wms'
  */
 export const SATELLITE_AREA: GeoBox = { west: 0, east: 22, south: 41, north: 56 }
 
+/**
+ * Mitte der Fläche — Bezugspunkt für den Sonnenstand. Ob ein sichtbarer Kanal
+ * etwas zeigen kann, hängt am Licht über dem GEBIET; ein Punkt genügt dafür,
+ * die Fläche ist rund 1.600 km breit und der Unterschied von Rand zu Rand
+ * beträgt gut eine Stunde.
+ */
+export const SATELLITE_CENTER = {
+  lat: (SATELLITE_AREA.south + SATELLITE_AREA.north) / 2,
+  lon: (SATELLITE_AREA.west + SATELLITE_AREA.east) / 2,
+}
+
 /** Dieselbe Fläche in EPSG:3857 — so wird das Bild angefordert. */
 export const SATELLITE_MERC: MercBox = mercBox(SATELLITE_AREA)
 
