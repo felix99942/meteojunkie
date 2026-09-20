@@ -525,11 +525,56 @@ export interface Profile {
   windSpeed: (number | null)[][]
   windDirection: (number | null)[][]
   height: (number | null)[][]
+  /**
+   * Geländehöhe, mit der das MODELL an diesem Punkt rechnet (m).
+   *
+   * Nicht dasselbe wie die reale Höhe, und genau darin liegt der Wert: die
+   * ganze Bodenschicht des Profils hängt daran. Open-Meteo rechnet jedes
+   * Modell auf sein eigenes 90-m-DEM herunter — am Sonnblick sind das 2962
+   * statt 3109 m (siehe den Höhenbefund der Verifikation in CLAUDE.md). Wer
+   * einen Punkt auf der Karte wählt, sieht daran, ob das Modell dort den
+   * Talboden oder einen geglätteten Hang annimmt.
+   */
+  elevation: number | null
+  /**
+   * Bodengrössen je Zeitschritt — das UNTERE ENDE des Profils.
+   *
+   * GEBRAUCHT, WEIL OPEN-METEO UNTER DAS GELÄNDE EXTRAPOLIERT: die
+   * Drucklevel-Reihen sind auch dort besetzt, wo das Level unterhalb der
+   * Modelloberfläche liegt. Gemessen (2026-09-20, ECMWF IFS): am Sonnblick
+   * (Modellhöhe 3057 m, Bodendruck 717 hPa) liefert 1000 hPa 25,5 °C auf
+   * 217 m — 2840 m UNTER dem Gelände; am Grossglockner liegt selbst 700 hPa
+   * noch darunter. Auch im Flachland trifft es zu (Salzburg, 442 m: 1000 hPa
+   * auf 209 m). Ohne diese Grenze beginnt jedes Skew-T mit erfundenen
+   * Niveaus, und SB-CAPE hebt sein Paket von dort.
+   */
+  surface: {
+    pressure: (number | null)[]
+    temperature: (number | null)[]
+    dewpoint: (number | null)[]
+    windSpeed: (number | null)[]
+    windDirection: (number | null)[]
+  }
 }
+
+/**
+ * Bodengrössen, die zum Abschneiden und für den Bodenpunkt gebraucht werden.
+ * Fünf Variablen zusätzlich zu den 95 der Drucklevel — das Gewicht bleibt bei
+ * 10 gewichteten Calls (Open-Meteo rechnet in Zehnerschritten), der Bodenpunkt
+ * kostet also nichts.
+ */
+const PROFILE_SURFACE_VARS = [
+  'surface_pressure',
+  'temperature_2m',
+  'relative_humidity_2m',
+  'wind_speed_10m',
+  'wind_direction_10m',
+] as const
 
 export async function fetchProfile(lat: number, lon: number, model: string): Promise<Profile> {
   const vars: string[] = []
   for (const lvl of PRESSURE_LEVELS) for (const v of PROFILE_VARIABLES) vars.push(levelVar(v, lvl))
+  vars.push(...PROFILE_SURFACE_VARS)
 
   const params = new URLSearchParams({
     latitude: lat.toFixed(4),
@@ -551,7 +596,10 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
     }
     throw new Error(`Open-Meteo: ${reason}`)
   }
-  const data = JSON.parse(res.text) as { hourly: Record<string, (number | null)[] | number[]> }
+  const data = JSON.parse(res.text) as {
+    hourly: Record<string, (number | null)[] | number[]>
+    elevation?: number
+  }
   const times = (data.hourly.time as number[]).map((t) => t * 1000)
   const nt = times.length
   const nulls = (): (number | null)[] => new Array<number | null>(nt).fill(null)
@@ -580,7 +628,28 @@ export async function fetchProfile(lat: number, lon: number, model: string): Pro
     height.push(GH ?? nulls())
   }
 
-  return { times, levels, temperature, dewpoint: dewp, windSpeed, windDirection, height }
+  const sfcT = (data.hourly.temperature_2m ?? []) as (number | null)[]
+  const sfcRh = (data.hourly.relative_humidity_2m ?? []) as (number | null)[]
+
+  return {
+    times,
+    levels,
+    temperature,
+    dewpoint: dewp,
+    windSpeed,
+    windDirection,
+    height,
+    elevation: data.elevation ?? null,
+    surface: {
+      pressure: (data.hourly.surface_pressure ?? nulls()) as (number | null)[],
+      temperature: sfcT.length ? sfcT : nulls(),
+      dewpoint: times.map((_, i) =>
+        sfcT[i] != null && sfcRh[i] != null ? dewpoint(sfcT[i] as number, sfcRh[i] as number) : null,
+      ),
+      windSpeed: (data.hourly.wind_speed_10m ?? nulls()) as (number | null)[],
+      windDirection: (data.hourly.wind_direction_10m ?? nulls()) as (number | null)[],
+    },
+  }
 }
 
 // --- Ensemble (SPEC §9 Phase 3) --------------------------------------------

@@ -373,12 +373,16 @@ function baseMockValue(
     }
     case 'pressure_msl':
       return round1(1013 + 14 * Math.sin(lon / 10 - t / 40 + phase) - (lat - 50) * 0.3)
-    // Der Mock hat kein Geländemodell, also ein pauschaler Abzug für eine
-    // Stationshöhe um 400 m. Ohne diesen Fall fiel `surface_pressure` in den
-    // Default (±10) — und Δθ im Föhn-Bereich wurde daraus als Unsinn
-    // gerechnet, ohne dass irgendwo etwas fehlte.
-    case 'surface_pressure':
-      return round1(mockValue('pressure_msl', model, lat, lon, t) - 45)
+    // Bodendruck AUS DERSELBEN Pseudo-Höhe wie `elevation` (barometrische
+    // Höhenformel). Vorher stand hier ein pauschaler Abzug für ~400 m — damit
+    // lag der Bodendruck im Mock immer knapp unter 1000 hPa, und der
+    // Abschneidepfad des Skew-T (Level unterhalb des Bodens verwerfen) wurde
+    // nie durchlaufen. Ohne den Fall überhaupt fiele `surface_pressure` in
+    // den Default (±10), woraus Δθ im Föhn-Bereich Unsinn ergäbe.
+    case 'surface_pressure': {
+      const h = mockElevation(lat, lon)
+      return round1(mockValue('pressure_msl', model, lat, lon, t) * (1 - 0.0065 * h / 288.15) ** 5.255)
+    }
     case 'wind_speed_10m':
       return round1(mockWind(model, lat, lon, t))
     case 'wind_gusts_10m':
@@ -424,8 +428,21 @@ const UNITS: Record<string, string> = {
 interface MockLocation {
   latitude: number
   longitude: number
+  /**
+   * Modell-Geländehöhe. BEWUSST KEINE nachgebaute Topografie — der Mock soll
+   * den Anzeigepfad bedienen, nicht so aussehen, als kenne er das Gelände.
+   * Deterministisch aus der Koordinate, damit derselbe Punkt immer denselben
+   * Wert liefert (dieselbe Regel wie für alle Mock-Felder).
+   */
+  elevation: number
   hourly: Record<string, number[] | (number | null)[]>
   hourly_units: Record<string, string>
+}
+
+/** Grobe, stetige Pseudo-Höhe in m — siehe MockLocation.elevation. */
+function mockElevation(lat: number, lon: number): number {
+  const v = Math.sin(lat * 1.7) * Math.cos(lon * 1.3) + Math.sin(lon * 0.9 + lat * 0.4)
+  return Math.max(0, Math.round(((v + 2) / 4) * 1800))
 }
 
 function buildForecastBody(u: URL): MockLocation | MockLocation[] {
@@ -453,7 +470,7 @@ function buildForecastBody(u: URL): MockLocation | MockLocation[] {
         hourly_units[key] = UNITS[v] ?? ''
       }
     }
-    return { latitude: lat, longitude: lon, hourly, hourly_units }
+    return { latitude: lat, longitude: lon, elevation: mockElevation(lat, lon), hourly, hourly_units }
   }
 
   return lats.length > 1
@@ -552,7 +569,7 @@ function buildEnsembleBody(u: URL): MockLocation {
     })
     hourly_units[key] = UNITS[variable] ?? ''
   }
-  return { latitude: lat, longitude: lon, hourly, hourly_units }
+  return { latitude: lat, longitude: lon, elevation: mockElevation(lat, lon), hourly, hourly_units }
 }
 
 /**

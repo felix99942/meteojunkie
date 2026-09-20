@@ -12,7 +12,13 @@ import { getModel } from '../config/models'
 import { formatRun, latestRun, RUN_TITLE } from '../config/runs'
 import { supportsPressureLevels } from '../config/levels'
 import { formatCursorTime, PROFILE_FORECAST_DAYS, timeToIndex } from '../config/time'
-import { columnFromProfile, computeSounding, type SoundingParams } from '../lib/sounding'
+import {
+  columnFromProfile,
+  computeSounding,
+  type SoundingColumn,
+  type SoundingParams,
+  type SurfacePoint,
+} from '../lib/sounding'
 import {
   DEFAULT_SKEWT_THEME,
   drawHodograph,
@@ -27,7 +33,6 @@ import {
 } from '../render/skewt'
 import { useWorkbench, type PanelConfig } from '../state/workbench'
 
-const KMH_TO_KT = 1 / 1.852
 const MS_TO_KT = 1.94384
 /** Mindest-Pixelabstand zwischen Windbarben (verhindert Überlappung, thint adaptiv). */
 /**
@@ -59,27 +64,49 @@ const dash = (v: string | number | null | undefined): string =>
 // (robuster als SB gegen die abendliche Grenzschichtproblematik).
 const TABLE_ROWS: { label: string; get: (s: SoundingParams) => string }[] = [
   { label: 'PWAT', get: (s) => `${s.pwat.toFixed(1)} mm` },
-  { label: 'SB-CAPE', get: (s) => `${Math.round(s.sb.cape)}` },
+  // ML ZUERST: es ist das Bezugspaket dieses Panels — der Parzellenweg im
+  // Diagramm und der LI stammen daraus. SB und MU stehen als Vergleich
+  // daneben, nicht als Hauptwert.
   { label: 'ML-CAPE', get: (s) => `${Math.round(s.ml.cape)}` },
+  { label: 'SB-CAPE', get: (s) => `${Math.round(s.sb.cape)}` },
   { label: 'MU-CAPE', get: (s) => `${Math.round(s.mu.cape)}` },
-  { label: 'CIN (ML)', get: (s) => `${Math.round(s.ml.cin)}` },
+  // Ohne LFC gibt es keine Sperre — dann steht hier „–" und keine Zahl.
+  { label: 'CIN (ML)', get: (s) => dash(s.ml.cin != null ? `${Math.round(s.ml.cin)}` : null) },
   { label: 'LCL', get: (s) => dash(s.ml.lclP != null ? `${Math.round(s.ml.lclP)} hPa` : null) },
   { label: 'LFC', get: (s) => dash(s.ml.lfcP != null ? `${Math.round(s.ml.lfcP)} hPa` : null) },
   { label: 'EL', get: (s) => dash(s.ml.elP != null ? `${Math.round(s.ml.elP)} hPa` : null) },
-  { label: 'LI', get: (s) => dash(s.li != null ? s.li.toFixed(1) : null) },
+  { label: 'LI (ML)', get: (s) => dash(s.li != null ? s.li.toFixed(1) : null) },
   { label: 'K-Index', get: (s) => dash(s.kIndex != null ? `${Math.round(s.kIndex)}` : null) },
   { label: 'Total Totals', get: (s) => dash(s.totalTotals != null ? `${Math.round(s.totalTotals)}` : null) },
-  { label: '0 °C', get: (s) => dash(s.freezingLevelP != null ? `${Math.round(s.freezingLevelP)} hPa` : null) },
+  // Nullgradgrenze in METERN: so liest man sie (Schneefall- und
+  // Vereisungsgrenze), nicht in hPa. Der Druck bleibt als Rückfall, falls das
+  // Modell keine Geopotentialhöhen liefert — „–" wäre dort unzutreffend, der
+  // Wert ist ja bekannt, nur nicht in der gewünschten Einheit.
+  {
+    label: '0 °C',
+    get: (s) =>
+      s.freezingLevelZ != null
+        ? `${Math.round(s.freezingLevelZ / 10) * 10} m`
+        : dash(s.freezingLevelP != null ? `${Math.round(s.freezingLevelP)} hPa` : null),
+  },
   { label: 'Shear 0–6 km', get: (s) => dash(s.shear06 != null ? `${Math.round(s.shear06 * MS_TO_KT)} kt` : null) },
 ]
 
-/** T- oder Td-Kurve eines Profils zum Zeitindex zeichnen (Lücken bei null). */
-function strokeProfileLine(
+/**
+ * T- oder Td-Kurve aus der SONDIERUNGSSPALTE zeichnen.
+ *
+ * Bewusst aus der Spalte und nicht mehr aus den Rohleveln: die Spalte ist
+ * dieselbe, aus der die Kennzahlen gerechnet werden (`columnFromProfile`) —
+ * sie beginnt am Boden und lässt die unterirdisch extrapolierten Level weg.
+ * Zeichnete das Diagramm weiter aus den Rohdaten, zeigte es eine Kurve, die
+ * unterhalb des Geländes weiterläuft, während die Tabelle daneben etwas
+ * anderes ausweist.
+ */
+function strokeColumnLine(
   ctx: CanvasRenderingContext2D,
   g: SkewTGeometry,
-  profile: Profile,
-  values: (number | null)[][],
-  timeIdx: number,
+  col: SoundingColumn,
+  values: number[],
   color: string,
   linedash: number[],
 ): void {
@@ -89,15 +116,14 @@ function strokeProfileLine(
   ctx.setLineDash(linedash)
   ctx.beginPath()
   let pen = false
-  for (let i = 0; i < profile.levels.length; i++) {
-    const p = profile.levels[i]
-    const v = values[i]?.[timeIdx]
-    if (p < g.pMin || p > g.pMax || v == null) {
+  for (let i = 0; i < col.p.length; i++) {
+    const v = values[i]
+    if (v == null || !Number.isFinite(v)) {
       pen = false
       continue
     }
-    const x = xFromTP(g, v, p)
-    const y = yFromP(g, p)
+    const x = xFromTP(g, v, col.p[i])
+    const y = yFromP(g, col.p[i])
     if (pen) ctx.lineTo(x, y)
     else {
       ctx.moveTo(x, y)
@@ -106,6 +132,20 @@ function strokeProfileLine(
   }
   ctx.stroke()
   ctx.restore()
+}
+
+/** Bodenpunkt eines Profils zum Zeitindex. */
+function surfaceAt(p: Profile, ti: number): SurfacePoint | null {
+  const pressure = p.surface.pressure[ti]
+  if (pressure == null || !Number.isFinite(pressure)) return null
+  return {
+    pressure,
+    temperature: p.surface.temperature[ti] ?? null,
+    dewpoint: p.surface.dewpoint[ti] ?? null,
+    windSpeed: p.surface.windSpeed[ti] ?? null,
+    windDirection: p.surface.windDirection[ti] ?? null,
+    elevation: p.elevation,
+  }
 }
 
 export function SkewTPanel({ panel }: { panel: PanelConfig }) {
@@ -117,22 +157,50 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hodoContainerRef = useRef<HTMLDivElement>(null)
   const hodoCanvasRef = useRef<HTMLCanvasElement>(null)
-  const [showParams, setShowParams] = useState(false)
+  // Kennzahlen sind standardmässig SICHTBAR: sie sind der Grund, warum man
+  // ein Sounding aufschlägt, und seit die Grenze zur Karte ziehbar ist, hat
+  // das Diagramm den Platz dafür. Ausblenden bleibt möglich.
+  const [showParams, setShowParams] = useState(true)
   const [showHodo, setShowHodo] = useState(false)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   const loadedKey = results.map((r) => (r.data ? '1' : '0')).join('')
   const modelsKey = panel.models.join()
 
-  // Kennzahlen je Modell zum aktuellen Zeitpunkt (memoisiert; auf geladene Daten
-  // + Zeit keyen, results ist jede Runde ein neues Array).
-  const soundings = useMemo(
+  /**
+   * Geländehöhe, mit der die Modelle hier rechnen — die wichtigste Angabe zum
+   * gewählten PUNKT, seit man ihn auf der Karte setzt: das Profil beginnt auf
+   * dieser Höhe, nicht auf der realen. Ein Klick ins Inntal, den das Modell
+   * als geglätteten Hang führt, erklärt eine Bodenschicht, die sonst wie ein
+   * Fehler aussieht.
+   *
+   * Als SPANNE, wenn die Modelle sich uneinig sind: gemessen melden sie
+   * meist dieselbe Höhe (Open-Meteo rechnet jedes auf sein eigenes 90-m-DEM
+   * herunter), verlassen sollte man sich darauf nicht — eine einzelne Zahl
+   * wäre dann die Höhe irgendeines Modells.
+   */
+  const elevationText = useMemo(() => {
+    const vals = results
+      .map((r) => r.data?.elevation)
+      .filter((v): v is number => v != null && Number.isFinite(v))
+    if (!vals.length) return null
+    const lo = Math.round(Math.min(...vals))
+    const hi = Math.round(Math.max(...vals))
+    return lo === hi ? `${lo} m` : `${lo}–${hi} m`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedKey, modelsKey])
+
+  // Sondierungsspalte UND Kennzahlen je Modell zum aktuellen Zeitpunkt
+  // (memoisiert; auf geladene Daten + Zeit keyen, results ist jede Runde ein
+  // neues Array). Die Spalte wird auch gezeichnet — Diagramm und Tabelle
+  // sollen nicht aus zwei verschiedenen Datenständen kommen.
+  const columns = useMemo(
     () =>
       panel.models.map((_id, i) => {
         const p = results[i]?.data
         if (!p) return null
         const ti = Math.min(timeToIndex(panelTime), p.times.length - 1)
-        const col = columnFromProfile(
+        return columnFromProfile(
           p.levels,
           p.temperature,
           p.dewpoint,
@@ -140,38 +208,46 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           p.windDirection,
           p.height,
           ti,
+          surfaceAt(p, ti),
         )
-        return col ? computeSounding(col) : null
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [loadedKey, panelTime, modelsKey],
   )
+  const soundings = useMemo(
+    () => columns.map((col) => (col ? computeSounding(col) : null)),
+    [columns],
+  )
   const soundingsRef = useRef(soundings)
   soundingsRef.current = soundings
+  const columnsRef = useRef(columns)
+  columnsRef.current = columns
 
-  // Hodograf-Daten für EIN Modell: bevorzugt ECMWF (auf Wunsch), sonst das
-  // erste mit Daten. u/v (kt) je Level, Höhe über Grund, Boden zuerst.
+  /**
+   * Hodograf-Daten für EIN Modell: bevorzugt ECMWF (auf Wunsch), sonst das
+   * erste mit Daten. u/v (kt) je Level, Höhe über Grund, Boden zuerst.
+   *
+   * Aus der SPALTE, nicht aus den Rohleveln — sonst stünden hier dieselben
+   * unterirdisch extrapolierten Winde, und gerade der Hodograf lebt vom
+   * bodennahen Teil: die Scherung der untersten Kilometer ist sein Zweck.
+   */
   const hodoData = useMemo<HodoPoint[] | null>(() => {
-    let idx = panel.models.findIndex((id, k) => id === 'ecmwf_ifs025' && results[k]?.data)
-    if (idx < 0) idx = panel.models.findIndex((_id, k) => results[k]?.data)
+    let idx = panel.models.findIndex((id, k) => id === 'ecmwf_ifs025' && columns[k])
+    if (idx < 0) idx = columns.findIndex((c) => c != null)
     if (idx < 0) return null
-    const p = results[idx].data as Profile
-    const ti = Math.min(timeToIndex(panelTime), p.times.length - 1)
+    const col = columns[idx] as SoundingColumn
     const pts: HodoPoint[] = []
     let surfaceZ: number | null = null
-    for (let l = 0; l < p.levels.length; l++) {
-      const ws = p.windSpeed[l]?.[ti]
-      const wd = p.windDirection[l]?.[ti]
-      const z = p.height[l]?.[ti]
-      if (ws == null || wd == null || z == null) continue
+    for (let l = 0; l < col.p.length; l++) {
+      const u = col.u[l]
+      const v = col.v[l]
+      const z = col.z[l]
+      if (u == null || v == null || z == null) continue
       if (surfaceZ == null) surfaceZ = z
-      const spd = ws * KMH_TO_KT
-      const rad = (wd * Math.PI) / 180
-      pts.push({ zAgl: z - surfaceZ, u: -spd * Math.sin(rad), v: -spd * Math.cos(rad) })
+      pts.push({ zAgl: z - surfaceZ, u: u * MS_TO_KT, v: v * MS_TO_KT })
     }
     return pts.length >= 2 ? pts : null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, modelsKey])
+  }, [columns, panel.models])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -195,15 +271,14 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       const g = makeGeometry(38, 8, w - 38 - 44, h - 8 - 22)
       drawSkewTBackground(ctx, g, DEFAULT_SKEWT_THEME)
 
-      const timeIdx = timeToIndex(panelTime)
       const sounds = soundingsRef.current
-      let barb: { profile: Profile; color: string } | null = null
+      const cols = columnsRef.current
+      let barb: { col: SoundingColumn; color: string } | null = null
       let refParcelDrawn = false
 
       panel.models.forEach((id, i) => {
-        const profile = results[i]?.data
-        if (!profile) return
-        const ti = Math.min(timeIdx, profile.times.length - 1)
+        const col = cols[i]
+        if (!col) return
         const color = SERIES_COLORS[panel.modelSlots[id] ?? 0]
         // Bezugsmodell = erstes mit Sondierung: ML-Paket + CAPE/CIN zuerst (unten).
         // ML statt SB, weil das SB-Paket abends durch die Grenzschichtproblematik
@@ -212,26 +287,29 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           drawParcel(ctx, g, sounds[i]!.ml)
           refParcelDrawn = true
         }
-        strokeProfileLine(ctx, g, profile, profile.temperature, ti, color, [])
-        strokeProfileLine(ctx, g, profile, profile.dewpoint, ti, color, [4, 3])
-        if (!barb) barb = { profile, color }
+        strokeColumnLine(ctx, g, col, col.T, color, [])
+        strokeColumnLine(ctx, g, col, col.Td, color, [4, 3])
+        if (!barb) barb = { col, color }
       })
 
       if (barb) {
-        const { profile, color } = barb as { profile: Profile; color: string }
-        const ti = Math.min(timeIdx, profile.times.length - 1)
+        const { col, color } = barb as { col: SoundingColumn; color: string }
         const bx = g.left + g.width + 20
         // So viele Level wie ohne Überlappung passen (adaptiv statt fester
         // Liste). Die Obergrenze setzt die API, nicht diese Schleife — siehe
-        // BARB_MIN_GAP.
+        // BARB_MIN_GAP. Gezeichnet wird aus derselben Spalte wie die Kurven,
+        // also ohne die unterirdischen Level und mit dem Bodenwind zuunterst.
         let lastBarbY = Infinity
-        for (let i = 0; i < profile.levels.length; i++) {
-          const y = yFromP(g, profile.levels[i])
+        for (let i = 0; i < col.p.length; i++) {
+          const y = yFromP(g, col.p[i])
           if (Math.abs(y - lastBarbY) < BARB_MIN_GAP) continue
-          const ws = profile.windSpeed[i]?.[ti]
-          const wd = profile.windDirection[i]?.[ti]
-          if (ws == null || wd == null) continue
-          drawWindBarb(ctx, bx, y, ws * KMH_TO_KT, wd, color, BARB_LEN)
+          const u = col.u[i]
+          const v = col.v[i]
+          if (u == null || v == null) continue
+          // u/v (m/s) zurück in Betrag und Herkunftsrichtung
+          const spdKt = Math.hypot(u, v) * MS_TO_KT
+          const dir = ((Math.atan2(-u, -v) * 180) / Math.PI + 360) % 360
+          drawWindBarb(ctx, bx, y, spdKt, dir, color, BARB_LEN)
           lastBarbY = y
         }
       }
@@ -302,7 +380,17 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       <div ref={containerRef} className="skewt-canvas">
         <canvas ref={canvasRef} />
       </div>
-      <span className="skewt-time">{formatCursorTime(panelTime)}</span>
+      <span className="skewt-time">
+        {formatCursorTime(panelTime)}
+        {elevationText && (
+          <span
+            className="skewt-elev"
+            title="Geländehöhe, mit der das Modell an diesem Punkt rechnet — nicht die reale Höhe. Das Profil beginnt hier."
+          >
+            Modell {elevationText}
+          </span>
+        )}
+      </span>
       <div className="skewt-toggles">
         <button
           type="button"
@@ -329,9 +417,16 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       )}
       {showParams && (
         <div className="skewt-params">
-          <span className="skewt-hint">
-            — T · - - Td · ⋯ Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
-            <span style={{ color: '#4a93e8' }}>▉ CIN</span> · CAPE/CIN in J/kg · ML-Paket im Diagramm
+          {/* Kurz halten: der Kasten steht jetzt dauerhaft da, und ein
+              Erklärsatz, den man einmal liest, kostet sonst jede Sitzung
+              Fläche. Das Bezugspaket steht ohnehin an den Zeilen („LI (ML)",
+              „CIN (ML)"), der Rest im Tooltip. */}
+          <span
+            className="skewt-hint"
+            title="Bezugspaket ist ML (Mittel der untersten 100 hPa) — daraus stammen der Parzellenweg im Diagramm und der LI. SB (bodenbasiert) und MU (labilstes Paket) stehen zum Vergleich daneben. CAPE/CIN in J/kg."
+          >
+            — T · - - Td · ⋯ ML-Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
+            <span style={{ color: '#4a93e8' }}>▉ CIN</span>
           </span>
           <table className="skewt-table">
             <thead>

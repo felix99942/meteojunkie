@@ -765,8 +765,8 @@ npm run preview   # gebautes dist/ servieren
   sonst zeigte das Vertikalprofil leere Diagramme. Vier Tests halten
   Freischaltung, Größenliste, Einordnung und die fehlende
   Drucklevel-Fähigkeit fest.
-  `config/levels.ts` führt ICON-D2 für das Skew-T weiter als nicht
-  drucklevelfähig; zumindest für 700 hPa ist das widerlegt.
+  `config/levels.ts` ist deswegen inzwischen KOMPLETT NACHGEMESSEN (s. u.) —
+  ICON-D2 ist dort jetzt drucklevelfähig geführt.
   `usePointSeries` holt Serien OHNE Registry-Gate (Drucklevel,
   `surface_pressure` stehen nicht in `availableVariables`), mit demselben
   Query-Key und Batcher wie `useMeteogramSeries`. Kosten je Achse: ein
@@ -1018,6 +1018,182 @@ npm run preview   # gebautes dist/ servieren
   sie außerhalb der Fläche und verdeckt keine Symbole. Symboldichte an der
   Breite orientiert (~30 px Mindestabstand), Radius zusätzlich am Abstand
   gedeckelt, damit sich die Kreise nie berühren.
+- **Ortswahl auf der Karte** (`LocationMap.tsx` + `ProfileMapPane.tsx`, Asset
+  `scripts/build-relief.mjs` → `src/mapdata/europe-relief.png`, Konstanten in
+  `config/relief.ts` mit Tests) — der Soundings-Bereich wählt den Punkt auf
+  einer zoombaren Europakarte statt über Ortsname oder Schnellwahl. Grund: ein
+  Vertikalprofil wählt man GEOGRAFISCH — Luv oder Lee, vor oder hinter der
+  Front, Alpennord- gegen Südseite; man weiss, WO man hinsehen will, aber nicht,
+  wie der Ort dort heisst. Karte LINKS neben dem Diagramm (`ProfileSplit.tsx`),
+  nicht darüber: übereinander nähme sie die Höhe weg, die das Skew-T braucht.
+  Der Ort ist globaler Zustand, die Komponente ist deshalb allgemein gehalten
+  (nimmt eine Modell-Liste und eine Breite, sonst nichts) und liesse sich ohne
+  Umbau auch neben Meteogramm oder Ensemble stellen.
+  **Der Soundings-Bereich hat GENAU EIN Panel, und das ist keine Voreinstellung**
+  (`FIXED_PANEL_COUNT`/`hasLayoutChoice` in `state/workbench.ts`): der
+  MODELLVERGLEICH FINDET IM PANEL STATT — mehrere Modelle liegen als Kurven im
+  selben Skew-T —, und der Ort ist globaler Zustand. Ein zweites Panel zeigte
+  also denselben Punkt zur selben Zeit und unterschiede sich nur in der
+  Modellauswahl, also in genau dem, wofür das eine Diagramm schon da ist; dazu
+  kostete es Budget (~100 Level-Variablen) und nähme der Karte die Breite.
+  Der LayoutPicker wird dort deshalb GAR NICHT gezeigt (eine Auswahl ohne
+  Wirkung ist schlimmer als keine), `setLayout` ist für solche Bereiche ein
+  No-op, und `presetLayouts` zieht ein älteres Preset mit zwei Profil-Panels
+  auf den festen Wert. Die sechs Panel-Configs bleiben unangetastet — Layout
+  ist nach wie vor nur eine Anzeigefrage.
+  **Die Grenze zwischen Karte und Diagramm ist ZIEHBAR** (`.split-handle`,
+  Rechenkern `lib/splitWidth.ts` mit Tests, Breite im Store als
+  `profileMapWidth`): was man gerade braucht, wechselt mit der Frage — wer den
+  Punkt sucht, will die Karte gross, wer das Profil liest, das Diagramm. Das
+  ist ein Handgriff mitten in der Arbeit und gehört deshalb an die Grenzlinie,
+  nicht in ein Menü. Die Breite liegt im STORE und nicht in der Komponente,
+  damit sie einen Bereichswechsel überlebt. Greiffläche 10 px (3 px trifft man
+  nicht), Doppelklick und Pos1 setzen zurück, Pfeiltasten verschieben.
+  **Im Engpass gewinnt das DIAGRAMM** (`clampMapWidth`): reicht der Platz für
+  beide Mindestbreiten nicht, schrumpft die Karte unter ihr Minimum — sie ist
+  das Werkzeug zur Auswahl, das Profil der Inhalt. Unter 900 px wird ohnehin
+  gestapelt, und dort muss die vom Trenner gesetzte Inline-Breite per
+  `!important` überschrieben werden.
+  **Die Orografie ist QUALITATIV, Atlas-Manier** — abgestufte Höhenschichten
+  (0–200 … > 3000 m, dunkelgrün → braun → hell), aus denen man die Landschaft
+  erkennt, aber KEINE Werte abliest. Gedämpft fürs dunkle Theme, und das ist
+  Bedingung: darüber liegen Grenzlinien (#b4b9c2) und Stadtlabels, ein Test
+  hält die oberste Stufe unter deren Helligkeit und die Stufen monoton
+  aufsteigend. Meer bekommt fast die Hintergrundfarbe — es trägt keine
+  Information, Bathymetrie lenkt nur ab.
+  **Was Meer ist, entscheidet NICHT die Höhe allein, sondern eine LANDMASKE**
+  (`rasterizeLand` im Ingest, Natural Earth 1:50m — dieselbe Stufe wie die
+  Küstenlinie der Basemap, damit die Maskenkante exakt darunter liegt). Ohne
+  sie standen die Niederlande und die deutsche Marschküste als Wasser da: sie
+  liegen grossflächig unter null, und die Karte sah aus, als wäre das halbe
+  Land abgesoffen. Eine tiefere Höhenschwelle behebt das NICHT, sie verschiebt
+  es nur — Wattenmeer und Bodden liegen ebenfalls knapp unter null und wären
+  dann Land. Die Maske hebt deshalb nur AN und löscht nie: Land unter dem
+  Meeresspiegel wird zur untersten Landstufe (gemessen 0,52 % der Fläche =
+  44.969 px), ein Punkt ausserhalb der Polygone bleibt aber nach seiner HÖHE
+  eingestuft — sonst verlöre man kleine Inseln, die in 1:50m fehlen.
+  **Was das Profil wirklich bestimmt, ist die MODELLtopografie** — deshalb
+  steht am gewählten Punkt die Modellhöhe (`Profile.elevation`, neu
+  durchgereicht, im Skew-T als `.skewt-elev` neben der Zeit; als SPANNE, wenn
+  die Modelle sich uneinig sind). Am Sonnblick rechnet Open-Meteo mit 2962
+  statt 3109 m — das Relief ordnet ein, es beweist nichts.
+  **Bild statt Tile-Dienst**, dieselbe Entscheidung wie überall
+  (`render/basemap.ts`): kein Key, kein fremdes Rate-Limit, und MapLibres
+  `load`-Event hängt nicht an fremden Requests. Quelle sind die offenen
+  Terrain-Kacheln von AWS Open Data (Tilezen „terrarium",
+  h = R·256 + G + B/256 − 32768), einmalig geholt und eingefärbt; Attribution
+  ist Lizenzbedingung und steht im Bereich (`ReliefAttribution`). Die Kacheln
+  liegen in WEB-MERCATOR und MapLibres image-source spannt linear im
+  Mercator-Raum auf — das Kachelfeld IST also das Zielraster, es braucht keine
+  Vorverzerrung wie `render/fieldImage.ts` für lat/lon-Gitter (gleiche Lage wie
+  beim Radarbild in EPSG:3857). PNG lesen und schreiben macht
+  `scripts/lib/png.mjs` mit Bordmitteln (zlib), bewusst ohne Fremdpaket wie der
+  KMZ-Parser des MOSMIX-Ingests; es liest NUR 8-Bit-RGB ohne Interlacing und
+  schreibt NUR indiziert — alles andere wirft, statt still falsch zu lesen.
+  **Zoomstufe 6 = 1,53 km/px, 321 KB. Gemessen (2026-09-20) kostet Stufe 7 mit
+  0,75 km/px das 3,4-Fache (1128 KB)** — für ein Relief ohne ablesbare Werte
+  ist das der Preis nicht wert, und beim Hineinzoomen weich zu werden ist hier
+  sogar richtig: die Modelle lösen 7–25 km auf.
+  **Ausserhalb der Modellabdeckung wird ABGEBLENDET und der Klick abgelehnt**
+  (`coverageIntersection`/`isEmptyCoverage` in `config/models.ts`, mit Tests;
+  Maske = Polygon mit Loch). Der SCHNITT ist die richtige Rechnung, nicht die
+  Vereinigung: die Panels legen die Profile übereinander, an einem Punkt, den
+  nur eines abdeckt, stünde eine Kurve allein da. Abgeblendet wird halb-
+  durchlässig — man muss noch erkennen, WO die Abdeckung endet. Gemessen: die
+  acht Regionalmodelle der Registry überlappen PAARWEISE alle, ein leerer
+  Schnitt ist heute unerreichbar (ein Test hält das fest, damit ein Modell
+  ausserhalb Europas auffällt).
+- **Drucklevel-Verfügbarkeit ist GEMESSEN, nicht aus der Doku**
+  (`config/levels.ts`, live 2026-09-20 in Innsbruck, je Modell alle 19 Level
+  abgefragt und die nicht-leeren gezählt; Tests in `levels.test.ts`). Der
+  vorherige Stand war ein Doku-Arbeitsstand und in BEIDE Richtungen falsch.
+  **Fünf Modelle mit Druckleveln fehlten**: `icon_d2` (14 Level), `meteofrance_
+  arome_france` (15), `meteofrance_arpege_europe` (15), `ecmwf_aifs025_single`
+  (13) und `ukmo_global_deterministic_10km` (19). Damit stehen erstmals
+  LOKALmodelle im Skew-T — AROME France mit 1,5 km und ICON-D2 mit 2,2 km
+  gegen einen 25-km-Global ist genau der Vergleich, um den es dieser Workbench
+  geht. **Und KEIN Modell liefert alle 19 Level**: ECMWF IFS/AIFS nur 13 — es
+  fehlen 975, 950, 900, 800, 70 und 30 hPa, also gerade die untere
+  Feinstruktur, auf die es bei einer Inversion ankommt; ICON-D2 endet bei
+  200 hPa (Konvektionsmodell), hat dafür unten alle Level. `PressureLevelSupport`
+  führt deshalb `levels` und `topHpa`: ein Profil, das bei 200 hPa aufhört, ist
+  richtig und kein Datenfehler. **Bestätigt OHNE Drucklevel** (alle 19 durchgehend
+  null bei HTTP 200 — die Falle aus SPEC §6): `geosphere_arome_austria`,
+  `meteoswiss_icon_ch1`, `meteoswiss_icon_ch2`; bei den ICON-CH deckt sich das
+  mit dem Ensemble-Befund. Nicht erneut aus der Doku ergänzen.
+- **Das Profil beginnt am BODEN, nicht bei 1000 hPa** (`SurfacePoint` +
+  `columnFromProfile` in `lib/sounding.ts`, Tests in `sounding.test.ts`):
+  Open-Meteo besetzt die Drucklevel AUCH unterhalb der Modelloberfläche — dort
+  extrapoliert. **Gemessen (2026-09-20, ECMWF IFS)**: am Sonnblick
+  (Modellhöhe 3057 m, Bodendruck 717 hPa) liefert 1000 hPa **25,5 °C auf
+  217 m**, also 2840 m TIEF IM BERG, und 850 hPa 16,7 °C auf 1594 m; am
+  Grossglockner liegt selbst 700 hPa noch darunter. **Auch das Flachland ist
+  betroffen** — Salzburg (442 m): 1000 hPa auf 209 m. Es gibt also keinen
+  Punkt, an dem das ungefiltert richtig war.
+  Ungefiltert begann jedes Skew-T bei 1000 hPa, und das SB-Paket („surface
+  based") stieg von einem Niveau auf, das es nicht gibt: **Sonnblick vorher
+  SB-CAPE 57 / LCL 856 hPa** (1,5 km unter dem Gipfel), nachher 0 / 616 hPa;
+  **Salzburg vorher 4, nachher 95** — der Fehler ging in BEIDE Richtungen.
+  Abgeschnitten wird am BODENDRUCK, nicht an der Höhe: die Skew-T-Achse ist
+  eine Druckachse, und `surface_pressure` lässt sich direkt gegen ein
+  Drucklevel halten, ohne den Umweg über die selbst extrapolierte
+  Geopotentialhöhe. Der vollständige Bodenpunkt wird als unterstes Niveau
+  EINGEFÜGT (aus `temperature_2m`/`relative_humidity_2m`/`wind_*_10m`, fünf
+  Variablen mehr im selben Request — das Gewicht bleibt bei 10 gewichteten
+  Calls, der Bodenpunkt kostet also nichts). Diagramm, Windfiedern, Hodograf
+  UND Kennzahlen lesen seither dieselbe `SoundingColumn`; vorher zeichnete das
+  Panel aus den Rohleveln, während die Tabelle schon gerechnet hatte.
+  **Zwei Folgefehler kamen dabei ans Licht, beide vorher durch den erfundenen
+  warmen Start verdeckt:**
+  **(1) CIN ohne LFC war eine Riesenzahl.** Ohne Niveau des freien Auftriebs
+  summierte die Schleife die negative Auftriebsfläche bis zur Gitterspitze —
+  am Sonnblick standen **−21.668 J/kg** in der Tabelle (real sind −10 bis
+  −300). CIN ist dort gegenstandslos: gibt es kein LFC, ist nichts zu
+  überwinden. `ParcelResult.cin` ist deshalb `number | null`, die Tabelle
+  zeigt „–".
+  **(2) Freie Konvektion wurde als CAPE = 0 ausgewiesen.** Die LFC-Suche
+  verlangte einen Vorzeichenwechsel des Auftriebs. Ist das Paket ab dem LCL
+  SOFORT wärmer als die Umgebung (heisser Nachmittag, genau die Gewitterlage),
+  gibt es keinen — das LFC liegt dann AUF dem LCL und CIN ist 0.
+  **(3) Die NULLGRADGRENZE steht in METERN, nicht in hPa** — so liest man sie
+  (Schneefall- und Vereisungsgrenze); der Druck bleibt nur als Rückfall, falls
+  ein Modell keine Geopotentialhöhen liefert („–" wäre dort unzutreffend, der
+  Wert ist bekannt, nur nicht in der gewünschten Einheit). Interpoliert wird
+  über die Level MIT gültiger Höhe statt über alle: vorher verlangte die
+  Rechnung, dass JEDER Eintrag eine Höhe trägt, und ein einziger fehlender
+  Wert unterdrückte die Angabe still — seit der Bodenpunkt vorangestellt wird,
+  genügte dafür ein fehlendes `elevation`. Gerundet auf 10 m, nicht auf 100:
+  die Tabelle dient dem MODELLvergleich, und zwei Modelle mit 3440 und 3460 m
+  sollen unterscheidbar bleiben.
+- **Bezugspaket des Skew-T ist ML, nicht SB** — durchgehend: der gezeichnete
+  Parzellenweg mit CAPE/CIN war es schon, der **LIFTED INDEX kam aber aus dem
+  SB-Paket**, die Tabelle wies also zwei Grössen aus, die von verschiedenen
+  Startniveaus stammten. Grund für ML: das SB-Paket hängt an genau EINEM
+  Wertepaar (`temperature_2m`/`relative_humidity_2m`) und wird von der
+  bodennahen Schicht dominiert — bei nächtlicher Inversion meldet es eine
+  Stabilität, die nur die untersten Meter betrifft. Das ML-Paket mittelt die
+  untersten 100 hPa. Seit das Profil am Boden abgeschnitten wird (s. o.) wiegt
+  das schwerer, weil der SB-Start jetzt wirklich der Modellbodenwert ist und
+  nicht mehr ein extrapoliertes 1000-hPa-Niveau. In der Tabelle steht ML-CAPE
+  deshalb ZUERST, die Zeile heisst „LI (ML)", und SB/MU stehen zum Vergleich
+  daneben.
+- **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
+  (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
+  hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch
+  den ziehbaren Trenner: das Diagramm hat jetzt Platz, den es als halbes
+  Panel nicht hatte. Ausblenden geht weiter über „Kennzahlen ✕".
+  **Die Ecke ist gewählt, nicht bloss frei**: rechts oben heisst im Skew-T
+  „sehr warm in grosser Höhe" — dort verläuft keine reale Sondierung, die
+  Fläche ist praktisch immer leer. Links unten sässe der Kasten mitten in der
+  Bodenschicht. Er ist deshalb auch nur so hoch wie nötig (kein `bottom: 0`
+  mehr): über die volle Höhe verdeckte er die untere rechte Ecke, wo bei
+  warmen Profilen die Kurven liegen. Gemessen 7 % der Panelfläche bei einem
+  Modell.
+  **Modellnamen dürfen UMBRECHEN**, dieselbe Regel wie im
+  Verifikations-Panel: ungebrochen ist „ECMWF IFS 0.25° 12 UTC" allein 145 px
+  breit, ab drei Modellen lief der Kasten über seine Höchstbreite und die
+  letzte Spalte stand abgeschnitten da (gemessen 460 px gebraucht bei 418 px
+  Platz). Mit Umbruch kostet jede Modellspalte 88 px, vier Modelle passen.
 - **Windfahnen im Skew-T sind von der API begrenzt, nicht vom Code**
   (`BARB_MIN_GAP`/`BARB_LEN` in `SkewTPanel.tsx`): Open-Meteo liefert genau die
   19 Drucklevel aus `PRESSURE_LEVELS`, davon 16 im Achsenbereich (1050–100 hPa).
@@ -2026,7 +2202,9 @@ npm run preview   # gebautes dist/ servieren
   `mode: 'ensemble'|'profile'` werden NICHT verworfen: `restorePanel` lädt sie
   als Meteogramm und sagt es im `presetWarning`.
 - **Layout 6/4/2/1 gilt JE BEREICH** (`layouts: Record<PanelSection, PanelLayout>`
-  im Store, Standard `DEFAULT_LAYOUT` = {workbench: 4, ensemble: 1, profile: 2} —
+  im Store, Standard `DEFAULT_LAYOUT` = {workbench: 4, ensemble: 1, profile: 1};
+  das Profil hat gar keine Wahl mehr, siehe `FIXED_PANEL_COUNT` beim
+  Soundings-Abschnitt —
   vier Ensembles kosten etwas ganz anderes als vier Meteogramme, und ein
   Plume-Diagramm braucht selbst schon viel Breite (51+ Member), zu zweit kaum
   lesbar;

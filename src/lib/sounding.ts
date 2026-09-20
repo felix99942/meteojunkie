@@ -32,7 +32,18 @@ export interface SoundingColumn {
 
 export interface ParcelResult {
   cape: number // J/kg
-  cin: number // J/kg (≤ 0)
+  /**
+   * Konvektionssperre in J/kg (≤ 0) — `null`, wenn es KEIN LFC gibt.
+   *
+   * CIN ist die Energie, die ein Paket bis zum Niveau des freien Auftriebs
+   * braucht. Erreicht es dieses Niveau nie, gibt es nichts zu überwinden und
+   * die Grösse ist gegenstandslos; eine Zahl wäre dann die aufsummierte
+   * Negativfläche bis zur Gitterspitze — am Sonnblick standen so −21.668 J/kg
+   * in der Tabelle (real sind −10 bis −300). Aufgefallen ist das erst, als
+   * die Profile am Boden abgeschnitten wurden: vorher fand das Paket vom
+   * erfundenen 1000-hPa-Niveau aus fast immer ein LFC.
+   */
+  cin: number | null
   lclP: number | null
   lfcP: number | null
   elP: number | null
@@ -48,7 +59,18 @@ export interface SoundingParams {
   sb: ParcelResult
   ml: ParcelResult
   mu: ParcelResult
-  li: number | null // SB-Paket, auf 500 hPa
+  /**
+   * Lifted Index auf 500 hPa, aus dem ML-PAKET (nicht SB).
+   *
+   * Dasselbe Bezugspaket wie das im Diagramm gezeichnete — vorher stand hier
+   * das SB-Paket, und die Tabelle wies damit zwei Grössen aus, die von
+   * verschiedenen Startniveaus stammten. Das ML-Paket mittelt die untersten
+   * 100 hPa und ist robuster: das SB-Paket hängt an genau einem Wertepaar
+   * (`temperature_2m`/`relative_humidity_2m`) und wird von der bodennahen
+   * Schicht dominiert — bei nächtlicher Inversion meldet es eine Stabilität,
+   * die nur die untersten Meter betrifft.
+   */
+  li: number | null
   kIndex: number | null
   totalTotals: number | null
   freezingLevelP: number | null // hPa
@@ -60,6 +82,54 @@ export interface SoundingParams {
  * Sondierungsspalte aus einem Profil zum Zeitindex bauen: nur Level mit gültiger
  * T UND Td, Boden (höchster Druck) zuerst. Wind (km/h, Richtung) → u/v (m/s).
  */
+/** Bodenwerte eines Zeitschritts — das untere Ende der Sondierung. */
+export interface SurfacePoint {
+  /** Bodendruck in hPa (Stationsdruck, NICHT auf Meereshöhe reduziert). */
+  pressure: number
+  temperature: number | null
+  dewpoint: number | null
+  /** km/h */
+  windSpeed: number | null
+  windDirection: number | null
+  /** Modell-Geländehöhe in m, falls bekannt. */
+  elevation?: number | null
+}
+
+/** Wind (km/h, Herkunftsrichtung) → u/v in m/s. */
+function windToUV(
+  speedKmh: number | null | undefined,
+  dirDeg: number | null | undefined,
+): [number | null, number | null] {
+  if (speedKmh == null || dirDeg == null) return [null, null]
+  const spd = speedKmh / 3.6
+  const rad = (dirDeg * Math.PI) / 180
+  // Wind weht AUS dirDeg → Vektor zeigt dorthin entgegengesetzt
+  return [-spd * Math.sin(rad), -spd * Math.cos(rad)]
+}
+
+/**
+ * Sondierungsspalte aus einem Profil zum Zeitindex bauen: nur Level mit
+ * gültiger Temperatur und Taupunkt, Boden zuerst.
+ *
+ * SCHNEIDET AM BODEN AB, und das ist keine Kosmetik, sondern eine
+ * Korrektheitsfrage: Open-Meteo besetzt die Drucklevel-Reihen AUCH unterhalb
+ * der Modelloberfläche (dort extrapoliert). Gemessen am Sonnblick
+ * (Modellhöhe 3057 m, Bodendruck 717 hPa): 1000 hPa liefert 25,5 °C auf
+ * 217 m Höhe, 850 hPa 16,7 °C auf 1594 m — beides tief im Berg. Ungefiltert
+ * begann das Skew-T dort bei 1000 hPa, und das SB-Paket („surface based")
+ * stieg von einem Niveau auf, das es nicht gibt; CAPE, CIN, LCL und LI waren
+ * damit im Gebirge wertlos. Auch im Flachland ist mindestens das
+ * 1000-hPa-Level betroffen (Salzburg, 442 m: 1000 hPa auf 209 m).
+ *
+ * Das Kriterium ist der BODENDRUCK, nicht die Höhe: die Skew-T-Achse ist eine
+ * Druckachse, und `surface_pressure` ist genau die Grösse, gegen die sich ein
+ * Drucklevel vergleichen lässt — ohne den Umweg über die Geopotentialhöhe,
+ * die ihrerseits extrapoliert sein kann.
+ *
+ * Ist der Bodenpunkt vollständig, wird er als UNTERSTES Niveau eingefügt.
+ * Erst damit beginnt das Profil dort, wo das Modell den Boden hat, statt beim
+ * ersten Level darüber — am Sonnblick sind das 717 statt 700 hPa.
+ */
 export function columnFromProfile(
   levels: number[],
   temperature: (number | null)[][],
@@ -68,27 +138,37 @@ export function columnFromProfile(
   windDirection: (number | null)[][],
   height: (number | null)[][],
   timeIdx: number,
+  surface?: SurfacePoint | null,
 ): SoundingColumn | null {
   const col: SoundingColumn = { p: [], T: [], Td: [], z: [], u: [], v: [] }
+
+  // Bodenpunkt zuerst — nur wenn er vollständig ist; ein halber Bodenpunkt
+  // (Druck ohne Temperatur) wäre als Stützstelle schlechter als keiner.
+  const sfc =
+    surface && surface.temperature != null && surface.dewpoint != null ? surface : null
+  if (sfc) {
+    const [u, v] = windToUV(sfc.windSpeed, sfc.windDirection)
+    col.p.push(sfc.pressure)
+    col.T.push(sfc.temperature as number)
+    col.Td.push(sfc.dewpoint as number)
+    col.z.push(sfc.elevation ?? null)
+    col.u.push(u)
+    col.v.push(v)
+  }
+
   for (let i = 0; i < levels.length; i++) {
     const t = temperature[i]?.[timeIdx]
     const td = dewpoint[i]?.[timeIdx]
     if (t == null || td == null) continue
+    // Unterhalb des Bodens: extrapoliert, gehört nicht ins Profil.
+    if (surface?.pressure != null && levels[i] >= surface.pressure) continue
     col.p.push(levels[i])
     col.T.push(t)
     col.Td.push(td)
     col.z.push(height[i]?.[timeIdx] ?? null)
-    const ws = windSpeed[i]?.[timeIdx]
-    const wd = windDirection[i]?.[timeIdx]
-    if (ws != null && wd != null) {
-      const spd = ws / 3.6 // km/h → m/s
-      const rad = (wd * Math.PI) / 180
-      col.u.push(-spd * Math.sin(rad)) // Wind weht AUS wd → Vektor zeigt dorthin entgegengesetzt
-      col.v.push(-spd * Math.cos(rad))
-    } else {
-      col.u.push(null)
-      col.v.push(null)
-    }
+    const [u, v] = windToUV(windSpeed[i]?.[timeIdx], windDirection[i]?.[timeIdx])
+    col.u.push(u)
+    col.v.push(v)
   }
   // absteigend nach Druck (Boden zuerst) — Profillevel sind bereits so sortiert
   return col.p.length >= 3 ? col : null
@@ -172,6 +252,12 @@ function liftParcel(
   let elIdx = -1
   for (let i = 1; i < fineP.length; i++) {
     if (fineP[i] > lclP) continue // erst ab LCL nach Auftrieb suchen
+    // FREIE KONVEKTION: ist das Paket schon am LCL wärmer als die Umgebung,
+    // gibt es keinen Vorzeichenwechsel — das LFC liegt dann AUF dem LCL und
+    // CIN ist 0. Ohne diesen Fall blieb `lfcIdx` bei −1 und die Sondierung
+    // wies CAPE = 0 aus, obwohl das Paket von unten weg auftreibt; genau die
+    // Lage, in der es gewittert.
+    if (lfcIdx < 0 && buoy[i - 1] > 0 && fineP[i - 1] <= lclP) lfcIdx = i - 1
     if (lfcIdx < 0 && buoy[i - 1] <= 0 && buoy[i] > 0) lfcIdx = i
     if (lfcIdx >= 0 && buoy[i - 1] > 0 && buoy[i] <= 0) elIdx = i
   }
@@ -185,14 +271,16 @@ function liftParcel(
     const seg = 0.5 * (buoy[i - 1] + buoy[i]) * dlnp
     if (lfcIdx >= 0 && i > lfcIdx && i <= elIdx) {
       if (seg > 0) cape += seg
-    } else if (lfcIdx < 0 || i <= lfcIdx) {
+    } else if (i <= lfcIdx) {
+      // Nur BIS zum LFC — ohne LFC gibt es keine Sperre zu überwinden, und
+      // die Schleife summierte sonst bis zur Gitterspitze weiter.
       if (seg < 0) cin += seg
     }
   }
 
   return {
     cape,
-    cin,
+    cin: lfcIdx >= 0 ? cin : null,
     lclP,
     lfcP: lfcIdx >= 0 ? fineP[lfcIdx] : null,
     elP: elIdx >= 0 ? fineP[elIdx] : null,
@@ -263,13 +351,13 @@ export function computeSounding(col: SoundingColumn): SoundingParams {
     if (r.cape > mu.cape) mu = r
   }
 
-  // LI: SB-Paket-Temperatur bei 500 hPa vs. Umgebung
+  // LI: ML-Paket-Temperatur bei 500 hPa vs. Umgebung (siehe SoundingParams.li)
   const lnP = col.p.map((p) => Math.log(p))
   const t500 = col.p.some((p) => p <= 500) ? interpDesc(lnP, col.T, Math.log(500)) : null
   let li: number | null = null
   if (t500 != null) {
-    const iP500 = sb.fineP.findIndex((p) => p <= 500)
-    if (iP500 >= 0) li = t500 - sb.parcelT[iP500]
+    const iP500 = ml.fineP.findIndex((p) => p <= 500)
+    if (iP500 >= 0) li = t500 - ml.parcelT[iP500]
   }
 
   // K-Index / Total Totals aus festen Leveln
@@ -287,13 +375,28 @@ export function computeSounding(col: SoundingColumn): SoundingParams {
     totalTotals = t850 - t500v + (td850 - t500v)
   }
 
-  // Nullgradgrenze
+  // Nullgradgrenze. Die HÖHE ist hier die gebrauchte Grösse (Schneefall- und
+  // Vereisungsgrenze liest man in Metern), der Druck bleibt als Rückfall.
+  //
+  // Interpoliert wird über die Level MIT gültiger Höhe statt über alle: vorher
+  // verlangte die Rechnung, dass JEDER Eintrag eine Höhe trägt, und ein
+  // einziger fehlender Wert unterdrückte die Angabe still. Seit der Bodenpunkt
+  // vorangestellt wird, genügte dafür ein fehlendes `elevation` — also genau
+  // der Fall, in dem die Höhe am interessantesten ist.
   const freezingLevelP = crossingP(col, 0)
   let freezingLevelZ: number | null = null
   if (freezingLevelP != null) {
-    const zVals = col.z.map((z) => (z == null ? NaN : z))
-    if (zVals.every((z) => !Number.isNaN(z))) {
-      freezingLevelZ = interpDesc(lnP, zVals as number[], Math.log(freezingLevelP))
+    const lnPz: number[] = []
+    const zVals: number[] = []
+    for (let i = 0; i < col.z.length; i++) {
+      const z = col.z[i]
+      if (z == null || !Number.isFinite(z)) continue
+      lnPz.push(lnP[i])
+      zVals.push(z)
+    }
+    // Zwei Stützstellen sind das Minimum für eine Interpolation.
+    if (zVals.length >= 2) {
+      freezingLevelZ = interpDesc(lnPz, zVals, Math.log(freezingLevelP))
     }
   }
 
