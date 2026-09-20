@@ -17,7 +17,8 @@
     "ingest:at:records": "node scripts/at-ingest-records.mjs",
     "ingest:at:histalp": "node scripts/at-ingest-histalp.mjs",
     "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs",
-    "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs"
+    "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs",
+    "build:relief": "node scripts/build-relief.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

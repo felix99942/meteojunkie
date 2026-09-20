@@ -78,13 +78,41 @@ export const PANEL_LAYOUTS: { value: PanelLayout; label: string; title: string }
  */
 export const DEFAULT_LAYOUT: Record<PanelSection, PanelLayout> = {
   workbench: 4,
-  // Profile sind datenschwer (~100 Level-Variablen je Panel) — zwei Panels
-  // sind hier der sinnvolle Start, mehr ist einen Klick entfernt. Ensemble
-  // startet bei EINEM Panel: das Plume-Diagramm braucht selbst schon viel
-  // Breite (51+ Member, mehrere Modelle) und ist bei zwei nebeneinander kaum
-  // lesbar — anders als bei den schmalen Meteogramm-Panels.
+  // Ensemble und Profil starten bei EINEM Panel, aus zwei verschiedenen
+  // Gründen. Das Plume-Diagramm braucht selbst schon viel Breite (51+ Member,
+  // mehrere Modelle) und ist zu zweit nebeneinander kaum lesbar — anders als
+  // die schmalen Meteogramm-Panels. Beim PROFIL ist es die Ortswahl-Karte:
+  // sie nimmt links eine feste Spalte, und der Bereich zeigt ohnehin immer
+  // DENSELBEN Punkt (`lockedLocation` ist globaler Zustand) — zwei Skew-Ts
+  // nebeneinander unterscheiden sich also nur in der Modellauswahl, und dafür
+  // legt man die Modelle besser in EIN Diagramm übereinander. Profile sind
+  // zudem datenschwer (~100 Level-Variablen je Panel), das zweite kostet also
+  // auch Budget. Mehr Panels bleiben einen Klick entfernt.
   ensemble: 1,
-  profile: 2,
+  profile: 1,
+}
+
+/**
+ * Bereiche mit FESTER Panelzahl — dort gibt es keine Layout-Wahl, weil die
+ * Zahl keine Anzeigefrage ist, sondern aus dem Bereich folgt.
+ *
+ * Das Vertikalprofil ist genau so ein Fall: der MODELLVERGLEICH FINDET IM
+ * PANEL STATT (mehrere Modelle als Kurven im selben Skew-T), und der Ort ist
+ * globaler Zustand. Ein zweites Panel zeigte damit denselben Punkt zur selben
+ * Zeit und unterschiede sich nur in der Modellauswahl — also genau das, wofür
+ * das eine Diagramm schon da ist. Dazu kostete es Budget (~100
+ * Level-Variablen) und nähme der Ortswahl-Karte die Breite.
+ *
+ * Die Configs der übrigen Panels bleiben unangetastet (Layout ist nach wie
+ * vor nur eine Anzeigefrage) — sie werden in diesem Bereich nur nie gezeigt.
+ */
+export const FIXED_PANEL_COUNT: Partial<Record<PanelSection, PanelLayout>> = {
+  profile: 1,
+}
+
+/** Darf der Bereich seine Panelzahl selbst wählen? */
+export function hasLayoutChoice(section: PanelSection): boolean {
+  return FIXED_PANEL_COUNT[section] === undefined
 }
 
 /** Fixe Panelzahl — das Raster ist auf sechs Configs ausgelegt (SPEC §1). */
@@ -147,6 +175,8 @@ interface WorkbenchStore {
    * kosten als vier Meteogramme.
    */
   layouts: Record<PanelSection, PanelLayout>
+  /** Siehe setProfileMapWidth. */
+  profileMapWidth: number | null
 
   // gemeinsamer Zustand für sync-aktive Panels
   sharedModels: string[]
@@ -164,6 +194,12 @@ interface WorkbenchStore {
   setDomain: (d: DomainPreset) => void
   setLockedLocation: (loc: LatLon | null) => void
   setLayout: (layout: PanelLayout) => void
+  /**
+   * Breite der Ortswahl-Karte im Soundings-Bereich (px), `null` = noch nicht
+   * gesetzt (die Komponente rechnet dann eine Startbreite aus der Fläche).
+   * Liegt im Store, damit sie einen Bereichswechsel überlebt.
+   */
+  setProfileMapWidth: (fn: (prev: number | null) => number) => void
   updatePanel: (index: number, patch: Partial<PanelConfig>) => void
   togglePanelModel: (index: number, modelId: string) => void
   toggleSync: (index: number) => void
@@ -338,6 +374,7 @@ export const useWorkbench = create<WorkbenchStore>((set) => ({
   panels: DEFAULT_PANEL_VARIABLES.map(makePanel),
 
   layouts: { ...DEFAULT_LAYOUT },
+  profileMapWidth: null,
 
   sharedModels: [...DEFAULT_MODELS],
   sharedModelSlots: defaultSlots(DEFAULT_MODELS),
@@ -371,9 +408,21 @@ export const useWorkbench = create<WorkbenchStore>((set) => ({
 
   // Layout gilt je Bereich: vier Ensembles kosten etwas ganz anderes als vier
   // Meteogramme, eine gemeinsame Zahl wäre für beide falsch.
+  setProfileMapWidth: (fn) =>
+    set((s) => {
+      const next = Math.round(fn(s.profileMapWidth))
+      // Nur setzen, wenn sich etwas ändert: beim Ziehen feuert der Zeiger
+      // pixelweise, und ein Store-Update je Ereignis rendert die Karte mit.
+      return next === s.profileMapWidth ? {} : { profileMapWidth: next }
+    }),
+
   setLayout: (layout) =>
     set((s) => {
       const section = activePanelSection()
+      // Bereiche mit fester Panelzahl ignorieren die Wahl — sonst könnte ein
+      // altes Preset oder ein direkter Aufruf ein Raster erzeugen, das der
+      // Bereich gar nicht anbietet.
+      if (!hasLayoutChoice(section)) return {}
       return {
         layouts: { ...s.layouts, [section]: layout },
         parSyncSource: parSyncAfterLayout(s.parSyncSource, layout),

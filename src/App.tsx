@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { TopBar } from './components/TopBar'
 import { PanelGrid } from './components/PanelGrid'
+import { ProfileSplit } from './components/ProfileSplit'
 import { TimeScrubber } from './components/TimeScrubber'
 import { AppNav } from './components/AppNav'
 import { AtSection } from './components/AtSection'
@@ -8,7 +9,7 @@ import { ClassicMeteogram } from './components/ClassicMeteogram'
 import { VerifyPanel } from './components/VerifyPanel'
 import { FoehnPanel } from './components/FoehnPanel'
 import { Impressum } from './components/Impressum'
-import { OpenMeteoAttribution } from './components/Attribution'
+import { OpenMeteoAttribution, ReliefAttribution } from './components/Attribution'
 import { POINT_FORECASTS_ENABLED } from './config/features'
 import { isPanelSection, useAppView } from './state/appView'
 
@@ -18,6 +19,7 @@ const RadarPanel = lazy(() => import('./components/RadarPanel').then((m) => ({ d
 const SatellitePanel = lazy(() =>
   import('./components/SatellitePanel').then((m) => ({ default: m.SatellitePanel })),
 )
+
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
 // (TopBar, Panel-Raster, Zeit-Scrubber) und dieselben Panel-Configs — sie
@@ -39,9 +41,17 @@ export default function App() {
       {isPanelSection(view) ? (
         <>
           <TopBar />
-          <PanelGrid />
+          {/* Soundings: Ortswahl-Karte NEBEN dem Diagramm (nicht darüber —
+              das nähme dem Skew-T die Höhe), mit ziehbarem Trenner. Die
+              Karte zieht MapLibre nach und wird dort lazy geladen. */}
+          {view === 'profile' ? <ProfileSplit /> : <PanelGrid />}
           <TimeScrubber />
-          <OpenMeteoAttribution className="app-attribution" />
+          <div className="app-attribution">
+            <OpenMeteoAttribution />
+            {/* Das Relief gehört nur zum Soundings-Bereich — in den übrigen
+                Panel-Bereichen gibt es keine Ortswahl-Karte. */}
+            {view === 'profile' && <ReliefAttribution />}
+          </div>
         </>
       ) : view === 'classic' ? (
         <ClassicMeteogram />

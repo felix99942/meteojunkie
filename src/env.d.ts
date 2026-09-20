@@ -34,3 +34,12 @@ declare const __BUILD_COMMIT__: string
 declare const __BUILD_DATE__: string
 /** Build aus einem geänderten Arbeitsbaum — nur lokal je wahr. */
 declare const __BUILD_DIRTY__: boolean
+
+/**
+ * Textimport (`?raw`). `vite/client` deklariert das mit, wird hier aber
+ * bewusst nicht eingebunden (siehe oben) — deshalb die eine Zeile von Hand.
+ */
+declare module '*?raw' {
+  const content: string
+  export default content
+}

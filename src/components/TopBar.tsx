@@ -8,6 +8,7 @@ import { LocationPicker } from './LocationPicker'
 import { QuickPoints } from './QuickPoints'
 import { PresetBar } from './PresetBar'
 import { LayoutPicker } from './LayoutPicker'
+import { hasLayoutChoice } from '../state/workbench'
 
 export function TopBar() {
   const view = useAppView((s) => s.view)
@@ -57,7 +58,10 @@ export function TopBar() {
           bzw. brauchen sie nicht — zweimal dieselben acht Knöpfe übereinander
           wären Platzverschwendung. */}
       {view === 'profile' && <QuickPoints />}
-      <LayoutPicker />
+      {/* Nicht in jedem Bereich: wo die Panelzahl feststeht (Profil — der
+          Modellvergleich läuft IM Diagramm), wäre der Picker eine Auswahl
+          ohne Wirkung. */}
+      {isPanelSection(view) && hasLayoutChoice(view) && <LayoutPicker />}
       <PresetBar />
       <span
         className="api-usage"

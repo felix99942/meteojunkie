@@ -35,3 +35,34 @@ export function OpenMeteoAttribution({ className = '' }: { className?: string })
     </span>
   )
 }
+
+/**
+ * Quellenangabe des Geländereliefs der Ortswahl-Karte.
+ *
+ * Getrennt von der Modell-Attribution, weil es eine ganz andere Quelle ist:
+ * kein Vorhersagedienst, sondern ein einmalig erzeugtes statisches Asset
+ * (`scripts/build-relief.mjs`). Die Terrain-Kacheln von Tilezen/AWS Open Data
+ * setzen sich aus mehreren staatlichen Höhenmodellen zusammen, und deren
+ * Nennung ist Bedingung der Nutzung — dieselbe Regel wie bei Open-Meteo,
+ * GeoSphere und dem DWD.
+ */
+export function ReliefAttribution({ className = '' }: { className?: string }) {
+  return (
+    <span className={`attribution ${className}`.trim()}>
+      Geländerelief:{' '}
+      <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">
+        Terrain Tiles
+      </a>{' '}
+      (AWS Open Data) —{' '}
+      <a
+        href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+        target="_blank"
+        rel="noreferrer"
+        title="Zusammengesetzt aus SRTM (NASA), GMTED2010 und ETOPO1 (USGS/NOAA), EU-DEM und weiteren staatlichen Höhenmodellen — die vollständige Liste steht beim Anbieter."
+      >
+        SRTM, GMTED2010, ETOPO1 u. a.
+      </a>
+      , einmalig vorgerendert.
+    </span>
+  )
+}

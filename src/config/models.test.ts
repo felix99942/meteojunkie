@@ -11,6 +11,9 @@ import {
   getModel,
   type ModelInfo,
   modelFamily,
+  coverageIntersection,
+  isEmptyCoverage,
+  isInCoverage,
 } from './models'
 
 const m = (id: string) => getModel(id) as ModelInfo
@@ -147,5 +150,65 @@ describe('ICON-CH1/CH2', () => {
   it('gelten weiter als nicht drucklevelfähig', async () => {
     const { supportsPressureLevels } = await import('./levels')
     for (const id of ch) expect(supportsPressureLevels(id), id).toBe(false)
+  })
+})
+
+describe('coverageIntersection', () => {
+  it('lässt globale Modelle unbeschränkt', () => {
+    expect(coverageIntersection(['ecmwf_ifs025', 'gfs_global'])).toBeNull()
+    expect(coverageIntersection([])).toBeNull()
+  })
+
+  it('übernimmt die Fläche eines einzelnen Regionalmodells', () => {
+    const box = coverageIntersection(['icon_eu'])
+    expect(box).toEqual(m('icon_eu').coverage)
+  })
+
+  it('schneidet Regionalmodelle gegeneinander und ignoriert globale', () => {
+    // ICON-EU reicht bis weit nach Norden, AROME Austria nur über den
+    // Alpenraum — der Schnitt ist die kleinere Fläche, und ein global
+    // danebengelegtes Modell ändert daran nichts.
+    const both = coverageIntersection(['icon_eu', 'geosphere_arome_austria'])
+    const withGlobal = coverageIntersection(['icon_eu', 'geosphere_arome_austria', 'gfs_global'])
+    expect(both).toEqual(withGlobal)
+    const at = m('geosphere_arome_austria').coverage as { latMin: number; latMax: number }
+    expect(both!.latMax).toBeLessThanOrEqual(at.latMax)
+  })
+
+  it('erkennt einen leeren Schnitt als LEER, nicht als unbeschränkt', () => {
+    // Der Unterschied trägt die ganze Aussage der Karte: „kein Modell
+    // schränkt ein" und „die Modelle haben keine gemeinsame Fläche" sind
+    // gegenteilige Befunde. Ein gemeinsames null für beides hätte die
+    // gesperrte Karte als offene gezeigt.
+    expect(isEmptyCoverage({ latMin: 50, latMax: 40, lonMin: 0, lonMax: 10 })).toBe(true)
+    expect(isEmptyCoverage({ latMin: 40, latMax: 50, lonMin: 10, lonMax: 0 })).toBe(true)
+    expect(isEmptyCoverage({ latMin: 40, latMax: 50, lonMin: 0, lonMax: 10 })).toBe(false)
+    expect(isEmptyCoverage(null)).toBe(false)
+  })
+
+  it('kann mit der HEUTIGEN Registry gar nicht leer werden', () => {
+    // Gemessen (2026-09-20): die acht Regionalmodelle überlappen PAARWEISE
+    // alle — es gibt kein disjunktes Paar. Der Leerfall ist damit heute
+    // unerreichbar, die Behandlung aber trotzdem richtig: ein Modell ausserhalb
+    // Europas (UKMO UK liegt schon am Rand) würde ihn sofort auslösen. Schlägt
+    // dieser Test fehl, ist ein solches Modell dazugekommen — dann ist die
+    // Sperre in der Ortswahl-Karte live zu prüfen, nicht der Test zu streichen.
+    const regional = SELECTABLE_MODELS.filter((mm) => mm.coverage !== 'global')
+    for (const a of regional) {
+      for (const b of regional) {
+        expect(isEmptyCoverage(coverageIntersection([a.id, b.id]))).toBe(false)
+      }
+    }
+  })
+
+  it('stimmt mit isInCoverage überein', () => {
+    // Innsbruck liegt in beiden Flächen, Lissabon in keiner der beiden.
+    const ids = ['icon_eu', 'geosphere_arome_austria']
+    const box = coverageIntersection(ids)!
+    const inside = { lat: 47.26, lon: 11.39 }
+    const outside = { lat: 38.72, lon: -9.14 }
+    expect(ids.every((id) => isInCoverage(m(id), inside.lat, inside.lon))).toBe(true)
+    expect(inside.lat >= box.latMin && inside.lat <= box.latMax).toBe(true)
+    expect(ids.every((id) => isInCoverage(m(id), outside.lat, outside.lon))).toBe(false)
   })
 })

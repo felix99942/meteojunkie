@@ -43,10 +43,11 @@ describe('visiblePanelIndices', () => {
 
   it('startet im Meteogramm-Bereich mit vier Panels', () => {
     expect(DEFAULT_LAYOUT.workbench).toBe(4)
-    // Ensemble startet bei einem Panel (Plume-Diagramm braucht selbst schon
-    // viel Breite), Profil bei zwei (datenschwer, aber schmaler lesbar).
+    // Ensemble und Profil starten bei EINEM Panel: dort braucht das Diagramm
+    // die Breite (Plume) bzw. steht die Ortswahl-Karte daneben, und beide
+    // Bereiche zeigen ohnehin denselben Punkt.
     expect(DEFAULT_LAYOUT.ensemble).toBe(1)
-    expect(DEFAULT_LAYOUT.profile).toBe(2)
+    expect(DEFAULT_LAYOUT.profile).toBe(1)
   })
 })
 

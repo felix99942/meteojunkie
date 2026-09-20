@@ -424,6 +424,41 @@ export function isInCoverage(model: ModelInfo, lat: number, lon: number): boolea
 }
 
 /**
+ * Schnitt der Abdeckungen mehrerer Modelle — `null` heisst „unbeschränkt"
+ * (alle global). Ein LEERER Schnitt (latMin ≥ latMax oder lonMin ≥ lonMax)
+ * bleibt als Box stehen und wird von `isEmptyCoverage` erkannt, statt hier
+ * schon zu null zu werden: „kein Modell schränkt ein" und „die Modelle haben
+ * keine gemeinsame Fläche" sind gegenteilige Aussagen und dürfen sich nicht
+ * denselben Rückgabewert teilen.
+ *
+ * Der SCHNITT ist die richtige Rechnung, nicht die Vereinigung: wer mehrere
+ * Modelle übereinanderlegt, will sie VERGLEICHEN — an einem Punkt, den nur
+ * eines abdeckt, stünde eine Kurve allein da und der Vergleich fiele still
+ * aus.
+ */
+export function coverageIntersection(modelIds: string[]): BBox | null {
+  let box: BBox | null = null
+  for (const id of modelIds) {
+    const cov = getModel(id).coverage
+    if (cov === 'global') continue
+    box = box
+      ? {
+          latMin: Math.max(box.latMin, cov.latMin),
+          latMax: Math.min(box.latMax, cov.latMax),
+          lonMin: Math.max(box.lonMin, cov.lonMin),
+          lonMax: Math.min(box.lonMax, cov.lonMax),
+        }
+      : { ...cov }
+  }
+  return box
+}
+
+/** Haben die Modelle keine gemeinsame Fläche? */
+export function isEmptyCoverage(b: BBox | null): boolean {
+  return b != null && (b.latMin >= b.latMax || b.lonMin >= b.lonMax)
+}
+
+/**
  * Ende des Modellhorizonts als Epoch-ms. `forecastHours` zählt ab der INIT-Zeit
  * des Laufs, nicht ab Mitternacht — deshalb wird der geschätzte Lauf
  * (config/runs.ts) als Bezugspunkt genommen.

@@ -25,6 +25,7 @@ import {
 import type { PanelSection } from './appView'
 import {
   DEFAULT_LAYOUT,
+  FIXED_PANEL_COUNT,
   useWorkbench,
   visiblePanelIndices,
   type LatLon,
@@ -268,7 +269,10 @@ function presetLayouts(p: Preset): Record<PanelSection, PanelLayout> {
   return {
     workbench: valid(p.layouts?.workbench, legacy ?? 6),
     ensemble: valid(p.layouts?.ensemble, DEFAULT_LAYOUT.ensemble),
-    profile: valid(p.layouts?.profile, DEFAULT_LAYOUT.profile),
+    // Das Profil hat eine FESTE Panelzahl (siehe FIXED_PANEL_COUNT) — ein
+    // älteres Preset mit zwei Profil-Panels wird deshalb nicht übernommen,
+    // sondern auf den festen Wert gezogen.
+    profile: FIXED_PANEL_COUNT.profile ?? valid(p.layouts?.profile, DEFAULT_LAYOUT.profile),
   }
 }
 

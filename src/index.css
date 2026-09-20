@@ -773,17 +773,32 @@ button:focus-visible {
 }
 
 /* Overlay der Kennzahlen — rechts eingeblendet, Diagramm bleibt darunter. */
+/*
+ * Kennzahlen: dauerhaft sichtbarer Kasten OBEN RECHTS im Diagramm.
+ *
+ * Die Ecke ist mit Absicht gewählt und nicht bloss frei: rechts oben bedeutet
+ * im Skew-T „sehr warm in grosser Höhe" — dort verläuft keine reale
+ * Sondierung, die Fläche ist praktisch immer leer. Ein Kasten dort verdeckt
+ * also nichts, während er links unten mitten in der Bodenschicht sässe.
+ *
+ * Nur so hoch wie nötig (kein `bottom: 0` mehr): als die Tabelle noch hinter
+ * einem Knopf lag, durfte sie die volle Höhe nehmen — dauerhaft eingeblendet
+ * verdeckte sie damit auch die untere rechte Ecke, wo bei warmen Profilen die
+ * Kurven liegen.
+ */
 .skewt-params {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 26px;
+  right: 4px;
   z-index: 6;
-  width: min(66%, 340px);
+  width: max-content;
+  max-width: min(72%, 520px);
+  max-height: calc(100% - 32px);
   overflow: auto;
-  padding: 28px 8px 8px;
+  padding: 6px 8px 8px;
   background: rgba(20, 21, 23, 0.95);
-  border-left: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .skewt-hint {
@@ -808,11 +823,20 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+/*
+ * Modellnamen dürfen UMBRECHEN, statt die Spalte breitzuziehen — dieselbe
+ * Regel wie im Verifikations-Panel. Ungebrochen ist „ECMWF IFS 0.25° 12 UTC"
+ * allein 145 px breit, und ab drei Modellen lief der Kasten über seine
+ * Höchstbreite hinaus; die letzte Spalte stand dann abgeschnitten da.
+ */
 .skewt-table thead th {
   color: var(--ink-secondary);
   position: sticky;
   top: 0;
   background: var(--bg-panel);
+  white-space: normal;
+  max-width: 88px;
+  vertical-align: bottom;
 }
 
 .skewt-table thead th .legend-chip {
@@ -3301,4 +3325,187 @@ button:focus-visible {
   text-shadow:
     0 0 2px #000,
     0 0 2px #000;
+}
+
+/* --- Ortswahl-Karte (Soundings) ------------------------------------------ */
+
+/*
+ * Karte links, Diagramm rechts, dazwischen ein ziehbarer Trenner.
+ *
+ * Die Kartenbreite steht als Inline-Style am Element (vom Trenner gesetzt) —
+ * die Werte hier sind nur der Rückfall, solange noch nichts vermessen ist.
+ * Mindestbreiten stehen NICHT im CSS, sondern in `clampMapWidth`: sie sind
+ * Teil der Zieh-Logik und dort auch getestet.
+ */
+.profile-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.profile-split > .panel-grid {
+  flex: 1;
+  min-width: 0;
+}
+
+.locmap {
+  flex: 0 0 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px;
+}
+
+/*
+ * ZWEI Klassen Spezifität sind Pflicht, nicht Geschmack: maplibre-gl.css wird
+ * mit dem lazy geladenen Modul NACH index.css injiziert und stempelt dem
+ * Container `.maplibregl-map { position: relative }` auf. Mit nur einer Klasse
+ * kollabiert der Container auf Höhe 0 — das war die Ursache der „schwarzen
+ * Karten".
+ */
+.locmap .locmap-map {
+  flex: 1;
+  min-height: 0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/*
+ * Der Trenner ist die GANZE Breite des Griffs breit, nicht nur die sichtbare
+ * Linie: 3 px trifft man mit der Maus nicht. Die Fläche ist 10 px, sichtbar
+ * sind zwei Punkte-Reihen in der Mitte.
+ */
+.split-handle {
+  flex: 0 0 10px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  cursor: col-resize;
+  /* Beim Ziehen darf der Zeiger nicht in der Karte "hängenbleiben" und dort
+     Text markieren oder die Karte verschieben. */
+  touch-action: none;
+  user-select: none;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+.split-grip {
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 120ms ease, height 120ms ease;
+}
+
+.split-handle:hover .split-grip,
+.split-handle:focus-visible .split-grip {
+  background: var(--ink-secondary);
+  height: 52px;
+}
+
+.split-handle:focus-visible {
+  outline: none;
+}
+
+.locmap-loading {
+  flex: 0 0 340px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-muted);
+  font-size: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.locmap-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.locmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.locmap-legend i {
+  width: 14px;
+  height: 9px;
+  border-radius: 1px;
+}
+
+.locmap-legend-label {
+  margin-right: 3px;
+}
+
+.locmap-legend-label + i {
+  margin-left: 0;
+}
+
+.locmap-legend i + .locmap-legend-label {
+  margin-left: 4px;
+  margin-right: 0;
+}
+
+.locmap-hint {
+  line-height: 1.3;
+}
+
+.locmap-warn {
+  color: var(--warn, #e8776c);
+}
+
+/* Gewählter Punkt: Fadenkreuz-Ring, damit er über dem Relief nicht mit einem
+   Stadtpunkt verwechselt wird. */
+.locmap-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.75);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Schmales Fenster: Karte über die Diagramme, mit begrenzter Höhe. */
+@media (max-width: 900px) {
+  .profile-split {
+    flex-direction: column;
+  }
+
+  /* Gestapelt: die vom Trenner gesetzte Breite gilt dann nicht mehr, deshalb
+     wird sie hier ausdrücklich überschrieben (Inline-Style schlägt sonst). */
+  .locmap,
+  .locmap-loading {
+    flex: 0 0 240px !important;
+    width: auto !important;
+  }
+
+  .split-handle {
+    display: none;
+  }
+}
+
+/* Modell-Geländehöhe neben der Zeit im Skew-T — Eigenschaft des PUNKTES,
+   nicht des Zeitschritts, deshalb abgesetzt. */
+.skewt-elev {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+  color: var(--ink-muted);
+}
+
+/* Mehrere Quellenzeilen nebeneinander (Soundings: Modelle + Relief). */
+.app-attribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
 }
