@@ -46,6 +46,33 @@ export function OpenMeteoAttribution({ className = '' }: { className?: string })
  * Nennung ist Bedingung der Nutzung — dieselbe Regel wie bei Open-Meteo,
  * GeoSphere und dem DWD.
  */
+/**
+ * Untergrund der Bildkarten. NASA-Bilder sind frei verwendbar, die
+ * Namensnennung ist erbeten — und hier ohnehin die Information selbst: wer
+ * ein Satellitenbild ansieht, soll wissen, dass der Untergrund darunter ein
+ * ANDERES, älteres Bild ist und nicht der heutige Zustand.
+ */
+export function GroundAttribution({ className = '' }: { className?: string }) {
+  return (
+    <span className={`attribution ${className}`.trim()}>
+      Untergrund:{' '}
+      <a
+        href="https://earthobservatory.nasa.gov/features/BlueMarble"
+        target="_blank"
+        rel="noreferrer"
+        title="Wolkenfreies Monatskomposit aus MODIS-Daten, 500 m — der Untergrund zeigt den Sommerzustand, nicht den heutigen."
+      >
+        Blue Marble: Next Generation
+      </a>{' '}
+      (NASA Earth Observatory) über{' '}
+      <a href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noreferrer">
+        NASA GIBS
+      </a>
+      , einmalig vorgerendert.
+    </span>
+  )
+}
+
 export function ReliefAttribution({ className = '' }: { className?: string }) {
   return (
     <span className={`attribution ${className}`.trim()}>

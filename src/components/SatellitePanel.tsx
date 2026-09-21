@@ -30,7 +30,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchSatelliteExtent, loadSatelliteImages } from '../api/eumetsat'
 import { CITIES } from '../config/cities'
-import { RELIEF_COORDINATES, RELIEF_URL } from '../config/relief'
+import { GROUND_COORDINATES, GROUND_URL } from '../config/ground'
 import {
   DEFAULT_SATELLITE_PRODUCT,
   MAX_CACHED,
@@ -55,11 +55,11 @@ import {
   loadBasemap,
   OVERLAY_INSERT_BEFORE,
 } from '../render/basemap'
-import { ReliefAttribution } from './Attribution'
+import { GroundAttribution } from './Attribution'
 
 const SAT_SOURCE_ID = 'satellite'
 const SAT_LAYER_ID = 'satellite'
-const RELIEF_ID = 'relief'
+const GROUND_ID = 'ground'
 
 interface View {
   id: string
@@ -406,19 +406,20 @@ export function SatellitePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    // NATÜRLICHER UNTERGRUND statt der grauen Fläche: dasselbe vorgerenderte
-    // Höhenrelief wie in der Ortswahl-Karte der Soundings (`config/relief.ts`,
-    // 321 KB, einmal gebaut). Es zeigt sich NUR neben dem Satellitenbild — das
-    // ist deckend —, und genau dort war vorher nichts als Hintergrundfarbe mit
+    // NATÜRLICHER UNTERGRUND statt der grauen Fläche: die Erde aus dem All,
+    // wolkenfrei (`config/ground.ts`, NASA Blue Marble, 485 KB, einmal
+    // vorgerendert). Er zeigt sich NUR neben dem Satellitenbild — das ist
+    // deckend —, und genau dort war vorher nichts als Hintergrundfarbe mit
     // ein paar Linien darauf. Seit die HRFI-Kanäle ihre engere Fläche haben,
     // ist dieser Rand breiter geworden, und ein Bild, das in einer leeren
     // Fläche schwebt, sieht nach einem Ladefehler aus statt nach einem
-    // Ausschnitt. Liegt ÜBER dem Hintergrund und unter allem anderen: das
-    // Satellitenbild wird später vor `OVERLAY_INSERT_BEFORE` eingehängt und
-    // damit darüber. Attribution ist Lizenzbedingung und steht unten.
-    map.addSource(RELIEF_ID, { type: 'image', url: RELIEF_URL, coordinates: RELIEF_COORDINATES })
+    // Ausschnitt. Ein echtes Satellitenbild darunter setzt das Bild fort,
+    // während ein Höhenrelief den Eindruck bräche.
+    // Liegt ÜBER dem Hintergrund und unter allem anderen: das Satellitenbild
+    // wird später vor `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber.
+    map.addSource(GROUND_ID, { type: 'image', url: GROUND_URL, coordinates: GROUND_COORDINATES })
     map.addLayer(
-      { id: RELIEF_ID, type: 'raster', source: RELIEF_ID, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+      { id: GROUND_ID, type: 'raster', source: GROUND_ID, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
       OVERLAY_INSERT_BEFORE,
     )
     ;(map.getSource('graticule') as maplibregl.GeoJSONSource).setData(
@@ -737,7 +738,7 @@ export function SatellitePanel() {
         >
           EUMETView
         </a>
-        . Kartenhintergrund: Natural Earth. <ReliefAttribution />
+        . Kartenhintergrund: Natural Earth. <GroundAttribution />
       </span>
     </div>
   )

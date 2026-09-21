@@ -1523,16 +1523,35 @@ npm run preview   # gebautes dist/ servieren
   Dutzend Abrufe je Zeitschritt statt einem, und jedes Verschieben der Karte
   löste neue aus — bewusst nicht gemacht, das ist derselbe Handel wie beim
   Radar.
-  **Der Untergrund ist das Höhenrelief, nicht die graue Fläche**
-  (`config/relief.ts`, dasselbe vorgerenderte Asset wie die Ortswahl-Karte der
-  Soundings, 321 KB): sichtbar ist es nur NEBEN dem Satellitenbild — das ist
-  deckend —, und genau dort stand vorher nichts als Hintergrundfarbe mit ein
-  paar Linien. Seit die HRFI-Kanäle ihre engere Fläche haben, ist dieser Rand
-  breiter, und ein Bild, das in einer leeren Fläche schwebt, sieht nach einem
-  Ladefehler aus statt nach einem Ausschnitt. Liegt über dem Hintergrund und
-  unter allem anderen (das Satellitenbild wird später vor
-  `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber). Die Attribution der
-  Terrain Tiles ist Lizenzbedingung und steht jetzt auch in diesem Bereich.
+  **Der Untergrund ist ein ECHTES Satellitenbild, nicht die graue Fläche und
+  nicht das Höhenrelief** (`config/ground.ts` + `scripts/build-ground.mjs`,
+  npm `build:ground`): **NASA Blue Marble: Next Generation** über GIBS — ein
+  wolkenfreies MODIS-Monatskomposit, 500 m, nahtlos, CORS offen und ohne Key.
+  Sichtbar ist er nur NEBEN dem Satellitenbild — das ist deckend —, und genau
+  dort stand vorher nichts als Hintergrundfarbe mit ein paar Linien. Seit die
+  HRFI-Kanäle ihre engere Fläche haben, ist dieser Rand breiter, und ein Bild,
+  das in einer leeren Fläche schwebt, sieht nach einem Ladefehler aus statt
+  nach einem Ausschnitt. **Warum hier ein Satellitenbild und nicht das
+  Relief**: daneben liegt ein echtes Satellitenbild, und ein Farbschema aus
+  Höhenstufen bricht diesen Eindruck — Wald, Ackerland, Küsten und die
+  schneebedeckten Alpen setzen ihn fort. Das Relief bleibt, wo die OROGRAFIE
+  die Frage ist (Soundings).
+  **Das schärfere Landsat-Komposit ist bewusst DRAUSSEN**:
+  `Landsat_WELD_CorrectedReflectance_TrueColor_Global_Annual` hat 30 m, zeigt
+  über diesem Ausschnitt aber genau die Fehler solcher Jahreskomposite — live
+  geprüft: ein schwarzes Loch plus Wolkenfeld über Nordsee und Dänemark,
+  sichtbare Szenenkanten quer über Deutschland. Als Hintergrund ist nahtlos
+  und weich mehr wert als scharf mit Löchern.
+  **Ein Bild, kein Tile-Dienst**, dieselbe Entscheidung wie beim Relief und
+  bei der Basemap; die WMS-Antwort geht UNVERÄNDERT auf die Platte (EPSG:3857
+  ist schon das Zielraster, und JPEG schreiben könnte dieses Projekt ohne
+  Fremdpaket gar nicht). Ausschnitt exakt das Relief-Fenster, damit beide
+  austauschbar sind (Test). Gemessen 2048 px → **485 KB** (3363 m/px Mercator,
+  ~2,1 km/px am Boden); 2560 px wären 747 KB, 1536 px 296 KB — die Fläche ist
+  Hintergrund und grösstenteils verdeckt, mehr wäre der falsche Handel. Liegt
+  über dem Hintergrund und unter allem anderen (das Satellitenbild wird später
+  vor `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber). Namensnennung
+  (NASA) steht in der Quellenzeile.
   **DIE ZEITFALLE IST EINE ANDERE ALS BEIM DWD, und die gefährlichere**: die
   Zeitdimension trägt `nearestValue="1"` — ein Zeitpunkt auf dem Raster, den es
   noch nicht gibt, wird STILL durch das nächstgelegene Bild beantwortet
