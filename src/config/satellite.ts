@@ -154,6 +154,22 @@ export const SATELLITE_IMAGE_WIDTH = 1100
 
 export type SatelliteMission = 'MTG' | 'MSG'
 
+/**
+ * Helligkeit → Deckkraft für die Graustufen-Kanäle: unterhalb von `min` ist
+ * das Bild durchsichtig (darunter steht der echte Boden), oberhalb von `max`
+ * deckend, dazwischen eine Rampe. Werte in Grauwerten 0…255.
+ *
+ * `solarScaled` gilt für den SICHTBAREN Kanal: er misst reflektiertes
+ * Sonnenlicht, seine Schwellen wandern deshalb mit dem Sonnenstand — die
+ * Zahlen stehen dann für senkrechten Einfall. Warum das nötig ist und wie die
+ * Werte gemessen wurden, steht in `render/cloudComposite.ts`.
+ */
+export interface CloudMaskSpec {
+  min: number
+  max: number
+  solarScaled?: true
+}
+
 export interface SatelliteProduct {
   id: string
   label: string
@@ -179,6 +195,12 @@ export interface SatelliteProduct {
    * bräuchten sie 2500 bzw. 3200 px für dasselbe Raster.
    */
   area?: GeoBox
+  /**
+   * Macht aus dem deckenden Graustufenbild WOLKEN ÜBER ECHTEM BODEN. Nur für
+   * die beiden Graustufen-Kanäle: Geocolour bringt seinen Boden selbst mit,
+   * und den Deutungs-RGBs die Deckkraft zu nehmen zerstörte ihre Aussage.
+   */
+  cloudMask?: CloudMaskSpec
   /**
    * Misst reflektiertes Sonnenlicht — nachts also schwarz. Das steht so in der
    * Legende: ein schwarzes Bild sieht sonst nach einem Fehler aus, und es ist
@@ -314,6 +336,9 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // gemessene Raster des Kanals sind 788 m. 546 KB je Tagbild.
     area: SATELLITE_DETAIL_AREA,
     imageWidth: 2000,
+    // Gemessen bei 40° Sonnenhöhe: Boden 37–70, Wolke ab ~90, dicht über 130.
+    // Geteilt durch sin(40°) = 0,64 ergibt das diese sonnenunabhängigen Werte.
+    cloudMask: { min: 124, max: 218, solarScaled: true },
     dayOnly: true,
     note: 'MTG/FCI HRFI VIS 0,6 µm: der schärfste Kanal des Dienstes (500 m am Subsatellitenpunkt, über Mitteleuropa ~1 km) — Nachfolger des MSG-HRV, das hier nicht veröffentlicht ist. Misst reflektiertes Sonnenlicht, ist nachts also schwarz. 10 Minuten.',
   },
@@ -330,6 +355,9 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // 188 KB. Mit den 2000 px von vis06 wäre es nur teurer, nicht schärfer.
     area: SATELLITE_DETAIL_AREA,
     imageWidth: 1400,
+    // Fest, denn Wärmestrahlung hängt nicht am Sonnenstand. Gemessen:
+    // Boden 24–90, Wolke ab ~90, hohe Wolke über 140.
+    cloudMask: { min: 78, max: 140 },
     note: 'MTG/FCI Infrarotkanal 10,5 µm: Strahlungstemperatur der Wolkenoberseite — je kälter (heller), desto höher die Wolke. 10 Minuten.',
   },
   {

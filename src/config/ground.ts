@@ -24,12 +24,38 @@
 // grösstenteils vom Satellitenbild verdeckt. Gemessen kostet sie so 485 KB;
 // 2560 px wären 747 KB, 1536 px nur 296 KB (Zahlen im Skript).
 //
+// ZWEI BILDER mit verschiedenen Aufgaben — das weite als Kartenhintergrund
+// NEBEN dem Satellitenbild, ein engeres und schärferes als Untergrund UNTER
+// den Wolken IM Bild. Warum nicht eines für beides: das weite ist über der
+// Detailfläche 4,3-fach hochskaliert und damit matschig, ein Bild in der
+// Schärfe des engen über ganz Europa wäre ein Vielfaches an Bytes.
+//
 // NUTZUNG: NASA-Bilder sind frei verwendbar, die Namensnennung ist erbeten
 // und steht in der Quellenzeile des Bereichs (`GroundAttribution`).
 
 import groundUrl from '../mapdata/europe-ground.jpg?url'
+import detailGroundUrl from '../mapdata/dach-ground.jpg?url'
 
 export const GROUND_URL = groundUrl
+
+/**
+ * ZWEITES Bild, schärfer und enger: der Untergrund UNTER den Wolken
+ * (`render/cloudComposite.ts`). Dort steht er neben gestochenen Wolkenkanten,
+ * und eine weiche Fläche daneben sieht falsch aus — am fertigen Komposit
+ * verglichen: mit dem Europa-Bild (4,3-fach hochskaliert) verschwimmen die
+ * Alpentäler zu einer Fläche, mit diesem stehen Grate und Schneefelder unter
+ * den Wolken. Deckt die Detailfläche der HRFI-Kanäle ab, 1600 px = 974 m/px
+ * in Mercator, 530 KB; 2000 px (803 KB) brachten nichts Sichtbares mehr.
+ */
+export const GROUND_DETAIL_URL = detailGroundUrl
+
+/** Fläche des Detailbildes — identisch mit `SATELLITE_DETAIL_AREA` (Test). */
+export const GROUND_DETAIL_BOUNDS = {
+  lonMin: 4,
+  lonMax: 18,
+  latMin: 44,
+  latMax: 56,
+} as const
 
 /**
  * Bildecken. Das Bild kommt in EPSG:3857 vom Dienst, und MapLibres

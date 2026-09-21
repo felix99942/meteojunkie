@@ -5,12 +5,18 @@
 // und hat mit dem Open-Meteo-Budget und dessen Zähler nichts zu tun —
 // dieselbe Trennung wie beim Radar und bei der Ortssuche.
 //
-// Unterschied zum Radar-Abruf, und der ist beabsichtigt: hier läuft KEIN
-// Canvas dazwischen. Das Radarbild muss durch eine Leinwand, weil die
-// magentafarbene Randlinie des Produkts herausgerechnet wird; am
-// Satellitenbild gibt es nichts zu korrigieren. Ein Blob-URL ist deshalb der
-// richtige Weg — ein Umweg über `canvas.toDataURL()` würde aus 160 KB JPEG
-// mehrere Megabyte PNG machen, und zwar für jedes einzelne Bild der Schleife.
+// Ein Canvas läuft nur dort dazwischen, wo es etwas zu tun gibt: die beiden
+// GRAUSTUFEN-Kanäle werden zu „Wolken über echtem Boden" zusammengesetzt
+// (`render/cloudComposite.ts`, `cloudMask` in der Registry) — der Anblick, den
+// man von Wetterseiten kennt; ohne ihn zeigt der sichtbare Kanal wolkenfreies
+// Land als kontrastarmes Grau. Geocolour und die Deutungs-RGBs gehen
+// unverändert durch, sie bringen ihre Farben selbst mit.
+//
+// Heraus kommt wieder ein JPEG in einem Blob-URL: das Komposit ist deckend,
+// Alpha wird also nicht gebraucht, und der Umweg über `canvas.toDataURL()`
+// würde aus 500 KB JPEG mehrere Megabyte PNG machen — für jedes einzelne Bild
+// der Schleife. Zusammengesetzt wird EINMAL je geladenem Bild, nicht bei
+// jedem Anzeigen.
 
 import {
   parseSatelliteCapabilities,
@@ -19,6 +25,7 @@ import {
   type SatelliteProduct,
 } from '../config/satellite'
 import type { TimeExtent } from '../config/wmsTime'
+import { compositeClouds } from '../render/cloudComposite'
 
 /**
  * TTL-Cache der Zeitdimension: der Dienst schiebt alle 10 bzw. 15 Minuten
@@ -94,11 +101,21 @@ export async function loadSatelliteImages(
       try {
         const res = await fetch(url, { signal: opts.signal })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const blob = await res.blob()
+        const raw = await res.blob()
         // Eine ServiceException kommt als XML mit HTTP 200 — dieselbe Falle
         // wie beim DWD (SPEC §6), nur bei einem anderen Dienst.
-        if (!blob.type.startsWith('image/')) {
-          throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
+        if (!raw.type.startsWith('image/')) {
+          throw new Error(`Antwort ist ${raw.type || 'kein Bild'}`)
+        }
+        let blob = raw
+        if (product.cloudMask) {
+          try {
+            blob = await compositeClouds(product, product.cloudMask, time, raw)
+          } catch (err) {
+            // Lieber das rohe Bild als gar keines: ohne Untergrund ist es
+            // immer noch die Messung, und der Fehler steht in der Konsole.
+            console.error('[satellit] Untergrund', err)
+          }
         }
         if (opts.signal?.aborted) return
         opts.onLoaded(time, URL.createObjectURL(blob))

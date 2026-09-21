@@ -1523,6 +1523,38 @@ npm run preview   # gebautes dist/ servieren
   Dutzend Abrufe je Zeitschritt statt einem, und jedes Verschieben der Karte
   löste neue aus — bewusst nicht gemacht, das ist derselbe Handel wie beim
   Radar.
+  **WOLKEN LIEGEN ÜBER ECHTEM BODEN** (`render/cloudComposite.ts`,
+  `cloudMask` in der Produkt-Registry) — der Anblick, den man von
+  Wetterseiten kennt. Die beiden GRAUSTUFEN-Kanäle sind vom Dienst DECKENDE
+  Bilder: wo keine Wolke ist, zeigen sie den Boden so, wie der Kanal ihn misst
+  — sichtbar ein dunkles kontrastarmes Grau, Infrarot eine Temperaturfläche.
+  Beim Laden wird deshalb EINMAL je Bild die HELLIGKEIT ZUR DECKKRAFT
+  (Rampe zwischen `min` und `max`, keine harte Schwelle — sonst bekäme jede
+  Wolkenkante eine Treppe und dünner Zirrus wäre ganz da oder ganz weg), und
+  darunter liegt das scharfe Bodenbild. Heraus kommt wieder ein JPEG im
+  Blob-URL (das Komposit ist deckend), der Anzeigepfad ist unverändert.
+  Gemessen: 30–90 ms je IR-Bild (1400×2149) im Software-Renderer, also im
+  Ladepfad neben dem Netz und nicht beim Abspielen.
+  **DER SICHTBARE KANAL SKALIERT MIT DEM SONNENSTAND**, und das ist gemessen
+  (2026-09-21, fünf Zeitpunkte): er misst reflektiertes Sonnenlicht, dieselbe
+  Wolke ist mittags doppelt so hell wie zwei Stunden vor Sonnenuntergang — mit
+  festen Schwellen löste sich die Bewölkung im Tagesverlauf langsam auf.
+  Zwischen 21° und 40° Sonnenhöhe ist die Normierung mit dem Sinus fast exakt
+  (Boden-Perzentil p20/sin bleibt bei 100–103). **Unter `MIN_SUN_DEG` = 10°
+  wird NICHT zusammengesetzt**: dort bricht sie in BEIDE Richtungen — bei 7°
+  lägen die Schwellen unter dem Boden und die ganze Fläche würde zur Wolke,
+  bei 2,6° darüber und alles würde wolkenfrei; das rohe Bild ist bei diesem
+  Sonnenstand (p98 = 27, fast schwarz) die ehrlichere Anzeige. Nachts erst
+  recht — sonst stünde der blanke Untergrund da und sähe wolkenlos aus,
+  obwohl nichts gemessen wurde.
+  **Das Infrarot skaliert NICHT** (Wärmestrahlung, Tag und Nacht gleich), hat
+  dafür eine bekannte Schwäche: WARME tiefe Wolken (Hochnebel, Stratus) sind
+  kaum heller als der Boden und werden blass — wer sie sucht, nimmt den
+  sichtbaren Kanal oder Geocolour; umgekehrt kann sehr kalter Winterboden wie
+  Wolke aussehen. Dem Verfahren eigen, keine Fehlfunktion.
+  **Geocolour und die MSG-RGBs bleiben unangetastet**: Geocolour bringt seinen
+  Boden mit, und den Deutungs-RGBs die Deckkraft zu nehmen zerstörte ihre
+  Aussage (jede Farbe bedeutet dort etwas).
   **Der Untergrund ist ein ECHTES Satellitenbild, nicht die graue Fläche und
   nicht das Höhenrelief** (`config/ground.ts` + `scripts/build-ground.mjs`,
   npm `build:ground`): **NASA Blue Marble: Next Generation** über GIBS — ein
@@ -1545,10 +1577,18 @@ npm run preview   # gebautes dist/ servieren
   **Ein Bild, kein Tile-Dienst**, dieselbe Entscheidung wie beim Relief und
   bei der Basemap; die WMS-Antwort geht UNVERÄNDERT auf die Platte (EPSG:3857
   ist schon das Zielraster, und JPEG schreiben könnte dieses Projekt ohne
-  Fremdpaket gar nicht). Ausschnitt exakt das Relief-Fenster, damit beide
-  austauschbar sind (Test). Gemessen 2048 px → **485 KB** (3363 m/px Mercator,
-  ~2,1 km/px am Boden); 2560 px wären 747 KB, 1536 px 296 KB — die Fläche ist
-  Hintergrund und grösstenteils verdeckt, mehr wäre der falsche Handel. Liegt
+  Fremdpaket gar nicht).
+  **ZWEI Bodenbilder mit verschiedenen Aufgaben** (`build:ground` erzeugt
+  beide): `europe-ground.jpg` NEBEN dem Satellitenbild als Kartenhintergrund —
+  Ausschnitt exakt das Relief-Fenster, damit beide austauschbar sind (Test),
+  2048 px = **485 KB** (2,1 km/px am Boden; 2560 wären 747 KB); und
+  `dach-ground.jpg` UNTER den Wolken IM Bild, wo Schärfe zählt, weil der Boden
+  neben gestochenen Wolkenkanten steht — Ausschnitt exakt
+  `SATELLITE_DETAIL_AREA` (Test), 1600 px = **530 KB** (974 m/px). Am fertigen
+  Komposit verglichen: mit dem Europa-Bild (4,3-fach hochskaliert)
+  verschwimmen die Alpentäler zu einer Fläche, mit dem engen stehen Grate und
+  Schneefelder unter den Wolken; 2000 px (803 KB) brachten nichts Sichtbares
+  mehr. Ein Bild für beides gibt es deshalb nicht. Liegt
   über dem Hintergrund und unter allem anderen (das Satellitenbild wird später
   vor `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber). Namensnennung
   (NASA) steht in der Quellenzeile.

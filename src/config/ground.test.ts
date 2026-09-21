@@ -3,8 +3,14 @@
 // sieht wie eine Karte aus — nur liegt die Küste dann neben der Küstenlinie.
 
 import { describe, expect, it } from 'vitest'
-import { GROUND_BOUNDS, GROUND_COORDINATES, GROUND_TILES } from './ground'
+import {
+  GROUND_BOUNDS,
+  GROUND_COORDINATES,
+  GROUND_DETAIL_BOUNDS,
+  GROUND_TILES,
+} from './ground'
 import { RELIEF_BOUNDS } from './relief'
+import { SATELLITE_DETAIL_AREA } from './satellite'
 
 const xToLon = (x: number, n: number) => (x / n) * 360 - 180
 const yToLat = (y: number, n: number) => {
@@ -38,6 +44,16 @@ describe('Untergrund', () => {
     expect(ne).toEqual([GROUND_BOUNDS.lonMax, GROUND_BOUNDS.latMax])
     expect(se).toEqual([GROUND_BOUNDS.lonMax, GROUND_BOUNDS.latMin])
     expect(sw).toEqual([GROUND_BOUNDS.lonMin, GROUND_BOUNDS.latMin])
+  })
+
+  // Das zweite, schärfere Bild liegt UNTER den Wolken und muss deshalb GENAU
+  // die Fläche des Satellitenbildes haben — einen Grad daneben, und der Boden
+  // wäre gegen die Wolken verschoben, ohne dass es nach einem Fehler aussieht.
+  it('deckt sich mit der Detailfläche der HRFI-Kanäle', () => {
+    expect(GROUND_DETAIL_BOUNDS.lonMin).toBe(SATELLITE_DETAIL_AREA.west)
+    expect(GROUND_DETAIL_BOUNDS.lonMax).toBe(SATELLITE_DETAIL_AREA.east)
+    expect(GROUND_DETAIL_BOUNDS.latMin).toBe(SATELLITE_DETAIL_AREA.south)
+    expect(GROUND_DETAIL_BOUNDS.latMax).toBe(SATELLITE_DETAIL_AREA.north)
   })
 
   // Der Ausschnitt muss die Flächen der Bildbereiche tragen — sonst endet der
