@@ -30,6 +30,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchSatelliteExtent, loadSatelliteImages } from '../api/eumetsat'
 import { CITIES } from '../config/cities'
+import { RELIEF_COORDINATES, RELIEF_URL } from '../config/relief'
 import {
   DEFAULT_SATELLITE_PRODUCT,
   MAX_CACHED,
@@ -39,6 +40,7 @@ import {
   getSatelliteProduct,
   productArea,
   productImageSize,
+  resamplingSwitchZoom,
   satelliteImageCoordinates,
   satelliteTimes,
   wantedTimes,
@@ -53,9 +55,11 @@ import {
   loadBasemap,
   OVERLAY_INSERT_BEFORE,
 } from '../render/basemap'
+import { ReliefAttribution } from './Attribution'
 
 const SAT_SOURCE_ID = 'satellite'
 const SAT_LAYER_ID = 'satellite'
+const RELIEF_ID = 'relief'
 
 interface View {
   id: string
@@ -402,6 +406,21 @@ export function SatellitePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+    // NATÜRLICHER UNTERGRUND statt der grauen Fläche: dasselbe vorgerenderte
+    // Höhenrelief wie in der Ortswahl-Karte der Soundings (`config/relief.ts`,
+    // 321 KB, einmal gebaut). Es zeigt sich NUR neben dem Satellitenbild — das
+    // ist deckend —, und genau dort war vorher nichts als Hintergrundfarbe mit
+    // ein paar Linien darauf. Seit die HRFI-Kanäle ihre engere Fläche haben,
+    // ist dieser Rand breiter geworden, und ein Bild, das in einer leeren
+    // Fläche schwebt, sieht nach einem Ladefehler aus statt nach einem
+    // Ausschnitt. Liegt ÜBER dem Hintergrund und unter allem anderen: das
+    // Satellitenbild wird später vor `OVERLAY_INSERT_BEFORE` eingehängt und
+    // damit darüber. Attribution ist Lizenzbedingung und steht unten.
+    map.addSource(RELIEF_ID, { type: 'image', url: RELIEF_URL, coordinates: RELIEF_COORDINATES })
+    map.addLayer(
+      { id: RELIEF_ID, type: 'raster', source: RELIEF_ID, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+      OVERLAY_INSERT_BEFORE,
+    )
     ;(map.getSource('graticule') as maplibregl.GeoJSONSource).setData(
       buildGraticuleBox(
         {
@@ -503,7 +522,30 @@ export function SatellitePanel() {
           source: SAT_SOURCE_ID,
           // Deckend: das Bild IST die Karte. Grenzen, Gradnetz und Städte
           // liegen darüber (`OVERLAY_INSERT_BEFORE`).
-          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+          paint: {
+            'raster-opacity': 1,
+            'raster-fade-duration': 0,
+            // GESTUFT STATT WEICHGEZEICHNET, sobald vergrössert wird: das
+            // Bild ist im nativen Raster des Produkts angefordert (siehe
+            // `config/satellite.ts`), mehr Bildinhalt gibt es nicht — jede
+            // weitere Vergrösserung ist Erfindung. Bilinear macht daraus
+            // Matsch, nearest zeigt die Messpixel; genau der Unterschied, den
+            // man gegen sat24 & Co. sieht. Unterhalb der Grenze bleibt es bei
+            // linear, sonst flimmert das stark verkleinerte Bild beim
+            // Verschieben (Grenze und Begründung: `resamplingSwitchZoom`).
+            // Der Geräte-Pixelfaktor steckt in der Grenze und wird beim
+            // Anlegen der Ebene gelesen; zieht jemand das Fenster auf einen
+            // Schirm mit anderer Dichte, stimmt sie bis zum nächsten
+            // Produktwechsel eine Zoomstufe daneben — das ist der Preis
+            // dafür, ihn nicht bei jedem Frame nachzufragen.
+            'raster-resampling': [
+              'step',
+              ['zoom'],
+              'linear',
+              resamplingSwitchZoom(product, window.devicePixelRatio || 1),
+              'nearest',
+            ],
+          },
         },
         OVERLAY_INSERT_BEFORE,
       )
@@ -695,7 +737,7 @@ export function SatellitePanel() {
         >
           EUMETView
         </a>
-        . Kartenhintergrund: Natural Earth.
+        . Kartenhintergrund: Natural Earth. <ReliefAttribution />
       </span>
     </div>
   )

@@ -12,10 +12,12 @@ import {
   SATELLITE_MERC,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
+  magnificationZoom,
   parseSatelliteCapabilities,
   productArea,
   productImageSize,
   productMerc,
+  resamplingSwitchZoom,
   satelliteCapabilitiesUrl,
   satelliteImageUrl,
   satelliteLayer,
@@ -145,6 +147,42 @@ describe('Registry', () => {
         expect(s2).toBeGreaterThanOrEqual(a.south)
         expect(n).toBeLessThanOrEqual(a.north)
       }
+    }
+  })
+
+  // Ab wann die Karte das Bild VERGRÖSSERT, ist eine Rechnung und kein
+  // Gefühl — an ihr hängt, ob gestuft oder geglättet dargestellt wird.
+  // Geprüft wird die Identität selbst: auf dieser Zoomstufe deckt sich ein
+  // Bildpixel mit einem GERÄTEpixel.
+  it('rechnet die 1:1-Zoomstufe je Produkt und Gerätedichte', () => {
+    for (const p of SATELLITE_PRODUCTS) {
+      const a = productArea(p)
+      const { width } = productImageSize(p)
+      for (const dpr of [1, 2, 3]) {
+        const z = magnificationZoom(p, dpr)
+        const devicePxOfImage = 512 * 2 ** z * ((a.east - a.west) / 360) * dpr
+        expect(devicePxOfImage).toBeCloseTo(width, 6)
+      }
+      // Ein doppelt so dichter Schirm vergrössert eine ganze Stufe früher.
+      expect(magnificationZoom(p, 2)).toBeCloseTo(magnificationZoom(p, 1) - 1, 10)
+    }
+  })
+
+  // Ankerwert, damit die Formel nicht unbemerkt driftet: der sichtbare Kanal
+  // ist mit 2000 px über 14° bei z ≈ 6,65 deckungsgleich, vor der
+  // Flächentrennung (1600 px über 22°) war es z ≈ 5,68.
+  it('hält den gemessenen Ankerwert des sichtbaren Kanals', () => {
+    expect(magnificationZoom(getSatelliteProduct('vis06'))).toBeCloseTo(6.65, 2)
+    expect(magnificationZoom(getSatelliteProduct('geocolour'))).toBeCloseTo(5.68, 2)
+  })
+
+  // Umgeschaltet wird eine Stufe FRÜHER als 1:1 (Begründung dort): bilinear
+  // verwischt schon bei knapper Verkleinerung, Aliasing droht erst deutlich
+  // darunter.
+  it('schaltet eine Zoomstufe vor der 1:1-Grenze auf gestuft', () => {
+    for (const p of SATELLITE_PRODUCTS) {
+      expect(resamplingSwitchZoom(p, 2)).toBeCloseTo(magnificationZoom(p, 2) - 1, 10)
+      expect(resamplingSwitchZoom(p)).toBeLessThan(magnificationZoom(p))
     }
   })
 

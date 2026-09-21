@@ -228,6 +228,50 @@ export function productImageSize(p: SatelliteProduct): { width: number; height: 
   return { width, height: imageHeightFor(productMerc(p), width) }
 }
 
+/**
+ * Zoomstufe, AB DER die Karte das Bild vergrössert statt es zu verkleinern —
+ * und damit die Grenze, ab der geglättet oder gestuft dargestellt werden soll.
+ *
+ * Warum das eine eigene Rechnung ist: das Bild ist EINES über eine feste
+ * Fläche, seine Pixeldichte auf dem Schirm hängt also allein am Zoom. Es
+ * spannt `width` Pixel über `east−west` Grad; die Welt hat bei Zoom z
+ * 512·2^z Pixel, gleichgesetzt ergibt das die Stufe, auf der ein Bildpixel
+ * genau ein Kartenpixel ist. Darüber wird vergrössert — und dort ist NEAREST
+ * richtig: es zeigt die Messpixel, wie sie sind (dasselbe, was der Dienst
+ * selbst täte, wenn man ihn feiner anfragt — gemessen, er rastert nearest
+ * neighbour). Darunter wird verkleinert, und dort ist LINEAR richtig, sonst
+ * flimmert beim Verschieben jede zweite Zeile weg.
+ *
+ * `pixelRatio` gehört dazu: auf einem Gerät mit `devicePixelRatio` 2 beginnt
+ * die Vergrösserung eine ganze Zoomstufe früher, als die Kartenzoomstufe
+ * (in CSS-Pixeln gezählt) vermuten lässt.
+ */
+export function magnificationZoom(p: SatelliteProduct, pixelRatio = 1): number {
+  const area = productArea(p)
+  const { width } = productImageSize(p)
+  const worldPx = (width * 360) / (area.east - area.west)
+  return Math.log2(worldPx / 512) - Math.log2(Math.max(1, pixelRatio))
+}
+
+/**
+ * Zoomstufe, ab der das Bild GESTUFT statt geglättet dargestellt wird — eine
+ * ganze Stufe UNTER der 1:1-Grenze, und das ist gemessen, nicht gerundet.
+ *
+ * Die naheliegende Wahl wäre `magnificationZoom` selbst. Sie ist falsch: schon
+ * bei knapper VERkleinerung (die Alpen-Ansicht liegt bei z ≈ 6,5 gegen eine
+ * 1:1-Grenze von 6,65) mittelt die bilineare Filterung jeden Ausgabepixel aus
+ * vier Quellpixeln, weil die beiden Raster nicht aufeinander liegen — im
+ * direkten Vergleich am selben Zeitpunkt verschwimmen dort einzelne
+ * Quellwolken zu einer Fläche, die gestufte Darstellung zeigt sie einzeln.
+ * Aliasing bekommt man umgekehrt erst, wenn deutlich mehr als ein Quellpixel
+ * auf einen Bildschirmpixel fällt. Eine Zoomstufe = Faktor 2 ist die Grenze,
+ * an der beides gerade nicht stört: darunter (Übersicht) geglättet, darüber
+ * (Detail) gestuft.
+ */
+export function resamplingSwitchZoom(p: SatelliteProduct, pixelRatio = 1): number {
+  return magnificationZoom(p, pixelRatio) - 1
+}
+
 /** Layername mit Workspace, wie GetMap ihn erwartet. */
 export function satelliteLayer(p: SatelliteProduct): string {
   return `${p.workspace}:${p.name}`

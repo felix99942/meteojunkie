@@ -1495,14 +1495,44 @@ npm run preview   # gebautes dist/ servieren
   Ostrau und Lille fallen heraus (3 von 134 `imagery`-Einträgen), und
   „ganzer Ausschnitt" meint jetzt das BILD und wechselt mit dem Produkt; die
   festen Sprungziele D-A-CH und Alpen liegen in BEIDEN Flächen (Test).
-  **Der zweite Teil der Unschärfe liegt nicht am Abruf, sondern an der
-  Anzeige**: ein festes Bild über eine feste Fläche wird von der Karte
-  gestreckt, sobald der Kartenbereich in GERÄTEpixeln breiter ist als der
-  gezeigte Bildausschnitt — bei `devicePixelRatio` 2 schon in der
-  Voreinstellung. Ab z ≈ 6,6 (vorher 5,7) ist jeder weitere Zoom reine
-  Vergrößerung. Dagegen hülfen nur KACHELN je Zoomstufe: ein Dutzend Abrufe je
-  Zeitschritt statt einem, und jedes Verschieben der Karte löste neue aus —
-  bewusst nicht gemacht, das ist derselbe Handel wie beim Radar.
+  **MEHR ALS DAS GIBT DIESE QUELLE NICHT — und das ist gemessen, nicht
+  angenommen**: dasselbe Fenster in DREI Dichten angefordert (779 · 389 ·
+  195 m/px) zeigt die Blöcke immer bei derselben GRÖSSE am Boden — 788 m in x,
+  1178 m in y. Der Dienst rastert nearest neighbour (wie der DWD beim Radar),
+  eine feinere Anfrage liefert also dasselbe Feld in größeren Kästchen. Damit
+  ist auch die naheliegende Idee erledigt, den Zoom aufzugeben und
+  stattdessen zwei feste Stufen über Deutschland/Österreich neu anzufordern:
+  sie brächte KEINEN Bildinhalt. Wir liegen mit 779 m/px in x auf dem nativen
+  Raster und in y bereits 1,5× darunter.
+  **Was bleibt, ist die DARSTELLUNG, und die ist der zweite Teil der
+  Unschärfe**: ein festes Bild über eine feste Fläche wird von der Karte
+  gestreckt, sobald der Kartenbereich in GERÄTEpixeln mehr Platz hat als das
+  Bild Pixel — bei `devicePixelRatio` 2 schon in der Voreinstellung. Deshalb
+  wird oberhalb von `resamplingSwitchZoom` **gestuft statt geglättet**
+  (`raster-resampling: nearest` als Zoom-Stufenausdruck): bilinear mittelt
+  jeden Ausgabepixel aus vier Quellpixeln und macht aus einzelnen
+  Quellwolken eine Fläche — im Vergleich am selben Zeitpunkt (Alpen-Ansicht)
+  deutlich sichtbar. Umgeschaltet wird eine ganze Zoomstufe VOR der
+  1:1-Grenze (`magnificationZoom`, rechnet Bildbreite gegen Gradspanne und
+  Gerätedichte): schon bei knapper Verkleinerung verwischt bilinear, Aliasing
+  droht umgekehrt erst deutlich darunter — unterhalb bleibt es deshalb bei
+  linear, sonst flimmert die Übersicht beim Verschieben. Anker: vis06 ist bei
+  z ≈ 6,65 deckungsgleich, vor der Flächentrennung war es 5,68 (Tests halten
+  Identität und Ankerwerte fest).
+  Eine echte Verbesserung darüber hinaus hülfen nur KACHELN je Zoomstufe: ein
+  Dutzend Abrufe je Zeitschritt statt einem, und jedes Verschieben der Karte
+  löste neue aus — bewusst nicht gemacht, das ist derselbe Handel wie beim
+  Radar.
+  **Der Untergrund ist das Höhenrelief, nicht die graue Fläche**
+  (`config/relief.ts`, dasselbe vorgerenderte Asset wie die Ortswahl-Karte der
+  Soundings, 321 KB): sichtbar ist es nur NEBEN dem Satellitenbild — das ist
+  deckend —, und genau dort stand vorher nichts als Hintergrundfarbe mit ein
+  paar Linien. Seit die HRFI-Kanäle ihre engere Fläche haben, ist dieser Rand
+  breiter, und ein Bild, das in einer leeren Fläche schwebt, sieht nach einem
+  Ladefehler aus statt nach einem Ausschnitt. Liegt über dem Hintergrund und
+  unter allem anderen (das Satellitenbild wird später vor
+  `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber). Die Attribution der
+  Terrain Tiles ist Lizenzbedingung und steht jetzt auch in diesem Bereich.
   **DIE ZEITFALLE IST EINE ANDERE ALS BEIM DWD, und die gefährlichere**: die
   Zeitdimension trägt `nearestValue="1"` — ein Zeitpunkt auf dem Raster, den es
   noch nicht gibt, wird STILL durch das nächstgelegene Bild beantwortet
