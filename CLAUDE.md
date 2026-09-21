@@ -1458,13 +1458,51 @@ npm run preview   # gebautes dist/ servieren
   HRFI (High Resolution Fast Imagery), 500 m am Subsatellitenpunkt, über
   Mitteleuropa durch den schrägen Blick real ~1 km. Im direkten Vergleich mit
   Geocolour am selben Zeitpunkt sind Alpentäler, einzelne Cumuluszellen und
-  Cirrenstreifen sichtbar schärfer. Deshalb hat DIESES Produkt eine eigene
-  Anforderungsbreite (`SatelliteProduct.imageWidth` = 1600 statt 1100, also
-  ~1,0 km/px): mit der Vorgabe läge der Vorteil, für den man es nimmt, unter
-  dem Zielraster. Mehr bringt nichts und kostet (gemessen 1100 → 200 KB,
-  1600 → 372 KB, 2200 → 628 KB, 3000 → 1,0 MB). `dayOnly: true` steuert den
+  Cirrenstreifen sichtbar schärfer. `dayOnly: true` steuert den
   Hinweis in der Legende — ein schwarzes Nachtbild sieht nach einem Fehler aus
   und ist keiner; genau ein Produkt darf so aussehen (Test).
+  **DAS ANGEFORDERTE RASTER MUSS ZUM NATIVEN RASTER DES PRODUKTS PASSEN, und
+  lange tat es das nicht** — gemeldet als „MTG ist bei mir unscharf, auf
+  sat24.com gestochen scharf", und der Befund gab dem recht. GEMESSEN
+  (2026-09-21, über den Alpen 90-fach überzoomt bei 126 m/px, Blockstruktur
+  über die Autokorrelation des Spaltengradienten — dasselbe Verfahren wie der
+  Nearest-Neighbour-Nachweis beim Radar), natives Abtastintervall in
+  Mercator-Metern: `vis06_hrfi` **788 × 1178** (≈ 0,54 × 0,80 km am Boden),
+  `ir105_hrfi` 1113 × 1670, `rgb_geocolour` 1577 × 2337, die MSG-RGBs ~3 km.
+  EUMETView liefert HRFI also WIRKLICH mit 500 m. Der Abruf holte dagegen ALLE
+  Produkte über die 22° breite Vollfläche mit 1600 bzw. 1100 px, also 1,3× bis
+  2,0× gröber als die Quelle — und am gröbsten ausgerechnet dort, wo man das
+  Produkt wegen seiner Schärfe nimmt. Gegenprobe über denselben Ausschnitt auf
+  ein gemeinsames Zielraster gebracht (mittlerer Nachbarschaftsgradient als Maß
+  für überlebende Struktur): nativ 1,163 · Detailfläche 2000 px 0,727 ·
+  Vollfläche 3200 px 0,717 · Vollfläche 1600 px **0,523** (der alte Stand) ·
+  Vollfläche 1100 px 0,415. **Die frühere Notiz „mehr bringt nichts und kostet
+  nur" stützte sich auf die DATEIGRÖSSEN und ist damit widerlegt** — nicht
+  erneut von der Byte-Kurve auf den Bildinhalt schließen.
+  **ZWEI FLÄCHEN sind der Handel** (`SATELLITE_DETAIL_AREA`, lon 4–18 /
+  lat 44–56 neben der Vollfläche): die Vollfläche nativ hieße 3200 px und
+  990 KB je Bild, beim Öffnen also 12 MB für `PREFETCH_RECENT` = 12. Die beiden
+  HRFI-Kanäle bekommen deshalb die engere Fläche, auf der sie mit weniger
+  Pixeln nativ sind, alles Übrige bleibt auf der Vollfläche. Gemessene Kosten je
+  Bild: vis06 Detailfläche 2000 px **546 KB** (779 m/px) · ir105 Detailfläche
+  1400 px **188 KB** (1113 m/px — der Kanal ist gröber als der sichtbare, mehr
+  Pixel wären nur teurer) · Geocolour Vollfläche 1600 px **302 KB** (1531 m/px)
+  · MSG-RGBs Vollfläche 1100 px ~138 KB (2226 m/px, doppelt so fein wie ihre
+  3-km-Quelle — DORT bringen mehr Pixel wirklich nichts). Breite und Fläche
+  gehören zusammen und kommen deshalb nur gemeinsam aus `productImageSize()`:
+  eine Breite mit der Höhe der anderen Fläche verzerrt das Bild, und der Dienst
+  rendert das klaglos. Der Preis der engeren Fläche ist der Rand — Krakau,
+  Ostrau und Lille fallen heraus (3 von 134 `imagery`-Einträgen), und
+  „ganzer Ausschnitt" meint jetzt das BILD und wechselt mit dem Produkt; die
+  festen Sprungziele D-A-CH und Alpen liegen in BEIDEN Flächen (Test).
+  **Der zweite Teil der Unschärfe liegt nicht am Abruf, sondern an der
+  Anzeige**: ein festes Bild über eine feste Fläche wird von der Karte
+  gestreckt, sobald der Kartenbereich in GERÄTEpixeln breiter ist als der
+  gezeigte Bildausschnitt — bei `devicePixelRatio` 2 schon in der
+  Voreinstellung. Ab z ≈ 6,6 (vorher 5,7) ist jeder weitere Zoom reine
+  Vergrößerung. Dagegen hülfen nur KACHELN je Zoomstufe: ein Dutzend Abrufe je
+  Zeitschritt statt einem, und jedes Verschieben der Karte löste neue aus —
+  bewusst nicht gemacht, das ist derselbe Handel wie beim Radar.
   **DIE ZEITFALLE IST EINE ANDERE ALS BEIM DWD, und die gefährlichere**: die
   Zeitdimension trägt `nearestValue="1"` — ein Zeitpunkt auf dem Raster, den es
   noch nicht gibt, wird STILL durch das nächstgelegene Bild beantwortet
@@ -1477,7 +1515,8 @@ npm run preview   # gebautes dist/ servieren
   (22:10 gemeldet, 22:30 schon abrufbar), was die sichere Richtung ist.
   Verzug insgesamt unter 10 Minuten.
   **Die FLÄCHE gibt die Seite vor, nicht der Dienst** (`SATELLITE_AREA`,
-  lon 0–22 / lat 41–56): ein Satellitenlayer meldet im Capabilities die ganze
+  lon 0–22 / lat 41–56; die HRFI-Kanäle die engere `SATELLITE_DETAIL_AREA`,
+  s. o.): ein Satellitenlayer meldet im Capabilities die ganze
   sichtbare Halbkugel (gemessen lon ±81,3, lat ±77,4), ein Bild darüber wäre
   für Mitteleuropa nutzlos. Der Ausschnitt reicht bewusst von der Nordsee bis
   in die Po-Ebene und von der Rhône bis zur Weichsel, damit man Systeme
@@ -1488,10 +1527,10 @@ npm run preview   # gebautes dist/ servieren
   **JPEG, nicht PNG**: bei 1400 px war Geocolour als JPEG 266 KB und als PNG8
   1,18 MB — Faktor 4,4 bei einem Fotomotiv. `format_options=quality:70` ändert
   nichts (byte-identisch zu 85), nicht erneut versuchen. `SATELLITE_IMAGE_WIDTH`
-  = 1100 (~1,5 km/px, feiner als MTG mit 2 km) ergibt 70–210 KB je Bild
-  (gemessen über den echten Abrufpfad: Geocolour 206, IR 90, Airmass 101,
-  Konvektion 72) — spürbar mehr als das Radar; deshalb die Nebenläufigkeit 3
-  statt 4.
+  = 1100 ist seit der Flächentrennung nur noch die Vorgabe für die beiden
+  MSG-RGBs (~138 KB je Bild); die MTG-Produkte bringen ihre Breite selbst mit
+  (188–546 KB, Tabelle oben) — spürbar mehr als das Radar, deshalb die
+  Nebenläufigkeit 3 statt 4.
   **NACHT IST KEIN FEHLER, sieht aber wie einer aus** (`lib/solar.ts`,
   `.satellite-night`): der hochaufgelöste sichtbare Kanal misst reflektiertes
   Sonnenlicht, sein Bild ist nachts vollständig schwarz — gemeldet wurde das

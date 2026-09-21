@@ -29,33 +29,61 @@
 // AKTUALITÄT: das 22:30-Bild war um 22:39 abrufbar, also unter 10 Minuten
 // Verzug — vergleichbar mit dem Radar (3 min), aber im 10-Minuten-Takt.
 //
-// GRÖSSE: JPEG, nicht PNG. Gemessen bei 1400 px Breite über der Fläche unten:
+// GRÖSSE: JPEG, nicht PNG. Gemessen bei 1400 px Breite über der Vollfläche:
 // Geocolour als JPEG 266 KB, als PNG8 1,18 MB — Faktor 4,4 bei einem
 // Fotomotiv, für das PNG das falsche Format ist. `format_options=quality:70`
-// ändert nichts (byte-identisch zu 85), nicht erneut versuchen. Bei
-// `SATELLITE_IMAGE_WIDTH` = 1100 sind es je nach Produkt und Bewölkung
-// 70–210 KB (über den echten Abrufpfad gemessen: Geocolour 206, IR 90,
-// Airmass 101, Konvektion 72) — eine 2-Stunden-Schleife also 0,7 bis 2,7 MB.
+// ändert nichts (byte-identisch zu 85), nicht erneut versuchen.
 //
-// TAGESPRODUKTE nur dort, wo sie etwas können, was kein Tag-und-Nacht-Produkt
-// kann. `rgb_truecolour`, `rgb_snow` und `rgb_cloudtype` sind draußen: sie
-// zeigen tagsüber nichts, was Geocolour nicht auch zeigt (das selbst auf
-// Infrarot umschaltet und am Tag wie True Colour aussieht), und nachts liefern
-// sie ein schwarzes bzw. leeres Bild. Die AUSNAHME ist der hochaufgelöste
-// sichtbare Kanal — siehe `dayOnly` unten: er ist das schärfste, was dieser
-// Dienst hergibt, und dafür sind schwarze Nachtbilder ein fairer Preis.
+// **DAS ANGEFORDERTE RASTER MUSS ZUM NATIVEN RASTER DES PRODUKTS PASSEN — und
+// tat es lange nicht.** Gemessen (2026-09-21, stark überzoomt über den Alpen
+// bei 126 m/px, Blockstruktur über die Autokorrelation des Spaltengradienten
+// — dasselbe Verfahren, mit dem beim Radar die Nearest-Neighbour-Rasterung
+// nachgewiesen wurde):
 //
-// **HOCHAUFGELÖST SICHTBAR: `vis06_hrfi`, nicht HRV.** MSGs HRV-Kanal (1 km)
-// ist bei EUMETView NICHT veröffentlicht — von SEVIRI gibt es nur `vis006`,
-// den 3-km-Standardkanal. Der Nachfolger ist da: MTG/FCI liefert VIS 0,6 µm
-// als HRFI (High Resolution Fast Imagery) mit 500 m am Subsatellitenpunkt.
-// Über Mitteleuropa wird daraus durch den schrägen Blick real rund 1 km —
-// deshalb fordert dieses Produkt sein Bild mit 1600 px an (≈1,0 km/px) statt
-// mit den 1100 der übrigen: bei 1100 px würde die Auflösung, für die man das
-// Produkt nimmt, im Zielraster wieder weggeworfen. Mehr bringt nichts mehr,
-// kostet aber: gemessen 1100 → 200 KB, 1600 → 372 KB, 2200 → 628 KB,
-// 3000 → 1,0 MB. Im direkten Vergleich mit Geocolour am selben Zeitpunkt sind
-// Alpentäler, einzelne Cumuluszellen und Cirrenstreifen sichtbar schärfer.
+//   vis06_hrfi      788 × 1178 m (Mercator)  ≈ 0,54 × 0,80 km am Boden, 47 °N
+//   ir105_hrfi     1113 × 1670 m             ≈ 0,76 × 1,14 km
+//   rgb_geocolour  1577 × 2337 m             ≈ 1,08 × 1,59 km
+//   rgb_airmass    keine Periodik < 24 px    ≈ 3 km (MSG/SEVIRI, nativ grob)
+//
+// EUMETView liefert HRFI also WIRKLICH mit 500 m. Der frühere Abruf — ALLE
+// Produkte über die 22° breite Vollfläche mit 1600 bzw. 1100 px — war damit
+// 1,3× bis 2,0× gröber als die Quelle, und zwar genau dort, wo man das
+// Produkt wegen seiner Schärfe nimmt. Gegenprobe über denselben Ausschnitt,
+// alles auf ein gemeinsames Zielraster gebracht, mittlerer
+// Nachbarschaftsgradient als Maß für überlebende Struktur:
+//
+//   nativ angefordert          1,163   (= 100 %)
+//   Detailfläche  2000 px      0,727   (63 %)   ← jetzt
+//   Vollfläche    3200 px      0,717   (62 %)   bei 1,8× der Bytes
+//   Vollfläche    1600 px      0,523   (45 %)   ← vorher
+//   Vollfläche    1100 px      0,415   (36 %)
+//
+// Die frühere Notiz „mehr Pixel bringen nichts mehr, kosten aber Bytes"
+// stützte sich auf die DATEIGRÖSSEN und ist damit widerlegt — nicht erneut
+// aus der Byte-Kurve auf den Bildinhalt schließen.
+//
+// **ZWEI FLÄCHEN, und das ist der Handel**: die Vollfläche nativ anzufordern
+// hieße 3200 px und 990 KB je Bild (bei `PREFETCH_RECENT` = 12 also 12 MB
+// beim Öffnen). Die beiden HRFI-Produkte bekommen deshalb eine ENGERE Fläche
+// (`SATELLITE_DETAIL_AREA`), auf der sie mit weniger Pixeln nativ sind; alles
+// Übrige bleibt auf der Vollfläche. Kosten je Bild, über den echten Abrufpfad
+// gemessen (Tagbild, 11 UTC):
+//
+//   vis06_hrfi     Detailfläche 2000 px   546 KB   ( 779 m/px, nativ)
+//   ir105_hrfi     Detailfläche 1400 px   188 KB   (1113 m/px, nativ)
+//   rgb_geocolour  Vollfläche   1600 px   302 KB   (1531 m/px, nativ)
+//   MSG-RGBs       Vollfläche   1100 px  ~138 KB   (2226 m/px, 2× über Bedarf)
+//
+// **Der zweite Teil der Unschärfe liegt NICHT hier, sondern an der Anzeige.**
+// Ein festes Bild über eine feste Fläche wird von der Karte gestreckt, sobald
+// der Kartenbereich in GERÄTEpixeln breiter ist als der gezeigte Ausschnitt
+// des Bildes — bei `devicePixelRatio` 2 also schon in der Voreinstellung.
+// Rechnung: das Bild spannt seine Fläche über `width` Pixel, ab
+// z = log2(width / (Längengrad-Anteil × 512)) ist jeder weitere Zoom reine
+// Vergrößerung; für vis06 sind das jetzt z ≈ 6,6 statt vorher 5,7. Weiter
+// käme man nur mit KACHELN je Zoomstufe — die kosten je Zeitschritt ein
+// Dutzend Abrufe statt einem, und jedes Verschieben der Karte löste neue aus.
+// Bewusst nicht gemacht, siehe `satelliteImageUrl`.
 
 import {
   extractTimeDimension,
@@ -83,7 +111,26 @@ export const EUMETSAT_WMS_BASE = 'https://view.eumetsat.int/geoserver/wms'
 export const SATELLITE_AREA: GeoBox = { west: 0, east: 22, south: 41, north: 56 }
 
 /**
- * Mitte der Fläche — Bezugspunkt für den Sonnenstand. Ob ein sichtbarer Kanal
+ * ENGERE Fläche für die beiden hochaufgelösten MTG-Kanäle (`vis06_hrfi`,
+ * `ir105_hrfi`). Sie ist kein Geschmacksausschnitt, sondern die Rechnung aus
+ * dem Kopf der Datei: 14° Länge sind 1.558.473 m in Mercator, bei 2000 px also
+ * 779 m/px — praktisch genau das native Raster von HRFI (788 m). Auf der
+ * Vollfläche bräuchte dasselbe Raster 3200 px und das Doppelte an Bytes.
+ *
+ * Der Preis ist der Rand: Krakau, Ostrau und Lille fallen heraus (3 von 134
+ * Einträgen der Pseudo-Domain `imagery` in `config/cities.ts`, gemessen) — die
+ * Stadtmarken stehen dort dann über dem bloßen Kartenhintergrund. BEIDE
+ * Sprungziele der Werkzeugleiste (D-A-CH, Alpen) liegen vollständig innerhalb,
+ * ein Test hält das fest: ein Sprungziel außerhalb des Bildes wäre der Fehler,
+ * den man dieser Trennung sonst nicht ansieht.
+ */
+export const SATELLITE_DETAIL_AREA: GeoBox = { west: 4, east: 18, south: 44, north: 56 }
+
+/**
+ * Mitte der VOLLfläche — Bezugspunkt für den Sonnenstand. Bewusst nicht je
+ * Produkt: die Detailfläche hat denselben Mittelmeridian und liegt nur 1,5°
+ * weiter nördlich, und die Frage ist ohnehin nur, ob über dem GEBIET Licht
+ * ist. Ob ein sichtbarer Kanal
  * etwas zeigen kann, hängt am Licht über dem GEBIET; ein Punkt genügt dafür,
  * die Fläche ist rund 1.600 km breit und der Unterschied von Rand zu Rand
  * beträgt gut eine Stunde.
@@ -97,11 +144,11 @@ export const SATELLITE_CENTER = {
 export const SATELLITE_MERC: MercBox = mercBox(SATELLITE_AREA)
 
 /**
- * Breite des angeforderten Bildes. 1100 px über die ~1.630 km der Fläche sind
- * bei 48 °N rund 1,5 km je Pixel — feiner als MTG/FCI im Standardkanal
- * (2 km) und feiner als MSG (3 km am Subsatellitenpunkt, über Mitteleuropa
- * deutlich gröber). Mehr Pixel kosten nur Bytes: gemessen 900 px → 119 KB,
- * 1100 → 160–210 KB, 1400 → 266 KB je Bild.
+ * VORGABE-Breite — sie gilt seit der Flächentrennung nur noch für die beiden
+ * MSG-RGBs. Die sind nativ 3 km; 1100 px über die Vollfläche sind 2226 m/px in
+ * Mercator und damit rund doppelt so fein wie die Quelle. Mehr Pixel bringen
+ * DORT wirklich nichts — anders als bei den MTG-Produkten, die ihre Breite
+ * selbst mitbringen (`imageWidth`).
  */
 export const SATELLITE_IMAGE_WIDTH = 1100
 
@@ -120,11 +167,18 @@ export interface SatelliteProduct {
   /** Bildformat der Anfrage. JPEG für alles, was Tag und Nacht Inhalt hat. */
   format: string
   /**
-   * Abweichende Anforderungsbreite. Nur der hochaufgelöste sichtbare Kanal
-   * braucht sie: mit der Vorgabe (1100 px ≈ 1,5 km/px) läge sein Vorteil unter
-   * dem Zielraster. Alle anderen Produkte sind bei 2 km oder gröber nativ.
+   * Abweichende Anforderungsbreite. Sie gehört UNTRENNBAR zu `area`: beide
+   * zusammen ergeben die m/px, und die sollen zum nativen Raster des Produkts
+   * passen (Tabelle im Kopf der Datei). Deshalb gibt es sie nur zusammen über
+   * `productImageSize()`.
    */
   imageWidth?: number
+  /**
+   * Abweichende Fläche. Nur die beiden HRFI-Kanäle haben eine: auf der
+   * engeren Fläche sind sie mit 1400 bzw. 2000 px nativ, auf der Vollfläche
+   * bräuchten sie 2500 bzw. 3200 px für dasselbe Raster.
+   */
+  area?: GeoBox
   /**
    * Misst reflektiertes Sonnenlicht — nachts also schwarz. Das steht so in der
    * Legende: ein schwarzes Bild sieht sonst nach einem Fehler aus, und es ist
@@ -138,6 +192,40 @@ export interface SatelliteProduct {
 /** Breite, die DIESES Produkt anfordert. */
 export function productImageWidth(p: SatelliteProduct): number {
   return p.imageWidth ?? SATELLITE_IMAGE_WIDTH
+}
+
+/** Fläche, die DIESES Produkt zeigt. */
+export function productArea(p: SatelliteProduct): GeoBox {
+  return p.area ?? SATELLITE_AREA
+}
+
+// Die Projektion einer Fläche ist eine reine Rechnung über vier Zahlen, wird
+// aber in jeder Renderrunde gebraucht — gecacht über die Fläche SELBST, nicht
+// über die Produkt-Id: zwei Produkte teilen sich eine Fläche und sollen sich
+// auch ihre Projektion teilen.
+const mercCache = new WeakMap<GeoBox, MercBox>()
+
+/** Diese Fläche in EPSG:3857 — so wird das Bild angefordert. */
+export function productMerc(p: SatelliteProduct): MercBox {
+  const area = productArea(p)
+  let merc = mercCache.get(area)
+  if (!merc) {
+    merc = mercBox(area)
+    mercCache.set(area, merc)
+  }
+  return merc
+}
+
+/**
+ * Breite UND Höhe in EINEM Griff. Getrennt wäre es eine Einladung zum Fehler:
+ * eine Breite mit der Höhe einer ANDEREN Fläche kombiniert liefert ein Bild
+ * mit falschem Seitenverhältnis, das der Dienst klaglos rendert und die Karte
+ * klaglos über die richtigen Ecken spannt — man sieht es erst daran, dass die
+ * Küstenlinie nicht mehr passt.
+ */
+export function productImageSize(p: SatelliteProduct): { width: number; height: number } {
+  const width = productImageWidth(p)
+  return { width, height: imageHeightFor(productMerc(p), width) }
 }
 
 /** Layername mit Workspace, wie GetMap ihn erwartet. */
@@ -164,6 +252,10 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     mission: 'MTG',
     stepMs: 10 * 60_000,
     format: 'image/jpeg',
+    // Bleibt auf der VOLLFLÄCHE — Geocolour ist das Produkt, mit dem man die
+    // Lage im Grossen ansieht, und sein natives Raster (1577 m in Mercator)
+    // ist dort bei 1600 px genau getroffen (1531 m/px). 302 KB je Bild.
+    imageWidth: 1600,
     note: 'MTG/FCI Geocolour: tagsüber nahezu echte Farben, nachts Infrarot — die einzige Darstellung, die über den ganzen Tag trägt. 10 Minuten.',
   },
   {
@@ -174,8 +266,10 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     mission: 'MTG',
     stepMs: 10 * 60_000,
     format: 'image/jpeg',
-    // ≈1,0 km/px — die reale Auflösung dieses Kanals über Mitteleuropa.
-    imageWidth: 1600,
+    // NATIV: 2000 px über die Detailfläche sind 779 m/px in Mercator, das
+    // gemessene Raster des Kanals sind 788 m. 546 KB je Tagbild.
+    area: SATELLITE_DETAIL_AREA,
+    imageWidth: 2000,
     dayOnly: true,
     note: 'MTG/FCI HRFI VIS 0,6 µm: der schärfste Kanal des Dienstes (500 m am Subsatellitenpunkt, über Mitteleuropa ~1 km) — Nachfolger des MSG-HRV, das hier nicht veröffentlicht ist. Misst reflektiertes Sonnenlicht, ist nachts also schwarz. 10 Minuten.',
   },
@@ -187,6 +281,11 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     mission: 'MTG',
     stepMs: 10 * 60_000,
     format: 'image/jpeg',
+    // Ebenfalls HRFI, aber gröber als der sichtbare Kanal: gemessenes Raster
+    // 1113 m, 1400 px über die Detailfläche sind 1113 m/px — dasselbe Bild für
+    // 188 KB. Mit den 2000 px von vis06 wäre es nur teurer, nicht schärfer.
+    area: SATELLITE_DETAIL_AREA,
+    imageWidth: 1400,
     note: 'MTG/FCI Infrarotkanal 10,5 µm: Strahlungstemperatur der Wolkenoberseite — je kälter (heller), desto höher die Wolke. 10 Minuten.',
   },
   {
@@ -270,7 +369,7 @@ export function satelliteImageUrl(
   p: SatelliteProduct,
   opts: { time: number; width: number; height: number },
 ): string {
-  const { minx, miny, maxx, maxy } = SATELLITE_MERC
+  const { minx, miny, maxx, maxy } = productMerc(p)
   const q = new URLSearchParams({
     service: 'WMS',
     version: '1.3.0',
@@ -287,17 +386,11 @@ export function satelliteImageUrl(
   return `${EUMETSAT_WMS_BASE}?${q.toString()}`
 }
 
-export function satelliteImageHeight(width = SATELLITE_IMAGE_WIDTH): number {
-  return imageHeightFor(SATELLITE_MERC, width)
-}
-
-export function satelliteImageCoordinates(): [
-  [number, number],
-  [number, number],
-  [number, number],
-  [number, number],
-] {
-  return imageCoordinates(SATELLITE_AREA)
+/** Ecken für die MapLibre-image-Source — die Fläche DIESES Produkts. */
+export function satelliteImageCoordinates(
+  p: SatelliteProduct,
+): [[number, number], [number, number], [number, number], [number, number]] {
+  return imageCoordinates(productArea(p))
 }
 
 // --- Ladepolitik der Schleife ---------------------------------------------

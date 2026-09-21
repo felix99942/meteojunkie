@@ -7,15 +7,16 @@ import {
   DEFAULT_SATELLITE_PRODUCT,
   PREFETCH_RECENT,
   wantedTimes,
-  SATELLITE_IMAGE_WIDTH,
-  productImageWidth,
   SATELLITE_AREA,
+  SATELLITE_DETAIL_AREA,
   SATELLITE_MERC,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
   parseSatelliteCapabilities,
+  productArea,
+  productImageSize,
+  productMerc,
   satelliteCapabilitiesUrl,
-  satelliteImageHeight,
   satelliteImageUrl,
   satelliteLayer,
   satelliteTimes,
@@ -42,13 +43,18 @@ describe('Fläche', () => {
     expect(north - mid).toBeGreaterThan(mid - south)
   })
 
-  it('leitet die Bildhöhe aus dem Seitenverhältnis ab', () => {
-    const w = 1100
-    const expected = Math.round(
-      (w * (SATELLITE_MERC.maxy - SATELLITE_MERC.miny)) /
-        (SATELLITE_MERC.maxx - SATELLITE_MERC.minx),
-    )
-    expect(satelliteImageHeight(w)).toBe(expected)
+  it('leitet die Bildhöhe aus dem Seitenverhältnis DER EIGENEN Fläche ab', () => {
+    // Höhe und Breite eines Bildes gehören zu EINER Fläche. Seit es zwei gibt,
+    // ist das die Stelle, an der ein Bild still verzerrt würde: der Dienst
+    // rendert jedes Seitenverhältnis klaglos, und die Karte spannt es klaglos
+    // über die richtigen Ecken — auffallen würde es erst an der Küstenlinie.
+    for (const p of SATELLITE_PRODUCTS) {
+      const merc = productMerc(p)
+      const { width, height } = productImageSize(p)
+      expect(height).toBe(
+        Math.round((width * (merc.maxy - merc.miny)) / (merc.maxx - merc.minx)),
+      )
+    }
   })
 
   it('umfasst D-A-CH mit Anlauf', () => {
@@ -80,17 +86,65 @@ describe('Registry', () => {
     expect(getSatelliteProduct('gibtsnicht').id).toBe(DEFAULT_SATELLITE_PRODUCT.id)
   })
 
-  // Der hochaufgelöste sichtbare Kanal ist der Grund, warum es überhaupt eine
-  // produkteigene Breite gibt: mit der Vorgabe (1,5 km/px) landete sein
-  // Vorteil unter dem Zielraster. Ein Test hält beides fest — dass er sie hat
-  // und dass sonst niemand sie braucht.
-  it('fordert nur den hochaufgelösten Kanal breiter an', () => {
-    const vis = getSatelliteProduct('vis06')
-    expect(vis.imageWidth).toBe(1600)
-    expect(productImageWidth(vis)).toBe(1600)
+  // DAS IST DER KERN DER FLÄCHENTRENNUNG, und er ist gemessen (2026-09-21,
+  // Blockstruktur des ausgelieferten Rasters über den Alpen — Tabelle im Kopf
+  // von `satellite.ts`): je Produkt das native Abtastintervall in
+  // Mercator-Metern. Der Abruf muss MINDESTENS so fein sein, sonst wirft er
+  // Bildinhalt weg — und höchstens doppelt so fein, sonst zahlt er Bytes für
+  // Pixel, in denen nichts steht.
+  const NATIVE_MERC_M: Record<string, number> = {
+    geocolour: 1577,
+    vis06: 788,
+    ir105: 1113,
+    // MSG/SEVIRI, 3 km am Boden; über den Alpen keine Periodik unter 24 px
+    // messbar, die Zahl ist deshalb gerechnet statt abgelesen.
+    airmass: 4400,
+    convection: 4400,
+  }
+
+  it('fordert jedes Produkt in seinem nativen Raster an', () => {
     for (const p of SATELLITE_PRODUCTS) {
-      if (p.id === 'vis06') continue
-      expect(productImageWidth(p)).toBe(SATELLITE_IMAGE_WIDTH)
+      const native = NATIVE_MERC_M[p.id]
+      expect(native).toBeDefined()
+      const merc = productMerc(p)
+      const { width } = productImageSize(p)
+      const mPerPx = (merc.maxx - merc.minx) / width
+      // kein Detailverlust …
+      expect(mPerPx).toBeLessThanOrEqual(native * 1.01)
+      // … und keine Bytes für nichts
+      expect(mPerPx).toBeGreaterThan(native / 2.1)
+    }
+  })
+
+  // Die engere Fläche haben genau die beiden HRFI-Kanäle: auf der Vollfläche
+  // bräuchten sie 2500 bzw. 3200 px für dasselbe Raster, also rund das
+  // Doppelte an Bytes je Bild.
+  it('gibt die Detailfläche genau den beiden HRFI-Kanälen', () => {
+    const detail = SATELLITE_PRODUCTS.filter((p) => productArea(p) === SATELLITE_DETAIL_AREA)
+    expect(detail.map((p) => p.id)).toEqual(['vis06', 'ir105'])
+    for (const p of SATELLITE_PRODUCTS) {
+      if (detail.includes(p)) continue
+      expect(productArea(p)).toBe(SATELLITE_AREA)
+    }
+  })
+
+  // Die Detailfläche darf NICHT enger sein als die Sprungziele der
+  // Werkzeugleiste (`FIXED_VIEWS` in `SatellitePanel`): ein Sprung auf einen
+  // Ausschnitt, der über den Bildrand hinausreicht, zeigt leere Ränder und
+  // sieht nach einem Ladefehler aus.
+  it('umfasst in JEDER Produktfläche die Sprungziele der Leiste', () => {
+    const views: [[number, number], [number, number]][] = [
+      [[5.4, 45.8], [17.4, 55.3]], // D-A-CH
+      [[5.8, 44.8], [17.2, 49.3]], // Alpen
+    ]
+    for (const p of SATELLITE_PRODUCTS) {
+      const a = productArea(p)
+      for (const [[w, s2], [e, n]] of views) {
+        expect(w).toBeGreaterThanOrEqual(a.west)
+        expect(e).toBeLessThanOrEqual(a.east)
+        expect(s2).toBeGreaterThanOrEqual(a.south)
+        expect(n).toBeLessThanOrEqual(a.north)
+      }
     }
   })
 
@@ -175,6 +229,24 @@ describe('URLs', () => {
     const bbox = (q.get('bbox') ?? '').split(',').map(Number)
     expect(bbox[0]).toBeCloseTo(SATELLITE_MERC.minx, 0)
     expect(bbox[3]).toBeCloseTo(SATELLITE_MERC.maxy, 0)
+  })
+
+  // Seit es zwei Flächen gibt, ist die bbox produktabhängig — nimmt sie
+  // jemand wieder aus einer Konstanten, wird das Bild über die falsche Fläche
+  // gespannt und ALLES liegt verschoben, ohne dass etwas fehlschlägt.
+  it('fordert jedes Produkt über seine EIGENE Fläche an', () => {
+    for (const prod of SATELLITE_PRODUCTS) {
+      const { width, height } = productImageSize(prod)
+      const url = satelliteImageUrl(prod, { time: Date.parse('2026-09-18T22:20:00Z'), width, height })
+      const bbox = (new URL(url).searchParams.get('bbox') ?? '').split(',').map(Number)
+      const merc = productMerc(prod)
+      expect(bbox[0]).toBeCloseTo(merc.minx, 0)
+      expect(bbox[1]).toBeCloseTo(merc.miny, 0)
+      expect(bbox[2]).toBeCloseTo(merc.maxx, 0)
+      expect(bbox[3]).toBeCloseTo(merc.maxy, 0)
+    }
+    const vis = getSatelliteProduct('vis06')
+    expect(productMerc(vis).minx).toBeGreaterThan(SATELLITE_MERC.minx)
   })
 
   it('setzt den Layernamen mit Workspace zusammen', () => {

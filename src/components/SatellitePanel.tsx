@@ -37,11 +37,12 @@ import {
   SATELLITE_CENTER,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
-  productImageWidth,
+  productArea,
+  productImageSize,
   satelliteImageCoordinates,
-  satelliteImageHeight,
   satelliteTimes,
   wantedTimes,
+  type SatelliteProduct,
 } from '../config/satellite'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
 import { hasDaylight, solarElevationDeg } from '../lib/solar'
@@ -56,19 +57,38 @@ import {
 const SAT_SOURCE_ID = 'satellite'
 const SAT_LAYER_ID = 'satellite'
 
-/** Ansichten, auf die man beim Satelliten wirklich springt. */
-const VIEWS: { id: string; label: string; bounds: [[number, number], [number, number]] }[] = [
+interface View {
+  id: string
+  label: string
+  bounds: [[number, number], [number, number]]
+}
+
+/**
+ * Ansichten, auf die man beim Satelliten wirklich springt. Die beiden festen
+ * liegen in JEDER Produktfläche (ein Test hält das fest) — „ganzer Ausschnitt"
+ * dagegen meint das BILD und wechselt deshalb mit dem Produkt: die beiden
+ * HRFI-Kanäle zeigen die engere Fläche (`SATELLITE_DETAIL_AREA`), und auf die
+ * Vollfläche zu springen hieße, auf leere Ränder zu zoomen.
+ */
+const FIXED_VIEWS: View[] = [
   { id: 'dach', label: 'D-A-CH', bounds: [[5.4, 45.8], [17.4, 55.3]] },
   { id: 'alpen', label: 'Alpen', bounds: [[5.8, 44.8], [17.2, 49.3]] },
-  {
-    id: 'gesamt',
-    label: 'ganzer Ausschnitt',
-    bounds: [
-      [SATELLITE_AREA.west, SATELLITE_AREA.south],
-      [SATELLITE_AREA.east, SATELLITE_AREA.north],
-    ],
-  },
 ]
+
+function viewsFor(product: SatelliteProduct): View[] {
+  const area = productArea(product)
+  return [
+    ...FIXED_VIEWS,
+    {
+      id: 'gesamt',
+      label: 'ganzer Ausschnitt',
+      bounds: [
+        [area.west, area.south],
+        [area.east, area.north],
+      ],
+    },
+  ]
+}
 
 /**
  * Die Ziehleiste umfasst IMMER 24 Stunden — keine Auswahl davor. Eine
@@ -131,6 +151,7 @@ function frameLabel(time: number, latest: number): string {
 export function SatellitePanel() {
   const [productId, setProductId] = useState(DEFAULT_SATELLITE_PRODUCT.id)
   const product = getSatelliteProduct(productId)
+  const views = useMemo(() => viewsFor(product), [product])
 
   const [extent, setExtent] = useState<TimeExtent | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -237,12 +258,13 @@ export function SatellitePanel() {
     const missing = wanted.filter((t) => imagesRef.current[t] === undefined)
     if (missing.length === 0) return
     const ac = new AbortController()
-    // Breite kommt vom PRODUKT: der hochaufgelöste sichtbare Kanal fordert
-    // mehr an als die übrigen, sonst läge sein Vorteil unter dem Zielraster.
-    const width = productImageWidth(product)
+    // Größe UND Fläche kommen vom PRODUKT und gehören zusammen (Begründung
+    // an `productImageSize`): die HRFI-Kanäle holen ihre engere Fläche nativ,
+    // Geocolour und die MSG-RGBs die Vollfläche.
+    const { width, height } = productImageSize(product)
     loadSatelliteImages(product, missing, {
       width,
-      height: satelliteImageHeight(width),
+      height,
       signal: ac.signal,
       onLoaded: (time, url) => {
         urlsRef.current.push(url)
@@ -358,7 +380,7 @@ export function SatellitePanel() {
     const map = new maplibregl.Map({
       container: el,
       style: BASE_STYLE,
-      bounds: VIEWS[0].bounds,
+      bounds: FIXED_VIEWS[0].bounds,
       fitBoundsOptions: { padding: 8 },
       attributionControl: false,
       // Über ~1,5 km je Pixel hinaus zeigt das Bild keine Details mehr —
@@ -466,7 +488,10 @@ export function SatellitePanel() {
       if (source) map.removeSource(SAT_SOURCE_ID)
       return
     }
-    const coordinates = satelliteImageCoordinates()
+    // Die Ecken hängen am PRODUKT — ein Wechsel zwischen den beiden Flächen
+    // muss sie mit umsetzen, sonst spannt die Karte das neue Bild über die
+    // alte Fläche und alles liegt verschoben.
+    const coordinates = satelliteImageCoordinates(product)
     if (source) {
       source.updateImage({ url: currentUrl, coordinates })
     } else {
@@ -483,7 +508,7 @@ export function SatellitePanel() {
         OVERLAY_INSERT_BEFORE,
       )
     }
-  }, [currentUrl, mapReady])
+  }, [currentUrl, product, mapReady])
 
   const applyPending = useCallback(() => {
     if (!pending) return
@@ -628,7 +653,7 @@ export function SatellitePanel() {
           </div>
         )}
         <div className="radar-views">
-          {VIEWS.map((v) => (
+          {views.map((v) => (
             <button key={v.id} type="button" onClick={() => jumpToView(v.bounds)}>
               {v.label}
             </button>
