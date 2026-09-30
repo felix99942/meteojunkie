@@ -63,7 +63,7 @@
 // aus der Byte-Kurve auf den Bildinhalt schließen.
 //
 // **ZWEI FLÄCHEN, und das ist der Handel**: die Vollfläche nativ anzufordern
-// hieße 3200 px und 990 KB je Bild (bei `PREFETCH_RECENT` = 12 also 12 MB
+// hieße 3200 px und 990 KB je Bild (bei 12 vorgeladenen Bildern also 12 MB
 // beim Öffnen). Die beiden HRFI-Produkte bekommen deshalb eine ENGERE Fläche
 // (`SATELLITE_DETAIL_AREA`), auf der sie mit weniger Pixeln nativ sind; alles
 // Übrige bleibt auf der Vollfläche. Kosten je Bild, über den echten Abrufpfad
@@ -358,6 +358,16 @@ export function productMerc(p: SatelliteProduct): MercBox {
  */
 export function productImageSize(p: SatelliteProduct): { width: number; height: number } {
   const width = productImageWidth(p)
+  return { width, height: imageHeightFor(productMerc(p), width) }
+}
+
+/**
+ * Grösse der VORSCHAU (siehe `loadPlan`). Nie grösser als das scharfe Bild.
+ * Beim geschärften Produkt ist die Vorschau die FARBE allein in ihrem
+ * nativen Raster — ohne Schärfungskanal, also ein Abruf statt zwei.
+ */
+export function previewImageSize(p: SatelliteProduct): { width: number; height: number } {
+  const width = p.sharpen ? p.sharpen.colourWidth : Math.min(PREVIEW_WIDTH, productImageWidth(p))
   return { width, height: imageHeightFor(productMerc(p), width) }
 }
 
@@ -750,36 +760,129 @@ export function satelliteImageCoordinates(
 // beim Aufbau versehentlich der Stand von gestern geholt wird.
 
 /**
- * Was geladen wird: die jüngsten `PREFETCH_RECENT` Bilder (der Teil, den fast
- * jeder ansieht) plus ein Fenster um den Zeiger — zwei Schritte zurück, damit
- * kurzes Zurückziehen sofort etwas zeigt, und `LOOKAHEAD` voraus, damit die
- * Schleife nicht bei jedem Bild stehenbleibt.
+ * ZWEI STUFEN je Zeitschritt: eine VORSCHAU für den ganzen Tag und das
+ * SCHARFE Bild nur dort, wo man hinsieht.
+ *
+ * Anlass (gemessen 2026-09-30): EUMETView rendert jedes Bild auf Anfrage und
+ * braucht dafür 1–3 s — bei 2000 px über Europa (~530 KB) wie bei 1000 px
+ * (~160 KB), die Zeit ist Rechenzeit des Dienstes, nicht Leitung. 145 scharfe
+ * Bilder für 24 h wären 77 MB je Produkt; die alte Politik holte deshalb nur
+ * ein Fenster um den Zeiger, und den Tag bekam man nie zusammen. Die Vorschau
+ * über den ganzen Tag kostet 15–25 MB und ist bei drei parallelen Abrufen in
+ * rund einer Minute vollständig — danach läuft jede Schleife flüssig, und wo
+ * der Zeiger stehen bleibt, kommt das scharfe Bild nach (wie die
+ * Vorschaubilder eines Videoplayers).
  */
-export const PREFETCH_RECENT = 12
+export type ImageTier = 'lo' | 'hi'
+
+export interface LoadJob {
+  time: number
+  tier: ImageTier
+}
+
+/** Breite der Vorschau. Über Europa ~8 km/px — für die Schleife genug. */
+export const PREVIEW_WIDTH = 1000
+
+/**
+ * Abrufe gleichzeitig. Mehr verträgt EUMETView nicht: bei 6 parallelen kam
+ * gemessen schon einer mit HTTP 500 zurück.
+ */
+export const SAT_CONCURRENCY = 3
+
+/** Die Schleife kreist über die letzten 3 Stunden (siehe `SatellitePanel`). */
+export const LOOP_SPAN_MS = 3 * 3_600_000
+
+/** Nachbarn des Zeigers, die beim Ziehen/Abspielen als Vorschau Vorrang haben. */
 export const LOOKAHEAD = 8
 export const LOOKBEHIND = 2
 
 /**
- * Obergrenze der im Speicher gehaltenen Bilder. Ohne sie sammelt eine Sitzung,
- * in der jemand den ganzen Tag durchzieht, alle 145 Blobs an (~26 MB); über
- * dieser Zahl werden die ältesten wieder freigegeben, die gerade niemand
- * braucht.
+ * Obergrenze SCHARFER Bilder im Speicher. Vorschauen werden für den ganzen
+ * Tag gehalten (≤ 145 × ~160 KB); die scharfen (~530 KB) nur, soweit sie der
+ * Plan gerade will — Zeiger, Nachbarn, Schleife sind zusammen 21.
  */
-export const MAX_CACHED = 48
+export const HI_MAX = 24
 
-/** Zeitpunkte, die zum aktuellen Zustand geladen sein sollten. */
-export function wantedTimes(times: number[], idx: number, playing: boolean): number[] {
-  if (times.length === 0) return []
-  const want = new Set<number>()
-  for (let i = Math.max(0, times.length - PREFETCH_RECENT); i < times.length; i++) {
-    want.add(times[i])
+/**
+ * Wartezeiten vor einem erneuten Versuch. EUMETView antwortet unter Last
+ * sporadisch mit HTTP 500/502; die frühere Regel „einmal gescheitert, für die
+ * Sitzung gemerkt" liess diese Stellen als dauerhafte Lücken stehen. Nach dem
+ * letzten Versuch bleibt es dabei — sonst liefe eine Dauerschleife gegen einen
+ * fremden Dienst.
+ */
+export const RETRY_DELAYS_MS = [10_000, 60_000]
+
+/** Zeitpunkt des nächsten Versuchs nach `failures` Fehlschlägen, oder Infinity. */
+export function retryAt(failures: number, now: number): number {
+  const d = RETRY_DELAYS_MS[failures - 1]
+  return d == null ? Infinity : now + d
+}
+
+/**
+ * Was in welcher Reihenfolge geladen werden soll — die eine Entscheidung,
+ * an der bei einer 24-Stunden-Leiste alles hängt. Reihenfolge:
+ *
+ * 1. das SCHARFE Bild unter dem Zeiger (nicht beim Abspielen — dort wechselt
+ *    es alle 320 ms, und die Vorschau trägt die Bewegung),
+ * 2. VORSCHAUEN um den Zeiger (voraus weiter als zurück),
+ * 3. VORSCHAUEN der Schleife, neueste zuerst — die sieht fast jeder,
+ * 4. die SCHARFEN Nachbarn des Zeigers (Schritt vor/zurück ist sofort scharf),
+ * 5. VORSCHAUEN für den Rest des Tages, dem Zeiger nächste zuerst,
+ * 6. die Schleife SCHARF — erst wenn der Tag als Vorschau steht.
+ *
+ * `idx < 0` heisst: der Zeiger hat sich noch nicht gesetzt (erster Aufbau).
+ * Dann gilt der NEUESTE Stand als Zeiger — ein Fenster um Index 0 wäre der
+ * Stand von vor 24 Stunden, den in dem Moment niemand sehen will.
+ */
+export function loadPlan(times: number[], idx: number, playing: boolean): LoadJob[] {
+  const n = times.length
+  if (n === 0) return []
+  const i = idx < 0 ? n - 1 : Math.min(idx, n - 1)
+  const out: LoadJob[] = []
+  const seen = new Set<string>()
+  const add = (k: number, tier: ImageTier) => {
+    if (k < 0 || k >= n) return
+    const key = `${tier}|${times[k]}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({ time: times[k], tier })
   }
-  // idx < 0: der Zeiger hat sich noch nicht gesetzt (erster Aufbau). Dann nur
-  // die jüngsten Bilder holen — ein Fenster um Index 0 wäre der Stand von vor
-  // 24 Stunden, den in dem Moment niemand sehen will.
-  if (idx < 0) return [...want]
-  const from = Math.max(0, idx - LOOKBEHIND)
-  const to = Math.min(times.length - 1, idx + (playing ? LOOKAHEAD : LOOKBEHIND))
-  for (let i = from; i <= to; i++) want.add(times[i])
-  return [...want]
+  const loopStart = times.findIndex((t) => t >= times[n - 1] - LOOP_SPAN_MS)
+
+  if (!playing) add(i, 'hi')
+  add(i, 'lo')
+  for (let d = 1; d <= LOOKAHEAD; d++) add(i + d, 'lo')
+  for (let d = 1; d <= LOOKBEHIND; d++) add(i - d, 'lo')
+  for (let k = n - 1; k >= loopStart; k--) add(k, 'lo')
+  if (!playing) {
+    add(i + 1, 'hi')
+    add(i - 1, 'hi')
+  }
+  // Rest des Tages vom Zeiger aus nach aussen; bei gleichem Abstand zuerst
+  // das NEUERE Bild.
+  for (let d = 1; d < n; d++) {
+    add(i + d, 'lo')
+    add(i - d, 'lo')
+  }
+  for (let k = n - 1; k >= loopStart; k--) add(k, 'hi')
+  return out
+}
+
+/**
+ * Welche scharfen Bilder freigegeben werden, wenn es mehr als `HI_MAX` sind:
+ * nie eines, das der Plan gerade will (sonst Laden und Wegwerfen im Kreis),
+ * sonst die vom Zeiger am weitesten entfernten.
+ */
+export function hiEvictions(
+  hiTimes: number[],
+  plan: LoadJob[],
+  anchor: number,
+  max = HI_MAX,
+): number[] {
+  if (hiTimes.length <= max) return []
+  const keep = new Set(plan.filter((j) => j.tier === 'hi').map((j) => j.time))
+  return hiTimes
+    .filter((t) => !keep.has(t))
+    .sort((a, b) => Math.abs(b - anchor) - Math.abs(a - anchor))
+    .slice(0, hiTimes.length - max)
 }

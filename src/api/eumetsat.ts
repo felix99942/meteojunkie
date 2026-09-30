@@ -20,12 +20,14 @@
 
 import {
   parseSatelliteCapabilities,
+  previewImageSize,
   productImageSize,
   productMerc,
   satelliteCapabilitiesUrl,
   satelliteImageUrl,
   sharpenLayer,
   sharpenPanTime,
+  type ImageTier,
   type SatelliteProduct,
   type SharpenSpec,
 } from '../config/satellite'
@@ -59,91 +61,73 @@ export async function fetchSatelliteExtent(
   return extent
 }
 
-export interface SatelliteLoadOptions {
-  width: number
-  height: number
-  /**
-   * Gleichzeitige Abrufe. Drei statt der vier des Radars: die Bilder sind
-   * hier rund viermal so groß, und es ist ein fremder, kostenloser Dienst.
-   */
-  concurrency?: number
-  signal?: AbortSignal
-  onLoaded: (time: number, imageUrl: string) => void
-  onError?: (time: number, err: unknown) => void
-}
-
 /**
- * Lädt die Bilder zu den angegebenen Zeitpunkten, **vom neuesten nach hinten**
- * — der neueste Stand ist das, was man beim Öffnen sehen will, die
- * Vergangenheit füllt die Schleife danach auf.
+ * Lädt EIN Bild eines Zeitschritts in der gewünschten Stufe und liefert eine
+ * **Blob-URL**, die der Aufrufer wieder freigeben muss
+ * (`URL.revokeObjectURL`).
  *
- * Der Aufrufer gibt NUR die Zeiten mit, die ihm fehlen: beim Nachrücken auf
- * einen neuen Stand ist das genau ein Bild, nicht die ganze Schleife.
+ * Einzeln statt als Stapel, weil die Reihenfolge jetzt eine Warteschlange im
+ * Bereich entscheidet (`loadPlan`): sie ordnet bei jeder Zeigerbewegung neu,
+ * OHNE laufende Abrufe abzubrechen. Der frühere Stapel hing an einem
+ * AbortController je Ladefenster — jedes Weiterziehen verwarf damit 1–3 s
+ * Renderzeit des Dienstes je halbfertigem Bild, und beim Durchziehen kam fast
+ * nichts an.
  *
- * Die zurückgegebenen URLs sind **Blob-URLs** und müssen vom Aufrufer wieder
- * freigegeben werden (`URL.revokeObjectURL`), sonst hält jeder Produktwechsel
- * seine alte Schleife im Speicher fest.
+ * - `'hi'`: das scharfe Bild, samt Schärfung und Wolkenkomposit.
+ * - `'lo'`: die Vorschau (`previewImageSize`). Beim geschärften Produkt die
+ *   Farbe ALLEIN (ein Abruf statt zwei); das Wolkenkomposit bleibt, sonst
+ *   sprängen die Graustufenkanäle beim Wechsel Vorschau → scharf zwischen
+ *   dunklem Boden und Untergrundbild hin und her.
+ *
+ * Der HTTP-Cache des Browsers hilft mit: EUMETView schickt
+ * `Cache-Control: max-age=604800` (7 Tage) — ein freigegebenes scharfes Bild
+ * kommt beim nächsten Mal von der Platte.
  */
-export async function loadSatelliteImages(
+export async function loadSatelliteImage(
   product: SatelliteProduct,
-  times: number[],
-  opts: SatelliteLoadOptions,
-): Promise<void> {
-  const order = [...times].sort((a, b) => b - a)
-  const concurrency = Math.max(1, opts.concurrency ?? 3)
-  let next = 0
-
-  const worker = async () => {
-    for (;;) {
-      if (opts.signal?.aborted) return
-      const slot = next++
-      if (slot >= order.length) return
-      const time = order[slot]
-      // Beim GESCHÄRFTEN Produkt wird die Farbe klein geholt (sie ist mit
-      // 3 km nativ) und beim Zusammensetzen hochgezogen; die Zielgröße gibt
-      // der Schärfungskanal vor.
-      const colourSize = product.sharpen
+  time: number,
+  tier: ImageTier,
+  signal?: AbortSignal,
+): Promise<string> {
+  // Beim GESCHÄRFTEN Produkt wird die Farbe klein geholt (sie ist mit 3 km
+  // nativ) und beim Zusammensetzen hochgezogen; die Zielgröße gibt der
+  // Schärfungskanal vor. Die Vorschau ist genau diese Farbe.
+  const size =
+    tier === 'lo'
+      ? previewImageSize(product)
+      : product.sharpen
         ? colourRequestSize(product, product.sharpen)
-        : { width: opts.width, height: opts.height }
-      const url = satelliteImageUrl(product, { time, ...colourSize })
-      try {
-        const res = await fetch(url, { signal: opts.signal })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const raw = await res.blob()
-        // Eine ServiceException kommt als XML mit HTTP 200 — dieselbe Falle
-        // wie beim DWD (SPEC §6), nur bei einem anderen Dienst.
-        if (!raw.type.startsWith('image/')) {
-          throw new Error(`Antwort ist ${raw.type || 'kein Bild'}`)
-        }
-        let blob = raw
-        if (product.sharpen) {
-          try {
-            blob = await sharpen(product, product.sharpen, time, raw, opts)
-          } catch (err) {
-            // Lieber die grobe Farbe als gar kein Bild: sie IST die Messung,
-            // nur unschärfer. Der Fehler steht in der Konsole.
-            console.error('[satellit] Schärfung', err)
-          }
-        }
-        if (product.cloudMask) {
-          try {
-            blob = await compositeClouds(product, product.cloudMask, time, raw)
-          } catch (err) {
-            // Lieber das rohe Bild als gar keines: ohne Untergrund ist es
-            // immer noch die Messung, und der Fehler steht in der Konsole.
-            console.error('[satellit] Untergrund', err)
-          }
-        }
-        if (opts.signal?.aborted) return
-        opts.onLoaded(time, URL.createObjectURL(blob))
-      } catch (err) {
-        if (opts.signal?.aborted) return
-        opts.onError?.(time, err)
-      }
+        : productImageSize(product)
+  const res = await fetch(satelliteImageUrl(product, { time, ...size }), { signal })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const raw = await res.blob()
+  // Eine ServiceException kommt als XML mit HTTP 200 — dieselbe Falle wie
+  // beim DWD (SPEC §6), nur bei einem anderen Dienst.
+  if (!raw.type.startsWith('image/')) {
+    throw new Error(`Antwort ist ${raw.type || 'kein Bild'}`)
+  }
+  let blob = raw
+  if (tier === 'hi' && product.sharpen) {
+    try {
+      blob = await sharpen(product, product.sharpen, time, raw, signal)
+    } catch (err) {
+      if (signal?.aborted) throw err
+      // Lieber die grobe Farbe als gar kein Bild: sie IST die Messung, nur
+      // unschärfer. Der Fehler steht in der Konsole.
+      console.error('[satellit] Schärfung', err)
     }
   }
-
-  await Promise.all(Array.from({ length: concurrency }, worker))
+  if (product.cloudMask) {
+    try {
+      blob = await compositeClouds(product, product.cloudMask, time, raw)
+    } catch (err) {
+      // Lieber das rohe Bild als gar keines: ohne Untergrund ist es immer
+      // noch die Messung, und der Fehler steht in der Konsole.
+      console.error('[satellit] Untergrund', err)
+    }
+  }
+  signal?.throwIfAborted()
+  return URL.createObjectURL(blob)
 }
 
 /**
@@ -176,7 +160,7 @@ async function sharpen(
   spec: SharpenSpec,
   time: number,
   colour: Blob,
-  opts: SatelliteLoadOptions,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   const { width, height } = productImageSize(product)
   const url = satelliteImageUrl(product, {
@@ -185,7 +169,7 @@ async function sharpen(
     height,
     layer: sharpenLayer(spec),
   })
-  const res = await fetch(url, { signal: opts.signal })
+  const res = await fetch(url, { signal })
   if (!res.ok) throw new Error(`Schärfungskanal: HTTP ${res.status}`)
   const pan = await res.blob()
   if (!pan.type.startsWith('image/')) {

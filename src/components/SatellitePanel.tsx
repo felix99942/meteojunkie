@@ -28,21 +28,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { fetchSatelliteExtent, loadSatelliteImages } from '../api/eumetsat'
+import { fetchSatelliteExtent, loadSatelliteImage } from '../api/eumetsat'
 import { CITIES } from '../config/cities'
 import {
   DEFAULT_SATELLITE_PRODUCT,
-  MAX_CACHED,
+  HI_MAX,
+  LOOP_SPAN_MS,
+  SAT_CONCURRENCY,
   SATELLITE_AREA,
   SATELLITE_CENTER,
   SATELLITE_GROUPS,
   getSatelliteProduct,
+  hiEvictions,
+  loadPlan,
   productArea,
-  productImageSize,
   resamplingSwitchZoom,
+  retryAt,
   satelliteImageCoordinates,
   satelliteTimes,
-  wantedTimes,
+  type ImageTier,
   type SatelliteProduct,
 } from '../config/satellite'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
@@ -97,22 +101,16 @@ function viewsFor(product: SatelliteProduct): View[] {
  * Wetterlage liest man über einen Tag, nicht über zwei Stunden, und jede
  * Auswahl davor ist ein Handgriff, bevor man etwas sieht.
  *
- * Das geht aber nur mit einer anderen Ladestrategie: 24 h sind bei MTG
- * 145 Bilder à ~180 KB, also 26 MB — die kann man nicht vorladen. Geholt wird
- * deshalb NUR, was gebraucht wird (siehe `wantedTimes`): der neueste Stand,
- * die jüngste Vergangenheit und ein Fenster um den Zeiger. Der Rest kommt,
- * wenn man hinzieht oder die Schleife dorthin läuft.
+ * Das geht nur mit ZWEI STUFEN (siehe `loadPlan`): der ganze Tag als
+ * Vorschau (~160 KB je Bild) und das scharfe Bild (~530 KB) nur dort, wo man
+ * hinsieht. Scharf für den ganzen Tag wären 77 MB je Produkt.
  */
 const HISTORY_MS = 24 * 3_600_000
 
-/**
- * Zeitraum, in dem die SCHLEIFE kreist, nachdem sie am neuesten Bild
- * angekommen ist. Bewusst kürzer als die Ziehleiste: ein Tag im Zeitraffer
- * wären 145 Abrufe bei einem fremden Dienst, bei jedem Durchlauf. Wer weiter
- * zurück will, zieht dorthin — und die Schleife spielt von dort aus vorwärts,
- * bevor sie sich in diesen Abschnitt einpendelt.
- */
-const LOOP_SPAN_MS = 3 * 3_600_000
+// Die SCHLEIFE kreist über `LOOP_SPAN_MS` (3 h, in `config/satellite.ts`,
+// weil `loadPlan` sie kennen muss). Bewusst kürzer als die Ziehleiste: wer
+// weiter zurück will, zieht dorthin — die Schleife spielt von dort vorwärts,
+// bevor sie sich in diesen Abschnitt einpendelt.
 
 /** Bildwechsel der Schleife und Standzeit am letzten (neuesten) Bild. */
 const FRAME_MS = 320
@@ -139,6 +137,12 @@ const fmtTime = new Intl.DateTimeFormat('de-DE', {
   minute: '2-digit',
 })
 
+/** Ein Zeitschritt in bis zu zwei Stufen (siehe `loadPlan`). */
+interface Frame {
+  lo?: string
+  hi?: string
+}
+
 function frameLabel(time: number, latest: number): string {
   const clock = `${fmtClock.format(new Date(time))} UTC`
   const offMin = Math.round((latest - time) / 60_000)
@@ -160,8 +164,11 @@ export function SatellitePanel() {
   /** Neuerer Stand, den der Nutzer noch nicht sehen wollte (er sieht Älteres an). */
   const [pending, setPending] = useState<TimeExtent | null>(null)
 
-  /** Blob-URLs über ihren ZEITSTEMPEL (siehe Kopfkommentar). */
-  const [images, setImages] = useState<Record<number, string>>({})
+  /**
+   * Blob-URLs über ihren ZEITSTEMPEL (siehe Kopfkommentar), je Zeitschritt
+   * bis zu zwei: Vorschau und scharf. Angezeigt wird das schärfste, das da ist.
+   */
+  const [images, setImages] = useState<Record<number, Frame>>({})
   const [failed, setFailed] = useState(0)
   const [idx, setIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -173,7 +180,7 @@ export function SatellitePanel() {
   )
   const latest = times.length ? times[times.length - 1] : 0
   const current = times[Math.min(idx, times.length - 1)]
-  const currentUrl = current ? images[current] : undefined
+  const currentUrl = current ? (images[current]?.hi ?? images[current]?.lo) : undefined
   /** Steht der Zeiger auf dem neuesten Bild? Dann darf automatisch nachgerückt werden. */
   const atLiveEdge = times.length === 0 || idx >= times.length - 1
 
@@ -221,7 +228,17 @@ export function SatellitePanel() {
   // alte Schleife im Speicher fest (13 Bilder à bis zu 210 KB). Der Ref führt die
   // Liste mit, weil das Aufräumen außerhalb des Renderzyklus passiert.
   const urlsRef = useRef<string[]>([])
+  /** Laufende Abrufe (Schlüssel `tier|time`) — nur ein Produktwechsel bricht sie ab. */
+  const inFlightRef = useRef<Map<string, AbortController>>(new Map())
+  /** Was schon da ist, SYNCHRON geführt (der State kommt erst mit dem nächsten Render). */
+  const haveRef = useRef<Set<string>>(new Set())
+  /** Fehlschläge je Schlüssel: Anzahl und frühester nächster Versuch. */
+  const failsRef = useRef<Map<string, { n: number; at: number }>>(new Map())
   const dropImages = useCallback(() => {
+    for (const ac of inFlightRef.current.values()) ac.abort()
+    inFlightRef.current = new Map()
+    haveRef.current = new Set()
+    failsRef.current = new Map()
     for (const url of urlsRef.current) URL.revokeObjectURL(url)
     urlsRef.current = []
     setImages({})
@@ -269,96 +286,125 @@ export function SatellitePanel() {
     return () => clearTimeout(t)
   }, [idx, playing])
 
-  const imagesRef = useRef(images)
-  imagesRef.current = images
   /**
-   * GESCHEITERTE Zeitschritte, damit sie nicht endlos erneut angefragt
-   * werden — dasselbe Muster wie `failedRef` im Radarbereich, und hier aus
-   * demselben gemessenen Anlass: EUMETView beantwortet einzelne Zeitpunkte
-   * sporadisch mit **HTTP 502** (2026-09-29 reproduziert: `rgb_fog` um
-   * 12:00 UTC an zwei Tagen hintereinander, während 10:00, 14:00, 18:00 und
-   * 19:00 desselben Tages einwandfrei kamen). Ohne das Merken bleibt der Zeit
-   * kein Bild zugeordnet, `missing` enthält sie in jeder Runde erneut, und
-   * der Effekt läuft in einer Dauerschleife gegen einen fremden Dienst.
+   * WARTESCHLANGE statt Ladefenster mit Abbruch.
    *
-   * Schlüssel ist Produkt UND Zeit: derselbe Zeitpunkt kann bei einem
-   * anderen Produkt sehr wohl da sein.
+   * Vorher hing das Laden an einem Effekt über den Zeiger, dessen Aufräumen
+   * `abort()` rief: jedes Weiterziehen verwarf alle halbfertigen Bilder — bei
+   * 1–3 s Renderzeit des Dienstes je Bild kam beim Durchziehen fast nichts
+   * an, und 24 Stunden bekam man nie zusammen. Jetzt ORDNET eine Bewegung nur
+   * neu (`loadPlan`), was als Nächstes geholt wird; was läuft, läuft zu Ende.
+   * Abgebrochen wird allein beim Produktwechsel (`dropImages`).
+   *
+   * Gescheiterte Abrufe werden nach 10 s und 60 s erneut versucht
+   * (`retryAt`) — EUMETView antwortet unter Last sporadisch mit HTTP 500/502,
+   * und die frühere Regel „einmal gescheitert, für die Sitzung gemerkt" liess
+   * diese Stellen als dauerhafte Lücken stehen. Danach bleibt es dabei, sonst
+   * liefe eine Dauerschleife gegen einen fremden Dienst.
    */
-  const failedRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    failedRef.current = new Set()
-  }, [product])
-  useEffect(() => {
-    if (!extent || times.length === 0) return
-    const wanted = wantedTimes(times, settledIdx < 0 ? -1 : Math.min(settledIdx, times.length - 1), playing)
-    const missing = wanted.filter(
-      (t) => imagesRef.current[t] === undefined && !failedRef.current.has(`${product.id}|${t}`),
-    )
-    if (missing.length === 0) return
+  const plan = useMemo(
+    () => loadPlan(times, settledIdx < 0 ? -1 : settledIdx, playing),
+    [times, settledIdx, playing],
+  )
+  const planRef = useRef(plan)
+  planRef.current = plan
+  const productRef = useRef(product)
+  productRef.current = product
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const pump = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+    const now = Date.now()
+    let nextRetry = Infinity
+    for (const job of planRef.current) {
+      if (inFlightRef.current.size >= SAT_CONCURRENCY) break
+      const key = `${job.tier}|${job.time}`
+      if (haveRef.current.has(key) || inFlightRef.current.has(key)) continue
+      const fail = failsRef.current.get(key)
+      if (fail && fail.at > now) {
+        nextRetry = Math.min(nextRetry, fail.at)
+        continue
+      }
+      startJob(job.time, job.tier, key)
+    }
+    if (Number.isFinite(nextRetry)) {
+      retryTimerRef.current = setTimeout(() => pumpRef.current(), nextRetry - now + 50)
+    }
+    // Bewusst ohne Abhängigkeiten: `startJob` liest nur Refs, und ein
+    // stabiles `pump` hält den Effekt unten auf „Plan hat sich geändert".
+  }, [])
+  const pumpRef = useRef(pump)
+
+  const startJob = (time: number, tier: ImageTier, key: string) => {
+    const p = productRef.current
     const ac = new AbortController()
-    // Größe UND Fläche kommen vom PRODUKT und gehören zusammen (Begründung
-    // an `productImageSize`): die HRFI-Kanäle holen ihre engere Fläche nativ,
-    // Geocolour und die MSG-RGBs die Vollfläche.
-    const { width, height } = productImageSize(product)
-    loadSatelliteImages(product, missing, {
-      width,
-      height,
-      signal: ac.signal,
-      onLoaded: (time, url) => {
+    inFlightRef.current.set(key, ac)
+    loadSatelliteImage(p, time, tier, ac.signal)
+      .then((url) => {
+        if (ac.signal.aborted || productRef.current !== p) {
+          URL.revokeObjectURL(url)
+          return
+        }
         urlsRef.current.push(url)
-        setImages((prev) => ({ ...prev, [time]: url }))
-      },
-      onError: (time, err) => {
-        failedRef.current.add(`${product.id}|${time}`)
-        console.error('[satellit]', new Date(time).toISOString(), err)
-        setFailed((n) => n + 1)
-      },
-    }).catch((err: unknown) => console.error('[satellit]', err))
-    return () => ac.abort()
-  }, [extent, product, times, settledIdx, playing])
+        haveRef.current.add(key)
+        failsRef.current.delete(key)
+        setImages((prev) => ({ ...prev, [time]: { ...prev[time], [tier]: url } }))
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return
+        const n = (failsRef.current.get(key)?.n ?? 0) + 1
+        const at = retryAt(n, Date.now())
+        failsRef.current.set(key, { n, at })
+        console.error('[satellit]', tier, new Date(time).toISOString(), err)
+        if (!Number.isFinite(at)) setFailed((f) => f + 1)
+      })
+      .finally(() => {
+        if (inFlightRef.current.get(key) !== ac) return
+        inFlightRef.current.delete(key)
+        pumpRef.current()
+      })
+  }
+
+  // Neuer Plan (Zeiger, Schleife, neuer Stand) → Reihenfolge neu, nichts abbrechen.
+  useEffect(() => {
+    if (!extent) return
+    pump()
+  }, [plan, extent, pump])
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+    },
+    [],
+  )
 
   /**
-   * VERDRÄNGUNG — eigener Effekt, und das aus zwei Gründen, die beide Fehler
-   * waren:
-   *
-   * 1. Sie stand vorher IM State-Updater. Ein Updater muss frei von
-   *    Nebenwirkungen sein; React ruft ihn im Entwicklungsmodus (StrictMode)
-   *    doppelt auf, und `URL.revokeObjectURL` doppelt heißt, dass die zweite
-   *    Runde freigibt, was die erste gerade eingetragen hat.
-   * 2. Sie maß den Abstand am GEBREMSTEN Zeiger und schützte nur den neuesten
-   *    Stand. Beim Ziehen läuft der echte Zeiger dem gebremsten voraus — die
-   *    gerade geladenen Bilder der neuen Stelle waren damit die „am weitesten
-   *    entfernten" und flogen sofort wieder raus. Das Ergebnis war ein
-   *    Kreislauf aus Laden und Wegwerfen: die Karte blieb leer, weil zum
-   *    angezeigten Zeitpunkt nie ein Bild überlebte.
-   *
-   * Geschützt ist deshalb alles, was gerade GEBRAUCHT wird (das Ladefenster
-   * plus das angezeigte Bild); weggeworfen wird nur darüber hinaus, und zwar
-   * das vom angezeigten Bild am weitesten entfernte.
+   * VERDRÄNGUNG nur der SCHARFEN Bilder (Vorschauen bleiben für den ganzen
+   * Tag). Nie eines, das der Plan gerade will — sonst Laden und Wegwerfen im
+   * Kreis; die Regel und ihr Test stehen in `hiEvictions`. Freigegebene
+   * scharfe Bilder kommen beim nächsten Mal aus dem HTTP-Cache (7 Tage).
    */
   useEffect(() => {
-    const keys = Object.keys(images).map(Number)
-    if (keys.length <= MAX_CACHED) return
-    const keep = new Set(wantedTimes(times, Math.min(idx, times.length - 1), playing))
-    if (current) keep.add(current)
-    const anchor = current ?? times[times.length - 1] ?? 0
-    const drop = keys
-      .filter((t) => !keep.has(t))
-      .sort((a, b) => Math.abs(b - anchor) - Math.abs(a - anchor))
-      .slice(0, keys.length - MAX_CACHED)
+    const hiTimes = Object.keys(images)
+      .map(Number)
+      .filter((t) => images[t]?.hi)
+    const drop = hiEvictions(hiTimes, plan, current ?? times[times.length - 1] ?? 0)
     if (drop.length === 0) return
-    setImages((prev) => {
-      const next = { ...prev }
-      for (const t of drop) delete next[t]
-      return next
-    })
     for (const t of drop) {
-      const dead = images[t]
+      const dead = images[t]?.hi
+      haveRef.current.delete(`hi|${t}`)
       if (!dead) continue
       URL.revokeObjectURL(dead)
       urlsRef.current = urlsRef.current.filter((u) => u !== dead)
     }
-  }, [images, times, idx, playing, current])
+    setImages((prev) => {
+      const next = { ...prev }
+      for (const t of drop) next[t] = { lo: prev[t]?.lo }
+      return next
+    })
+  }, [images, plan, current, times])
 
   // Zeiger auf dem neuesten Bild halten, solange er dort war. Beim ersten
   // Laden und nach jedem Nachrücken springt er mit, sonst bleibt seine ZEIT.
@@ -372,7 +418,8 @@ export function SatellitePanel() {
     if (current) wantTimeRef.current = current
   }, [current])
 
-  const loaded = times.filter((t) => images[t] !== undefined).length
+  const loadedLo = times.filter((t) => images[t]?.lo || images[t]?.hi).length
+  const loadedHi = times.filter((t) => images[t]?.hi).length
 
   /**
    * TAGESLICHT über der Fläche. Der sichtbare Kanal misst reflektiertes
@@ -399,7 +446,8 @@ export function SatellitePanel() {
     // Ziehleiste (siehe LOOP_SPAN_MS).
     const loopStart = nearestFrame(times, times[times.length - 1] - LOOP_SPAN_MS)
     const nextIdx = atEnd ? loopStart : idx + 1
-    const ready = images[times[nextIdx]] !== undefined
+    const next = images[times[nextIdx]]
+    const ready = next?.lo !== undefined || next?.hi !== undefined
     const delay = !ready ? WAIT_MS : atEnd ? END_DWELL_MS : FRAME_MS
     const t = setTimeout(() => {
       if (ready) setIdx(nextIdx)
@@ -654,7 +702,7 @@ export function SatellitePanel() {
             {times.map((t, i) => (
               <span
                 key={t}
-                className={`radar-tick${images[t] ? ' is-loaded' : ''}${
+                className={`radar-tick${images[t]?.lo || images[t]?.hi ? ' is-loaded' : ''}${
                   i === idx ? ' is-current' : ''
                 }${product.dayOnly && !daylight[i] ? ' is-night' : ''}`}
               />
@@ -667,8 +715,8 @@ export function SatellitePanel() {
           title={
             error
               ? error
-              : `MTG liefert alle 10 Minuten, MSG alle 15; das fertige Bild steht unter 10 Minuten nach der Aufnahme bereit (gemessen). Der Bereich fragt jede Minute nach und rückt selbst nach, solange der Zeiger auf dem neuesten Bild steht.\n\nGeladen wird nach Bedarf: die jüngsten Bilder und ein Fenster um den Zeiger, höchstens ${MAX_CACHED} gleichzeitig.${
-                  failed ? `\n\n${failed} Bild(er) konnten nicht geladen werden.` : ''
+              : `MTG liefert alle 10 Minuten, MSG alle 15; das fertige Bild steht unter 10 Minuten nach der Aufnahme bereit (gemessen). Der Bereich fragt jede Minute nach und rückt selbst nach, solange der Zeiger auf dem neuesten Bild steht.\n\nGeladen wird in zwei Stufen: der ganze Tag als Vorschau (Übersicht), scharf nur das Bild unter dem Zeiger, seine Nachbarn und die Schleife der letzten 3 Stunden — höchstens ${HI_MAX} scharfe Bilder gleichzeitig. Scharf heisst hier: in voller Auflösung, nicht verlustfrei. Gescheiterte Bilder werden nach 10 s und 60 s erneut versucht.${
+                  failed ? `\n\n${failed} Bild(er) konnten auch nach zwei Versuchen nicht geladen werden.` : ''
                 }`
           }
         >
@@ -684,7 +732,8 @@ export function SatellitePanel() {
                 {failed > 0 && !loading ? '⚠' : '●'}
               </span>
               24 h · {times.length} Bilder à {stepMin} min ·{' '}
-              <span className="radar-num">{loaded}</span> geladen · Stand {stand}
+              <span className="radar-num">{loadedLo}</span> Übersicht ·{' '}
+              <span className="radar-num">{loadedHi}</span> scharf · Stand {stand}
             </>
           )}
         </span>

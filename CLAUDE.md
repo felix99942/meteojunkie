@@ -2163,12 +2163,13 @@ npm run preview   # gebautes dist/ servieren
   **EUMETView antwortet auf einzelne Zeitschritte sporadisch mit HTTP 502
   oder 500** — reproduziert (2026-09-29): `rgb_fog` um 12:00 UTC an zwei
   Tagen hintereinander, während 10:00, 14:00, 18:00 und 19:00 desselben Tages
-  einwandfrei kamen. Der Bereich merkt sich gescheiterte Zeiten deshalb in
-  einem `failedRef` (Schlüssel Produkt+Zeit, wie im Radarbereich): ohne das
-  bleibt der Zeit kein Bild zugeordnet, sie steht in jeder Runde erneut in
-  `missing`, und der Effekt läuft in einer Dauerschleife gegen einen fremden
-  Dienst. **Das war ein echter Fehler und ist mit der Erweiterung nur
-  sichtbarer geworden.**
+  einwandfrei kamen. Gescheiterte Abrufe werden deshalb gemerkt (je Stufe
+  und Zeit) und **nach 10 s und 60 s erneut versucht** (`retryAt`), danach
+  bleibt die Lücke: ohne das Merken liefe eine Dauerschleife gegen einen
+  fremden Dienst (das war ein echter Fehler), ohne die Wiederholung blieb
+  jeder vereinzelte 500er für die ganze Sitzung ein Loch in der Leiste
+  (auch das). Gemessen fängt die Wiederholung die meisten ab — von 12
+  Fehlschlägen über einen Tagesaufbau blieb einer.
   Offen und nicht behoben: beim schnellen Durchschalten stehen
   `ERR_FILE_NOT_FOUND`/`AJAXError` auf blob-URLs in der Konsole. Gegengeprüft,
   dass das mit den ursprünglichen fünf Produkten genauso passiert — ein Rennen
@@ -2472,35 +2473,50 @@ npm run preview   # gebautes dist/ servieren
   und Polarnacht auf Spitzbergen.
   **Die Ziehleiste umfasst IMMER 24 Stunden, ohne Auswahl davor** (auf
   Wunsch): eine Wetterlage liest man über einen Tag, und jede Auswahl davor
-  ist ein Handgriff, bevor man etwas sieht. Das erzwingt eine ANDERE
-  Ladestrategie als beim Radar — 24 h sind bei MTG **145 Bilder à ~180 KB,
-  also 26 MB**, die kann man nicht vorladen. Geholt wird deshalb nur, was
-  gebraucht wird (`wantedTimes`): die jüngsten 12 Bilder, dazu ein Fenster um
-  den Zeiger (2 zurück, beim Abspielen 8 voraus). Der Rest kommt, wenn man
-  hinzieht — bei ~0,7 s je Bild ist das kein Warten. **Die Verdrängung ist ein
-  eigener Effekt und schützt, was gebraucht wird** — beides waren Fehler: sie
-  stand im State-Updater (React ruft den im Entwicklungsmodus doppelt auf, und
-  `URL.revokeObjectURL` doppelt gibt frei, was die erste Runde eingetragen
-  hat), und sie maß den Abstand am GEBREMSTEN Zeiger, während der echte beim
-  Ziehen vorauslief: die eben geladenen Bilder der neuen Stelle waren damit
-  die „am weitesten entfernten" und flogen sofort wieder raus — ein Kreislauf
-  aus Laden und Wegwerfen, bei dem die Karte leer blieb. `wantedTimes` steht
-  deshalb als reine Funktion in der Registry und ist getestet, samt des
-  Fehlers, den sie beim Aufbau hatte: vor dem ersten Zeigerstand (`idx < 0`)
-  darf sie NUR die jüngsten Bilder wollen, sonst holt der Bereich beim Öffnen
-  ein Fenster um Index 0 — den Stand von vor 24 Stunden. Beim ZIEHEN ist sie
-  zusätzlich gebremst (`SETTLE_MS`, 220 ms): ohne das forderte jede
-  Zwischenstellung des Reglers ihr eigenes Fenster an und brach das vorherige
-  ab, eine Salve halbfertiger Abrufe bei einem fremden Dienst. Dazu eine Obergrenze von
-  48 Bildern im Speicher: wer den ganzen Tag durchzieht, sammelte sonst alle
-  145 Blobs an; verdrängt wird das vom Zeiger am weitesten entfernte, der
-  neueste Stand bleibt immer. **Die SCHLEIFE kreist trotzdem nur über die
-  letzten 3 Stunden** (`LOOP_SPAN_MS`): ein Tag im Zeitraffer wären 145 Abrufe
-  bei einem fremden Dienst, und zwar bei jedem Durchlauf. Wer weiter zurück
-  will, zieht dorthin; die Schleife spielt von dort vorwärts und pendelt sich
-  danach in den jüngsten Abschnitt ein. Die Statuszeile zählt deshalb
-  „geladen", nicht „x von 145" — ein Fortschritt gegen die Gesamtzahl wäre
-  eine Zahl, die nie voll wird.
+  ist ein Handgriff, bevor man etwas sieht.
+  **Geladen wird in ZWEI STUFEN über eine WARTESCHLANGE** (`loadPlan`,
+  `hiEvictions`, `retryAt` in `config/satellite.ts`, getestet; Schlange in
+  `SatellitePanel`, Einzelabruf `loadSatelliteImage`). Der ganze Tag als
+  VORSCHAU (`PREVIEW_WIDTH` = 1000 px, ~160 KB), SCHARF (~530 KB) nur das
+  Bild unter dem Zeiger, seine Nachbarn und die Schleife — höchstens
+  `HI_MAX` = 24 scharfe Bilder im Speicher, Vorschauen alle.
+  **Anlass war ein gemessener Befund, keine Vermutung** (2026-09-30):
+  EUMETView rendert jedes Bild auf Anfrage und braucht 1–3 s — bei 2000 px
+  (530 KB) wie bei 1000 px (160 KB), die Zeit ist RECHENZEIT des Dienstes,
+  nicht Leitung. Die frühere Politik (`wantedTimes`: jüngste 12 + Fenster um
+  den Zeiger, 48 Bilder Obergrenze) bekam den Tag nie zusammen, und zwar aus
+  einem Grund, der schwerer wog als die Fenstergrösse: der Ladeeffekt hing
+  am Zeiger und rief beim Aufräumen `abort()` — **jedes Weiterziehen verwarf
+  alle halbfertigen Bilder**, bei 1–3 s Renderzeit je Bild kam beim
+  Durchziehen fast nichts an. Jetzt ORDNET eine Bewegung nur neu, was als
+  Nächstes geholt wird; was läuft, läuft zu Ende. Abgebrochen wird allein
+  beim Produktwechsel. Reihenfolge des Plans: scharf unter dem Zeiger (nicht
+  beim Abspielen, dort wechselt das Bild alle 320 ms) → Vorschau um den
+  Zeiger → Vorschau der Schleife → scharfe Nachbarn → Vorschau für den Rest
+  des Tages vom Zeiger nach aussen → Schleife scharf. **Gemessen mit kaltem
+  Cache**: 143 von 145 Vorschauen nach 90 s, die scharfe Schleife nach rund
+  2 min; ~1 Bild/s bei `SAT_CONCURRENCY` = 3. Schneller geht es mit dieser
+  Quelle nicht — bei 6 parallelen Abrufen kam schon einer mit HTTP 500 zurück,
+  und auch mit 3 ist es jeder zehnte (daher die Wiederholung, s. o.).
+  **Die Verdrängung trifft nur SCHARFE Bilder und nie eines, das der Plan
+  gerade will** — sonst Laden und Wegwerfen im Kreis; das war früher zweimal
+  ein Fehler (Verdrängung im State-Updater, den React im Entwicklungsmodus
+  doppelt aufruft; Abstand am GEBREMSTEN Zeiger gemessen, sodass die eben
+  geladenen Bilder der neuen Stelle sofort wieder rausflogen). Ein
+  freigegebenes scharfes Bild kommt beim nächsten Mal aus dem HTTP-Cache:
+  EUMETView schickt `Cache-Control: max-age=604800` (7 Tage). Der Cache wird
+  dadurch nicht „zugemüllt" — der Browser deckelt ihn selbst und verwirft das
+  am längsten Ungenutzte; begrenzt werden muss der ARBEITSspeicher der Seite,
+  und das tut `HI_MAX`. Vor dem ersten Zeigerstand (`idx < 0`) gilt der
+  NEUESTE als Zeiger — ein Fenster um Index 0 wäre der Stand von vor 24
+  Stunden (der Fehler der ersten Fassung, als Test festgehalten). Beim ZIEHEN
+  ist der Plan weiter gebremst (`SETTLE_MS`, 220 ms), damit nicht jede
+  Zwischenstellung ein scharfes Bild ganz nach vorn setzt.
+  **Die SCHLEIFE kreist nur über die letzten 3 Stunden** (`LOOP_SPAN_MS`, in
+  der Registry, weil der Plan sie kennt). Wer weiter zurück will, zieht
+  dorthin; die Schleife spielt von dort vorwärts (auf den Vorschauen) und
+  pendelt sich danach in den jüngsten Abschnitt ein. Die Statuszeile nennt
+  beide Stufen getrennt („143 Übersicht · 20 scharf").
   **Die Leiste hat FESTE Breiten, und das ist eine Fehlerbehebung**: Schieber,
   Zeitangabe und Statuszeile liegen in EINER umbruchfähigen Flex-Zeile, und
   der Schieber ist das einzige flexible Element darin. Wechselte die

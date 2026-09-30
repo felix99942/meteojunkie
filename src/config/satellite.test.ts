@@ -5,8 +5,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SATELLITE_PRODUCT,
-  PREFETCH_RECENT,
-  wantedTimes,
+  loadPlan,
+  hiEvictions,
+  HI_MAX,
+  LOOP_SPAN_MS,
+  LOOKAHEAD,
+  retryAt,
+  RETRY_DELAYS_MS,
+  previewImageSize,
   SATELLITE_AREA,
   SATELLITE_DETAIL_AREA,
   SATELLITE_MERC,
@@ -377,53 +383,117 @@ describe('URLs', () => {
   })
 })
 
-describe('wantedTimes', () => {
-  // 24 Stunden sind bei MTG 145 Bilder à ~180 KB — vorladen scheidet aus.
-  // Diese Funktion entscheidet, was stattdessen geholt wird.
+describe('loadPlan', () => {
+  // 24 Stunden MTG = 145 Zeitschritte. Die Vorschau soll den ganzen Tag
+  // abdecken, das scharfe Bild nur, wo man hinsieht.
   const times = Array.from({ length: 145 }, (_, i) => i * 10 * MIN)
   const last = times.length - 1
+  const keys = (plan: { time: number; tier: string }[]) => plan.map((j) => `${j.tier}|${j.time}`)
 
-  it('holt immer die jüngsten Bilder', () => {
-    const w = wantedTimes(times, last, false)
-    for (let i = times.length - PREFETCH_RECENT; i < times.length; i++) {
-      expect(w).toContain(times[i])
-    }
+  it('beginnt mit dem scharfen Bild unter dem Zeiger', () => {
+    expect(loadPlan(times, 40, false)[0]).toEqual({ time: times[40], tier: 'hi' })
   })
 
-  // Der Fehler, den es beim Aufbau gab: ohne diese Regel lud der Bereich ein
-  // Fenster um Index 0 — den Stand von vor 24 Stunden, den in dem Moment
-  // niemand sehen will.
-  it('holt vor dem ersten Zeigerstand NUR die jüngsten', () => {
-    const w = wantedTimes(times, -1, false)
-    expect(w).toHaveLength(PREFETCH_RECENT)
-    expect(w).not.toContain(times[0])
+  it('deckt den GANZEN Tag als Vorschau ab', () => {
+    const lo = loadPlan(times, 40, false).filter((j) => j.tier === 'lo')
+    expect(new Set(lo.map((j) => j.time)).size).toBe(times.length)
   })
 
-  it('holt ein Fenster um den Zeiger', () => {
-    const w = wantedTimes(times, 40, false)
-    expect(w).toContain(times[40])
-    expect(w).toContain(times[38])
-    expect(w).not.toContain(times[20])
+  it('will scharf nur Zeiger, Nachbarn und Schleife', () => {
+    const hi = loadPlan(times, 40, false).filter((j) => j.tier === 'hi')
+    expect(hi.length).toBeLessThanOrEqual(HI_MAX)
+    const loopCount = times.filter((t) => t >= times[last] - LOOP_SPAN_MS).length
+    expect(hi.length).toBe(3 + loopCount)
   })
 
-  // Beim Abspielen zählt der Vorlauf: sonst bleibt die Schleife bei jedem
-  // Bild stehen und wartet.
-  it('schaut beim Abspielen weiter voraus als beim Ziehen', () => {
-    const still = wantedTimes(times, 40, false).length
-    const playing = wantedTimes(times, 40, true).length
-    expect(playing).toBeGreaterThan(still)
+  // Der Fehler beim Aufbau der alten Politik: vor dem ersten Zeigerstand
+  // lud sie ein Fenster um Index 0 — den Stand von vor 24 Stunden.
+  it('nimmt vor dem ersten Zeigerstand den NEUESTEN als Zeiger', () => {
+    const plan = loadPlan(times, -1, false)
+    expect(plan[0]).toEqual({ time: times[last], tier: 'hi' })
+    expect(plan.findIndex((j) => j.time === times[0])).toBeGreaterThan(100)
+  })
+
+  it('holt die Vorschau der Schleife vor dem Rest des Tages', () => {
+    const plan = keys(loadPlan(times, 40, false))
+    const loopLo = plan.indexOf(`lo|${times[last]}`)
+    const farLo = plan.indexOf(`lo|${times[0]}`)
+    expect(loopLo).toBeLessThan(farLo)
+  })
+
+  it('holt die scharfe Schleife erst, wenn der Tag als Vorschau steht', () => {
+    const plan = loadPlan(times, 40, false)
+    const lastLo = plan.map((j) => j.tier).lastIndexOf('lo')
+    const loopHi = keys(plan).indexOf(`hi|${times[last]}`)
+    expect(loopHi).toBeGreaterThan(lastLo)
+  })
+
+  // Beim Abspielen wechselt das Bild alle 320 ms — ein scharfes Bild für den
+  // Zeiger wäre dort Abruf um Abruf für einen Augenblick.
+  it('will beim Abspielen kein scharfes Zeigerbild vorn', () => {
+    const plan = loadPlan(times, 40, true)
+    expect(plan[0]).toEqual({ time: times[40], tier: 'lo' })
+    expect(keys(plan)).not.toContain(`hi|${times[41]}`)
+  })
+
+  it('schaut beim Abspielen voraus', () => {
+    const plan = keys(loadPlan(times, 40, true))
+    expect(plan.indexOf(`lo|${times[40 + LOOKAHEAD]}`)).toBeLessThan(plan.indexOf(`lo|${times[last]}`))
   })
 
   it('bleibt innerhalb der Reihe und ohne Doppelte', () => {
-    for (const idx of [0, 1, 72, last]) {
-      const w = wantedTimes(times, idx, true)
-      expect(new Set(w).size).toBe(w.length)
-      for (const t of w) expect(times).toContain(t)
+    for (const idx of [0, 1, 72, last, 999]) {
+      const plan = keys(loadPlan(times, idx, idx % 2 === 0))
+      expect(new Set(plan).size).toBe(plan.length)
     }
   })
 
   it('liefert für eine leere Reihe nichts', () => {
-    expect(wantedTimes([], 0, false)).toEqual([])
+    expect(loadPlan([], 0, false)).toEqual([])
+  })
+})
+
+describe('hiEvictions', () => {
+  const times = Array.from({ length: 145 }, (_, i) => i * 10 * MIN)
+
+  it('gibt unter der Grenze nichts frei', () => {
+    expect(hiEvictions(times.slice(0, HI_MAX), loadPlan(times, 40, false), times[40])).toEqual([])
+  })
+
+  // Ohne diese Regel: Laden und Wegwerfen im Kreis, die Karte bleibt leer.
+  it('gibt nie ein Bild frei, das der Plan gerade will', () => {
+    const plan = loadPlan(times, 40, false)
+    const drop = hiEvictions(times, plan, times[40])
+    const wanted = new Set(plan.filter((j) => j.tier === 'hi').map((j) => j.time))
+    for (const t of drop) expect(wanted.has(t)).toBe(false)
+    expect(times.length - drop.length).toBe(HI_MAX)
+  })
+
+  it('gibt die vom Zeiger am weitesten entfernten zuerst frei', () => {
+    const plan = loadPlan(times, 40, false)
+    const have = [times[0], times[39], times[41], times[40], ...times.slice(60, 60 + HI_MAX)]
+    const drop = hiEvictions(have, plan, times[40])
+    expect(drop).toContain(times[60 + HI_MAX - 1])
+    expect(drop).not.toContain(times[40])
+  })
+})
+
+describe('retryAt', () => {
+  it('versucht zweimal erneut und gibt dann auf', () => {
+    expect(retryAt(1, 0)).toBe(RETRY_DELAYS_MS[0])
+    expect(retryAt(2, 0)).toBe(RETRY_DELAYS_MS[1])
+    expect(retryAt(3, 0)).toBe(Infinity)
+  })
+})
+
+describe('previewImageSize', () => {
+  it('ist nie grösser als das scharfe Bild und hält das Seitenverhältnis', () => {
+    for (const p of SATELLITE_PRODUCTS) {
+      const lo = previewImageSize(p)
+      const hi = productImageSize(p)
+      expect(lo.width).toBeLessThanOrEqual(hi.width)
+      expect(lo.height / lo.width).toBeCloseTo(hi.height / hi.width, 2)
+    }
   })
 })
 
