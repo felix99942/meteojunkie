@@ -3,7 +3,7 @@
 // ob aus der Verteilung eine lesbare Reihe oder eine geschlossene Fläche wird.
 
 import { describe, expect, it } from 'vitest'
-import { barIndices, barStepHours, barWidth } from './quantileBars'
+import { barIndices, barStepHours, barWidth, densityBins, smoothBins } from './quantileBars'
 
 const H = 3_600_000
 
@@ -67,15 +67,66 @@ describe('barWidth', () => {
     expect(barWidth(20, 1, 1)).toBeLessThan(20)
   })
 
-  // Unter 3 px trägt eine Säule keine Striche mehr, über 22 px sieht sie aus
-  // wie ein Mengenbalken — sie zeigt aber eine Verteilung.
-  it('bleibt zwischen 3 und 22 px', () => {
-    expect(barWidth(0.1, 1, 1)).toBe(3)
-    expect(barWidth(200, 1, 1)).toBe(22)
+  // Unter 5 px trägt eine Säule keine Memberstriche mehr, über 24 px sieht
+  // sie aus wie ein Mengenbalken — sie zeigt aber eine Verteilung.
+  it('bleibt zwischen 5 und 24 px', () => {
+    expect(barWidth(0.1, 1, 1)).toBe(5)
+    expect(barWidth(200, 1, 1)).toBe(24)
   })
 
   it('rechnet den Schritt in die Breite ein', () => {
     // 3-h-Schritt auf stündlichem Raster: drei Slots stehen zur Verfügung.
     expect(barWidth(4, 3, 1)).toBe(Math.round(12 * 0.62))
+  })
+})
+
+describe('densityBins', () => {
+  it('zählt die Member in ihren Höhenabschnitten', () => {
+    // Kasten von y=0 bis y=100, vier Abschnitte à 25 px.
+    expect(densityBins([10, 12, 60, 99], 0, 100, 4)).toEqual([2, 0, 1, 1])
+  })
+
+  /**
+   * Ein Wert ÜBER oder UNTER dem Kasten (im Fühlerbereich) verschwindet
+   * nicht, er zählt zum Randabschnitt: er ist Teil der Verteilung, nur eben
+   * ein Ausreißer, und seine Masse gehört an den Rand der Dichte.
+   */
+  it('schlägt Werte außerhalb dem Randabschnitt zu', () => {
+    expect(densityBins([-50, 150], 0, 100, 4)).toEqual([1, 0, 0, 1])
+  })
+
+  it('verträgt einen Kasten ohne Höhe (alle Member gleich)', () => {
+    expect(densityBins([7, 7, 7], 7, 0, 5)[0]).toBe(3)
+  })
+
+  it('summiert sich immer auf die Memberzahl', () => {
+    const ys = [0, 3, 3, 3, 40, 41, 99, 100]
+    const sum = densityBins(ys, 0, 100, 7).reduce((a, b) => a + b, 0)
+    expect(sum).toBe(ys.length)
+  })
+})
+
+describe('smoothBins', () => {
+  // Ohne Glättung springt die Deckkraft von Abschnitt zu Abschnitt zwischen
+  // 0, 1 und 2 Treffern — das sieht nach Rauschen aus, nicht nach Verteilung.
+  it('mittelt über die Nachbarn', () => {
+    expect(smoothBins([0, 3, 0])).toEqual([1, 1, 1])
+  })
+
+  // Der Rand zählt sich selbst doppelt, sonst bräche die Dichte oben und
+  // unten künstlich ein.
+  it('lässt den Rand nicht einbrechen', () => {
+    expect(smoothBins([3, 3, 3])).toEqual([3, 3, 3])
+  })
+
+  it('erhält die Gesamtmasse ungefähr', () => {
+    const c = [0, 2, 5, 9, 4, 1, 0]
+    const before = c.reduce((a, b) => a + b, 0)
+    const after = smoothBins(c).reduce((a, b) => a + b, 0)
+    expect(Math.abs(after - before)).toBeLessThan(1.5)
+  })
+
+  it('lässt sehr kurze Listen in Ruhe', () => {
+    expect(smoothBins([4, 1])).toEqual([4, 1])
   })
 })

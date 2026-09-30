@@ -632,19 +632,24 @@ button:focus-visible {
   border-bottom: 1px solid rgba(57, 135, 229, 0.6);
 }
 
-/* Die Säule in klein: außen hell, innen kräftig — dieselbe Staffelung wie im
-   Diagramm, damit das Muster wiedererkennbar ist. */
+/* Die Säule in klein: Fühler oben und unten, dazwischen der Kasten mit
+   dichterer Mitte — dasselbe Muster wie im Diagramm, damit man es
+   wiedererkennt. */
 .ens-legend i.ens-barswatch {
   width: 9px;
-  height: 13px;
+  height: 15px;
   background:
     linear-gradient(
-      rgba(57, 135, 229, 0.16) 0 2px,
-      rgba(57, 135, 229, 0.3) 2px 4px,
-      rgba(57, 135, 229, 0.46) 4px 9px,
-      rgba(57, 135, 229, 0.3) 9px 11px,
-      rgba(57, 135, 229, 0.16) 11px 13px
-    );
+        rgba(120, 180, 245, 0.85) 0 1px,
+        transparent 1px 3px,
+        rgba(57, 135, 229, 0.18) 3px 6px,
+        rgba(57, 135, 229, 0.62) 6px 9px,
+        rgba(57, 135, 229, 0.3) 9px 12px,
+        transparent 12px 14px,
+        rgba(120, 180, 245, 0.85) 14px 15px
+      )
+      no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(90, 165, 245, 0);
 }
 
 .ens-hint {

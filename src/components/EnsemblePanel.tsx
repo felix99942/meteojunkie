@@ -42,14 +42,27 @@ const HRES_LINE = '#d95926'
 const CURSOR_LINE = '#e8b23a'
 
 /**
- * Quantil-Säulen (Niederschlag): Stufen von außen nach innen immer kräftiger,
- * dazu ein Strich je Member. Derselbe Blauton wie das Band — es ist dieselbe
- * Aussage, nur je Termin statt als Verlauf.
+ * Quantil-Säulen (Niederschlag): Dichtefüllung im selben Blau wie das Band —
+ * es ist dieselbe Aussage, nur je Termin statt als Verlauf. Die
+ * Memberstriche sind HELLER als die Füllung, damit jeder einzelne Lauf auf
+ * der dichtesten Stelle noch zu sehen ist.
  */
-const BAR_OUTER = 'rgba(57,135,229,0.16)'
-const BAR_MID = 'rgba(57,135,229,0.30)'
-const BAR_INNER = 'rgba(57,135,229,0.46)'
-const BAR_TICK = 'rgba(200,225,255,0.55)'
+const BAR_RGB = '57,135,229'
+const BAR_OUTLINE = 'rgba(90,165,245,0.75)'
+/**
+ * Der Fühler tritt gegenüber dem Kasten ZURÜCK. Bei voller Deckkraft ist er
+ * das Auffälligste im Bild — ein einzelner nasser Member zieht einen langen
+ * Strich, und der zog den Blick von den 80 % der Member ab, um die es geht.
+ */
+const BAR_WHISKER = 'rgba(120,180,245,0.5)'
+const BAR_TICK = 'rgba(214,236,255,0.85)'
+/**
+ * Der Median IN der Säule ist heller als die Medianlinie sonst: er liegt auf
+ * der blauen Dichtefüllung, und Blau auf Blau ist keine Marke. In der
+ * Säulenansicht nimmt auch die Linie und der Legendenpunkt diesen Ton, damit
+ * Legende und Bild dieselbe Farbe zeigen.
+ */
+const BAR_MEDIAN = '#8ad0ff'
 /**
  * Mindestabstand zweier Säulen in CSS-Pixeln. Mit 7 px stand die
  * Summenansicht (361 Stundenwerte über 15 Tage) als geschlossener Block da —
@@ -242,12 +255,22 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             members,
             width: barWidth(spacing, step, baseHours) * dpr,
             ticks: showMembers,
+            dpr,
+            // Hauptlauf und Kontrolllauf als Marken IN der Säule: sonst muss
+            // man den Wert aus der Linie ablesen, die gerade irgendwo durch
+            // die Fläche läuft. Der Median kommt aus den Quantilen selbst.
+            marks: [
+              ...(prepared.deterministic
+                ? [{ values: prepared.deterministic, color: HRES_LINE }]
+                : []),
+              ...(members[0] ? [{ values: members[0], color: CONTROL_LINE }] : []),
+            ],
             colors: {
-              outer: BAR_OUTER,
-              mid: BAR_MID,
-              inner: BAR_INNER,
+              densityRgb: BAR_RGB,
+              outline: BAR_OUTLINE,
+              whisker: BAR_WHISKER,
               tick: BAR_TICK,
-              median: MEDIAN_LINE,
+              median: BAR_MEDIAN,
             },
             clip: { left: u.bbox.left, top: u.bbox.top, width: u.bbox.width, height: u.bbox.height },
           })
@@ -290,7 +313,12 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         {},
         { label: 'P90', stroke: barView ? 'transparent' : BAND_LINE, width: 1, points: { show: false } },
         { label: 'P10', stroke: barView ? 'transparent' : BAND_LINE, width: 1, points: { show: false } },
-        { label: 'Median', stroke: MEDIAN_LINE, width: barView ? 1 : 2, points: { show: false } },
+        {
+          label: 'Median',
+          stroke: barView ? BAR_MEDIAN : MEDIAN_LINE,
+          width: barView ? 1 : 2,
+          points: { show: false },
+        },
         {
           label: 'Kontrolllauf',
           stroke: CONTROL_LINE,
@@ -474,7 +502,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           <i className="ens-dash" style={{ background: CONTROL_LINE }} /> Kontrolllauf
         </span>
         <span title="Mittlerer Member je Zeitschritt (50. Perzentil)">
-          <i style={{ background: MEDIAN_LINE, height: 3 }} /> Median
+          <i style={{ background: barView ? BAR_MEDIAN : MEDIAN_LINE, height: 3 }} /> Median
         </span>
         {/* Das Band gibt es in der Säulenansicht nicht — dort steht dieselbe
             Aussage in jeder Säule. */}
@@ -484,8 +512,8 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           </span>
         )}
         {barView && (
-          <span title="Säule je Termin: hell min…max, mittel P10–P90, kräftig P25–P75 (die mittlere Hälfte).">
-            <i className="ens-barswatch" /> Säule = Spannweite · P10–P90 · P25–P75
+          <span title="Kasten = P10–P90 (80 % der Member), Füllung = Dichte der Member, Fühler mit Kappe = Minimum und Maximum. Der Kasten endet bewusst bei P90: ein einzelner nasser Ausreißer quetschte sonst die Mehrheit der Member in ein paar Pixel.">
+            <i className="ens-barswatch" /> Kasten P10–P90 · Fühler bis min/max
           </span>
         )}
         {showMembers && (

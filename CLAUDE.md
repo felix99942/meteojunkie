@@ -969,15 +969,36 @@ npm run preview   # gebautes dist/ servieren
   einen Verlauf, den KEIN EINZIGER Member hat. Gefragt ist an einem
   Niederschlagstermin ohnehin nicht „wie läuft es", sondern „wie viel und wie
   sicher" — also die Verteilung an diesem einen Termin.
-  Die Säule staffelt sie von außen nach innen (min…max · P10–P90 · P25–P75,
-  jede Stufe kräftiger) plus Median. **Der Kern ist der STRICH JE MEMBER
-  darin**: die Quantilgrenzen sagen nicht, wie es dazwischen aussieht, und
-  gerade beim Niederschlag ist die Verteilung selten glatt — dreißig Member
-  auf 0 mm und fünf bei 25 mm ist eine andere Aussage als eine gleichmäßige
-  Verteilung mit demselben p10/p90, und man sieht sie nur daran, wo sich die
-  halbdurchlässigen Striche stapeln. Der „Member"-Haken schaltet sie
-  (Spaghetti gibt es in dieser Ansicht nicht — es wären dieselben Werte
-  doppelt), das Band entfällt samt Legendeneintrag.
+  Gezeichnet wird eine **KASTENGRAFIK**: Kasten P10–P90, Fühler mit Kappe
+  hinauf zum Maximum und hinunter zum Minimum, Dichtefüllung dazwischen,
+  darüber drei Bezugsmarken.
+  **Der Kasten endet bei P90, nicht beim Maximum** — das ist der Unterschied
+  zwischen lesbar und unlesbar: beim Niederschlag zieht EIN nasser Ausreißer
+  die Säule auf das Dreifache, und die 80 % der Member, um die es geht,
+  quetschen sich unten in ein paar Pixel. Der Ausreißer gehört trotzdem ins
+  Bild und steht als Fühler darüber, wie in jeder Kastengrafik. Der Fühler
+  ist bewusst BLASSER als der Kasten (0,5 statt 0,85): bei voller Deckkraft
+  war der eine lange Strich das Auffälligste im Bild.
+  **Die Füllung zeigt die DICHTE** (`densityBins` + `smoothBins`,
+  5-px-Abschnitte, Deckkraft 0,07…0,78 auf den dichtesten Abschnitt
+  normiert): dreißig Member auf 1 mm und fünf bei 25 mm ist eine andere
+  Aussage als eine gleichmäßige Verteilung mit demselben P10/P90, und an drei
+  festen Quantilstufen sah man das nicht. Geglättet wird über die
+  NACHBARABSCHNITTE (Dreier-Mittel), nicht über einen geschätzten Kern —
+  ungeglättet hat bei 51 Membern auf 60 Abschnitte fast jeder null, einen
+  oder zwei Treffer, und die Fläche flackerte. **Dazu bleibt JEDER Member
+  als feiner Strich einzeln stehen**, im Kasten über die volle Breite, im
+  Fühlerbereich schmaler (dort ist er ein Ausreißer und soll nicht wie ein
+  zweiter Kasten aussehen). Der „Member"-Haken schaltet die Striche;
+  Spaghetti gibt es in dieser Ansicht nicht — es wären dieselben Werte
+  doppelt —, das Band entfällt samt Legendeneintrag.
+  **Median, Hauptlauf und Kontrolllauf stehen als MARKEN IN der Säule**, in
+  ihren Farben, jede mit dunkler Unterlegung und beidseitigem Überstand:
+  ohne die Unterlegung verschwindet gerade die wichtigste — der Median — im
+  dichtesten Teil der Füllung, und genau dort liegt er meistens. Der Median
+  ist in der Säulenansicht ZUSÄTZLICH heller (`BAR_MEDIAN`, auch für Linie
+  und Legendenpunkt): der übliche Akzentblauton liegt auf der blauen
+  Dichtefüllung und ist dort keine Marke.
   **Der Abstand wird bei jedem Zeichnen neu gerastert** (`barStepHours`, nur
   runde Stundenvielfache 1/2/3/6/12/24/48, `barIndices` hängt sie an die
   UTC-Zeit statt an den Datenbeginn — sonst stünden zwei Panels versetzt).
