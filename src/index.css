@@ -682,24 +682,41 @@ button:focus-visible {
 
 /* Ablesezeile des Ensembles — gleiche Logik wie die Meteogramm-Legende:
    die Zahlen sind der Zweck, nicht Beiwerk. */
+/* Die Ablesezeile ist das ERGEBNIS dieses Bereichs: die Plume zeigt, wie
+   die Verteilung aussieht, hier stehen die Zahlen dazu. Sie stand in
+   derselben Größe wie die Bedienleiste darüber und ging damit unter —
+   deshalb die ZAHLEN groß und in der Farbe ihrer Kurve, die Bezeichner
+   klein daneben. */
 .ens-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: 2px 16px;
   flex: 0 0 auto;
-  padding: 2px 2px 1px;
-  font-size: 13.5px;
-  line-height: 1.25;
+  padding: 5px 6px 4px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.2;
   color: var(--ink-secondary);
 }
 
 .ens-foot strong {
+  font-size: 19px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* Der Nachsatz (P10–P90, Spanne, Streuung) bleibt klein — er ordnet ein,
+   die Zahl davor ist die Auskunft. Seine eigenen Werte werden deshalb nicht
+   mit hochgezogen. */
+.ens-foot .label-muted strong {
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .ens-readcap {
   color: var(--ink);
+  font-size: 13.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }

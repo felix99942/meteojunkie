@@ -1004,11 +1004,31 @@ npm run preview   # gebautes dist/ servieren
   Mindestabstand ist eine Sache der ANZEIGE: `valToPos(…, true)` rechnet in
   GERÄTEpixeln, ohne die Division durch `devicePixelRatio` stünden die
   Balken auf einem HiDPI-Schirm doppelt so dicht (genau so war es zuerst).
-  Gezeichnet wird im `draw`-Hook, also ÜBER den Kurven: Hauptlauf und
-  Kontrolllauf bleiben als Linien dahinter sichtbar, ihre Marken liegen
-  scharf obenauf — darunter verschluckte sie die Bandfüllung. Bei
-  Temperatur, Druck und Wind bleibt es bei der Plume; dort ist sie richtig,
-  und der Umschalter erscheint gar nicht.
+  Gezeichnet wird im `draw`-Hook, also ÜBER den Kurven — darunter
+  verschluckte sie die Bandfüllung.
+  **In der Balkenansicht entfallen die LINIEN von Hauptlauf und
+  Kontrolllauf**: beide stehen als Marke IN jedem Balken, die Verbindung
+  dazwischen ist nicht nur überflüssig, sie behauptet auch einen Verlauf —
+  bei 6-h-Mengen gibt es zwischen zwei Terminen keinen Zwischenwert, und die
+  zwei kräftigen Zickzacklinien waren das Auffälligste im Bild. Die
+  Medianlinie bleibt dünn stehen: sie ist die eine Spur, an der man die
+  Abfolge der Termine entlanglesen kann.
+  **Die y-Achse muss die Extreme der Balken MITNEHMEN** (`barHi` in den
+  `scales`): uPlot skaliert nach den SERIEN, Minimum und Maximum liegen aber
+  in keiner — sie werden aus `stats` im `draw`-Hook gezeichnet. Ohne das
+  reichte die Achse nur bis P90 und schnitt die Extremstriche ab, und zwar
+  unauffällig: ein abgeschnittener Balken sieht wie ein hoher Balken aus.
+  Solange die Linien von Hauptlauf und Kontrolllauf noch mitliefen, fing
+  einer von beiden den Höchstwert oft zufällig ein — mit ihrem Wegfall kam
+  der Fehler sofort zum Vorschein (6-h-Ansicht: Achse bis 10,5 bei einem
+  Maximum von 19,2).
+  Bei Temperatur, Druck und Wind bleibt es bei der Plume; dort ist sie
+  richtig, und der Umschalter erscheint gar nicht.
+  **Die Ablesezeile unter dem Diagramm ist das ERGEBNIS des Bereichs** und
+  seit 2026-09-30 entsprechend gesetzt: die Zahlen groß (19 px) und in der
+  Farbe ihrer Kurve, die Bezeichner klein daneben, der einordnende Nachsatz
+  (P10–P90, Spanne, Streuung) klein. Vorher stand alles in der Größe der
+  Bedienleiste darüber und ging unter.
   Die suffixlose Reihe der Antwort
   ist der **Kontrolllauf**, NICHT der Hauptlauf — der kommt als eigener
   deterministischer Abruf dazu (1 Call). Eigene Modell- UND Variablenregistry

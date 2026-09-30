@@ -273,14 +273,32 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       },
     }
 
-    // Serienreihenfolge: p90/p10 (Band), Median, Kontrolllauf, Hauptlauf, dann
-    // Mitglieder. Das Band bezieht sich über `bands` auf die Perzentil-Serien.
-    // In der Säulenansicht entfallen die Spaghetti: dieselben Member stehen
-    // dort als Striche IN den Säulen, beides zugleich wäre doppelt.
+    /**
+     * Serienreihenfolge: p90/p10 (Band), Median, Kontrolllauf, Hauptlauf,
+     * dann Mitglieder. Das Band bezieht sich über `bands` auf die
+     * Perzentil-Serien.
+     *
+     * **In der Balkenansicht entfallen die LINIEN von Hauptlauf und
+     * Kontrolllauf.** Beide stehen dort als Marke IN jedem Balken; die
+     * Verbindung dazwischen ist nicht nur überflüssig, sie behauptet auch
+     * einen Verlauf: bei 6-h-Mengen gibt es zwischen zwei Terminen keinen
+     * Zwischenwert, und die beiden kräftigen Zickzacklinien waren das
+     * Auffälligste im Bild. Die Medianlinie bleibt, dünn — sie ist die eine
+     * Spur, an der man die Abfolge der Termine noch entlanglesen kann.
+     * Spaghetti entfallen ebenfalls (die Einzelläufe stehen in dieser
+     * Ansicht gar nicht).
+     */
     const spaghetti = showMembers && !barView
-    const data: (number | null)[][] = [stats.p90, stats.p10, stats.median, members[0] ?? []]
-    if (prepared.deterministic) data.push(prepared.deterministic)
-    if (spaghetti) for (let m = 1; m < members.length; m++) data.push(members[m])
+    /** Höchster Memberwert — nur in der Balkenansicht gebraucht (s. `scales`). */
+    const barHi = barView
+      ? stats.max.reduce<number>((a, v) => (v != null && v > a ? v : a), -Infinity)
+      : -Infinity
+    const data: (number | null)[][] = [stats.p90, stats.p10, stats.median]
+    if (!barView) {
+      data.push(members[0] ?? [])
+      if (prepared.deterministic) data.push(prepared.deterministic)
+      if (spaghetti) for (let m = 1; m < members.length; m++) data.push(members[m])
+    }
 
     const opts: uPlot.Options = {
       width: Math.max(el.clientWidth, 100),
@@ -296,8 +314,26 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         // Überfahrener Zeitschritt für die Ablesezeile; `null` beim Verlassen.
         setCursor: [(u: uPlot) => setHoverIdx(u.cursor.idx ?? null)],
       },
+      /**
+       * DIE ACHSE MUSS DIE EXTREME DER BALKEN MITNEHMEN.
+       *
+       * uPlot skaliert nach den SERIEN, und in der Balkenansicht liegen
+       * Minimum und Maximum in keiner: gezeichnet werden sie aus `stats` im
+       * `draw`-Hook. Ohne `barHi` reichte die Achse nur bis P90 — die
+       * Striche an den Extremen wurden oben abgeschnitten, und zwar
+       * unauffällig, weil ein abgeschnittener Balken wie ein hoher Balken
+       * aussieht. Seit die Linien von Hauptlauf und Kontrolllauf fehlen,
+       * fängt auch niemand mehr zufällig den Höchstwert ein.
+       */
       scales: variable.zeroBased
-        ? { y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.05 : 1] } }
+        ? {
+            y: {
+              range: (_u, _min, max) => {
+                const hi = Math.max(max, barHi)
+                return [0, hi > 0 ? hi * 1.05 : 1]
+              },
+            },
+          }
         : {},
       // In der Säulenansicht KEIN Band: es zeichnet zwischen zwei Terminen
       // einen Verlauf, den beim Niederschlag kein Member hat — genau das,
@@ -314,23 +350,27 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           width: barView ? 1 : 2,
           points: { show: false },
         },
-        {
-          label: 'Kontrolllauf',
-          stroke: CONTROL_LINE,
-          width: 1.5,
-          dash: [5, 3],
-          points: { show: false },
-        },
-        ...(prepared.deterministic
-          ? [{ label: 'Hauptlauf', stroke: HRES_LINE, width: 2, points: { show: false } }]
-          : []),
-        ...(spaghetti
-          ? members.slice(1).map(() => ({
-              stroke: MEMBER_LINE,
-              width: 1,
-              points: { show: false },
-            }))
-          : []),
+        ...(barView
+          ? []
+          : [
+              {
+                label: 'Kontrolllauf',
+                stroke: CONTROL_LINE,
+                width: 1.5,
+                dash: [5, 3],
+                points: { show: false },
+              },
+              ...(prepared.deterministic
+                ? [{ label: 'Hauptlauf', stroke: HRES_LINE, width: 2, points: { show: false } }]
+                : []),
+              ...(spaghetti
+                ? members.slice(1).map(() => ({
+                    stroke: MEMBER_LINE,
+                    width: 1,
+                    points: { show: false },
+                  }))
+                : []),
+            ]),
       ],
       axes: [
         {
@@ -492,7 +532,8 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           <i style={{ background: HRES_LINE }} /> Hauptlauf
         </span>
         <span title="Ungestörter Ensemble-Member in Ensemble-Auflösung — die Referenz INNERHALB der Verteilung, nicht der Hauptlauf.">
-          <i className="ens-dash" style={{ background: CONTROL_LINE }} /> Kontrolllauf
+          <i className={barView ? undefined : 'ens-dash'} style={{ background: CONTROL_LINE }} />{' '}
+          Kontrolllauf
         </span>
         <span title="Mittlerer Member je Zeitschritt (50. Perzentil) — die Hälfte der Member liegt darunter.">
           <i style={{ background: barView ? BAR_MEDIAN : MEDIAN_LINE, height: 3 }} /> Median
@@ -559,7 +600,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             <span style={{ color: barView ? BAR_MEDIAN : MEDIAN_LINE }}>
               Median <strong>{fmtVal(readout.r.median)}</strong>
             </span>
-            <span className="label-muted">
+            <span style={{ color: BAR_MEAN }}>
               Mittel <strong>{fmtVal(readout.r.mean)}</strong>
             </span>
             <span className="label-muted">
