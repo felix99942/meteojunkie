@@ -50,6 +50,9 @@ export interface PresetPanel {
   accumView?: AccumView
   /** Ensemble: Summe ↔ 6-h-Mengen; fehlt in älteren Presets → 'sum'. */
   ensembleAccumView?: EnsembleAccumView
+  /** Ansichtsschalter des Ensembles — fehlen sie, gilt die Vorgabe (beide an). */
+  ensembleBars?: boolean
+  ensembleMembers?: boolean
   sync: boolean
 }
 
@@ -153,6 +156,8 @@ function snapshotPanels(): PresetPanel[] {
     ensembleVariable: p.ensembleVariable,
     accumView: p.accumView,
     ensembleAccumView: p.ensembleAccumView,
+    ensembleBars: p.ensembleBars,
+    ensembleMembers: p.ensembleMembers,
     sync: p.sync,
   }))
 }
@@ -249,6 +254,10 @@ function restorePanel(pp: PresetPanel, current: PanelConfig, now: number): Panel
     // eine stillschweigend kumulierte Kurve wäre die verwirrendere Überraschung
     accumView: pp.accumView === 'sum' ? 'sum' : 'rate',
     ensembleAccumView: pp.ensembleAccumView === '6h' ? '6h' : 'sum',
+    // Nur ein ausdrückliches `false` schaltet ab — ein älteres Preset ohne
+    // die Felder lädt damit wie bisher, mit beiden Ansichten an.
+    ensembleBars: pp.ensembleBars !== false,
+    ensembleMembers: pp.ensembleMembers !== false,
     sync: pp.sync,
     localTime: now, // Zeiten werden nicht persistiert — aktuelle Zeit bleibt
     presetWarning: issues.length > 0 ? issues.join(' · ') : undefined,

@@ -136,6 +136,8 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
       : panel.variable
 
   const atModelLimit = panel.models.length >= MAX_MODELS_PER_PANEL
+  /** Nur Summengrößen kennen die Balkenansicht (siehe render/quantileBars.ts). */
+  const ensembleAccum = isEnsemble && getEnsembleVariable(panel.ensembleVariable).kind === 'accum'
 
   return (
     <div className="panel-header">
@@ -354,6 +356,42 @@ export function PanelHeader({ index, panel }: { index: number; panel: PanelConfi
             ParSync
           </button>
         </>
+      )}
+
+      {/* ANSICHTSSCHALTER des Ensembles, direkt neben SYNC.
+          Sie standen als zwei Häkchen in der Werkzeugleiste des Panelinhalts,
+          rechts oben — dort sucht man sie: was ein Panel ZEIGT, stellt man im
+          Panelkopf ein, wie Modell und Parameter daneben. „Balken" gibt es nur
+          bei Summengrößen (bei Temperatur ist die Plume richtig), „Member" nur
+          dort, wo es Spaghetti zu zeigen gibt — in der Balkenansicht stehen die
+          Einzelläufe gar nicht im Bild. */}
+      {isEnsemble && (
+        <span className="panel-viewtoggles">
+          {ensembleAccum && (
+            <button
+              type="button"
+              className={
+                panel.ensembleBars ? 'sync-toggle view-toggle active' : 'sync-toggle view-toggle'
+              }
+              title="Quantil-Balken statt Linienbündel: P10–P90 mit Median und Mittel, Aufsätze bis P5/P95, Striche an Minimum und Maximum. Beim Niederschlag springen die Member — ein Linienbündel ist dort nicht lesbar."
+              onClick={() => updatePanel(index, { ensembleBars: !panel.ensembleBars })}
+            >
+              BALKEN
+            </button>
+          )}
+          {!(ensembleAccum && panel.ensembleBars) && (
+            <button
+              type="button"
+              className={
+                panel.ensembleMembers ? 'sync-toggle view-toggle active' : 'sync-toggle view-toggle'
+              }
+              title="Alle gestörten Member als Spaghetti zeigen"
+              onClick={() => updatePanel(index, { ensembleMembers: !panel.ensembleMembers })}
+            >
+              MEMBER
+            </button>
+          )}
+        </span>
       )}
 
       <button

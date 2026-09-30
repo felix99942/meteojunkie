@@ -95,17 +95,19 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const query = useEnsembleSeries(location, model.id, variable.id)
   const hres = useDeterministicSeries(location, model.id, variable.id)
 
-  const [showMembers, setShowMembers] = useState(true)
   /**
-   * Quantil-Säulen statt Spaghetti — Vorgabe bei Summengrößen.
+   * Die beiden ANSICHTSSCHALTER stehen im Panelkopf neben SYNC (siehe
+   * `PanelHeader`) und liegen deshalb im Panel-Zustand, nicht hier: was ein
+   * Panel zeigt, stellt man dort ein, wie Modell und Parameter daneben.
    *
-   * Beim Niederschlag springen die Member (Member 7 hat den Schauer um 14
-   * Uhr, Member 12 um 20 Uhr, zwanzig andere gar nicht); als Linienbündel ist
-   * das ein Knäuel, und das Band dazwischen liest sich wie ein Verlauf, den
-   * kein einziger Member hat. Bei Temperatur und Druck ist die Plume dagegen
-   * genau richtig, dort bleibt es bei den Linien.
+   * `bars` = Quantil-Balken statt Linienbündel, Vorgabe bei Summengrößen:
+   * beim Niederschlag springen die Member (Member 7 hat den Schauer um 14
+   * Uhr, Member 12 um 20 Uhr, zwanzig andere gar nicht), als Linienbündel
+   * ist das ein Knäuel. Bei Temperatur und Druck ist die Plume dagegen genau
+   * richtig, dort bleibt es bei den Linien.
    */
-  const [bars, setBars] = useState(true)
+  const showMembers = panel.ensembleMembers
+  const bars = panel.ensembleBars
   const [zoomed, setZoomed] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
@@ -502,28 +504,6 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         <span className="label-muted" title={`${model.label} · ${RUN_TITLE}`}>
           Lauf {formatRunLong(latestRun(model, Date.now()), Date.now())}
         </span>
-        {variable.kind === 'accum' && (
-          <label
-            className="ens-toggle"
-            title="Verteilung je Termin als Balken (P10–P90 mit Median und Mittel, Aufsätze bis P5/P95, Striche an Minimum und Maximum) statt als Linienbündel — beim Niederschlag springen die Member, ein Linienbündel ist dort nicht lesbar."
-          >
-            <input type="checkbox" checked={bars} onChange={(e) => setBars(e.target.checked)} />
-            Quantil-Balken
-          </label>
-        )}
-        {/* Die Einzelläufe stehen NICHT im Balken (siehe render/quantileBars.ts)
-            — der Haken gehört deshalb zur Linienansicht und verschwindet mit
-            ihr, statt als wirkungsloses Bedienelement stehen zu bleiben. */}
-        {!barView && (
-          <label className="ens-toggle" title="Alle Member als Spaghetti zeigen">
-            <input
-              type="checkbox"
-              checked={showMembers}
-              onChange={(e) => setShowMembers(e.target.checked)}
-            />
-            Member
-          </label>
-        )}
       </div>
 
       {/* Legende: ohne sie ist nicht ablesbar, welche Linie was ist. */}

@@ -149,6 +149,17 @@ export interface PanelConfig {
    * Spaghetti unlesbar, sinnvoll sind kumulierte Summe oder 6-h-Mengen.
    */
   ensembleAccumView: EnsembleAccumView
+  /**
+   * Ensemble: Quantil-Balken statt Linienbündel (nur bei Summengrößen
+   * wirksam) und Member-Spaghetti an/aus. Beides sind ANSICHTSschalter und
+   * gehören deshalb neben SYNC in den Panelkopf, nicht in die Werkzeugleiste
+   * des Panelinhalts — dort waren sie zwei Häkchen am rechten Rand, die man
+   * suchen musste. Panel-lokal wie `ensembleAccumView`: zwei Panels
+   * nebeneinander, eines mit Balken, eines mit Spaghetti, ist ein sinnvoller
+   * Vergleich.
+   */
+  ensembleBars: boolean
+  ensembleMembers: boolean
   /** SYNC: Zeit, Kartenzoom und Modell folgen dem gemeinsamen Zustand. */
   sync: boolean
   /** Eingefrorene Panel-Zeit, wirksam bei sync=false. */
@@ -259,6 +270,8 @@ function makePanel(variable: string): PanelConfig {
     ensembleVariable: DEFAULT_ENSEMBLE_VARIABLE,
     accumView: 'rate',
     ensembleAccumView: 'sum',
+    ensembleBars: true,
+    ensembleMembers: true,
     sync: true,
     localTime: INITIAL_CURSOR,
   }

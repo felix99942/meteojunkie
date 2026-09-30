@@ -492,6 +492,31 @@ button:focus-visible {
   margin-left: auto;
 }
 
+/* Ansichtsschalter (Ensemble: BALKEN, MEMBER) stehen als Gruppe links neben
+   SYNC. Sie werden wie SYNC bedient und sehen deshalb so aus — aktiv aber
+   in der Schriftfarbe statt im Akzentblau: der Akzent gehört der KOPPLUNG
+   zwischen Panels, hier geht es nur um dieses eine Panel. */
+.sync-toggle.view-toggle {
+  margin-left: 0;
+}
+
+.sync-toggle.view-toggle.active {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+  background: var(--bg-control-hover);
+}
+
+/* Im Ensemble-Kopf gibt es keinen parsync-Knopf, der SYNC an den Rand
+   schöbe — das tut hier die Gruppe der Ansichtsschalter. Als eigener
+   Container und nicht über `:first-of-type`: welcher Knopf der erste ist,
+   hängt daran, welche gerade sichtbar sind. */
+.panel-viewtoggles {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+
 .sync-toggle.active {
   color: var(--accent);
   border-color: var(--accent);

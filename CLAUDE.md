@@ -969,6 +969,22 @@ npm run preview   # gebautes dist/ servieren
   einen Verlauf, den KEIN EINZIGER Member hat. Gefragt ist an einem
   Niederschlagstermin ohnehin nicht „wie läuft es", sondern „wie viel und wie
   sicher" — also die Verteilung an diesem einen Termin.
+  **Die beiden ANSICHTSSCHALTER stehen im PANELKOPF neben SYNC**
+  (`BALKEN`/`MEMBER` in `PanelHeader`, `.panel-viewtoggles`; Zustand
+  `ensembleBars`/`ensembleMembers` in der `PanelConfig`). Vorher waren es
+  zwei Häkchen in der Werkzeugleiste des Panelinhalts, rechts oben — dort
+  sucht man sie nicht: was ein Panel ZEIGT, stellt man im Kopf ein, wie
+  Modell und Parameter daneben. Sie sehen aus wie SYNC, weil sie so bedient
+  werden; aktiv aber in der Schriftfarbe statt im Akzentblau, denn der
+  Akzent gehört der KOPPLUNG zwischen Panels, hier geht es nur um dieses
+  eine Panel. `BALKEN` erscheint nur bei Summengrößen (bei Temperatur ist
+  die Plume richtig), `MEMBER` nur dort, wo es Spaghetti zu zeigen gibt — in
+  der Balkenansicht stehen die Einzelläufe gar nicht im Bild. Die Gruppe hat
+  einen eigenen Container statt eines `:first-of-type`-Kniffs: welcher Knopf
+  der erste ist, hängt daran, welche gerade sichtbar sind. Panel-lokal wie
+  `ensembleAccumView` — zwei Panels nebeneinander, eines mit Balken, eines
+  mit Spaghetti, ist ein sinnvoller Vergleich; ältere Presets ohne die
+  Felder laden mit beiden an (nur ein ausdrückliches `false` schaltet ab).
   Gezeichnet wird die am Markt übliche **QUANTIL-BALKEN**-Form
   (ECMWF-/Wetterzentrale-Manier): Hauptbalken **P10–P90** mit **Median und
   MITTEL** als Marken darin, darauf schmalere und blassere Aufsätze bis
