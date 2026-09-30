@@ -541,6 +541,30 @@ npm run preview   # gebautes dist/ servieren
   sie jede Kältefrage, ohne dass man es sähe. Der Filter steht im
   ANTWORTTEXT („… in Österreich, ohne Bergstationen"): „112 Tage in
   Österreich" allein wäre schlicht falsch.
+  **„Berg" IST EIN STATIONSNAME, und daran ging der Filter kaputt**
+  (`terrainPhrase`, seit 2026-09-30): Österreich hat eine Station **„Bergau"**
+  und eine **„Leiser Berge"** — „meiste eistage ohne berge" traf deshalb
+  Leiser Berge, „ohne berg" Bergau. Der Filter selbst stand richtig auf „low",
+  galt aber einer EINZELNEN Station, wo er gar keine Bedeutung hat; beantwortet
+  wurde also eine ganz andere Frage. Die Gegenrichtung gab es ebenso: „höchste
+  Temperatur in Leiser Berge" schaltete still auf „nur Bergstationen".
+  Die Wörter zerfallen deshalb in zwei Klassen — EINDEUTIGE
+  (`bergstation…`, `hochgebirge`, `flachland`, `tieflage…`) gelten für sich,
+  MEHRDEUTIGE (`berg`, `berge`, `bergen`, `gipfel`, `tal`) nur mit einem
+  Qualifizierer davor („ohne …", „nur …"). Ist eine Phrase erkannt, sucht
+  `parseQuestion` die Station in der Frage OHNE deren Wörter — die
+  Reihenfolge ist die eigentliche Behebung. **Findet die verkürzte Frage die
+  Station TROTZDEM, war sie gemeint**: „in leiser berge" trifft ohne „berge"
+  weiter Leiser Berge (Score 0,89), „in den bergen" ohne „bergen" gar nichts
+  — daran unterscheiden sich die beiden Fälle, ohne eine zweite Namensliste.
+  Bei ausdrücklichem „ohne"/„nur" gilt der Filter immer. Mitgegangen: „hoher"
+  ist als Bergwort raus — ein Allerweltsadjektiv, das als Marker nichts taugt.
+  **Das ist kein Einzelfall dieser Wortart**: dieselbe Kollision hat
+  „höchste temperatur in Puchberg am SCHNEEBERG" — die Kompositum-Regel liest
+  darin `schnee` und antwortet mit der Schneehöhe. Dort ist sie nicht
+  behoben (ein Parameterwort steckt in einem Stationsnamen, eine andere
+  Mechanik als der Höhenfilter); wer sie angeht, braucht die Positionen des
+  Stationstreffers, die `matchStations` heute nicht zurückgibt.
   **Der gefilterte LANDESrekord geht weder über `_national.json` noch über
   die Stationsdateien** — die eine Datei ist über alle Stationen
   vorgerechnet und nicht nachträglich filterbar, die andere wären bei „ohne

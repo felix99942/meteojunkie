@@ -62,6 +62,10 @@ const STATIONS: AtStation[] = [
   // Stationsnamen — genau der Fall, an dem sich Land und Station scheiden.
   st(11804, 'St. Johann in Tirol', true, '1980-01-01', 'Tirol'),
   st(14200, 'Bruck an der Mur', true, '1980-01-01', 'Steiermark'),
+  // Für den Höhenfilter: BEIDE gibt es wirklich, und beide haben ihn
+  // ausgehebelt — „ohne berge" traf Leiser Berge, „ohne berg" traf Bergau.
+  st(67, 'Leiser Berge', true, '1980-01-01', 'Niederösterreich'),
+  st(5904, 'Bergau', true, '1980-01-01', 'Niederösterreich'),
 ]
 
 const ask = (q: string) => parseQuestion(q, STATIONS)
@@ -1375,5 +1379,61 @@ describe('Höhenfilter', () => {
   it('stört die übrigen Fragen nicht', () => {
     expect(ask('höchste temperatur in wien').terrain).toBe('all')
     expect(ask('durchschnittliche Maxima in salzburg im september').terrain).toBe('all')
+  })
+
+  /**
+   * DER FILTER DARF NICHT AN EINEM STATIONSNAMEN HÄNGENBLEIBEN.
+   *
+   * Österreich hat eine Station „Leiser Berge" und eine „Bergau": „meiste
+   * eistage ohne berge" landete deshalb bei Leiser Berge und „ohne berg" bei
+   * Bergau. Der Filter stand zwar richtig auf „low", galt aber einer
+   * EINZELNEN Station — und dort hat er keine Bedeutung, die Antwort war also
+   * eine ganz andere als die gestellte Frage.
+   */
+  it('setzt bei „ohne berge/berg" den Filter statt eine Station zu treffen', () => {
+    for (const q of ['meiste eistage ohne berge', 'meiste eistage ohne berg',
+      'meiste eistage ohne bergstationen', 'meiste eistage ohne gipfel']) {
+      const r = ask(q)
+      expect(r.terrain, q).toBe('low')
+      expect(r.area, q).toBe('austria')
+      expect(r.station, q).toBeNull()
+    }
+  })
+
+  it('gilt genauso für „nur …"', () => {
+    for (const q of ['meiste eistage nur berge', 'meiste eistage nur bergstationen']) {
+      const r = ask(q)
+      expect(r.terrain, q).toBe('high')
+      expect(r.area, q).toBe('austria')
+    }
+  })
+
+  /**
+   * Die Gegenrichtung, und sie ist genauso wichtig: wer die Station wirklich
+   * meint, hat MEHR als das Höhenwort genannt. Ohne „berge" trifft die Frage
+   * Leiser Berge immer noch (0,89) — daran wird es unterschieden, nicht an
+   * einer zweiten Namensliste.
+   */
+  it('lässt einen gemeinten Stationsnamen gewinnen', () => {
+    const r = ask('höchste temperatur in leiser berge')
+    expect(r.station?.name).toBe('Leiser Berge')
+    expect(r.terrain).toBe('all')
+    expect(ask('höchste temperatur in bergau').station?.name).toBe('Bergau')
+    expect(ask('höchste temperatur in bergau').terrain).toBe('all')
+  })
+
+  // … und wo nur das Höhenwort steht, bleibt es der Filter, auch ohne
+  // „ohne"/„nur": „in den bergen" trifft ohne „bergen" keine Station.
+  it('nimmt „in den bergen" als Filter, nicht als Station', () => {
+    const r = ask('meiste eistage in den bergen')
+    expect(r.terrain).toBe('high')
+    expect(r.area).toBe('austria')
+  })
+
+  it('verträgt Filter und Gebiet in einer Frage', () => {
+    const r = ask('meiste eistage in tirol ohne bergstationen')
+    expect(r.area).toBe('state')
+    expect(r.state).toBe('Tirol')
+    expect(r.terrain).toBe('low')
   })
 })

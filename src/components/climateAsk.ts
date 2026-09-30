@@ -706,21 +706,83 @@ export type AskTerrain = 'all' | 'high' | 'low'
  */
 export const MOUNTAIN_M = 1500
 
-const MOUNTAIN_WORDS = ['bergstation', 'bergstationen', 'berg', 'berge', 'bergen', 'gipfel',
-  'hochlage', 'hochlagen', 'hochgebirge', 'alpin', 'hoher', 'bergstationnen']
-const LOWLAND_WORDS = ['tal', 'taler', 'talstation', 'talstationen', 'tieflage', 'tieflagen',
+/**
+ * DIE WÖRTER DES HÖHENFILTERS ZERFALLEN IN ZWEI KLASSEN, und das ist der Kern
+ * der Sache: „Bergstation" kann kein Ortsname sein, „Berge" schon.
+ *
+ * Österreich hat eine Station **„Bergau"** und eine **„Leiser Berge"** —
+ * „meiste eistage ohne berge" landete deshalb bei Leiser Berge und „ohne
+ * berg" bei Bergau, statt den Filter zu setzen: die Frage galt plötzlich
+ * EINER Station, an der ein Höhenfilter gar keine Bedeutung hat. Die
+ * Gegenrichtung gab es auch — „höchste temperatur in leiser berge" schaltete
+ * still auf „nur Bergstationen".
+ *
+ * Deshalb: die EINDEUTIGEN Wörter gelten für sich allein, die MEHRDEUTIGEN
+ * nur zusammen mit einem Qualifizierer („ohne …", „nur …"), der VOR ihnen
+ * steht. Ist die Phrase so erkannt, werden ihre Tokens aus der Frage
+ * genommen, bevor die Stationssuche läuft — sonst bliebe der Namenstreffer
+ * neben dem Filter stehen.
+ */
+const MOUNTAIN_SOLO = ['bergstation', 'bergstationen', 'bergstationnen',
+  'hochlage', 'hochlagen', 'hochgebirge']
+const MOUNTAIN_AMBIG = ['berg', 'berge', 'bergen', 'gipfel', 'alpin']
+const LOWLAND_SOLO = ['talstation', 'talstationen', 'tieflage', 'tieflagen',
   'flachland', 'niederung', 'niederungen', 'tiefland', 'talboden']
+const LOWLAND_AMBIG = ['tal', 'taler']
 /** „OHNE Bergstationen" dreht die Bedeutung um — das Wort steht getrennt davor. */
 const WITHOUT_WORDS = ['ohne', 'exklusive', 'ausser', 'ausgenommen']
+/** „NUR Bergstationen" bestätigt sie — und macht die Absicht ausdrücklich. */
+const ONLY_WORDS = ['nur', 'ausschliesslich', 'lediglich']
+
+/** Trifft das Token eines der Wörter? Dieselbe Regel wie `hasAny`, je Token. */
+function isWord(token: string, words: string[]): boolean {
+  return words.some((w) => (token.length <= 3 ? token === w : similarity(token, w) >= 0.85))
+}
+
+export interface TerrainPhrase {
+  terrain: AskTerrain
+  /** Indizes der Tokens, die zur Phrase gehören. */
+  used: number[]
+  /**
+   * Stand ein eindeutiges Wort oder ein Qualifizierer dabei? Nur dann ist der
+   * Filter AUSDRÜCKLICH gemeint und die Tokens dürfen der Stationssuche
+   * entzogen werden.
+   */
+  explicit: boolean
+}
+
+/** Höhenfilter samt der Tokens, aus denen er stammt. */
+export function terrainPhrase(tokens: string[]): TerrainPhrase {
+  const none: TerrainPhrase = { terrain: 'all', used: [], explicit: false }
+  const qualifier = tokens.findIndex((t) => isWord(t, WITHOUT_WORDS) || isWord(t, ONLY_WORDS))
+  const noun = tokens.findIndex(
+    (t) =>
+      isWord(t, MOUNTAIN_SOLO) || isWord(t, MOUNTAIN_AMBIG) ||
+      isWord(t, LOWLAND_SOLO) || isWord(t, LOWLAND_AMBIG),
+  )
+  if (noun < 0) return none
+
+  const t = tokens[noun]
+  const solo = isWord(t, MOUNTAIN_SOLO) || isWord(t, LOWLAND_SOLO)
+  const high = isWord(t, MOUNTAIN_SOLO) || isWord(t, MOUNTAIN_AMBIG)
+  // Der Qualifizierer gehört zur Phrase, wenn er VOR dem Wort steht — so
+  // steht es im Deutschen („ohne die Berge"), und „Berge" allein soll keinen
+  // beliebigen früheren Nebensatz an sich ziehen.
+  const qual = qualifier >= 0 && qualifier < noun ? qualifier : -1
+  if (!solo && qual < 0) {
+    // Mehrdeutiges Wort ohne Qualifizierer: der Filter gilt, die Tokens
+    // bleiben aber in der Frage — ob ein Stationsname sie beansprucht,
+    // entscheidet `parseQuestion` mit der Stationsliste in der Hand.
+    return { terrain: high ? 'high' : 'low', used: [noun], explicit: false }
+  }
+  const invert = qual >= 0 && isWord(tokens[qual], WITHOUT_WORDS)
+  const terrain: AskTerrain = high === !invert ? 'high' : 'low'
+  return { terrain, used: qual >= 0 ? [qual, noun] : [noun], explicit: true }
+}
 
 /** Höhenfilter aus der Frage. */
 export function matchTerrain(tokens: string[]): AskTerrain {
-  const berg = hasAny(tokens, MOUNTAIN_WORDS)
-  const tal = hasAny(tokens, LOWLAND_WORDS)
-  const ohne = hasAny(tokens, WITHOUT_WORDS)
-  if (berg) return ohne ? 'low' : 'high'
-  if (tal) return ohne ? 'high' : 'low'
-  return 'all'
+  return terrainPhrase(tokens).terrain
 }
 
 /** Passt die Station zum Höhenfilter? Ohne bekannte Höhe zählt sie als Tal. */
@@ -815,7 +877,31 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   // und Zeit-Marker prüfen weiter auf der vollen Liste (dort stehen sie).
   const content = tokens.filter((t) => !STOPWORDS.has(t))
 
-  const matches = matchStations(question, stations)
+  /**
+   * HÖHENFILTER VOR DER STATIONSSUCHE — die Reihenfolge IST die Behebung.
+   *
+   * Erkennt die Frage einen Filter, sucht die Station in der Frage OHNE
+   * dessen Wörter. Sonst gewinnt „Leiser Berge" bzw. „Bergau" den
+   * Namensvergleich, und „meiste eistage ohne berge" gilt plötzlich EINER
+   * Station — an der ein Höhenfilter gar keine Bedeutung hat.
+   *
+   * Findet die verkürzte Frage die Station TROTZDEM, hat sie mehr als das
+   * Höhenwort genannt, und dann ist die Station gemeint: „höchste temperatur
+   * in leiser berge" trifft ohne „berge" immer noch Leiser Berge (0,89),
+   * „meiste eistage in den bergen" ohne „bergen" gar nichts. Das
+   * unterscheidet die beiden Fälle, ohne eine zweite Namensliste zu pflegen.
+   * Bei einem AUSDRÜCKLICHEN „ohne …"/„nur …" gilt der Filter dagegen immer.
+   */
+  const phrase = terrainPhrase(tokens)
+  const masked = tokens.filter((_, i) => !phrase.used.includes(i)).join(' ')
+  const filtered = phrase.terrain === 'all' ? [] : matchStations(masked, stations)
+  const claimedByName =
+    !phrase.explicit &&
+    filtered[0] != null &&
+    normalize(filtered[0].name).split(' ').some((w) => phrase.used.some((i) => isWord(tokens[i], [w])))
+  const terrain: AskTerrain = claimedByName ? 'all' : phrase.terrain
+  const asked = terrain === 'all' ? question : masked
+  const matches = terrain === 'all' ? matchStations(question, stations) : filtered
   const month = content.map((t) => lookupWord(t, MONTHS)).find((v) => v != null) ?? null
   const season = content.map((t) => lookupWord(t, SEASONS)).find((v) => v != null) ?? null
 
@@ -895,7 +981,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   // „in österreich" schlägt jeden Stationstreffer; ohne erkannten Ort ist die
   // Frage ebenfalls eine Landesfrage.
   const best = matches[0] ?? null
-  const place = best ? resolvePlace(question, best, stations) : null
+  const place = best ? resolvePlace(asked, best, stations) : null
   const state = matchState(content)
   /**
    * Meint die Frage das BUNDESLAND oder den gleichnamigen Ort?
@@ -995,7 +1081,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
     area,
     place,
     state,
-    terrain: matchTerrain(tokens),
+    terrain,
     station: best,
     alternatives: matches.slice(1),
     param,
