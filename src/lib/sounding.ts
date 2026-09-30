@@ -108,6 +108,8 @@ export interface SoundingParams {
   dcape: number | null
   /** Startniveau des Abwinds (hPa) — Minimum von θe in den untersten 400 hPa. */
   dcapeSourceP: number | null
+  /** Absinkweg samt Umgebung — zum Zeichnen der DCAPE-Fläche. */
+  downdraft: DowndraftResult | null
   shear06: number | null // m/s (0–6 km Bulk)
 }
 
@@ -480,9 +482,20 @@ function pwat(fine: { p: number[]; Td: number[] }): number {
  * bremste dieser Abschnitt den Abwind, statt ihn zu treiben — ihn
  * gutzuschreiben, machte die Zahl größer und die Aussage falscher.
  */
+export interface DowndraftResult {
+  /** J/kg — die Fläche, auf der das Paket kälter ist als die Umgebung. */
+  dcape: number
+  /** Startniveau (hPa): das θe-Minimum der untersten 400 hPa. */
+  sourceP: number
+  /** Absinkweg zum Zeichnen, vom Startniveau abwärts (Druck STEIGEND). */
+  fineP: number[]
+  parcelT: number[]
+  envT: number[]
+}
+
 function downdraftCape(
   fine: { p: number[]; T: number[]; Td: number[] },
-): { dcape: number; sourceP: number } | null {
+): DowndraftResult | null {
   const pSurf = fine.p[0]
   let srcIdx = -1
   let minTe = Infinity
@@ -502,6 +515,9 @@ function downdraftCape(
 
   let dcape = 0
   let prevBuoy: number | null = null
+  const fineP: number[] = []
+  const parcelT: number[] = []
+  const envT: number[] = []
   for (let i = srcIdx; i >= 0; i--) {
     const p = fine.p[i]
     const tParcel = i === srcIdx ? tSrc : moistAdiabatTemp(tSrc, pSrc, p)
@@ -514,8 +530,11 @@ function downdraftCape(
       if (seg > 0) dcape += seg
     }
     prevBuoy = buoy
+    fineP.push(p)
+    parcelT.push(tParcel)
+    envT.push(fine.T[i])
   }
-  return { dcape, sourceP: pSrc }
+  return { dcape, sourceP: pSrc, fineP, parcelT, envT }
 }
 
 /** Feuchtkugeltemperatur je Level der Spalte — für die Kurve im Skew-T. */
@@ -657,6 +676,7 @@ export function computeSounding(col: SoundingColumn): SoundingParams {
     wetBulbZeroZ,
     dcape: dd ? dd.dcape : null,
     dcapeSourceP: dd ? dd.sourceP : null,
+    downdraft: dd,
     shear06,
   }
 }

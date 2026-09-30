@@ -27,6 +27,7 @@ import {
   DEFAULT_SKEWT_THEME,
   drawHodograph,
   drawParcel,
+  drawDowndraft,
   drawSkewTBackground,
   drawThetaEColumn,
   drawWindBarb,
@@ -204,6 +205,12 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
    * Modellen wird es zu dritt eng, deshalb abschaltbar.
    */
   const [showWetBulb, setShowWetBulb] = useState(true)
+  /**
+   * Abwindweg samt DCAPE-Fläche. Wie der Parzellenweg nur für das
+   * Bezugsmodell — zwei Absinkkurven übereinander sagen nichts, was die Zahl
+   * in der Tabelle nicht besser sagt.
+   */
+  const [showDowndraft, setShowDowndraft] = useState(true)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
@@ -335,6 +342,10 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         // (nächtliche Bodeninversion) irreführendes CAPE liefert.
         if (!refParcelDrawn && sounds[i]) {
           drawParcel(ctx, g, sounds[i]!.ml)
+          // Der Abwind ZUERST wäre falsch herum: die DCAPE-Fläche liegt
+          // unten, wo auch CIN liegt, und soll obenauf sichtbar bleiben.
+          const dd = sounds[i]!.downdraft
+          if (showDowndraft && dd) drawDowndraft(ctx, g, dd)
           refParcelDrawn = true
         }
         strokeColumnLine(ctx, g, col, col.T, color, [])
@@ -396,7 +407,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     ro.observe(container)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE, showWetBulb])
+  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE, showWetBulb, showDowndraft])
 
   // Hodograf in sein Overlay zeichnen (nur wenn geöffnet)
   useEffect(() => {
@@ -471,6 +482,14 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         <button
           type="button"
           className="skewt-params-toggle"
+          onClick={() => setShowDowndraft((v) => !v)}
+          title="Abwindweg ein-/ausblenden: das durch Verdunstung gekühlte Paket sinkt vom θe-Minimum feuchtadiabatisch zum Boden. Die violette Fläche IST die DCAPE — die Energie, die den Abwind treibt."
+        >
+          DCAPE {showDowndraft ? '✕' : '▾'}
+        </button>
+        <button
+          type="button"
+          className="skewt-params-toggle"
           onClick={() => setShowWetBulb((v) => !v)}
           title="Feuchtkugelkurve ein-/ausblenden: die Temperatur, auf die Verdunstung die Luft abkühlen kann. Sie liegt zwischen Taupunkt und Temperatur; an Tw = 0 °C liest man die Schneefallgrenze ab."
         >
@@ -520,6 +539,12 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             — T · - - Td{showWetBulb ? ' · ··· Tw' : ''} · ⋯ ML-Paket ·{' '}
             <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
             <span style={{ color: '#4a93e8' }}>▉ CIN</span>
+            {showDowndraft && (
+              <>
+                {' '}
+                <span style={{ color: 'rgb(170,135,235)' }}>▉ DCAPE</span>
+              </>
+            )}
           </span>
           {/* Die Bänder der θe-Spalte brauchen eine Lesart — eine Farbe ohne
               Legende ist Dekoration. Steht hier statt unter der Spalte: dort

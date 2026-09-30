@@ -8,6 +8,7 @@
 
 import { dryAdiabatTemp, moistAdiabatTemp, tempFromSaturationMixingRatio } from '../lib/thermo'
 import type {
+  DowndraftResult,
   ParcelResult,
   StratificationKind,
   ThetaELayer,
@@ -190,6 +191,9 @@ export function drawWindBarb(
 const CAPE_FILL = 'rgba(214, 58, 43, 0.30)'
 const CIN_FILL = 'rgba(74, 147, 232, 0.30)'
 const PARCEL_LINE = 'rgba(232, 228, 220, 0.9)'
+/** Abwind: violett, weil Rot und Blau hier CAPE und CIN gehören. */
+const DCAPE_FILL = 'rgba(150, 110, 220, 0.30)'
+const DCAPE_LINE = 'rgba(190, 155, 245, 0.9)'
 
 /** Fläche zwischen zwei T-Kurven (aT, bT) über den Indexbereich füllen. */
 function fillBetween(
@@ -230,6 +234,70 @@ function levelMarker(
   ctx.lineTo(g.left + 16, y)
   ctx.stroke()
   ctx.fillText(label, g.left + 19, y)
+}
+
+/**
+ * ABWIND ins Skew-T zeichnen: die DCAPE-Fläche zwischen dem absinkenden
+ * Paket und der Umgebung, dazu der Absinkweg und eine Marke am Startniveau.
+ *
+ * Eigene Farbe, und zwar VIOLETT: Rot und Blau sind hier schon vergeben
+ * (CAPE, CIN), und die DCAPE-Fläche liegt regelmäßig genau über dem
+ * CIN-Bereich — in derselben Familie eingefärbt wären die beiden nicht mehr
+ * auseinanderzuhalten. Gestrichelt statt gepunktet, damit der Weg nicht mit
+ * dem gepunkteten Aufstiegsweg des ML-Pakets verwechselt wird.
+ *
+ * Gefüllt wird NUR, wo das Paket kälter ist als die Umgebung — dieselbe
+ * Einschränkung wie in der Rechnung: ein wärmerer Abschnitt bremst den
+ * Abwind und gehört nicht zur Energie, die ihn treibt.
+ */
+export function drawDowndraft(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  r: DowndraftResult,
+): void {
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(g.left, g.top, g.width, g.height)
+  ctx.clip()
+
+  // Abschnittsweise füllen: zusammenhängende Stücke mit kälterem Paket.
+  let runStart = -1
+  for (let i = 0; i < r.fineP.length; i++) {
+    const colder = r.parcelT[i] < r.envT[i]
+    if (colder && runStart < 0) runStart = i
+    const end = !colder || i === r.fineP.length - 1
+    if (runStart >= 0 && end) {
+      const last = colder ? i : i - 1
+      if (last > runStart) {
+        fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, runStart, last, DCAPE_FILL)
+      }
+      runStart = -1
+    }
+  }
+
+  ctx.strokeStyle = DCAPE_LINE
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([5, 3])
+  ctx.beginPath()
+  for (let i = 0; i < r.fineP.length; i++) {
+    const x = xFromTP(g, r.parcelT[i], r.fineP[i])
+    const y = yFromP(g, r.fineP[i])
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.restore()
+
+  ctx.save()
+  ctx.strokeStyle = DCAPE_LINE
+  ctx.fillStyle = DCAPE_LINE
+  ctx.lineWidth = 1
+  ctx.font = '9px system-ui, sans-serif'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  levelMarker(ctx, g, r.sourceP, 'DCAPE')
+  ctx.restore()
 }
 
 /**

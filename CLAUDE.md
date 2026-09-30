@@ -1623,6 +1623,16 @@ npm run preview   # gebautes dist/ servieren
   Beide Größen sind gegen diesen Kontrast getestet, nicht gegen feste Zahlen:
   was zählt, ist dass die Feuchte der Mittelschicht sie in die richtige
   Richtung bewegt.
+  **Der ABWINDWEG steht im Diagramm** (`drawDowndraft`, Umschalter „DCAPE"):
+  gestrichelte Absinkkurve vom Startniveau zum Boden, darunter die
+  DCAPE-Fläche — sie IST die Zahl aus der Tabelle, so wie die rote Fläche das
+  CAPE ist. **Violett**, weil Rot und Blau hier CAPE und CIN gehören und die
+  DCAPE-Fläche regelmäßig GENAU ÜBER dem CIN-Bereich liegt; in derselben
+  Farbfamilie wären die beiden nicht auseinanderzuhalten. Gestrichelt statt
+  gepunktet, damit der Absinkweg nicht mit dem Aufstiegsweg des ML-Pakets
+  verwechselt wird. Gefüllt wird abschnittsweise nur dort, wo das Paket
+  KÄLTER ist als die Umgebung — dieselbe Einschränkung wie in der Rechnung.
+  Nur für das Bezugsmodell, wie der Parzellenweg.
 - **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
   (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
   hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch
