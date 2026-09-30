@@ -7,7 +7,14 @@
 // 47,054 N / 12,957 O, Modellhöhe 3057 m, Bodendruck 717,4 hPa).
 
 import { describe, expect, it } from 'vitest'
-import { columnFromProfile, computeSounding, type SurfacePoint } from './sounding'
+import { moistAdiabatTemp } from './thermo'
+import {
+  columnFromProfile,
+  computeSounding,
+  thetaEProfile,
+  type SoundingColumn,
+  type SurfacePoint,
+} from './sounding'
 
 /** Gemessenes Sonnblick-Profil: [hPa, T °C, z m] — 1000 und 850 liegen im Berg. */
 const LEVELS = [1000, 850, 700, 600, 500]
@@ -239,5 +246,65 @@ describe('Nullgradgrenze', () => {
     const s = computeSounding(make(p.map(() => null)))
     expect(s.freezingLevelZ).toBeNull()
     expect(s.freezingLevelP).not.toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// θe-PROFIL UND SCHICHTUNG. Die Klassen sind ein Vorzeichentest auf dθe/dz —
+// und genau der ist die Aussage: nimmt θe mit der Höhe ab, labilisiert sich
+// die Schicht beim Heben von selbst.
+// ---------------------------------------------------------------------------
+
+describe('thetaEProfile', () => {
+  const col = (
+    p: number[],
+    T: number[],
+    Td: number[],
+    z: (number | null)[],
+  ): SoundingColumn => ({ p, T, Td, z, u: p.map(() => 0), v: p.map(() => 0) })
+
+  // Feuchter, warmer Fuß unter trockener Mitte — die klassische Lage vor
+  // einem Gewitter, und der Fall, für den die Spalte gebaut ist.
+  it('erkennt eine potentiell instabile Schicht', () => {
+    const r = thetaEProfile(col([1000, 900, 800], [25, 15, 8], [20, 0, -5], [0, 1000, 2000]))
+    expect(r?.layers[0].kind).toBe('unstable')
+    expect(r?.layers[0].gradient).toBeLessThan(-5)
+  })
+
+  it('nennt eine Inversion stabil', () => {
+    const r = thetaEProfile(col([1000, 900, 800], [0, 5, 5], [-20, -22, -25], [0, 1000, 2000]))
+    expect(r?.layers.map((l) => l.kind)).toEqual(['stable', 'stable'])
+  })
+
+  /**
+   * Eine feuchtadiabatisch geschichtete Luftmasse hat definitionsgemäß
+   * konstantes θe — sie MUSS neutral herauskommen. Das prüft zugleich, dass
+   * die Totzone weit genug ist, um numerisches Rauschen zu schlucken, und
+   * eng genug, um nicht alles zu neutralisieren (der Test daneben verlangt
+   * „stabil" bei 10 K/km).
+   */
+  it('nennt eine feuchtadiabatische Schichtung neutral', () => {
+    const t900 = moistAdiabatTemp(20, 1000, 900)
+    const t800 = moistAdiabatTemp(20, 1000, 800)
+    const r = thetaEProfile(
+      col([1000, 900, 800], [20, t900, t800], [20, t900, t800], [0, 1000, 2000]),
+    )
+    expect(r?.layers.map((l) => l.kind)).toEqual(['neutral', 'neutral'])
+  })
+
+  /**
+   * OHNE GEOPOTENTIALHÖHEN muss es trotzdem gehen: einzelne Level liefern
+   * keine, und die Klassifikation darf deswegen nicht für die ganze Schicht
+   * ausfallen. Die hypsometrische Näherung kommt hier auf −34,9 statt
+   * −31,7 K/km — dieselbe Klasse, und der Unterschied ist die Dicke, die das
+   * Modell meldet, gegen die, die aus T und p folgt.
+   */
+  it('kommt ohne Geopotentialhöhen aus', () => {
+    const r = thetaEProfile(col([1000, 900, 800], [25, 15, 8], [20, 0, -5], [null, null, null]))
+    expect(r?.layers[0].kind).toBe('unstable')
+  })
+
+  it('liefert null, wenn es keine zwei Level gibt', () => {
+    expect(thetaEProfile(col([1000], [20], [10], [0]))).toBeNull()
   })
 })

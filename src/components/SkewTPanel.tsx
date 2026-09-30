@@ -16,15 +16,18 @@ import { formatCursorTime, PROFILE_FORECAST_DAYS, timeToIndex } from '../config/
 import {
   columnFromProfile,
   computeSounding,
+  thetaEProfile,
   type SoundingColumn,
   type SoundingParams,
   type SurfacePoint,
+  type ThetaEProfile,
 } from '../lib/sounding'
 import {
   DEFAULT_SKEWT_THEME,
   drawHodograph,
   drawParcel,
   drawSkewTBackground,
+  drawThetaEColumn,
   drawWindBarb,
   makeGeometry,
   xFromTP,
@@ -52,6 +55,12 @@ const MS_TO_KT = 1.94384
  * bringt deshalb KEINE weitere Fahne, nur Überlappung.
  */
 const BARB_MIN_GAP = 8
+/**
+ * Breite der θe-Spalte samt Abstand. 76 px reichen für eine Kurve über
+ * 40–60 K Spanne und die beiden Randbeschriftungen; mehr nähme dem Skew-T
+ * die Fläche, auf die es hier ankommt.
+ */
+const THETAE_W = 76
 /**
  * Schaftlänge, passend zum Abstand: bei 8 px Abstand sind 30 px Schaft zu
  * lang, die Fiedern der Nachbarn greifen ineinander.
@@ -163,6 +172,12 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   // das Diagramm den Platz dafür. Ausblenden bleibt möglich.
   const [showParams, setShowParams] = useState(true)
   const [showHodo, setShowHodo] = useState(false)
+  /**
+   * θe-Spalte neben dem Diagramm. Vorgabe AN: sie beantwortet eine Frage, die
+   * man am T/Td-Paar erst zusammensetzen muss (siehe `thetaEProfile`), und
+   * kostet nur Platz, keine Daten — gerechnet wird aus denselben Leveln.
+   */
+  const [showThetaE, setShowThetaE] = useState(true)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
@@ -274,7 +289,10 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
 
-      const g = makeGeometry(38, 8, w - 38 - 44, h - 8 - 22)
+      // Die θe-Spalte nimmt dem Diagramm Breite weg — sie steht ZWISCHEN
+      // Diagramm und Windfiedern, damit beide ihre Druckachse behalten.
+      const teW = showThetaE ? THETAE_W : 0
+      const g = makeGeometry(38, 8, w - 38 - 44 - teW, h - 8 - 22)
       drawSkewTBackground(ctx, g, DEFAULT_SKEWT_THEME)
 
       const sounds = soundingsRef.current
@@ -298,9 +316,31 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         if (!barb) barb = { col, color }
       })
 
+      if (showThetaE) {
+        // Kurven für ALLE Modelle (der Vergleich ist der Sinn dieses
+        // Bereichs), Schichtungsbänder nur vom ERSTEN — übereinandergelegte
+        // Bänder ergäben eine Farbe, die keiner Schicht mehr entspricht.
+        const curves: { profile: ThetaEProfile; color: string }[] = []
+        panel.models.forEach((id, i) => {
+          const col = cols[i]
+          if (!col) return
+          const profile = thetaEProfile(col)
+          if (profile) curves.push({ profile, color: SERIES_COLORS[panel.modelSlots[id] ?? 0] })
+        })
+        drawThetaEColumn(
+          ctx,
+          g,
+          g.left + g.width + 8,
+          THETAE_W - 12,
+          curves,
+          curves[0]?.profile.layers ?? null,
+          DEFAULT_SKEWT_THEME,
+        )
+      }
+
       if (barb) {
         const { col, color } = barb as { col: SoundingColumn; color: string }
-        const bx = g.left + g.width + 20
+        const bx = g.left + g.width + (showThetaE ? THETAE_W : 0) + 20
         // So viele Level wie ohne Überlappung passen (adaptiv statt fester
         // Liste). Die Obergrenze setzt die API, nicht diese Schleife — siehe
         // BARB_MIN_GAP. Gezeichnet wird aus derselben Spalte wie die Kurven,
@@ -326,7 +366,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     ro.observe(container)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, modelsKey, panel.modelSlots])
+  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE])
 
   // Hodograf in sein Overlay zeichnen (nur wenn geöffnet)
   useEffect(() => {
@@ -382,7 +422,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   }
 
   return (
-    <div className="skewt">
+    <div className={showThetaE ? 'skewt has-thetae' : 'skewt'}>
       <div ref={containerRef} className="skewt-canvas">
         <canvas ref={canvasRef} />
       </div>
@@ -398,6 +438,14 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         )}
       </span>
       <div className="skewt-toggles">
+        <button
+          type="button"
+          className="skewt-params-toggle"
+          onClick={() => setShowThetaE((v) => !v)}
+          title="θe-Spalte ein-/ausblenden: äquivalentpotentielle Temperatur über die Höhe, hinterlegt mit der Schichtung — rot = potentiell instabil (θe nimmt nach oben ab), blau = stabil, grau = neutral."
+        >
+          θe {showThetaE ? '✕' : '▾'}
+        </button>
         <button
           type="button"
           className="skewt-params-toggle"
@@ -434,6 +482,20 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             — T · - - Td · ⋯ ML-Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
             <span style={{ color: '#4a93e8' }}>▉ CIN</span>
           </span>
+          {/* Die Bänder der θe-Spalte brauchen eine Lesart — eine Farbe ohne
+              Legende ist Dekoration. Steht hier statt unter der Spalte: dort
+              sind 64 px, hier ist die Zeile ohnehin für die Bildlegende da. */}
+          {showThetaE && (
+            <span
+              className="skewt-hint"
+              title="θe = äquivalentpotentielle Temperatur: die Wärme des Pakets PLUS die, die beim Auskondensieren seines Dampfs frei wird. Sie bleibt bei trockener wie feuchter Hebung erhalten. Nimmt sie mit der Höhe AB, labilisiert sich die Schicht beim Heben von selbst (potentielle Instabilität) — die klassische Gewitterlage vor einer Hebung."
+            >
+              θe-Spalte:{' '}
+              <span style={{ color: 'rgb(214,90,58)' }}>▉ pot. instabil</span> ·{' '}
+              <span style={{ color: '#9a9a9a' }}>▉ neutral</span> ·{' '}
+              <span style={{ color: 'rgb(110,160,220)' }}>▉ stabil</span>
+            </span>
+          )}
           <table className="skewt-table">
             <thead>
               <tr>

@@ -101,6 +101,33 @@ function moistDtDp(tC: number, p: number): number {
 }
 
 /**
+ * ÄQUIVALENTPOTENTIELLE TEMPERATUR θe (K) — Bolton (1980), Gl. 43.
+ *
+ * Die Größe, die ein Luftpaket kennzeichnet, wenn man ihm BEIDES mitgibt: die
+ * Wärme, die es hat, und die, die beim Auskondensieren seines Wasserdampfs
+ * noch frei wird. Sie bleibt sowohl bei trockener als auch bei feuchter
+ * Hebung erhalten — deshalb ist sie die Größe, an der man Luftmassen
+ * wiedererkennt und an ihrem VERLAUF mit der Höhe die potentielle
+ * Instabilität abliest (siehe `thetaEProfile`).
+ *
+ * Bolton Gl. 43 ist die genaueste der geschlossenen Formen (± 0,3 K gegen die
+ * numerische Referenz) und die, die auch MetPy benutzt. `lcl()` liefert die
+ * dafür nötige LCL-Temperatur bereits nach Bolton Gl. 15.
+ *
+ * Zwei Prüfsteine, beide als Test festgehalten: bei trockener Luft geht θe in
+ * die potentielle Temperatur über, und entlang einer Feuchtadiabate bleibt θe
+ * konstant — Letzteres prüft die Formel gegen den unabhängig implementierten
+ * `moistAdiabatTemp`, nicht gegen sich selbst.
+ */
+export function thetaE(tC: number, tdC: number, p: number): number {
+  const tk = toK(tC)
+  const r = mixingRatioFromDewpoint(tdC, p) // g/kg
+  const tLcl = toK(lcl(p, tC, tdC).temperature) // K
+  const exponent = KAPPA * (1 - 0.28e-3 * r)
+  return tk * (P0 / p) ** exponent * Math.exp((3.376 / tLcl - 0.00254) * r * (1 + 0.81e-3 * r))
+}
+
+/**
  * Feuchtadiabate: Temperatur (°C) bei Zieldruck, ausgehend von (tStartC, pStart),
  * pseudoadiabatisch integriert (RK4, in Druck-Schritten). Für pTarget < pStart
  * (aufsteigend) wie > pStart (absteigend).

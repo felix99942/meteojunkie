@@ -1549,6 +1549,50 @@ npm run preview   # gebautes dist/ servieren
   nicht mehr ein extrapoliertes 1000-hPa-Niveau. In der Tabelle steht ML-CAPE
   deshalb ZUERST, die Zeile heisst „LI (ML)", und SB/MU stehen zum Vergleich
   daneben.
+- **θe-SPALTE neben dem Skew-T** (`thetaE` in `lib/thermo.ts`,
+  `thetaEProfile` in `lib/sounding.ts`, `drawThetaEColumn` in
+  `render/skewt.ts`; Umschalter „θe", Vorgabe AN): die
+  äquivalentpotentielle Temperatur über die Höhe, hinterlegt mit der
+  Schichtung — **rot = potentiell instabil, grau = neutral, blau = stabil**.
+  θe bleibt bei trockener WIE feuchter Hebung erhalten; hebt man eine ganze
+  Schicht, bleibt ihr θe-Profil also stehen. **Nimmt θe nach oben ab,
+  labilisiert sich die Schicht beim Heben von selbst** (der feuchte Fuß
+  sättigt zuerst und kühlt danach feuchtadiabatisch langsamer ab als die
+  trockene Oberseite) — die klassische Gewitterlage vor einer Hebung, und im
+  T/Td-Paar sieht man sie nur, wenn man beide zusammen liest.
+  **Eine eigene Spalte, keine zweite Kurve im Diagramm**: 320–350 K sind
+  47–77 °C, liegen also weit außerhalb der Temperaturachse (die bei 45 °C
+  endet), und die Scherung schöbe sie noch weiter hinaus. Eine zweite,
+  versteckte x-Skala im selben Feld wäre schlechter als eine getrennte —
+  man läse die Kurve unweigerlich gegen das Isothermengitter, das für sie
+  nicht gilt. Die Spalte teilt sich die DRUCKachse, liegt also mit dem
+  Diagramm auf einer Höhe.
+  **Die Skala nimmt nur die Troposphäre** (bis `THETAE_SCALE_TOP_HPA` =
+  300 hPa): θe wächst nach oben unaufhaltsam — über der Tropopause ist es
+  praktisch θ, bei 100 hPa über 500 K. Auto-skaliert über die ganze Säule lag
+  der Bereich, in dem die Schichtung entschieden wird (300–340 K), in den
+  linken 15 % der Spalte, plattgedrückt von der Stratosphäre; darüber läuft
+  die Kurve jetzt aus dem Rahmen.
+  Klassifiziert wird auf den NATIVEN Leveln (nicht auf dem feinen 5-hPa-Gitter
+  — die Bänder sollen zeigen, was das Modell liefert) über dθe/dz mit einer
+  Totzone von ±`NEUTRAL_K_PER_KM` = 0,5 K/km; in der freien Troposphäre
+  nimmt θe normal um 2–4 K/km ZU, „stabil" ist also der Normalfall und die
+  roten Schichten sind die Ausnahme, auf die es ankommt. Fehlen
+  Geopotentialhöhen, springt die hypsometrische Näherung ein (sonst fiele die
+  ganze Schicht aus, obwohl θe an beiden Enden bekannt ist).
+  Kurven für ALLE gewählten Modelle in ihren Farben, Bänder nur vom ersten —
+  übereinandergelegte Bänder ergäben eine Farbe, die keiner Schicht mehr
+  entspricht. Die Kurve wird dunkel unterlegt gezeichnet, sonst verschwindet
+  eine blaue Modellfarbe auf dem blauen „stabil"-Band.
+  **θe ist gegen IDENTITÄTEN geprüft, nicht gegen eigene Ausgaben**
+  (`thermo.test.ts`): bei trockener Luft geht es in θ über, und entlang einer
+  Feuchtadiabate bleibt es erhalten — Letzteres misst die Formel (Bolton
+  1980, Gl. 43) gegen den unabhängig implementierten RK4-Feuchtadiabaten
+  (gemessen 331,85 → 332,14 K von 900 auf 500 hPa).
+  Kennzahlentabelle und Umschalter weichen der Spalte aus
+  (`.skewt.has-thetae`, `right: 120px` = THETAE_W + Fiedernrand) — sonst läge
+  die Tabelle darauf und die Spalte wäre nur bei geschlossener Tabelle zu
+  sehen.
 - **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
   (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
   hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch

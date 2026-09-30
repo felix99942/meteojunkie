@@ -7,7 +7,12 @@
 // im Pixelraum, skew = 1 px/px). Datenkurven (T/Td) nutzen denselben Transform.
 
 import { dryAdiabatTemp, moistAdiabatTemp, tempFromSaturationMixingRatio } from '../lib/thermo'
-import type { ParcelResult } from '../lib/sounding'
+import type {
+  ParcelResult,
+  StratificationKind,
+  ThetaELayer,
+  ThetaEProfile,
+} from '../lib/sounding'
 
 export interface SkewTGeometry {
   /** Plotfläche in Pixeln (ohne Achsenränder). */
@@ -469,3 +474,129 @@ export function drawSkewTBackground(
   ctx.strokeRect(g.left, g.top, g.width, g.height)
   ctx.restore()
 }
+
+// --- θe-Spalte -------------------------------------------------------------
+//
+// θe passt NICHT in die Temperaturachse des Skew-T: 320–350 K sind 47–77 °C,
+// also weit rechts außerhalb (die Achse endet bei 45 °C), und die Scherung
+// schöbe die Kurve noch weiter hinaus. Eine zweite, versteckte x-Skala im
+// selben Feld wäre die schlechtere Lösung — man läse die Kurve unweigerlich
+// gegen das Isothermen-Gitter, das für sie nicht gilt. Deshalb eine eigene
+// schmale Spalte neben dem Diagramm, mit DERSELBEN Druckachse: senkrecht
+// vergleichbar, waagrecht getrennt.
+
+/** Farben der Schichtungsklassen — dieselbe Lesart wie überall: warm = labil. */
+export const STRATIFICATION_COLORS: Record<StratificationKind, string> = {
+  unstable: 'rgba(214, 90, 58, 0.55)',
+  neutral: 'rgba(150, 150, 150, 0.22)',
+  stable: 'rgba(74, 130, 200, 0.30)',
+}
+
+const THETAE_LINE = '#c98ae0'
+/** Über diesem Niveau geht die Skala nicht mit (Begründung in `drawThetaEColumn`). */
+const THETAE_SCALE_TOP_HPA = 300
+const THETAE_MIN_SPAN_K = 25
+
+/**
+ * θe-Spalte zeichnen: Schichtungsbänder als Hintergrund, darüber die Kurve(n).
+ *
+ * `x`/`width` sind die Spalte in Pixeln, die Druckachse kommt aus `g` — die
+ * Bänder liegen damit auf derselben Höhe wie die Schicht im Skew-T daneben.
+ * Die Skala ist AUTOMATISCH (auf 5 K gerundet) und wird beschriftet: θe
+ * schwankt je nach Luftmasse zwischen 290 und 360 K, eine feste Skala wäre
+ * im Winter leer und im Sommer am Anschlag.
+ */
+export function drawThetaEColumn(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  x: number,
+  width: number,
+  curves: { profile: ThetaEProfile; color: string }[],
+  /** Schichtungsbänder — nur vom Bezugsmodell, sonst überlagern sie sich. */
+  layers: ThetaELayer[] | null,
+  theme: SkewTTheme = DEFAULT_SKEWT_THEME,
+): void {
+  if (curves.length === 0) return
+  const yb = g.top + g.height
+  /**
+   * DIE SKALA NIMMT NUR DIE TROPOSPHÄRE. θe wächst nach oben unaufhaltsam —
+   * über der Tropopause ist es praktisch θ, und das sind bei 100 hPa über
+   * 500 K. Auto-skaliert über die ganze Säule lag der interessante Bereich
+   * (300–340 K, wo die Schichtung entschieden wird) in den linken 15 % der
+   * Spalte, plattgedrückt von der Stratosphäre. Oberhalb läuft die Kurve
+   * deshalb aus dem Rahmen — sie ist dort keine Aussage über Labilität mehr.
+   */
+  let lo = Infinity
+  let hi = -Infinity
+  for (const c of curves) {
+    for (let i = 0; i < c.profile.p.length; i++) {
+      if (c.profile.p[i] < THETAE_SCALE_TOP_HPA) continue
+      lo = Math.min(lo, c.profile.thetaE[i])
+      hi = Math.max(hi, c.profile.thetaE[i])
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return
+  lo = Math.floor(lo / 5) * 5
+  hi = Math.ceil(hi / 5) * 5
+  // Mindestspanne: bei einer gut durchmischten Luftmasse steht θe fast
+  // senkrecht, und ohne Boden zappelte die Kurve über die volle Breite.
+  if (hi - lo < THETAE_MIN_SPAN_K) hi = lo + THETAE_MIN_SPAN_K
+  const xOf = (te: number) => x + ((te - lo) / (hi - lo)) * width
+
+  ctx.save()
+
+  // Bänder zuerst — sie sind der Hintergrund, auf dem die Kurve liegt.
+  if (layers) {
+    for (const l of layers) {
+      const y1 = yFromP(g, l.pBot)
+      const y2 = yFromP(g, l.pTop)
+      ctx.fillStyle = STRATIFICATION_COLORS[l.kind]
+      ctx.fillRect(x, Math.min(y1, y2), width, Math.max(1, Math.abs(y2 - y1)))
+    }
+  }
+
+  // Rahmen und Beschriftung der eigenen Skala.
+  ctx.strokeStyle = theme.axis
+  ctx.lineWidth = 1
+  ctx.strokeRect(x + 0.5, g.top + 0.5, width - 1, g.height - 1)
+  ctx.font = '10px system-ui, sans-serif'
+  // Die Überschrift steht IM Feld, nicht darüber: über dem Diagramm liegen
+  // die Umschalter des Panels, und dort war sie halb verdeckt.
+  ctx.fillStyle = 'rgba(16,17,19,0.85)'
+  ctx.fillRect(x + 1, g.top + 1, width - 2, 13)
+  ctx.fillStyle = theme.label
+  ctx.textAlign = 'center'
+  ctx.fillText('θe K', x + width / 2, g.top + 11)
+  ctx.textAlign = 'left'
+  ctx.fillText(String(lo), x + 1, yb + 11)
+  ctx.textAlign = 'right'
+  ctx.fillText(String(hi), x + width - 1, yb + 11)
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x, g.top, width, g.height)
+  ctx.clip()
+  for (const { profile, color } of curves) {
+    // ZWEIMAL gezeichnet: dunkel unterlegt, dann in der Modellfarbe. Die
+    // Bänder darunter sind selbst farbig — eine blaue Kurve auf dem blauen
+    // „stabil"-Band wäre sonst kaum zu sehen, und die Modellfarbe muss
+    // bleiben, weil sie das Modell benennt.
+    ctx.beginPath()
+    for (let i = 0; i < profile.p.length; i++) {
+      const px = xOf(profile.thetaE[i])
+      const py = yFromP(g, profile.p[i])
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.strokeStyle = 'rgba(12,13,15,0.85)'
+    ctx.lineWidth = 3.4
+    ctx.stroke()
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.6
+    ctx.stroke()
+  }
+  ctx.restore()
+  ctx.restore()
+}
+
+export { THETAE_LINE }

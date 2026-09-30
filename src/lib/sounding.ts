@@ -14,6 +14,8 @@ import {
   moistAdiabatTemp,
   potentialTemperature,
   saturationMixingRatio,
+  thetaE,
+  toK,
   virtualTemperature,
 } from './thermo'
 
@@ -76,6 +78,106 @@ export interface SoundingParams {
   freezingLevelP: number | null // hPa
   freezingLevelZ: number | null // m
   shear06: number | null // m/s (0–6 km Bulk)
+}
+
+/**
+ * SCHICHTUNG AUF EINEN BLICK: θe über die Höhe und die Klassen dazwischen.
+ *
+ * θe bleibt sowohl bei trockener als auch bei feuchter Hebung erhalten. Hebt
+ * man also eine ganze SCHICHT, bleibt ihr θe-Profil stehen — und daran hängt
+ * die Aussage: **nimmt θe mit der Höhe AB, ist die Schicht potentiell
+ * instabil.** Wird sie gehoben, sättigt der feuchte Fuß zuerst, kühlt danach
+ * feuchtadiabatisch (langsamer) ab, während die trockene Oberseite weiter
+ * trockenadiabatisch (schneller) abkühlt — die Schichtung labilisiert sich
+ * von selbst. Das ist die klassische Gewitterlage vor einer Hebung, und man
+ * sieht sie im Skew-T nur, wenn man T und Td zusammen liest. Genau dafür ist
+ * die Kurve da.
+ *
+ * Die Klassen sind ein reiner Vorzeichentest auf dθe/dz mit einer
+ * Totzone: ±`NEUTRAL_K_PER_KM` gilt als neutral, weil Modellprofile auf
+ * wenigen Leveln sonst bei jedem Zehntelgrad die Farbe wechselten. In der
+ * freien Troposphäre nimmt θe normalerweise um 2–4 K/km ZU — „stabil" ist
+ * also der Normalfall und die roten Schichten sind die Ausnahme, auf die es
+ * ankommt.
+ *
+ * Gerechnet wird auf den NATIVEN Leveln, nicht auf dem feinen 5-hPa-Gitter:
+ * die Bänder sollen zeigen, was das Modell liefert, und nicht, was eine
+ * Interpolation daraus macht.
+ */
+export type StratificationKind = 'unstable' | 'neutral' | 'stable'
+
+/** Totzone um 0 (K/km), innerhalb derer eine Schicht als neutral gilt. */
+export const NEUTRAL_K_PER_KM = 0.5
+
+export interface ThetaELayer {
+  /** Druck an Unter- und Oberkante (hPa). */
+  pBot: number
+  pTop: number
+  /** dθe/dz in K/km — NEGATIV heißt potentiell instabil. */
+  gradient: number
+  kind: StratificationKind
+}
+
+export interface ThetaEProfile {
+  /** Druck je Level (hPa), Boden zuerst — wie die Spalte. */
+  p: number[]
+  /** θe je Level (K). */
+  thetaE: number[]
+  layers: ThetaELayer[]
+  min: number
+  max: number
+}
+
+/**
+ * Schichtdicke zweier Level in METERN. Bevorzugt die Geopotentialhöhen des
+ * Modells; fehlen sie (einzelne Level liefern keine), hilft die hypsometrische
+ * Näherung mit der mittleren Virtualtemperatur aus — sonst fiele die
+ * Klassifikation für die ganze Schicht aus, obwohl θe an beiden Enden bekannt
+ * ist.
+ */
+function thicknessM(col: SoundingColumn, i: number, j: number): number {
+  const zi = col.z[i]
+  const zj = col.z[j]
+  if (zi != null && zj != null && Number.isFinite(zi) && Number.isFinite(zj)) {
+    return Math.abs(zj - zi)
+  }
+  const tvI = virtualTemperature(col.T[i], mixingRatioFromDewpoint(col.Td[i], col.p[i]))
+  const tvJ = virtualTemperature(col.T[j], mixingRatioFromDewpoint(col.Td[j], col.p[j]))
+  const tvMean = toK((tvI + tvJ) / 2)
+  return (RD * tvMean) / G * Math.abs(Math.log(col.p[i] / col.p[j]))
+}
+
+export function thetaEProfile(col: SoundingColumn): ThetaEProfile | null {
+  const p: number[] = []
+  const te: number[] = []
+  const idx: number[] = []
+  for (let i = 0; i < col.p.length; i++) {
+    const v = thetaE(col.T[i], col.Td[i], col.p[i])
+    if (!Number.isFinite(v)) continue
+    p.push(col.p[i])
+    te.push(v)
+    idx.push(i)
+  }
+  if (te.length < 2) return null
+
+  const layers: ThetaELayer[] = []
+  for (let k = 0; k + 1 < te.length; k++) {
+    const dz = thicknessM(col, idx[k], idx[k + 1])
+    if (!(dz > 1)) continue
+    const gradient = ((te[k + 1] - te[k]) / dz) * 1000 // K/km, nach OBEN gerechnet
+    layers.push({
+      pBot: p[k],
+      pTop: p[k + 1],
+      gradient,
+      kind:
+        gradient < -NEUTRAL_K_PER_KM
+          ? 'unstable'
+          : gradient > NEUTRAL_K_PER_KM
+            ? 'stable'
+            : 'neutral',
+    })
+  }
+  return { p, thetaE: te, layers, min: Math.min(...te), max: Math.max(...te) }
 }
 
 /**

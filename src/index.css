@@ -776,6 +776,17 @@ button:focus-visible {
   pointer-events: none;
 }
 
+/* Ist die θe-Spalte an, weichen die Überlagerungen nach links aus — sonst
+   liegt die Kennzahlentabelle genau auf ihr, und die Spalte wäre nur bei
+   geschlossener Tabelle zu sehen. Der Wert ist die Spaltenbreite aus
+   `SkewTPanel`: THETAE_W (76) plus der Rand der Windfiedern (44) — also die
+   LINKE Kante der Spalte, nicht ihre Breite. Mit 84 px lag die Tabelle noch
+   auf dem linken Drittel der Spalte. */
+.skewt.has-thetae .skewt-toggles,
+.skewt.has-thetae .skewt-params {
+  right: 120px;
+}
+
 .skewt-toggles {
   position: absolute;
   top: 4px;
