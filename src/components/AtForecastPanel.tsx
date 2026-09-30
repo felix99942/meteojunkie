@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { loadForecast, loadMosStations, type ForecastData, type MosStation } from '../api/mosApi'
 import { FORECAST_PARAMS, getForecastSpec } from '../config/atForecast'
 import { colorForValue } from '../config/colorscales'
+import { globalKeyAllowed } from '../lib/globalKeys'
 import { DACH_VIEW } from '../render/atmap'
 import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import { AtClimateMap } from './AtClimateMap'
@@ -70,6 +71,30 @@ export function AtForecastPanel() {
   )
   const clampedIdx = Math.min(idx, Math.max(0, steps.length - 1))
 
+  /**
+   * ←/→ bewegen den Zeitschieber, Shift springt sechs Schritte weit — wie
+   * im Zeit-Scrubber der Panel-Bereiche.
+   *
+   * Der Regler ist ein `input[type=range]` und kann das von sich aus, aber
+   * eben NUR mit dem Fokus darauf: wer die Karte, das Parameter-Dropdown
+   * oder eine Station angeklickt hat, drückte ins Leere. Ein Zeitschieber,
+   * den man erst suchen und anklicken muss, ist im operationellen Gebrauch
+   * kein Zeitschieber.
+   */
+  useEffect(() => {
+    const last = steps.length - 1
+    if (last < 1) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!globalKeyAllowed(e)) return
+      const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0
+      if (dir === 0) return
+      e.preventDefault()
+      setIdx((i) => Math.max(0, Math.min(last, Math.min(i, last) + dir * (e.shiftKey ? 6 : 1))))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [steps.length])
+
   const { values, colors, covered } = useMemo(() => {
     const values: (number | null)[] = []
     const colors: (string | null)[] = []
@@ -126,6 +151,7 @@ export function AtForecastPanel() {
             value={clampedIdx}
             onChange={(e) => setIdx(Number(e.target.value))}
             disabled={steps.length === 0}
+            title="Zeitschritt wählen — ←/→ auch ohne Klick, Shift+←/→ sechs Schritte"
           />
           <span className="atclima-step">{stepLabel}</span>
         </div>

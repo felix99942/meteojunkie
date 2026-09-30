@@ -3,6 +3,7 @@
 // Shift+←/→ = ±6 h, Leertaste = Play/Pause.
 
 import { useEffect } from 'react'
+import { globalKeyAllowed } from '../lib/globalKeys'
 import { formatCursorTime, STEP_MS, TIME_RANGE } from '../config/time'
 import { activeHorizonEnd, cursorRangeEnd, useWorkbench } from '../state/workbench'
 
@@ -50,9 +51,10 @@ export function TimeScrubber() {
   // Globale Tastatursteuerung — Pflicht bei operationeller Nutzung (SPEC §5)
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null
-      const tag = target?.tagName
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
+      // Wer wann zugreifen darf, steht in `globalKeyAllowed` — inklusive der
+      // beiden Fälle, die hier falsch waren (fokussierter Knopf, doppelt
+      // wirkender Trenner im Soundings-Bereich).
+      if (!globalKeyAllowed(e)) return
       const s = useWorkbench.getState()
       if (e.key === 'ArrowLeft') {
         e.preventDefault()

@@ -2996,6 +2996,27 @@ npm run preview   # gebautes dist/ servieren
   ausgeblendet, schaltet parsync ab (`parSyncAfterLayout`), sonst blieben die
   Parameter-Dropdowns der übrigen Panels für immer gesperrt. Getestet in
   `state/workbench.test.ts`.
+- **Die Pfeiltasten bewegen den Zeitschieber — und zwar OHNE ihn
+  anzuklicken** (`lib/globalKeys.ts`, mit Tests): ←/→ ein Schritt, Shift
+  sechs. Der Zeit-Scrubber der Panel-Bereiche konnte das schon, die
+  MOS-Vorhersage nicht — dort war der Regler ein `input[type=range]`, das
+  die Tasten NUR mit dem Fokus darauf annimmt; wer die Karte, das
+  Parameter-Dropdown oder eine Station angeklickt hatte, drückte ins Leere.
+  `globalKeyAllowed(e)` ist die eine Regel dazu und nimmt genau zwei Fälle
+  aus, beide waren vorher falsch. **(1) Ein BUTTON darf NICHT sperren**: die
+  alte Liste im Scrubber schloss ihn mit ein, obwohl Pfeiltasten auf einem
+  Knopf nichts tun — wer im Soundings-Bereich eine Stadt aus der
+  Schnellwahl anklickte, ließ den Fokus dort stehen, und danach war die
+  Zeitsteuerung tot, ohne dass man sah, warum. Eingabefeld, Auswahlliste und
+  Schieberegler bleiben dagegen ausgenommen: dort ist die native Wirkung die
+  richtige (Textcursor, Auswahl, ein `step` weiter). **(2)
+  `defaultPrevented` sperrt**: der Trenner zwischen Karte und Skew-T
+  (`ProfileSplit`) verschiebt sich mit den Pfeiltasten und ruft
+  `preventDefault()`, sein Ereignis steigt aber weiter bis zum `window` —
+  ohne den Riegel rückte zusätzlich der Zeit-Cursor vor, ein Tastendruck mit
+  zwei Wirkungen. Der Riegel gilt damit auch für jeden künftigen lokalen
+  Handler. Radar und Satellit haben eigene Zeitleisten und bleiben vorerst
+  bei ihrem Regler.
 - **Schnellwahl des Orts** (`config/quickPoints.ts`, `components/QuickPoints.tsx`):
   acht Knöpfe — Landeshauptstädte plus **Sonnblick** — die `lockedLocation`
   setzen. Sie stehen in JEDEM punktbasierten Bereich: klassisches Meteogramm
