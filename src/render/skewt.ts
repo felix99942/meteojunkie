@@ -191,9 +191,30 @@ export function drawWindBarb(
 const CAPE_FILL = 'rgba(214, 58, 43, 0.30)'
 const CIN_FILL = 'rgba(74, 147, 232, 0.30)'
 const PARCEL_LINE = 'rgba(232, 228, 220, 0.9)'
-/** Abwind: violett, weil Rot und Blau hier CAPE und CIN gehören. */
-const DCAPE_FILL = 'rgba(150, 110, 220, 0.30)'
-const DCAPE_LINE = 'rgba(190, 155, 245, 0.9)'
+/**
+ * FEUCHTKUGELKURVE: eigenes LILA statt der Modellfarbe.
+ *
+ * Sie lag als dritte Kurve desselben Modells in dessen Farbe zwischen T und
+ * Td und ging dort unter — man fand sie nur, wenn man wusste, wo sie liegt.
+ * Mit einer eigenen Farbe ist sie sofort da, und die Zuordnung bleibt
+ * trotzdem lesbar: Tw verläuft immer ZWISCHEN T und Td desselben Modells.
+ * Der Preis steht dazu: bei mehreren Modellen sind die Tw-Kurven nicht mehr
+ * nach Modell zu unterscheiden.
+ *
+ * Kräftiges Magenta-Lila, bewusst gesättigter als das blasse Violett des
+ * Abwindwegs — beide sind violett, aber der eine ist gestrichelt und blass,
+ * der andere gepunktet und kräftig.
+ */
+export const WETBULB_LINE = '#b15be0'
+
+/**
+ * Abwind: violett, weil Rot und Blau hier CAPE und CIN gehören — aber ins
+ * BLAUE gezogen, seit die Feuchtkugelkurve lila ist. Die beiden laufen
+ * unweigerlich nebeneinander (der Abwind startet GENAU auf der Tw-Kurve),
+ * und zwei gleich warme Violetts wären dort nicht zu trennen.
+ */
+const DCAPE_FILL = 'rgba(118, 104, 224, 0.30)'
+const DCAPE_LINE = 'rgba(158, 150, 246, 0.95)'
 
 /** Fläche zwischen zwei T-Kurven (aT, bT) über den Indexbereich füllen. */
 function fillBetween(

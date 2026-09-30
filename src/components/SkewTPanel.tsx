@@ -32,6 +32,7 @@ import {
   drawThetaEColumn,
   drawWindBarb,
   makeGeometry,
+  WETBULB_LINE,
   xFromTP,
   yFromP,
   type HodoPoint,
@@ -353,7 +354,9 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         // Feuchtkugel: fein gepunktet und dünner als T/Td — sie ist die
         // dritte Kurve desselben Modells und soll die beiden nicht
         // überstimmen.
-        if (showWetBulb) strokeColumnLine(ctx, g, col, wetBulbColumn(col), color, [1, 3], 1.2)
+        if (showWetBulb) {
+          strokeColumnLine(ctx, g, col, wetBulbColumn(col), WETBULB_LINE, [2, 3], 1.5)
+        }
         if (!barb) barb = { col, color }
       })
 
@@ -536,13 +539,19 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             className="skewt-hint"
             title="Bezugspaket ist ML (Mittel der untersten 100 hPa) — daraus stammen der Parzellenweg im Diagramm und der LI. SB (bodenbasiert) und MU (labilstes Paket) stehen zum Vergleich daneben. CAPE/CIN in J/kg."
           >
-            — T · - - Td{showWetBulb ? ' · ··· Tw' : ''} · ⋯ ML-Paket ·{' '}
+            — T · - - Td{' '}
+            {showWetBulb && (
+              <>
+                · <span style={{ color: WETBULB_LINE }}>··· Tw</span>{' '}
+              </>
+            )}
+            · ⋯ ML-Paket ·{' '}
             <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
             <span style={{ color: '#4a93e8' }}>▉ CIN</span>
             {showDowndraft && (
               <>
                 {' '}
-                <span style={{ color: 'rgb(170,135,235)' }}>▉ DCAPE</span>
+                <span style={{ color: 'rgb(150,142,240)' }}>▉ DCAPE</span>
               </>
             )}
           </span>

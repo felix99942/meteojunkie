@@ -1602,8 +1602,15 @@ npm run preview   # gebautes dist/ servieren
   den Ausgangsdruck —, also aus den beiden schon vorhandenen, geprüften
   Bausteinen; gegen die Psychrometertafel: 20 °C bei 10 °C Taupunkt und
   1000 hPa ergeben 13,98 °C.
-  Gezeichnet fein gepunktet und dünner als T/Td: sie ist die dritte Kurve
-  DESSELBEN Modells und soll die beiden nicht überstimmen.
+  Gezeichnet gepunktet und in EIGENEM LILA (`WETBULB_LINE`) statt in der
+  Modellfarbe: als dritte Kurve desselben Modells in dessen Farbe ging sie
+  zwischen T und Td unter — man fand sie nur, wenn man wusste, wo sie liegt.
+  Die Zuordnung bleibt trotzdem lesbar, weil Tw immer ZWISCHEN T und Td
+  desselben Modells verläuft; der Preis ist, dass bei mehreren Modellen die
+  Tw-Kurven nicht mehr nach Modell zu unterscheiden sind. Der Abwindweg ist
+  daraufhin ins BLAUVIOLETTE gerückt: er startet GENAU auf der Tw-Kurve, die
+  beiden laufen also unweigerlich nebeneinander, und zwei gleich warme
+  Violetts wären dort nicht zu trennen.
   **Zwei Zahlen hängen daran, beide in der Kennzahlentabelle.**
   **„0 °C feucht"** ist die Feuchtkugel-Nullgradgrenze und die für den
   Niederschlagstyp entscheidende der beiden: Schnee, der in ungesättigte Luft
