@@ -23,6 +23,7 @@
 // Ort dort setzt, sieht ihn hier sofort, und umgekehrt.
 
 import { Fragment, useCallback, useMemo, useRef, useState } from 'react'
+import { seriesKey } from '../lib/dataKey'
 import type { HourlySeries } from '../api/openmeteo'
 import { useMeteogramSeries } from '../api/queries'
 import { ChartRow } from './ChartStack'
@@ -270,12 +271,19 @@ export function ClassicMeteogram() {
   const codeQ = useMeteogramSeries(location, [modelId], 'weather_code')[0]
   const dayQ = useMeteogramSeries(location, [modelId], 'is_day')[0]
 
-  const loadedKey = [
-    t2mQ, feelsQ, dewQ, precipQ, snowQ, probQ, cloudQ, cloudLowQ, cloudMidQ,
-    cloudHighQ, windQ, gustQ, windDirQ, pressureQ, codeQ, dayQ,
-  ]
-    .map((q) => (q.data ? '1' : '0'))
-    .join('')
+  /**
+   * Abhängigkeitsschlüssel des Diagramm-Memos.
+   *
+   * Über die IDENTITÄT der Serien, nicht über „geladen ja/nein" — sonst
+   * bleibt der Schlüssel beim Ortswechsel gleich, sobald beide Orte schon im
+   * Cache liegen, und die Knöpfe scheinen nicht zu reagieren (Begründung und
+   * Messung in `lib/dataKey.ts`).
+   */
+  const dataKey = seriesKey([
+    t2mQ.data, feelsQ.data, dewQ.data, precipQ.data, snowQ.data, probQ.data,
+    cloudQ.data, cloudLowQ.data, cloudMidQ.data, cloudHighQ.data,
+    windQ.data, gustQ.data, windDirQ.data, pressureQ.data, codeQ.data, dayQ.data,
+  ])
 
   const charts = useMemo<ChartDef[]>(() => {
     // Sicherheitsnetz: das Raster ist bereits am Horizont beschnitten, aber
@@ -446,11 +454,11 @@ export function ClassicMeteogram() {
         curves: [{ label: 'Luftdruck (MSL)', color: COLOR_PRESSURE, type: 'line', values: pressure, width: 1.6 }],
       },
     ]
-    // Query-Objekte sind bei TanStack Query jede Renderrunde neue Referenzen —
-    // auf `loadedKey` (geladen ja/nein je Serie) keyen wie im Meteogramm der
-    // Punktprognosen, sonst rechnet der Memo bei jedem Render neu.
+    // Query-Objekte sind bei TanStack Query jede Renderrunde neue Referenzen
+    // — auf die Identität der DATEN keyen, sonst rechnet der Memo bei jedem
+    // Render neu (oder, schlimmer, gar nicht: siehe `lib/dataKey.ts`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, gridMs, horizon])
+  }, [dataKey, gridMs, horizon])
 
   const syncKey = 'classic-meteogram'
   // Die Zeitleiste zwischen Bewölkung und Temperatur trägt den Zeitpunkt —

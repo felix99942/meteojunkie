@@ -4,6 +4,7 @@
 // Klick in den Plot setzt den Cursor.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { seriesKey } from '../lib/dataKey'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useMeteogramSeries } from '../api/queries'
@@ -62,7 +63,10 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
   const gridMs = useMemo(() => timeGridMs(), [])
   const xsSec = useMemo(() => gridMs.map((t) => t / 1000), [gridMs])
 
-  const loadedKey = results.map((r) => (r.data ? '1' : '0')).join('')
+  // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": sonst
+  // bleibt der Schlüssel gleich, wenn zwischen zwei bereits geladenen Orten
+  // gewechselt wird, und das Diagramm zeigt weiter den alten (`lib/dataKey.ts`).
+  const dataKey = seriesKey(results.map((r) => r.data))
   const data = useMemo<uPlot.AlignedData>(
     () => [
       xsSec,
@@ -80,9 +84,10 @@ export function Meteogram({ panel }: { panel: PanelConfig }) {
         return showSum ? accumulateSeries(aligned) : aligned
       }),
     ],
-    // results ist jede Renderrunde ein neues Array — auf geladene Daten keyen
+    // results ist jede Renderrunde ein neues Array — auf die Identität der
+    // Daten keyen
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loadedKey, gridMs, xsSec, panel.models.join(), panel.variable, showSum],
+    [dataKey, gridMs, xsSec, panel.models.join(), panel.variable, showSum],
   )
 
   // Cursor-Linie: Ref statt Prop, damit der Draw-Hook ohne Chart-Neuaufbau

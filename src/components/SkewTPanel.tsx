@@ -5,6 +5,7 @@
 // Darunter eine Vergleichstabelle der Kennzahlen (Parameter × Modell).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { seriesKey } from '../lib/dataKey'
 import { useProfiles } from '../api/queries'
 import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
@@ -164,7 +165,12 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   const [showHodo, setShowHodo] = useState(false)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
-  const loadedKey = results.map((r) => (r.data ? '1' : '0')).join('')
+  // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
+  // zwischen zwei bereits geladenen Punkten ließ den Schlüssel sonst
+  // unverändert, und das Skew-T zeigte weiter das alte Profil — an einem
+  // Sounding die denkbar unauffälligste Art, falsch zu sein
+  // (Messung in `lib/dataKey.ts`).
+  const loadedKey = seriesKey(results.map((r) => r.data))
   const modelsKey = panel.models.join()
 
   /**

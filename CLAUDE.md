@@ -2584,6 +2584,36 @@ npm run preview   # gebautes dist/ servieren
 
 ## Konventionen
 
+- **Memo-Schlüssel über die IDENTITÄT der Daten, nicht über „geladen
+  ja/nein"** (`lib/dataKey.ts`, `seriesKey`/`refId`, mit Tests). TanStack
+  Query gibt jede Renderrunde NEUE Query-Objekte zurück; ein `useMemo` über
+  sie rechnete bei jedem Render neu, und die Panels keyten deshalb auf ein
+  billiges `loadedKey` = „geladen ja/nein je Serie". **Das war zu wenig und
+  hat drei Panels still falsch gemacht**: Wien → Sonnblick → Wien ergibt
+  dreimal denselben Schlüssel `1111…`, sobald beide Punkte im Cache liegen —
+  der Memo rechnete beim dritten Klick nicht neu, und auf dem Schirm blieb
+  das Profil des Sonnblicks stehen. Gemessen (2026-09-30, klassisches
+  Meteogramm): 12 Plot-Neuaufbauten beim ersten Besuch einer Stadt, **null**
+  bei der Rückkehr, und die Pixelsignatur blieb nachweislich die der vorigen
+  Station. Beim schnellen Durchklicken besucht man Städte zwangsläufig
+  erneut — so entstand der Eindruck, die Knöpfe reagierten träge.
+  Geschrieben wird jetzt die IDENTITÄT der Datenobjekte (laufende Nummer je
+  Referenz aus einer `WeakMap`): TanStack teilt Strukturen, ein
+  unveränderter Abruf liefert dieselbe Referenz, ein geänderter eine neue —
+  der Schlüssel ändert sich also genau dann, wenn sich die Daten geändert
+  haben. **Bewusst NICHT der Ort im Schlüssel** (das `dataKey`-Muster aus
+  `VerifyPanel`): das übersähe einen Hintergrund-Refetch mit neuen Werten am
+  selben Ort. Betroffen waren `ClassicMeteogram`, `Meteogram` und
+  `SkewTPanel` — am Sounding ist es die unauffälligste Art, falsch zu sein.
+  **Die Rechenzeit war nie das Problem**, auch wenn es so aussah: ein
+  Ortswechsel kostet gemessen 135 ms insgesamt (Netz ~120 ms, erster
+  Plot-Aufbau nach 45 ms leer, zweiter nach 130 ms mit Daten), eine Rückkehr
+  aus dem Cache jetzt 30–45 ms. Dass `ChartRow` den uPlot bei Datenänderung
+  neu BAUT statt `setData` zu rufen, ist damit gemessen kein Engpass — nicht
+  ohne neue Messung refactorn. Die leere Zwischenrunde bleibt ausserdem
+  absichtlich: das vorige Bild stehen zu lassen wäre dieselbe falsche
+  Aussage, die hier gerade behoben wurde (vgl. „lieber nichts zeigen" im
+  Satellitenbereich).
 - **Sync-Semantik**: Der SYNC-Button eines Panels koppelt Zeit-Cursor,
   Kartenzoom (`sharedView`) und Modellauswahl (`sharedModels`/`sharedMapModel`).
   Sync-aktive Panels LESEN die gemeinsamen Werte über `useEffectivePanel()` —
