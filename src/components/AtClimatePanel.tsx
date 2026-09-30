@@ -143,6 +143,8 @@ export function AtClimatePanel() {
   const [selected, setSelected] = useState<AtStation | null>(null)
   const [showRank, setShowRank] = useState(false)
   const [showAsk, setShowAsk] = useState(false)
+  /** Was ins Einstiegsfeld getippt wurde, bevor das Fenster aufging. */
+  const [askSeed, setAskSeed] = useState('')
   const [rankHover, setRankHover] = useState<number | null>(null)
 
   const init = useMemo(latestPeriods, [])
@@ -990,14 +992,41 @@ export function AtClimatePanel() {
                 </span>
               )}
             </div>
-            {/* Beide Einstiege nebeneinander und dort, wo das Fenster danach
-                aufgeht — kein Suchen in der Werkzeugleiste. Die Reihe
-                verschwindet, sobald eines offen ist: sie belegen denselben
-                Platz und schließen über ihr eigenes ✕. Die Rangliste beantwortet
-                „welche Station", das Archiv „welcher Wert" — sie gehören
-                gleichrangig nebeneinander. */}
+            {/* Beide Einstiege dort, wo das Fenster danach aufgeht — kein
+                Suchen in der Werkzeugleiste. Sie verschwinden, sobald eines
+                offen ist: sie belegen denselben Platz und schließen über ihr
+                eigenes ✕.
+
+                **Die Frage ans Archiv ist ein echtes SUCHFELD und steht
+                zuerst**, die Rangliste als kleinerer Knopf darunter. Sie waren
+                zwei gleich große Knöpfe nebeneinander, und das wurde der Sache
+                nicht gerecht: die Rangliste beantwortet „welche Station" zu dem,
+                was ohnehin schon in der Karte steht, das Archiv dagegen
+                „welcher Wert" über die ganze Messgeschichte — das ist die
+                Frage, mit der man herkommt. Ein Feld sagt außerdem „hier
+                tippen", wo ein Knopf nur „hier klicken" sagt; das erste Zeichen
+                öffnet das Fenster und wird MITGENOMMEN (`askSeed`), sonst wäre
+                ein Feld, in dem nichts stehen bleibt, ein Etikettenschwindel. */}
             {!showRank && !showAsk && (
               <div className="atmap-tools">
+                <div
+                  className="atmap-ask"
+                  onClick={() => setShowAsk(true)}
+                  title="Frage in Alltagssprache stellen — beantwortet aus den Rekord- und Normalwerten, ohne Abruf"
+                >
+                  <span aria-hidden="true">💬</span>
+                  <input
+                    type="text"
+                    value=""
+                    placeholder="Frage ans Klimaarchiv — z. B. wärmster Sommer in Graz"
+                    aria-label="Frage ans Klimaarchiv"
+                    onFocus={() => setShowAsk(true)}
+                    onChange={(e) => {
+                      setAskSeed(e.target.value)
+                      setShowAsk(true)
+                    }}
+                  />
+                </div>
                 <button
                   type="button"
                   className="atmap-toolbtn"
@@ -1005,14 +1034,6 @@ export function AtClimatePanel() {
                   title="Alle Stationen durchsuchen und nach Wert reihen — Hover markiert die Station, Klick öffnet ihr Detail"
                 >
                   <span aria-hidden="true">🔍</span> Rangliste &amp; Stationssuche
-                </button>
-                <button
-                  type="button"
-                  className="atmap-toolbtn"
-                  onClick={() => setShowAsk(true)}
-                  title="Frage in Alltagssprache stellen — beantwortet aus den Rekord- und Normalwerten, ohne Abruf"
-                >
-                  <span aria-hidden="true">💬</span> Frage ans Klimaarchiv
                 </button>
               </div>
             )}
@@ -1048,7 +1069,11 @@ export function AtClimatePanel() {
             {showAsk && stations && (
               <AtAskBox
                 stations={stations}
-                onClose={() => setShowAsk(false)}
+                initial={askSeed}
+                onClose={() => {
+                  setShowAsk(false)
+                  setAskSeed('')
+                }}
                 onShow={(st, code, month, seasonId, year) => {
                   // Auf den ZEITRAUM DER ANTWORT springen: bei einem Rekord
                   // ist das sein Jahr, nicht das laufende — sonst zeigte die

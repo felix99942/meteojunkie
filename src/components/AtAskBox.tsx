@@ -25,7 +25,7 @@
 // diese Auskunft NICHT von einem Sprachmodell formulieren zu lassen: das
 // antwortet flüssig und verbirgt dabei, was es angenommen hat.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AtStation } from '../api/geosphere'
 import { resolveExtremeDay, type ExtremeDay } from '../api/atRecords'
 import {
@@ -146,10 +146,18 @@ const defaultValueYear = () => new Date().getUTCFullYear() - 1
 
 export function AtAskBox({
   stations,
+  initial,
   onShow,
   onClose,
 }: {
   stations: AtStation[]
+  /**
+   * Was schon im Einstiegsfeld der Karte stand, als das Fenster aufging. Das
+   * Feld dort ist ein echtes Suchfeld: wer lostippt, soll seine Zeichen
+   * wiederfinden und weiterschreiben können, statt sie an einen Knopf zu
+   * verlieren.
+   */
+  initial?: string
   /** „In der Karte zeigen" — setzt Parameter, Zeitraum und Station. */
   onShow: (
     station: AtStation,
@@ -161,14 +169,26 @@ export function AtAskBox({
   ) => void
   onClose: () => void
 }) {
-  const [question, setQuestion] = useState('')
+  const [question, setQuestion] = useState(initial ?? '')
   // Was der Erkenner verstanden hat — und was der Nutzer davon überstimmt hat.
   // Die Overrides werden bei JEDER neuen Frage verworfen, sonst hinge eine
   // alte Korrektur still an der nächsten Frage.
   const [override, setOverride] = useState<Partial<AskQuery>>({})
+  const inputRef = useRef<HTMLInputElement>(null)
   const [records, setRecords] = useState<StationRecords | null>(null)
   const [national, setNational] = useState<NationalRecords | null>(null)
   const [normals, setNormals] = useState<NormalsMap | null>(null)
+
+  // Fokus beim Öffnen — und zwar mit dem Cursor HINTER dem mitgebrachten Text.
+  // `autoFocus` allein reichte, solange das Feld immer leer aufging; mit einem
+  // ersten Zeichen aus dem Einstiegsfeld stünde der Cursor je nach Browser
+  // davor, und der zweite Buchstabe landete vor dem ersten.
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [])
 
   const parsed = useMemo(
     () => (question.trim() ? parseQuestion(question, stations) : null),
@@ -621,9 +641,9 @@ export function AtAskBox({
       </div>
 
       <input
+        ref={inputRef}
         className="atask-input"
         type="text"
-        autoFocus
         value={question}
         placeholder="z. B. höchste temperatur im juli in salzburg"
         onChange={(e) => {

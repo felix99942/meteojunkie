@@ -1936,14 +1936,16 @@ button:focus-visible {
   min-height: 0;
 }
 
-/* Frage ans Klimaarchiv: Fenster oben links, dort wo der Einstiegsknopf
-   stand — wie die Rangliste, mit der es sich den Platz teilt. */
+/* Frage ans Klimaarchiv: Fenster oben links, dort wo das Suchfeld stand — wie
+   die Rangliste, mit der es sich den Platz teilt. GENAU SO BREIT wie das
+   Einstiegsfeld (`.atmap-ask`), damit das Öffnen aussieht, als wüchse das Feld
+   nach unten auf, und nicht wie ein Sprung. */
 .atask {
   position: absolute;
   left: 10px;
   top: 10px;
   z-index: 6;
-  width: 400px;
+  width: 500px;
   max-width: calc(100% - 20px);
   max-height: calc(100% - 20px);
   overflow-y: auto;
@@ -1970,8 +1972,8 @@ button:focus-visible {
 
 .atask-input {
   width: 100%;
-  font-size: 14px;
-  padding: 7px 9px;
+  font-size: 14.5px;
+  padding: 8px 10px;
 }
 
 /* Beispiele: die Frageformen zeigen, die der Erkenner sicher versteht — eine
@@ -2158,26 +2160,77 @@ button:focus-visible {
 /* Prominenter Einstieg in Rangliste/Stationssuche — sitzt genau dort, wo die
    Liste danach aufgeht (links oben, deckungsgleich mit .atrank). Bewusst
    kräftiger als die Werkzeugleiste: es ist der Haupteinstieg in die Karte. */
+/* Die beiden Einstiege stehen UNTEREINANDER und sind bewusst NICHT
+   gleichrangig: das Suchfeld oben, die Rangliste als kleinerer Knopf darunter.
+   Begründung an der Stelle, die sie rendert (`AtClimatePanel`). */
 .atmap-tools {
   position: absolute;
   left: 10px;
   top: 10px;
   z-index: 5;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
 }
 
+/* Sieht aus wie ein Suchfeld, weil es eines ist — nur dass das Tippen das
+   Fenster darunter aufgehen lässt. Breite so, dass eine ganze Beispielfrage
+   hineinpasst: ein Feld, dessen Platzhalter abgeschnitten ist, sagt gerade
+   nicht, was man fragen kann. */
+.atmap-ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 500px;
+  max-width: 70vw;
+  padding: 9px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  cursor: text;
+}
+
+.atmap-ask:hover,
+.atmap-ask:focus-within {
+  background: var(--bg-control-hover);
+}
+
+/* Das innere Feld bringt keinen eigenen Rahmen mit — der Rahmen ist der des
+   Felds drumherum, sonst stünde ein Kasten im Kasten. */
+.atmap-ask input[type='text'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.atmap-ask input[type='text']:focus {
+  outline: none;
+}
+
+.atmap-ask input::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
+/* Die Rangliste ist der zweite Einstieg und tritt zurück: kleiner, ohne
+   Akzentrahmen. */
 .atmap-toolbtn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
-  font-size: 13.5px;
+  padding: 5px 10px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--ink);
+  color: var(--ink-secondary);
   background: var(--bg-panel);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   cursor: pointer;
@@ -2185,6 +2238,7 @@ button:focus-visible {
 
 .atmap-toolbtn:hover {
   background: var(--bg-control-hover);
+  color: var(--ink);
 }
 
 /* Trefferliste der Suche: kann lang werden, scrollt in der Schnellansicht */

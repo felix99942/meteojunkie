@@ -160,11 +160,10 @@ npm run preview   # gebautes dist/ servieren
   keine homogenisierte. Für den PERIODENVERGLEICH wird HISTALP inzwischen
   verwendet (s. u.) — dort ist es die richtige Quelle.
   **Frage ans Klimaarchiv** (`AtAskBox` + Rechenkern `climateAsk.ts`,
-  Einstieg gleichrangig NEBEN „Rangliste & Stationssuche" links oben in der
-  Karte, gemeinsame Reihe `.atmap-tools`): die Rangliste beantwortet „welche
-  Station", das Archiv „welcher Wert" — beide gehören nebeneinander. Beide
-  Fenster gehen an derselben Stelle auf und schließen sich gegenseitig aus, wie
-  bisher schon Knopf und Rangliste denselben Platz belegen: eine Frage in Alltagssprache („was war das
+  Einstieg links oben in der Karte, gemeinsame Reihe `.atmap-tools` mit
+  „Rangliste & Stationssuche"): beide Fenster gehen an derselben Stelle auf
+  und schließen sich gegenseitig aus, weil sie denselben Platz belegen. Eine
+  Frage in Alltagssprache („was war das
   tagesmaximum im juli seit messbeginn in salzburg?") wird in
   {Gebiet, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
   beantwortet — Rekorde (`records/<id>.json`) bzw. Normale. **Kostet keinen
@@ -174,6 +173,22 @@ npm run preview   # gebautes dist/ servieren
   ein API-Key wäre im Frontend öffentlich, und ein Modell, das aus eigenem
   Wissen antwortet, erfindet bei genau solchen Fragen selbstbewusst Zahlen —
   gebraucht wird kein Sprachverständnis, sondern Wissen über DIESE Registry.
+  **Der Einstieg ist ein echtes SUCHFELD und steht ÜBER der Rangliste**
+  (`.atmap-ask`, darunter der kleinere `.atmap-toolbtn`) — vorher waren es zwei
+  gleich große Knöpfe nebeneinander, und das wurde der Sache nicht gerecht: die
+  Rangliste beantwortet „welche Station" zu dem, was ohnehin schon in der Karte
+  steht, das Archiv „welcher Wert" über die ganze Messgeschichte. Letzteres ist
+  die Frage, mit der man herkommt, also die Hauptfunktion dieses Bereichs. Ein
+  Feld sagt außerdem „hier tippen", wo ein Knopf nur „hier klicken" sagt —
+  deshalb MUSS das Tippen dort auch funktionieren: das erste Zeichen öffnet das
+  Fenster und wird als `askSeed`/`AtAskBox.initial` MITGENOMMEN, sonst wäre ein
+  Feld, in dem nichts stehen bleibt, ein Etikettenschwindel. Der Fokus springt
+  mit dem Cursor ans ENDE des Mitgebrachten (Ref statt `autoFocus`; sonst
+  landet je nach Browser der zweite Buchstabe vor dem ersten). Fenster und Feld
+  sind GENAU gleich breit (500 px), damit das Öffnen aussieht, als wüchse das
+  Feld nach unten auf. Der Platzhalter trägt eine echte Beispielfrage
+  („wärmster Sommer in Graz") und muss ganz hineinpassen — ein abgeschnittener
+  Platzhalter sagt gerade nicht, was man fragen kann.
   Das Fenster zeigt das Verstandene als ÄNDERBARE Auswahl statt als Fließtext:
   „Salzburg" heißen acht Stationen, „Temperatur" kann Mittel, Maximum oder
   Minimum sein; ein Fehlgriff soll einen Klick kosten, keine falsche Zahl.
@@ -555,10 +570,12 @@ npm run preview   # gebautes dist/ servieren
   **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
   geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
   Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick
-  öffnet ihr Detail. Der Einstieg ist ein prominenter Knopf **links oben IN der
-  Karte** (`.atmap-rankbtn`) — genau dort, wo die Liste danach aufgeht; er
+  öffnet ihr Detail. Der Einstieg ist ein Knopf **links oben IN der
+  Karte** (`.atmap-toolbtn`) — genau dort, wo die Liste danach aufgeht; er
   verschwindet, solange sie offen ist (sie belegt denselben Platz und schließt
-  über ihr eigenes ✕). Das Suchfeld bekommt beim Öffnen den Fokus.
+  über ihr eigenes ✕). Er steht bewusst UNTER dem Suchfeld des Klimaarchivs und
+  ist kleiner — Begründung dort. Das Suchfeld der Liste bekommt beim Öffnen den
+  Fokus.
   **Die Suche geht immer über die GANZE Reihung**
   (`searchRanked`), nicht nur über die angezeigten Zeilen — sonst wäre eine
   Station auf Rang 87 in der Schnellansicht unauffindbar, weil dort nur die
