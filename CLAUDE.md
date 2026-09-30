@@ -168,7 +168,9 @@ npm run preview   # gebautes dist/ servieren
   tagesmaximum im juli seit messbeginn in salzburg?") wird in
   {Gebiet, Größe, Zeitraum, Extremum} übersetzt und aus den VORHANDENEN Assets
   beantwortet — Rekorde (`records/<id>.json`) bzw. Normale. **Kostet keinen
-  Request.** Bewusst OHNE Sprachmodell: die Seite ist statisch (GitHub Pages),
+  Request** (Ausnahme sind der exakte Rekordtag und die WERTfrage nach einem
+  benannten Zeitraum, s. u. — beide einen, beide für immer gecacht).
+  Bewusst OHNE Sprachmodell: die Seite ist statisch (GitHub Pages),
   ein API-Key wäre im Frontend öffentlich, und ein Modell, das aus eigenem
   Wissen antwortet, erfindet bei genau solchen Fragen selbstbewusst Zahlen —
   gebraucht wird kein Sprachverständnis, sondern Wissen über DIESE Registry.
@@ -227,6 +229,100 @@ npm run preview   # gebautes dist/ servieren
   („2.420 mm Rudolfshütte … bis 484 mm Retz"). Die Auswahl „gesucht" hat
   deshalb im Landesfall zwei Mittel-Einträge (höchste/tiefste Station), bei
   einer Station nur den einen.
+  **Das BUNDESLAND ist das vierte Gebiet** (`AskArea` = `station | place |
+  state | austria`, `AtStation.state` ist der Schlüssel): „wie viele Hitzetage
+  hatte die Steiermark 2024" ist eine Frage, die sich aus den vorhandenen
+  Daten beantworten lässt, und sie fiel vorher auf „ganz Österreich" zurück.
+  Ausgewertet wird wie beim Ort — dieselbe Stationsmenge, derselbe
+  `mergeRecords`/`answerFromNormalsRange`-Pfad. **Zwei Namen sind doppelt
+  vergeben**, und dort hat der ORT Vorrang: „Salzburg" und „Wien" heißen Land
+  UND Stadt, „höchste Temperatur in Wien" ist seit jeher die Frage an die
+  Stadt. Erkannt wird das daran, dass der Landesname ein Stationsname oder
+  dessen ANFANG ist („Wien Hohe Warte") — NICHT daran, ob `resolvePlace` einen
+  Ort gebildet hat: den gibt es erst ab zwei gleichnamigen Stationen, und an
+  einer einzelnen kippte die Frage sonst still aufs Land. Umgekehrt steckt
+  „Tirol" in Stationsnamen, ohne ein Ortsname zu sein: nennt die Frage AUSSER
+  dem Landesnamen noch ein Wort dieser Station („Kirchdorf in Tirol"), ist die
+  Station gemeint, sonst das Land. „Bundesland"/„ganz" schlägt beides
+  („im Bundesland Salzburg"). Der Preis steht nur beim REKORD an: er braucht
+  die Stationsdateien (Niederösterreich 117 × ~13 KB), Werte und Normale
+  kommen mit einem Abruf bzw. einer Datei aus — deshalb lädt das Fenster die
+  Dateien auch nur im Rekordfall. Die neun Länder stehen IMMER in der Auswahl,
+  nicht nur das erkannte: der Sprung vom Ort aufs Land soll ein Klick sein.
+  **Zwei davon tragen einen Artikel** (`areaIn`/`areaFor`) — „in DER
+  Steiermark", „im Burgenland" —, aus demselben Grund wie die
+  handgeschriebenen Superlative: aus dem Namen folgt er nicht, und ohne die
+  Tabelle stand da „meiste Hitzetage in Steiermark".
+  **Die dritte Frageform ist der gemessene WERT eines benannten Zeitraums**
+  (`AskScope` = `record | normal | value`, `askValuePeriod`/`answerFromPeriod`):
+  „anzahl der frosttage in innsbruck im jänner 2024" → 22 d, Innsbruck
+  Flughafen. Eine Jahreszahl macht die Frage dazu; „seit Messbeginn" schlägt
+  sie („höchste Temperatur seit 1900" bleibt eine Rekordfrage). Nennt die Frage
+  keinen engeren Zeitraum, gilt das ganze Jahr, sonst Monat oder Jahreszeit —
+  der Zeitraum ist dieselbe `Period`, die die Karte benutzt.
+  **Das ist der EINZIGE Pfad dieses Fensters, der einen Abruf kostet**, und
+  zwar genau einen: `fetchPeriodValues` holt den Zeitraum als Bulk-Request
+  über ALLE Stationen, legt ihn für immer in den IndexedDB-Cache und benutzt
+  denselben Schlüssel wie die Karte — wer den Zeitraum dort schon angesehen
+  hat, zahlt hier nichts. Bewusst über alle Stationen statt über das Gebiet:
+  ein zugeschnittener Request wäre ein zweiter Cache-Eintrag für dieselben
+  Daten. Derselbe Handel wie beim exakten Rekordtag (`resolveExtremeDay`) —
+  ohne ihn bliebe die Frage unbeantwortbar, obwohl die Karte die Zahl längst
+  zeigt. Über eine Stationsmenge gibt es auch hier bewusst KEINE eine Zahl,
+  sondern die SPANNE (Steiermark 2024: 52 Hitzetage in Bad Radkersburg … 0 in
+  Fischbach, 41 Stationen) — dieselbe Begründung wie beim Flächenmittel. Wer
+  von Hand auf „gemessener Wert" umschaltet, bekommt als Vorgabe das letzte
+  ABGESCHLOSSENE Jahr: das laufende wäre eine Teilsumme und sähe bei Kenntagen
+  und Niederschlag wie ein Rekordtief aus.
+  **Kenntage stehen in `PARAM_WORDS` VOR ihrer Rohgröße**, und das ist eine
+  Reihenfolgeregel, keine Kosmetik: die Suche nimmt den ersten Treffer, und
+  „niederschlagstage" ENTHÄLT „niederschlag" (die Kompositum-Regel greift ab
+  sechs Zeichen). Stünde `rr` davor, käme auf „meiste Niederschlagstage" eine
+  Zahl in mm statt in Tagen — und beides sieht plausibel aus.
+  **„DURCHSCHNITTLICHE MAXIMA" IST EINE EIGENE GRÖSSE — drei Zahlen sehen
+  plausibel aus, nur eine stimmt.** Live gemessen für Salzburg Flughafen,
+  September 1991–2020 (klima-v2-1m): `tl_mittel` **14,3 °C** (Monatsmittel),
+  `tlmax_mittel` **20,0 °C** (Mittel der TAGESmaxima), `tlmax` **27,6 °C**
+  (Mittel der MONATSmaxima, also des jeweils heißesten Septembertags).
+  Gefragt ist die mittlere; geantwortet wurde die erste, weil „Maxima"
+  überhaupt kein Größenwort war und die Frage auf die Vorgabe zurückfiel.
+  Die dritte ist die gefährliche: sie wäre herausgekommen, hätte man „Maxima"
+  bloß auf `tlmax` abgebildet, und sie beantwortet eine andere Frage — genau
+  davor warnt die Notiz zur Verifikation, die die Normal-Assets ausdrücklich
+  NICHT als Tagesklimatologie benutzt.
+  **`tlmax_mittel` und `tlmin_mittel` sind deshalb neu in der Registry**
+  („Mittleres Tagesmaximum/-minimum"). Die Größen gab es bei GeoSphere schon
+  immer (klima-v2-1m, „Mittelwert der Maximalwerte") — sie fehlten nur hier.
+  Die Normal-Assets sind für beide Perioden neu erzeugt (`ingest:at:normals`,
+  ~10 Requests); der Wert für Salzburg/September steht seither mit exakt den
+  gemessenen 20,0 °C darin. **REKORDE haben sie noch NICHT**: der
+  Rekord-Ingest läuft beide Pässe, rund 20 Minuten, 290 MB und 22 % des
+  Stundenbudgets. Ein Test nennt die zwei Ausnahmen namentlich, statt die
+  Regel „jeder Monatsparameter hat Rekorde" stillschweigend aufzuweichen.
+  Im Tag-Modus sind sie gesperrt (`monthlyOnly`): über einen einzelnen Tag
+  gemittelt IST das Tagesmaximum das Tagesmaximum, und GeoSphere führt die
+  Größe im Tagesdatensatz gar nicht.
+  **Und der Antworttext nennt jetzt die GRÖSSE.** Die Spannen-Fassung
+  (`answerFromNormalsRange`) sagte nur „höchstes langjähriges Mittel in
+  Salzburg – September" — bei drei ähnlich aussehenden Temperaturmitteln ist
+  das keine Auskunft. Beide Fassungen setzen die Größe jetzt NACH VORN
+  („Mittleres Tagesmaximum – höchstes langjähriges Mittel in Salzburg,
+  September"): umgekehrt stottert es, sobald die Größe selbst ein Mittel ist
+  („langjähriges Mittel Mittleres Tagesmaximum"). Dieselbe Falle wie bei den
+  Rekorden, wo sie zu den handgeschriebenen Superlativen geführt hat.
+  **Umgeschaltet wird über den SCOPE, nicht über ein eigenes Wort**
+  (`MEAN_OF_EXTREMES`): fragt die Frage nach einem Mittel — und genau diese
+  Wörter haben `scope` schon auf `normal` gestellt —, dann meint eine
+  Extremgröße das Mittel der Tageswerte. Wer wirklich den „im Mittel
+  heißesten Tag" will, stellt die Größe im Fenster um; dafür ist die
+  änderbare Auswahl da. Zwei Kleinigkeiten mussten dafür mit: **„mittleres"
+  war kein Mittelwort** (`hasAny` vergleicht ab vier Zeichen mit Ähnlichkeit
+  ≥ 0,85, „mittleres" gegen „mittel" liegt bei 0,67 — die Beugungen stehen
+  jetzt einzeln da), und **ein generisches Größenwort beendet die Suche nicht
+  mehr**: „durchschnittliche TEMPERATUR MAXIMA" traf zuerst „temperatur", das
+  ausdrücklich als `generic` markiert ist, brach ab und antwortete mit dem
+  Monatsmittel. Ein generischer Treffer wird jetzt nur gemerkt, die Frage
+  aber weiter abgesucht; ein bestimmtes Wort gewinnt, egal wo es steht.
   **Der Zeitraum hat eine EBENE, und die Frage entscheidet welche**: „höchster
   Jahresniederschlag in Salzburg" meint die höchste JAHRESSUMME (1.835 mm,
   1912), nicht den nassesten MONAT (404 mm, Juli 1954) — genau das kam vorher
@@ -428,7 +524,21 @@ npm run preview   # gebautes dist/ servieren
   (Schnellansicht in der Ecke ↔ maximiert über den Kartenbereich, CSS-Modifier
   `.is-max`): maximiert zeigt die Rangliste eine sortierbare Volltabelle
   (Rang bleibt IMMER global — Suche/Sortierung ändern nur die Anzeige) und das
-  Detail alle Rekordebenen als Tabelle mit Datum. **Rekordtage** (`api/
+  Detail alle Rekordebenen als Tabelle mit Datum.
+  **Die hervorgehobene Rekordebene folgt dem ZEITBEZUG** (`levelFor` in
+  `AtStationDetail`) — und tat es nicht: dort stand immer `abs`, der beste
+  EINZELMONAT der Reihe. Bei „Niederschlag Summe, Jahr" zeigte das Fenster
+  für Hohenau „Höchstwert 212 mm, September 2024", während die Frage nach
+  dem höchsten JAHRESniederschlag lautet — 734 mm aus dem Jahr 1959. Beide
+  Ebenen liegen in den Assets (`abs` und `ann`), gelesen wurde die falsche;
+  bei Summen liegen sie um ein Vielfaches auseinander, bei Maximum- und
+  Minimum-Größen fallen sie zusammen. Jetzt wählt der Zeitbezug die Ebene
+  (Jahr → `ann`, Saison → `sea`, Monat → `mon`, Tagesansicht → `abs`), die
+  Zeile NENNT sie („Höchstwert Jahr"), und die AT-Zeile darunter zeigt
+  dieselbe Ebene — vorher standen dort zwei verschiedene Fragen
+  untereinander (1.441 mm Dezember am Sonnblick neben einem Jahreswert;
+  richtig sind 4.167 mm, Feuerkogel 1944).
+  **Rekordtage** (`api/
   atRecords.ts`): die Assets kennen nur Monat/Jahr, aber bei `tlmax`/`tlmin`
   IST der Monatswert ein Tagesextrem („Monats-Maximum aus 24-h-Maxima") — ein
   Tagesabruf über den Rekordzeitraum liefert den exakten Tag (für immer
@@ -455,6 +565,18 @@ npm run preview   # gebautes dist/ servieren
   bei der Sonnenscheindauer 74–81 % vom Normal (zwei Monate Messung gegen drei
   Monate Normal), richtig sind 113–124 %. Die Überschrift markiert laufende
   Zeiträume mit „● läuft noch — bisher Jun + Jul + Aug 1.–17.".
+  **Das Detailfenster sagt FETT und ZUERST, was es zeigt**
+  (`.atdetail-what`: Größe + Zeitbezug, im Abweichungsmodus mit „·
+  Abweichung"). Vorher stand das dreimal klein und grau verstreut —
+  „Niederschlag Summe — Reihe der Perioden" oben, „Jahr 2011–2025 ·
+  Niederschlag Summe · mm" unter dem Diagramm —, und der ZEITBEZUG fehlte in
+  der obersten Zeile ganz. Bei einer Summe ist das der Unterschied zwischen
+  813 mm im Monat und 2.211 mm im Jahr: die Zahl allein sagt nicht, welche
+  Frage sie beantwortet. Die Bildunterschrift trägt seither nur noch, was
+  NUR sie weiß (Jahre, Bezugsperiode, Einheit); die Größe steht einmal.
+  `scopeLabel` ist dafür aus der Komponente in den Kern `atHistory.ts`
+  gewandert — zwei Stellen brauchen ihn jetzt, und die Überschrift ist die
+  letzte, bei der man eine abweichende Fassung bemerken würde.
   **Klick auf eine Station zeigt die Perioden-Historie** statt der Tagesreihe,
   sobald der Zeitbezug nicht „Tag" ist (`AtPeriodHistory` + Rechenkern
   `atHistory.ts`): dieselbe Größe wie in der Karte über die letzten
@@ -499,6 +621,48 @@ npm run preview   # gebautes dist/ servieren
   („meiste Frosttage, die ein Jänner je hatte"). Plausibilitätsprobe der Normale
   1991–2020 gegen 1961–1990: Median +15 Sommertage, +7 Hitzetage,
   −15 Frosttage, −7 Eistage.
+  **Die Farbe der REKORDPFEILE hängt an der GRÖSSE, nicht an hoch/tief**
+  (`recordToneColors` in `config/atParameters.ts`, `tone()` im
+  Stationsdetail). Sie muss sich lesen wie die Balken der Perioden-Historie,
+  die im SELBEN Fenster direkt darüber stehen — und tat es beim Niederschlag
+  nicht: dort stand ein roter ▲ auf der nassesten Jahreszeit, während das
+  Balkendiagramm zwei Zentimeter höher Nässe türkis zeichnete. Jetzt gilt
+  warm/kalt für die Temperatur, **nass/trocken für den Niederschlag**
+  (türkis nach oben, ocker nach unten) und weiter umgedreht für die
+  Kälte-Kenntage (`highIsCold`). Die Sonnenscheindauer braucht keinen
+  eigenen Eintrag: viel Sonne = warmes Orange ist schon die richtige Lesart.
+  **Mitgenommen: die NIEDERSCHLAGSTAGE.** Sie stehen in der Registry unter
+  „Kenntage" und fielen deshalb sowohl bei den Pfeilen als auch bei
+  `anomalyBarColors` in den Rot/Blau-Zweig — mehr Regentage sind aber nasser,
+  nicht wärmer. Beides entscheidet jetzt dieselbe Hilfsfunktion.
+  **Die Balkenfarben lassen sich dafür NICHT einfach übernehmen** — als TEXT
+  sind sie zu dunkel. Gemessen auf dem Zellenhintergrund (#232428): BrBG-
+  Türkis #35978f 4,4:1, BrBG-Braun #bf812d 4,7:1, das Trüb-Blau der
+  Sonnenrampe #4d6183 sogar nur 2,5:1, während die vorhandenen Pfeilfarben
+  bei 6,2:1 liegen. Die Pfeile benutzen deshalb aufgehellte Fassungen
+  derselben Töne (#49bdb0 / #d69a3f, 6,8 und 6,3:1); ein Test hält alle
+  Kontraste über 4,5:1 UND hält fest, dass die rohen Balkenfarben darunter
+  liegen — damit niemand die zwei Sätze zu einem zusammenzieht. Die Farben
+  stehen seither in der Registry und nicht mehr als CSS-Klassen: welche
+  Farbe gilt, kann CSS nicht entscheiden.
+  **Bei Frost- und Eistagen ist das OBERE Ende der Größe das KALTE, und die
+  Farbpolarität dreht deshalb mit** (`AtParameterSpec.highIsCold`, gesetzt auf
+  `tage_frost`/`tage_eis`): der Winter mit den MEISTEN Frosttagen ist der
+  kälteste. Die Karte machte das über `COLD_RAMP` schon richtig (86 Frosttage =
+  hellblau), drei andere Stellen nicht — im Stationsdetail stand ein ROTER ▲ auf
+  „86 Frosttage, Winter 1963", die Balken der Perioden-Historie zeigten „mehr
+  Frost" rot, und die Anomalieskala der Karte ebenso. Alle drei hängen jetzt an
+  dem einen Feld: `tone()` in `AtStationDetail` (Klassen heißen seither
+  `atdetail-recwarm`/`-reccold`, nach der BEDEUTUNG statt nach der Richtung —
+  der PFEIL bleibt an hoch/tief gebunden), `anomalyBarColors` und
+  `anomalyScale`/`climateAnomalyScale` über `reverseColors()`, das die Skala
+  SPIEGELT statt eine zweite Farbtabelle zu pflegen (zwei Listen, die
+  spiegelbildlich gleich bleiben müssen, laufen auseinander; ein Test hält
+  fest, dass nur die Farben tauschen und die Schwellen stehen bleiben). Balken
+  und Karte MÜSSEN zusammen kippen — dieselbe Lesart in beiden ist eine
+  gesetzte Regel (`anomalyBarColors`). NICHT gedreht sind Niederschlag, Sonne
+  und Niederschlagstage: die sagen nass/trocken bzw. trüb/sonnig, nicht
+  warm/kalt, und haben ihre eigenen Rampen.
   **Klimaperioden** (`config/atNormals.ts`, `AT_NORMAL_PERIODS`): vierter
   Zeitbezug neben Tag/Monat/Jahr — das langjährige Mittel einer WMO-Normalperiode
   (1991–2020, 1961–1990), wahlweise Jahresmittel oder ein Kalendermonat (z. B.

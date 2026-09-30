@@ -145,6 +145,10 @@ export function isParamAvailable(spec: AtParameterSpec, period: Period): boolean
   // Kenntage sind ANZAHLEN von Tagen — für einen einzelnen Tag wäre das 0
   // oder 1 und als Karte sinnlos. Sie gibt es deshalb erst ab Monat.
   if (spec.countRule) return period.kind !== 'day'
+  // Dasselbe aus anderem Grund für die MITTEL der Tagesextreme: über einen
+  // einzelnen Tag gemittelt ist das Tagesmaximum das Tagesmaximum, und
+  // GeoSphere führt die Größe im Tagesdatensatz gar nicht.
+  if (spec.monthlyOnly) return period.kind !== 'day'
   return period.kind === 'day' || spec.monthlyCode != null
 }
 

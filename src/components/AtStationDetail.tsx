@@ -24,9 +24,11 @@ import {
   loadNationalRecords,
   loadStationRecords,
   SEASON_LABEL,
+  seasonYearLabel,
   SEASONS,
   todayUtc,
   type MaxMin,
+  type Extreme,
   type NationalRecords,
   type StationRecords,
 } from '../api/atValues'
@@ -36,11 +38,12 @@ import {
   monthRange,
   resolveExtremeDay,
   seasonRange,
+  yearRange,
   type ExtremeDay,
 } from '../api/atRecords'
-import { getAtParameter } from '../config/atParameters'
+import { getAtParameter, recordToneColors } from '../config/atParameters'
 import { AtPeriodHistory } from './AtPeriodHistory'
-import type { HistoryScope } from './atHistory'
+import { scopeLabel, type HistoryScope } from './atHistory'
 
 const MONTH_ABBR = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 const MONTH_NAME = [
@@ -86,21 +89,80 @@ interface RecRow {
   end: string
 }
 
-function absRows(abs: MaxMin): RecRow[] {
+/**
+ * Die HERVORGEHOBENE Rekordebene — und sie folgt dem Zeitbezug der Karte.
+ *
+ * **Das war ein echter Fehler**: hier stand immer `abs`, der beste
+ * EINZELMONAT der Reihe. Bei „Niederschlag Summe, Jahr" zeigte das Fenster
+ * damit für Hohenau „Höchstwert 212 mm, September 2024" — während die Frage
+ * nach dem höchsten JAHRESniederschlag lautet, und der sind 734 mm aus dem
+ * Jahr 1959. Beide Ebenen liegen in den Assets (`abs` und `ann`), gelesen
+ * wurde nur die falsche. Bei Summen liegen sie um ein Vielfaches
+ * auseinander; bei Maximum-/Minimum-Größen fallen sie zusammen, dort ändert
+ * sich nichts.
+ *
+ * Ohne Zeitbezug (Tagesansicht) bleibt es beim besten Einzelmonat — dort
+ * gibt es keine Periode, der die Auswahl folgen könnte.
+ */
+function levelFor(
+  rec: StationRecords[string],
+  scope: HistoryScope | null,
+): { level: MaxMin | undefined; label: string; range: (e: Extreme) => { start: string; end: string } | null; when: (e: Extreme) => string } {
+  const byMonth = (e: Extreme) => {
+    if (!e.d) return null
+    return monthRange(e.d)
+  }
+  const monthText = (e: Extreme) => {
+    if (!e.d) return e.y != null ? String(e.y) : ''
+    const [y, m] = e.d.split('-').map(Number)
+    return `${MONTH_NAME[m - 1]} ${y}`
+  }
+  if (scope?.kind === 'year') {
+    return {
+      level: rec.ann,
+      label: 'Jahr',
+      range: (e) => (e.y != null ? yearRange(e.y) : null),
+      when: (e) => (e.y != null ? String(e.y) : ''),
+    }
+  }
+  if (scope?.kind === 'season') {
+    const s = scope.season
+    return {
+      level: rec.sea?.[s],
+      label: SEASON_LABEL[s],
+      range: (e) => (e.y != null ? seasonRange(s, e.y) : null),
+      when: (e) => (e.y != null ? seasonYearLabel(s, e.y) : ''),
+    }
+  }
+  if (scope?.kind === 'month') {
+    const m = scope.month
+    return {
+      level: rec.mon?.[m - 1],
+      label: MONTH_NAME[m - 1],
+      range: (e) => (e.y != null ? monthOfYearRange(e.y, m) : null),
+      when: (e) => (e.y != null ? String(e.y) : ''),
+    }
+  }
+  return { level: rec.abs, label: 'Absolut', range: byMonth, when: monthText }
+}
+
+function absRows(rec: StationRecords[string], scope: HistoryScope | null): RecRow[] {
+  const { level, label, range, when } = levelFor(rec, scope)
+  if (!level) return []
   const rows: RecRow[] = []
   for (const kind of ['max', 'min'] as const) {
-    const e = abs[kind]
-    if (!e?.d) continue
-    const { start, end } = monthRange(e.d)
-    const [y, m] = e.d.split('-').map(Number)
+    const e = level[kind]
+    if (!e || e.v == null) continue
+    const r = range(e)
+    if (!r) continue
     rows.push({
       key: `abs-${kind}`,
-      level: 'Absolut',
+      level: label,
       kind,
       value: e.v,
-      when: `${MONTH_NAME[m - 1]} ${y}`,
-      start,
-      end,
+      when: when(e),
+      start: r.start,
+      end: r.end,
     })
   }
   return rows
@@ -315,15 +377,26 @@ export function AtStationDetail({
   // Die nationalen Rekorde führen jetzt alle drei Ebenen (fürs Klimaarchiv);
   // hier gezeigt wird weiter nur die absolute — die Zeile vergleicht die
   // Station mit dem Landesrekord, nicht mit zwölf Monatsrekorden.
-  const natRec = recCode && national ? national[recCode]?.abs : undefined
+  /**
+   * Österreichweiter Rekord — auf DERSELBEN Ebene wie die Stationszeile
+   * darüber. Stand vorher fest auf `abs` (bester Einzelmonat): bei
+   * „Niederschlag Summe, Jahr" las man so 1.441 mm vom Sonnblick (ein
+   * Dezember) neben dem Jahreswert der Station, also zwei verschiedene
+   * Fragen in zwei Zeilen untereinander. Richtig sind dort 4.167 mm vom
+   * Feuerkogel, 1944.
+   */
+  const natAll = recCode && national ? national[recCode] : undefined
+  const natRec = natAll ? (levelFor(natAll, history?.scope ?? null).level ?? natAll.abs) : undefined
+  /** Zeitpunkt eines nationalen Rekords: Monat (`d`) oder Jahr (`y`). */
+  const natWhen = (e: Extreme) => e.d ?? (e.y != null ? String(e.y) : '')
   const u = spec.unit
   // Nur wo der Monatswert ein Tagesextrem IST, gibt es einen Rekordtag.
   const dayResolvable = recCode ? DAY_RESOLVABLE[recCode] != null : false
 
   const rows = useMemo(() => {
     if (!rec) return { abs: [] as RecRow[], sea: [] as RecRow[], mon: [] as RecRow[] }
-    return { abs: absRows(rec.abs), sea: seasonRows(rec), mon: monthRows(rec) }
-  }, [rec])
+    return { abs: absRows(rec, history?.scope ?? null), sea: seasonRows(rec), mon: monthRows(rec) }
+  }, [rec, history?.scope])
 
   // Aufgelöste Rekordtage je Zeilenschlüssel ('loading' während des Abrufs).
   const [days, setDays] = useState<Record<string, ExtremeDay | 'loading' | null>>({})
@@ -375,6 +448,20 @@ export function AtStationDetail({
     return { text: row.when, exact: false, loading: false }
   }
 
+  /**
+   * Farbe eines Rekordwerts. Sie sagt, was der Wert BEDEUTET, nicht ob er
+   * das Maximum oder das Minimum ist — und was er bedeutet, hängt an der
+   * Größe: bei den Kälte-Kenntagen ist der höchste Wert der kälteste, beim
+   * Niederschlag der nasseste. Die Farbpaare kommen aus der Registry
+   * (`recordToneColors`) und lesen sich wie die Balken der
+   * Perioden-Historie direkt darüber. Der PFEIL bleibt an hoch/tief
+   * gebunden, nur die Farbe folgt der Bedeutung.
+   */
+  const toneColors = recordToneColors(spec)
+  const tone = (kind: 'max' | 'min') => ({
+    color: kind === 'max' ? toneColors.high : toneColors.low,
+  })
+
   const recRow = (row: RecRow) => {
     const { text, exact, loading: busy } = dayText(row)
     const d = days[row.key]
@@ -382,7 +469,7 @@ export function AtStationDetail({
     return (
       <tr key={row.key}>
         <td>{row.level}</td>
-        <td className={row.kind === 'max' ? 'atdetail-recmax' : 'atdetail-recmin'}>
+        <td style={tone(row.kind)}>
           {row.kind === 'max' ? '▲' : '▼'} {fmt(row.value)} {u}
         </td>
         <td>
@@ -447,12 +534,33 @@ export function AtStationDetail({
           </button>
         </div>
       </div>
+      {/**
+        * ÜBERSCHRIFT: welche Größe und welcher Zeitbezug hier gerade zu sehen
+        * sind — fett und zuerst.
+        *
+        * Vorher stand das dreimal klein und grau verstreut („Niederschlag
+        * Summe — Reihe der Perioden" hier, „Jahr 2011–2025 · Niederschlag
+        * Summe · mm" unter dem Diagramm), und der ZEITBEZUG fehlte in der
+        * obersten Zeile ganz. Bei einer Summe ist das der Unterschied
+        * zwischen 813 mm im Monat und 2.211 mm im Jahr — die Zahl allein
+        * sagt nicht, welche Frage sie beantwortet.
+        */}
       <div className="atdetail-sub">
-        {history
-          ? `${spec.label} — Reihe der Perioden`
-          : spec.derived
-            ? `${spec.label} (${spec.unit}) · nur für den laufenden Tag`
-            : `${spec.label} (${spec.unit}) · Tageswerte der letzten 12 Monate bis ${day}`}
+        <strong className="atdetail-what">
+          {spec.label}
+          {history ? ` ${scopeLabel(history.scope, MONTH_NAME)}` : ''}
+          {/* Im Abweichungsmodus zeigt das Diagramm NICHT den Wert, sondern
+              den Abstand zum Normal — dann muss es auch in der Überschrift
+              stehen, sonst benennt sie die falsche Größe. */}
+          {history?.showAnomaly ? ' · Abweichung' : ''}
+        </strong>
+        <span className="label-muted">
+          {history
+            ? ' — Reihe der Perioden'
+            : spec.derived
+              ? ` (${spec.unit}) · nur für den laufenden Tag`
+              : ` (${spec.unit}) · Tageswerte der letzten 12 Monate bis ${day}`}
+        </span>
       </div>
       {maximized && <div className="atdetail-note">{spec.description}</div>}
 
@@ -531,8 +639,22 @@ export function AtStationDetail({
                 const { text, exact } = dayText(row)
                 return (
                   <div key={row.key} className="atdetail-recrow">
-                    <span className="atdetail-reclabel">{row.kind === 'max' ? 'Höchstwert' : 'Tiefstwert'}</span>
-                    <span className={row.kind === 'max' ? 'atdetail-recmax' : 'atdetail-recmin'}>
+                    {/* Die EBENE gehört dazu: „Höchstwert" allein ist
+                        zweideutig, sobald es Monats- UND Jahresrekorde gibt
+                        — bei Hohenau 212 mm (bester September) gegen 734 mm
+                        (bestes Jahr). */}
+                    <span
+                      className="atdetail-reclabel"
+                      title={
+                        row.level === 'Absolut'
+                          ? 'Bester EINZELMONAT der ganzen Reihe'
+                          : `Bester Wert über den Zeitbezug „${row.level}"`
+                      }
+                    >
+                      {row.kind === 'max' ? 'Höchstwert' : 'Tiefstwert'}
+                      {row.level === 'Absolut' ? '' : ` ${row.level}`}
+                    </span>
+                    <span style={tone(row.kind)}>
                       {row.kind === 'max' ? '▲' : '▼'} {fmt(row.value)} {u}
                     </span>
                     <span className={exact ? 'atrec-exact' : 'label-muted'}>{text}</span>
@@ -542,19 +664,28 @@ export function AtStationDetail({
               {natRec && (
                 <div
                   className="atdetail-recrow atdetail-recnat"
-                  title={`Österreichweit höchster bzw. niedrigster Monatswert von ${spec.label} — bei einem Maximum-Parameter ist ▼ also der niedrigste je gemessene Monatshöchstwert.`}
+                  title={
+                    `Österreichweit höchster bzw. niedrigster Wert von ${spec.label} auf derselben Ebene wie die Zeile darüber.` +
+                    // Der Zusatz gilt NUR für Extremgrößen: dort ist der
+                    // Monatswert selbst schon ein Tagesextrem. Bei einer
+                    // Summe oder Anzahl (Niederschlag, Frosttage) wäre der
+                    // Satz schlicht falsch.
+                    (spec.agg === 'max' || spec.agg === 'min'
+                      ? ' Bei einem Extremwert-Parameter ist ▼ also der niedrigste je gemessene Monatshöchstwert.'
+                      : '')
+                  }
                 >
                   <span className="atdetail-reclabel">AT</span>
-                  <span className="atdetail-recmax">▲ {fmt(natRec.max.v)} {u} <span className="label-muted">{natRec.max.n}, {natRec.max.d}</span></span>
-                  <span className="atdetail-recmin">▼ {fmt(natRec.min.v)} {u} <span className="label-muted">{natRec.min.n}, {natRec.min.d}</span></span>
+                  <span style={tone('max')}>▲ {fmt(natRec.max.v)} {u} <span className="label-muted">{natRec.max.n}, {natWhen(natRec.max)}</span></span>
+                  <span style={tone('min')}>▼ {fmt(natRec.min.v)} {u} <span className="label-muted">{natRec.min.n}, {natWhen(natRec.min)}</span></span>
                 </div>
               )}
               <div className="atdetail-recgrid">
                 {SEASONS.map((s) => (
-                  <div key={s} className="atdetail-reccell" title={`${SEASON_LABEL[s]}: wärmster/kältester Saisonwert der Reihe`}>
+                  <div key={s} className="atdetail-reccell" title={`${SEASON_LABEL[s]}: höchster/tiefster Saisonwert der Reihe`}>
                     <span className="atdetail-reccap">{SEASON_LABEL[s]}</span>
-                    <span className="atdetail-recmax">▲ {fmt(rec.sea[s].max.v)} <span className="label-muted">’{String(rec.sea[s].max.y).slice(2)}</span></span>
-                    <span className="atdetail-recmin">▼ {fmt(rec.sea[s].min.v)} <span className="label-muted">’{String(rec.sea[s].min.y).slice(2)}</span></span>
+                    <span style={tone('max')}>▲ {fmt(rec.sea[s].max.v)} <span className="label-muted">’{String(rec.sea[s].max.y).slice(2)}</span></span>
+                    <span style={tone('min')}>▼ {fmt(rec.sea[s].min.v)} <span className="label-muted">’{String(rec.sea[s].min.y).slice(2)}</span></span>
                   </div>
                 ))}
               </div>
@@ -562,8 +693,8 @@ export function AtStationDetail({
                 {rec.mon.map((m, i) => (
                   <div key={i} className="atdetail-reccell" title={`${MONTH_NAME[i]}: ▲${fmt(m.max.v)} ${m.max.y} · ▼${fmt(m.min.v)} ${m.min.y}`}>
                     <span className="atdetail-reccap">{MONTH_ABBR[i]}</span>
-                    <span className="atdetail-recmax">{fmt(m.max.v)}</span>
-                    <span className="atdetail-recmin">{fmt(m.min.v)}</span>
+                    <span style={tone('max')}>{fmt(m.max.v)}</span>
+                    <span style={tone('min')}>{fmt(m.min.v)}</span>
                   </div>
                 ))}
               </div>
@@ -612,10 +743,11 @@ export function AtStationDetail({
               {natRec && (
                 <div className="atdetail-note">
                   Österreichweit: höchster Monatswert <strong>{fmt(natRec.max.v)} {u}</strong> (
-                  {natRec.max.n}, {natRec.max.d}), niedrigster{' '}
-                  <strong>{fmt(natRec.min.v)} {u}</strong> ({natRec.min.n}, {natRec.min.d}). Bei
-                  einem Maximum-Parameter ist der niedrigste Wert also der kühlste je gemessene
-                  Monatshöchstwert.
+                  {natRec.max.n}, {natWhen(natRec.max)}), niedrigster{' '}
+                  <strong>{fmt(natRec.min.v)} {u}</strong> ({natRec.min.n}, {natWhen(natRec.min)}).
+                  {(spec.agg === 'max' || spec.agg === 'min') &&
+                    ' Bei einem Extremwert-Parameter ist der niedrigste Wert also der kühlste je' +
+                      ' gemessene Monatshöchstwert.'}
                 </div>
               )}
             </div>

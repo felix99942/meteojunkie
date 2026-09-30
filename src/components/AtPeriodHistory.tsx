@@ -11,9 +11,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { DATASET_MONTHLY, fetchStationSeries, type AtStation } from '../api/geosphere'
-import { clean, recentPeriodTtl, SEASON_LABEL, seasonYearLabel } from '../api/atValues'
+import { clean, recentPeriodTtl, seasonYearLabel } from '../api/atValues'
 import { anomaly, anomalyBarColors, anomalyDisplay, type AtParameterSpec } from '../config/atParameters'
-import { buildHistory, historyStart, historyStats, type HistoryScope } from './atHistory'
+import { buildHistory, historyStart, historyStats, scopeLabel, type HistoryScope } from './atHistory'
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
@@ -25,12 +25,6 @@ export const HISTORY_SPAN = 15
 
 const fmt = (v: number): string =>
   Math.abs(v) >= 100 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1)
-
-function scopeLabel(scope: HistoryScope, monthNames: string[]): string {
-  if (scope.kind === 'month') return monthNames[scope.month - 1]
-  if (scope.kind === 'season') return SEASON_LABEL[scope.season]
-  return 'Jahr'
-}
 
 function pointLabel(scope: HistoryScope, year: number, monthNames: string[]): string {
   if (scope.kind === 'month') return `${monthNames[scope.month - 1]} ${year}`
@@ -226,8 +220,12 @@ export function AtPeriodHistory({
   return (
     <>
       <div className="atdetail-histcap">
-        {scopeLabel(scope, monthNames)} {firstYear}–{lastYear} ·{' '}
-        {asAnomaly ? `Abweichung vs. ${refLabel}` : spec.label} · {unit}
+        {/* Die GRÖSSE steht jetzt fett in der Überschrift des Fensters —
+            hier stünde sie zum zweiten Mal, klein und grau. Übrig bleibt,
+            was nur dieses Diagramm weiß: welche Jahre es zeigt, wogegen
+            gerechnet wird und in welcher Einheit. */}
+        {scopeLabel(scope, monthNames)} {firstYear}–{lastYear}
+        {asAnomaly ? ` · Abweichung vs. ${refLabel}` : ''} · {unit}
       </div>
       <div ref={containerRef} className="atdetail-chart" />
       {loading && <div className="atdetail-note">lädt Reihe …</div>}

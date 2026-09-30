@@ -12,12 +12,27 @@
 // scripts/at-ingest-normals.mjs die Normale bildet.
 
 import { aggregate, type AggMode } from '../config/atParameters'
-import { seasonMonths, type Season } from '../api/atValues'
+import { SEASON_LABEL, seasonMonths, type Season } from '../api/atValues'
 
 export type HistoryScope =
   | { kind: 'month'; month: number }
   | { kind: 'season'; season: Season }
   | { kind: 'year' }
+
+/**
+ * Zeitbezug im Klartext — „Juli", „Sommer", „Jahr".
+ *
+ * Steht hier und nicht in der Komponente, weil ihn jetzt ZWEI Stellen
+ * brauchen: die Überschrift des Detailfensters und die Bildunterschrift des
+ * Diagramms. Zwei Fassungen wären zwei Gelegenheiten, sie auseinanderlaufen
+ * zu lassen — und die Überschrift ist genau die Zeile, die sagt, was man
+ * gerade ansieht.
+ */
+export function scopeLabel(scope: HistoryScope, monthNames: string[]): string {
+  if (scope.kind === 'month') return monthNames[scope.month - 1]
+  if (scope.kind === 'season') return SEASON_LABEL[scope.season]
+  return 'Jahr'
+}
 
 export interface HistoryPoint {
   /** Bei DJF das Jahr von Januar/Februar (Dezember stammt aus year-1). */

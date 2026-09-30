@@ -1,16 +1,22 @@
 // Klima-Suchfenster: eine Frage in Alltagssprache, eine Antwort aus den
-// vorhandenen Assets. Kostet KEINEN Request — Rekorde und Normale liegen als
-// Dateien im Browser (siehe climateAsk.ts für die Frageerkennung).
+// vorhandenen Assets. Rekorde und Normale liegen als Dateien im Browser, diese
+// Fragen kosten also keinen Request (siehe climateAsk.ts für die
+// Frageerkennung). Die Ausnahme ist die WERTfrage nach einem benannten
+// Zeitraum („Frosttage im Jänner 2024"): sie kostet EINEN Bulk-Abruf, der
+// danach im selben IndexedDB-Cache liegt wie die Karte.
 //
-// Gefragt werden kann nach EINER Station oder nach GANZ ÖSTERREICH. Der
-// Landesfall ist kein Sonderweg: `_national.json` hat dieselbe Form wie eine
-// Stationsdatei, nur trägt dort jeder Rekord die Station, die ihn hält — die
-// wird dann Teil der Antwort. Nur beim langjährigen MITTEL gibt es
-// österreichweit bewusst keine eine Zahl (siehe `answerFromNormalsRange`).
+// Gefragt werden kann nach EINER Station, einem ORT, einem BUNDESLAND oder
+// GANZ ÖSTERREICH. Der Landesfall ist kein Sonderweg: `_national.json` hat
+// dieselbe Form wie eine Stationsdatei, nur trägt dort jeder Rekord die
+// Station, die ihn hält — die wird dann Teil der Antwort. Nur beim
+// langjährigen MITTEL gibt es österreichweit bewusst keine eine Zahl (siehe
+// `answerFromNormalsRange`); dasselbe gilt für einen Periodenwert über eine
+// Stationsmenge (`answerFromPeriod`).
 //
-// Dazwischen liegt der ORT: „höchste Temperatur in Wien" ist keine Frage an die
-// Hohe Warte, sondern an Wien — beantwortet über ALLE Stationen des Ortes,
-// zusammengeführt von `mergeRecords`, mit der Station als Teil der Antwort.
+// Dazwischen liegen ORT und BUNDESLAND: „höchste Temperatur in Wien" ist keine
+// Frage an die Hohe Warte, sondern an Wien — beantwortet über ALLE Stationen
+// des Gebiets, zusammengeführt von `mergeRecords`, mit der Station als Teil
+// der Antwort.
 //
 // Leitgedanke der Darstellung: Das Fenster zeigt IMMER, was es verstanden hat,
 // und zwar als änderbare Auswahl. „Salzburg" heißen acht Stationen und
@@ -23,11 +29,16 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AtStation } from '../api/geosphere'
 import { resolveExtremeDay, type ExtremeDay } from '../api/atRecords'
 import {
+  fetchPeriodValues,
+  isParamAvailable,
   loadNationalRecords,
   loadNormals,
+  loadRecordIndex,
   loadStationRecords,
+  recordLevel,
   type NationalRecords,
   type NormalsMap,
+  type PeriodValues,
   type Season,
   type StationRecords,
 } from '../api/atValues'
@@ -36,7 +47,9 @@ import { AT_PARAMETERS, getAtParameter } from '../config/atParameters'
 import {
   answerFromNormals,
   answerFromNormalsRange,
+  answerFromPeriod,
   answerFromRecords,
+  askValuePeriod,
   mergeRecords,
   parseQuestion,
   type AskArea,
@@ -44,6 +57,9 @@ import {
   type AskScope,
   askDayRange,
   formatNightSpan,
+  matchesTerrain,
+  MOUNTAIN_M,
+  type AskTerrain,
   directionDerivable,
   directionNote,
 } from './climateAsk'
@@ -57,6 +73,18 @@ const SEASON_LABEL: Record<Season, string> = {
 }
 /** Normalperiode der Antworten — dieselbe Vorgabe wie in der Karte. */
 const NORMAL_PERIOD: NormalPeriodId = '1991-2020'
+
+/**
+ * Die neun Bundesländer, geschrieben wie `AtStation.state` sie führt — die
+ * Auswahl filtert darauf, der Text ist also kein Etikett, sondern der
+ * Schlüssel. Fest verdrahtet und nicht aus den Stationen abgeleitet: die Liste
+ * ist abgeschlossen und soll auch dann vollständig dastehen, wenn ein
+ * Bundesland gerade keine Station mit Wert hat.
+ */
+const STATES = [
+  'Burgenland', 'Kärnten', 'Niederösterreich', 'Oberösterreich', 'Salzburg',
+  'Steiermark', 'Tirol', 'Vorarlberg', 'Wien',
+]
 
 /**
  * Beispielfragen, nach EBENEN geordnet — die Liste ist auch eine Landkarte
@@ -87,6 +115,12 @@ const EXAMPLES = [
   'höchster jahresniederschlag in salzburg',
   'meiste hitzetage österreichweit',
   'wie warm ist es im juli in wien normalerweise',
+  // WERTfragen: ein benannter Zeitraum statt eines Rekords. Sie kosten als
+  // einzige einen Abruf — und beantworten die Frage, die man beim Blick auf
+  // eine Kenntage-Karte als Nächstes hat.
+  'anzahl der frosttage in innsbruck im jänner 2024',
+  'hitzetage in der steiermark im jahr 2024',
+  'niederschlag im sommer 2024 in vorarlberg',
 ]
 
 /**
@@ -97,8 +131,17 @@ const EXAMPLES = [
 function periodValue(q: AskQuery): string {
   if (q.month != null) return `m${q.month}`
   if (q.season != null) return `s${q.season}`
-  return q.annual ? 'y' : '-'
+  // Bei einer WERTfrage gibt es keine „ganze Reihe": nennt sie weder Monat
+  // noch Jahreszeit, ist das genannte JAHR gemeint.
+  return q.annual || q.scope === 'value' ? 'y' : '-'
 }
+
+/**
+ * Vorgabejahr, wenn von Hand auf „gemessener Wert" umgeschaltet wird: das
+ * letzte ABGESCHLOSSENE Jahr. Das laufende wäre eine Teilsumme und sähe bei
+ * Kenntagen und Niederschlag wie ein Rekordtief aus.
+ */
+const defaultValueYear = () => new Date().getUTCFullYear() - 1
 
 export function AtAskBox({
   stations,
@@ -147,18 +190,94 @@ export function AtAskBox({
     }
   }, [stationId])
 
-  // Rekorde ALLER Stationen des Ortes. Es sind kleine Dateien (~10 KB), sie
-  // liegen same-origin und werden modulweit gecacht — ein Ort kostet also
-  // einmalig ein Dutzend statische Abrufe und danach nichts mehr.
-  const placeKey = query?.place?.ids.join(',') ?? ''
-  const [placeRecords, setPlaceRecords] = useState<StationRecords | null>(null)
+  const station = stations.find((s) => s.id === stationId) ?? null
+  const spec = query ? getAtParameter(query.param) : null
+
+  /**
+   * Die Stationen, über die geantwortet wird. EINE Liste für alle vier
+   * Gebiete — Station, Ort, Bundesland, Österreich unterscheiden sich nur
+   * darin, welche Stationen sie umfassen, nicht darin, was mit ihnen
+   * geschieht.
+   */
+  const inTerrain = (id: number) =>
+    !query ||
+    query.area === 'station' ||
+    matchesTerrain(stations.find((s) => s.id === id)?.altitude, query.terrain)
+  const areaIds: number[] = (
+    !query
+      ? []
+      : query.area === 'station'
+        ? stationId != null
+          ? [stationId]
+          : []
+        : query.area === 'place'
+          ? (query.place?.ids ?? [])
+          : query.area === 'state'
+            ? stations.filter((s) => s.state === query.state).map((s) => s.id)
+            : stations.map((s) => s.id)
+  ).filter(inTerrain)
+  /**
+   * Wie viele Stationen jede Lage im gewählten Gebiet hat — die Zahl gehört
+   * in die Auswahl: „ohne Bergstationen" über drei Stationen ist eine andere
+   * Aussage als über vierhundertsiebzig.
+   */
+  const areaCount = (() => {
+    const base = !query
+      ? []
+      : query.area === 'place'
+        ? (query.place?.ids ?? [])
+        : query.area === 'state'
+          ? stations.filter((s) => s.state === query.state).map((s) => s.id)
+          : stations.map((s) => s.id)
+    const alt = (id: number) => stations.find((s) => s.id === id)?.altitude
+    return {
+      all: base.length,
+      high: base.filter((id) => matchesTerrain(alt(id), 'high')).length,
+      low: base.filter((id) => matchesTerrain(alt(id), 'low')).length,
+    }
+  })()
+
+  /** Wie das Gebiet im Antworttext heißt. */
+  const baseAreaLabel = !query
+    ? ''
+    : query.area === 'station'
+      ? (station?.name ?? '')
+      : query.area === 'place'
+        ? (query.place?.label ?? '')
+        : query.area === 'state'
+          ? (query.state ?? '')
+          : 'Österreich'
+  /**
+   * Der Höhenfilter gehört in den Antworttext. „Meiste Eistage in
+   * Österreich: 112 Tage" wäre sonst schlicht falsch — es sind 292 am
+   * Sonnblick, 112 ist die Zahl OHNE die Bergstationen.
+   */
+  const areaLabel =
+    !query || query.terrain === 'all' || query.area === 'station'
+      ? baseAreaLabel
+      : query.terrain === 'high'
+        ? `${baseAreaLabel}, nur Bergstationen`
+        : `${baseAreaLabel}, ohne Bergstationen`
+
+  // Rekorde ALLER Stationen einer MENGE — eines Ortes oder eines Bundeslands.
+  // Es sind kleine Dateien (~13 KB), sie liegen same-origin und werden
+  // modulweit gecacht; ein Ort kostet also einmalig ein Dutzend statische
+  // Abrufe und danach nichts mehr. Ein Bundesland kostet entsprechend mehr
+  // (Niederösterreich 117) — deshalb NUR im Rekordfall: Werte und Normale
+  // kommen aus einer einzigen Datei bzw. einem einzigen Abruf, dafür braucht
+  // es die Stationsdateien nicht.
+  const setKey =
+    query && query.scope === 'record' && (query.area === 'place' || query.area === 'state')
+      ? areaIds.join(',')
+      : ''
+  const [areaRecords, setAreaRecords] = useState<StationRecords | null>(null)
   useEffect(() => {
-    if (!placeKey) {
-      setPlaceRecords(null)
+    if (!setKey) {
+      setAreaRecords(null)
       return
     }
     let cancelled = false
-    const ids = placeKey.split(',').map(Number)
+    const ids = setKey.split(',').map(Number)
     Promise.all(ids.map((id) => loadStationRecords(id).then((rec) => ({ id, rec })))).then((all) => {
       if (cancelled) return
       // Nach Code umsortieren: `mergeRecords` arbeitet je Parameter, die
@@ -171,14 +290,14 @@ export function AtAskBox({
         )
         if (m) merged[code] = m
       }
-      setPlaceRecords(merged)
+      setAreaRecords(merged)
     })
     return () => {
       cancelled = true
     }
     // nameById hängt nur an `stations` und ist für den Effekt stabil genug
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeKey])
+  }, [setKey])
 
   // Die nationalen Rekorde sind EINE kleine Datei für alle Parameter und
   // Ebenen — sobald eine Landesfrage im Raum steht, einmal laden.
@@ -202,6 +321,43 @@ export function AtAskBox({
     }
   }, [query?.scope, normals])
 
+  /**
+   * WERTfrage: der gemessene Wert eines benannten Zeitraums („Frosttage im
+   * Jänner 2024"). Der einzige Pfad dieses Fensters, der nicht aus einem
+   * vorberechneten Asset kommt — er kostet EINEN Bulk-Abruf über ALLE
+   * Stationen, der für immer im IndexedDB-Cache liegt (historische Klimadaten
+   * ändern sich nicht) und denselben Schlüssel benutzt wie die Karte: wer den
+   * Zeitraum dort schon angesehen hat, zahlt hier gar nichts.
+   *
+   * Geholt wird bewusst über ALLE Stationen statt nur über das Gebiet: das
+   * ist derselbe Request, den die Karte stellt, und ein auf ein Bundesland
+   * zugeschnittener wäre ein zweiter Cache-Eintrag für dieselben Daten.
+   */
+  const valuePeriod = query ? askValuePeriod(query) : null
+  const valueKey =
+    valuePeriod && query && spec && isParamAvailable(spec, valuePeriod)
+      ? `${query.param}|${JSON.stringify(valuePeriod)}`
+      : null
+  const [periodVals, setPeriodVals] = useState<PeriodValues | null>(null)
+  const [valueBusy, setValueBusy] = useState(false)
+  useEffect(() => {
+    setPeriodVals(null)
+    if (!valueKey || !valuePeriod || !spec) return
+    let cancelled = false
+    setValueBusy(true)
+    fetchPeriodValues(spec, valuePeriod, stations)
+      .then((v) => !cancelled && setPeriodVals(v))
+      .catch(() => {})
+      .finally(() => !cancelled && setValueBusy(false))
+    return () => {
+      cancelled = true
+    }
+    // Absichtlich nur der Schlüssel: `valuePeriod` und `spec` sind jede
+    // Renderrunde neue Objekte, ihr INHALT steht vollständig in `valueKey`
+    // (dasselbe Muster wie `dayKey` weiter unten).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valueKey, stations])
+
   const periodLabel = AT_NORMAL_PERIODS.find((p) => p.id === NORMAL_PERIOD)?.label ?? NORMAL_PERIOD
   // Rekorde und Normale sind nach dem MONATScode abgelegt, die Frage nennt den
   // Registry-Code — bei fast allen Parametern derselbe, aber nicht bei der
@@ -210,14 +366,83 @@ export function AtAskBox({
   // meldete „keine Rekorde", obwohl die Assets sie führen.
   const assetCode = query ? (getAtParameter(query.param).monthlyCode ?? query.param) : null
   const stationName = nameById
+
+  /**
+   * REKORD über eine GEFILTERTE Landesmenge — der einzige Fall, der weder
+   * über `_national.json` noch über die Stationsdateien geht.
+   *
+   * `_national.json` ist über ALLE Stationen vorgerechnet, ein Höhenfilter
+   * lässt sich daraus nicht herausrechnen; die Stationsdateien einzeln zu
+   * holen wären bei „ohne Bergstationen" rund 470 Dateien. Beides scheidet
+   * aus. Genommen wird deshalb der KARTEN-INDEX (`_map-<code>.json`, eine
+   * Datei mit einer Größe über alle Stationen, 46–175 KB): daraus den
+   * Gewinner unter den erlaubten Stationen bestimmen und NUR DESSEN
+   * Stationsdatei nachladen — zwei Abrufe statt Hunderten, und die Antwort
+   * bekommt dadurch Datum und alle Ebenen wie sonst auch.
+   *
+   * Die Grenze des Verfahrens: der Index kennt den TAGESblock nicht. Wo die
+   * Antwort von dort käme (Gegenrichtung einer Extremgröße, ausdrückliche
+   * Tagesfrage), ist der gefilterte Landesrekord nicht zu haben — die UI
+   * sagt das, statt eine Zahl von der falschen Ebene zu zeigen.
+   */
+  const dayBlockNeeded =
+    query != null && spec != null && (query.daily === true || !directionDerivable(spec, query.extreme))
+  const filteredNational =
+    query != null &&
+    assetCode != null &&
+    query.scope === 'record' &&
+    query.area === 'austria' &&
+    query.terrain !== 'all' &&
+    !dayBlockNeeded
+  const [pick, setPick] = useState<{ id: number; rec: StationRecords } | null>(null)
+  const pickKey = filteredNational && query
+    ? [assetCode, query.terrain, query.extreme, query.month, query.season, query.annual].join('|')
+    : null
+  useEffect(() => {
+    setPick(null)
+    if (!pickKey || !assetCode || !query) return
+    let alive = true
+    const want = query.extreme
+    void loadRecordIndex(assetCode)
+      .then(async (idx) => {
+        const level = recordLevel(idx, {
+          extreme: want,
+          month: query.month,
+          season: query.season,
+          annual: query.annual,
+        })
+        let best: { id: number; v: number } | null = null
+        for (let i = 0; i < idx.ids.length; i++) {
+          const v = level.v[i]
+          if (v == null || !Number.isFinite(v)) continue
+          if (!inTerrain(idx.ids[i])) continue
+          if (!best || (want === 'max' ? v > best.v : v < best.v)) best = { id: idx.ids[i], v }
+        }
+        if (!best) return null
+        const rec = await loadStationRecords(best.id)
+        return rec ? { id: best.id, rec } : null
+      })
+      .then((r) => {
+        if (alive) setPick(r)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // Absichtlich nur der Schlüssel — `query` ist jede Renderrunde neu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickKey])
+
+  /** Station an eine Antwort hängen, die aus EINER Stationsdatei stammt. */
+  const withStation = (a: ReturnType<typeof answerFromRecords>, id?: number) =>
+    a && id != null ? { ...a, where: nameById(id), whereId: id } : a
+
   const answer =
     !query || !assetCode
       ? null
-      : query.area === 'austria'
-        ? query.scope === 'normal'
-          ? answerFromNormalsRange(query, normals, assetCode, stationName, periodLabel)
-          : answerFromRecords(query, national?.[assetCode])
-        : query.area === 'place' && query.place
+      : query.scope === 'value'
+        ? answerFromPeriod(query, periodVals?.byStation ?? null, areaIds, stationName, areaLabel)
+        : query.area === 'austria'
           ? query.scope === 'normal'
             ? answerFromNormalsRange(
                 query,
@@ -225,34 +450,60 @@ export function AtAskBox({
                 assetCode,
                 stationName,
                 periodLabel,
-                query.place.ids,
+                query.terrain === 'all' ? undefined : areaIds,
+                areaLabel,
               )
-            : answerFromRecords(query, placeRecords?.[assetCode])
-          : stationId != null
+            : filteredNational
+              ? withStation(answerFromRecords(query, pick?.rec[assetCode], areaLabel), pick?.id)
+              : answerFromRecords(query, national?.[assetCode])
+          : query.area === 'place' || query.area === 'state'
             ? query.scope === 'normal'
-              ? answerFromNormals(query, normals?.[stationId]?.[assetCode], periodLabel)
-              : answerFromRecords(query, records?.[assetCode])
-            : null
+              ? answerFromNormalsRange(
+                  query,
+                  normals,
+                  assetCode,
+                  stationName,
+                  periodLabel,
+                  areaIds,
+                  areaLabel,
+                )
+              : answerFromRecords(
+                  query,
+                  areaRecords?.[assetCode],
+                  query.terrain === 'all' ? undefined : areaLabel,
+                )
+            : stationId != null
+              ? query.scope === 'normal'
+                ? answerFromNormals(query, normals?.[stationId]?.[assetCode], periodLabel)
+                : answerFromRecords(query, records?.[assetCode])
+              : null
 
-  const station = stations.find((s) => s.id === stationId) ?? null
-  const spec = query ? getAtParameter(query.param) : null
-  // Rekorde und Normale gibt es nur für die vorgenerierten Parameter.
+  // Rekorde und Normale gibt es nur für die vorgenerierten Parameter; einen
+  // gemessenen WERT gibt es, wo der Parameter im Zeitbezug überhaupt existiert
+  // (die Schneehöhe hat keinen Monatsdatensatz, die gefühlte Temperatur gar
+  // kein GeoSphere-Feld).
   const hasParam = query && assetCode
-    ? query.area === 'austria'
-      ? query.scope === 'normal'
-        ? normals != null
-        : national?.[assetCode] != null
-      : query.area === 'place'
+    ? query.scope === 'value'
+      ? valueKey != null
+      : query.area === 'austria'
         ? query.scope === 'normal'
           ? normals != null
-          : placeRecords?.[assetCode] != null
-        : query.scope === 'normal'
-          ? normals?.[stationId ?? -1]?.[assetCode] != null
-          : records?.[assetCode] != null
+          : national?.[assetCode] != null
+        : query.area === 'place' || query.area === 'state'
+          ? query.scope === 'normal'
+            ? normals != null
+            : areaRecords?.[assetCode] != null
+          : query.scope === 'normal'
+            ? normals?.[stationId ?? -1]?.[assetCode] != null
+            : records?.[assetCode] != null
     : false
   /** Die Frage ist beantwortbar, sobald ein Gebiet feststeht. */
   const areaResolved =
-    query != null && (query.area === 'austria' || query.area === 'place' || stationId != null)
+    query != null &&
+    (query.area === 'austria' ||
+      query.area === 'place' ||
+      (query.area === 'state' && areaIds.length > 0) ||
+      stationId != null)
   /** Zielstation für „In der Karte zeigen" — beim Landesrekord die, die ihn hält. */
   const showStation =
     (answer?.whereId != null ? stations.find((s) => s.id === answer.whereId) : null) ?? station
@@ -384,7 +635,14 @@ export function AtAskBox({
                 überhaupt wirkt — ein Klick zu viel für den häufigsten Fall. */}
             <label>
               <span className="label-muted">Gebiet</span>
-              <select value={query.area} onChange={(e) => set({ area: e.target.value as AskArea })}>
+              <select
+                value={query.area === 'state' ? `state:${query.state ?? ''}` : query.area}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v.startsWith('state:')) set({ area: 'state', state: v.slice(6) })
+                  else set({ area: v as AskArea })
+                }}
+              >
                 <option value="austria">Österreich (alle Stationen)</option>
                 {/* Der Ort steht nur da, wenn sein Name mehr als eine Station
                     trägt — sonst wäre er dasselbe wie „einzelne Station". */}
@@ -396,8 +654,35 @@ export function AtAskBox({
                 <option value="station" disabled={stationId == null}>
                   {stationId == null ? 'einzelne Station — keine erkannt' : 'einzelne Station'}
                 </option>
+                {/* Alle neun stehen da, nicht nur das erkannte: „in Salzburg"
+                    meint die STADT (so beantwortet es das Fenster seit jeher),
+                    und der Sprung aufs Land soll ein Klick sein statt einer
+                    neu formulierten Frage. */}
+                <optgroup label="Bundesland">
+                  {STATES.map((st) => (
+                    <option key={st} value={`state:${st}`}>
+                      {st}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
+            {/* HÖHENFILTER. Bei einer einzelnen Station hat er keine
+                Bedeutung — dort steht er deshalb gar nicht. */}
+            {query.area !== 'station' && (
+              <label>
+                <span className="label-muted">Lage</span>
+                <select
+                  value={query.terrain}
+                  onChange={(e) => set({ terrain: e.target.value as AskTerrain })}
+                  title={`Reiner Höhenschnitt bei ${MOUNTAIN_M} m — keine topografische Einteilung. Galtür (1587 m) ist ein Talort und zählt als Berg, der Schöckl (1443 m) ist ein Gipfel und zählt nicht.`}
+                >
+                  <option value="all">alle Stationen ({areaCount.all})</option>
+                  <option value="high">nur Bergstationen ab {MOUNTAIN_M} m ({areaCount.high})</option>
+                  <option value="low">ohne Bergstationen ({areaCount.low})</option>
+                </select>
+              </label>
+            )}
             <label>
               <span className="label-muted">Station</span>
               <select
@@ -450,8 +735,14 @@ export function AtAskBox({
                 {/* „ganzes Jahr" hieß früher BEIDES und meinte den besten
                     Einzelmonat — bei Summen ist das um eine Größenordnung
                     daneben. Jetzt stehen die zwei Ebenen getrennt da. */}
-                <option value="-">bester Einzelmonat (ganze Reihe)</option>
-                <option value="y">Jahreswert (ganze Reihe)</option>
+                {query.scope === 'value' ? (
+                  <option value="y">ganzes Jahr</option>
+                ) : (
+                  <>
+                    <option value="-">bester Einzelmonat (ganze Reihe)</option>
+                    <option value="y">Jahreswert (ganze Reihe)</option>
+                  </>
+                )}
                 <optgroup label="Monat">
                   {MONTH_NAMES.map((n, i) => (
                     <option key={n} value={`m${i + 1}`}>
@@ -468,42 +759,74 @@ export function AtAskBox({
                 </optgroup>
               </select>
             </label>
+            {/* Das JAHR gehört nur zur Wertfrage — bei Rekord und Normal gibt
+                es keines (ein Rekord bringt sein Jahr mit, ein langjähriges
+                Mittel hat keins). */}
+            {query.scope === 'value' && (
+              <label>
+                <span className="label-muted">Jahr</span>
+                <input
+                  className="atask-year"
+                  type="number"
+                  min={1767}
+                  max={new Date().getUTCFullYear()}
+                  step={1}
+                  value={query.year ?? ''}
+                  onChange={(e) => {
+                    const y = Number(e.target.value)
+                    set({ year: Number.isFinite(y) && y > 999 ? y : null })
+                  }}
+                />
+              </label>
+            )}
             <label>
               <span className="label-muted">gesucht</span>
               <select
                 value={
-                  query.scope !== 'normal'
+                  query.scope === 'record'
                     ? query.extreme
-                    : // Bei einer Station gibt es nur DAS eine Mittel — die
+                    : // Bei einer Station gibt es nur DEN einen Wert — die
                       // Richtung wäre dort ohne Bedeutung und ließe die
                       // Auswahl leer, wenn sie gerade auf „min" stünde.
-                      query.area === 'austria'
-                      ? `normal:${query.extreme}`
-                      : 'normal:max'
+                      `${query.scope}:${query.area === 'station' ? 'max' : query.extreme}`
                 }
                 onChange={(e) => {
                   const v = e.target.value
-                  if (v.startsWith('normal:')) {
-                    set({ scope: 'normal' as AskScope, extreme: v.slice(7) as 'max' | 'min' })
+                  const [kind, dir] = v.includes(':') ? v.split(':') : ['record', v]
+                  const extreme = dir as 'max' | 'min'
+                  if (kind === 'value') {
+                    // Ohne Jahreszahl gäbe es keinen Zeitraum — die Frage
+                    // stünde dann ohne Antwort da, obwohl der Nutzer gerade
+                    // ausdrücklich einen Wert verlangt hat.
+                    set({
+                      scope: 'value' as AskScope,
+                      extreme,
+                      ...(query.year == null ? { year: defaultValueYear() } : {}),
+                    })
                   } else {
-                    set({ scope: 'record' as AskScope, extreme: v as 'max' | 'min' })
+                    set({ scope: kind as AskScope, extreme })
                   }
                 }}
               >
                 <option value="max">Höchstwert seit Messbeginn</option>
                 <option value="min">Tiefstwert seit Messbeginn</option>
-                {/* Österreichweit ist ein langjähriges Mittel KEINE einzelne
-                    Zahl (kein Flächenmittel aus Stationswerten) — gefragt wird
-                    deshalb nach dem oberen oder unteren Ende der Spanne, und
-                    das muss man auch umschalten können. Bei einer Station
-                    bleibt es das eine Mittel dieser Station. */}
-                {query.area === 'austria' ? (
+                {/* Über eine Stationsmenge ist weder ein langjähriges Mittel
+                    noch ein Periodenwert EINE Zahl (kein Flächenmittel aus
+                    Stationswerten) — gefragt wird deshalb nach dem oberen oder
+                    unteren Ende der Spanne, und das muss man umschalten
+                    können. Bei einer Station bleibt es der eine Wert. */}
+                {query.area === 'station' ? (
+                  <>
+                    <option value="normal:max">langjähriges Mittel</option>
+                    <option value="value:max">gemessener Wert (bestimmtes Jahr)</option>
+                  </>
+                ) : (
                   <>
                     <option value="normal:max">langjähriges Mittel — höchste Station</option>
                     <option value="normal:min">langjähriges Mittel — tiefste Station</option>
+                    <option value="value:max">gemessener Wert — höchste Station</option>
+                    <option value="value:min">gemessener Wert — tiefste Station</option>
                   </>
-                ) : (
-                  <option value="normal:max">langjähriges Mittel</option>
                 )}
               </select>
             </label>
@@ -552,7 +875,12 @@ export function AtAskBox({
                 Zahl, aber sie beantwortet eine andere Frage („wärmste Nacht"
                 → höchster Monats-Tiefstwert). Statt der falschen Zahl die
                 Erklärung — „keine Daten" wäre hier ebenfalls unzutreffend. */}
-            {areaResolved && !answer && spec && query && !directionDerivable(spec, query.extreme) && (
+            {/* Der Vorbehalt gilt nur für REKORDE aus dem Monatsarchiv: dort
+                ist die Gegenrichtung einer Extremgröße eine andere Aussage.
+                Ein gemessener Periodenwert hat das Problem nicht — „tiefstes
+                Tagesmaximum im Jänner 2024" ist genau der Monatswert. */}
+            {areaResolved && !answer && spec && query && query.scope === 'record' &&
+              !directionDerivable(spec, query.extreme) && (
               <span className="atask-note label-muted">
                 {directionNote(spec, query.extreme, query.nightly)}
               </span>
@@ -561,6 +889,7 @@ export function AtAskBox({
               !answer &&
               hasParam === false &&
               spec &&
+              query.scope !== 'value' &&
               directionDerivable(spec, query.extreme) && (
               <span className="label-muted">
                 Für „{spec.label}" gibt es{' '}
@@ -568,16 +897,36 @@ export function AtAskBox({
                 {query.scope === 'normal' ? 'Normale' : 'Rekorde'}.
               </span>
             )}
-            {areaResolved && !answer && hasParam && directionDerivable(spec!, query.extreme) && (
+            {areaResolved && !answer && hasParam && !valueBusy &&
+              (query.scope === 'value' || directionDerivable(spec!, query.extreme)) && (
               <span className="label-muted">Für diesen Zeitraum liegt kein Wert vor.</span>
             )}
           </div>
 
-          {/* Eine Jahreszahl beantwortet das Archiv nicht — die Karte schon. */}
-          {query.year != null && (
+          {/* Der gefilterte Landesrekord kommt aus dem Karten-Index, und der
+              kennt den Tagesblock nicht (Begründung bei `filteredNational`). */}
+          {query.scope === 'record' &&
+            query.area === 'austria' &&
+            query.terrain !== 'all' &&
+            dayBlockNeeded && (
+              <div className="atask-note label-muted">
+                Für diese Ebene lässt sich der Höhenfilter nicht rechnen — sie kommt aus dem
+                Tagesdatensatz, der landesweit nur ungefiltert vorliegt.
+              </div>
+            )}
+          {/* Die Wertfrage ist der einzige Pfad mit einem Abruf — und der
+              einzige, der ins Leere laufen kann, weil der Zeitraum vor dem
+              Messbeginn der Station liegt. Beides gehört gesagt. */}
+          {query.scope === 'value' && (
             <div className="atask-note label-muted">
-              Für ein einzelnes Jahr ({query.year}) hat das Archiv keinen Wert — dafür in der Karte
-              den Zeitbezug auf {query.year} stellen.
+              {query.year == null
+                ? 'Für einen gemessenen Wert fehlt die Jahreszahl.'
+                : valueBusy
+                  ? 'Werte werden geholt …'
+                  : hasParam === false
+                    ? `„${spec?.label}" gibt es für diesen Zeitbezug nicht.`
+                    : 'Gemessener Wert aus dem GeoSphere-Klimaarchiv — einmal geholt, danach ' +
+                      'aus dem Zwischenspeicher (dieselben Daten wie in der Karte).'}
             </div>
           )}
 

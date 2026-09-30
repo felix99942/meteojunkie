@@ -79,6 +79,16 @@ const PARAMS = [
   { code: 'tl_mittel', annual: 'mean', nonNeg: false },
   { code: 'tlmax', annual: 'max', nonNeg: false },
   { code: 'tlmin', annual: 'min', nonNeg: false },
+  // MITTELWERT DER TAGESEXTREME — eine andere Größe als `tlmax`/`tlmin`, und
+  // die Verwechslung ist der Anlass für diese beiden Zeilen. Gemessen für
+  // Salzburg Flughafen, September 1991–2020: `tl_mittel` 14,3 °C,
+  // `tlmax_mittel` 20,0 °C, `tlmax` 27,6 °C. Wer nach „durchschnittlichen
+  // Maxima" fragt, meint die mittlere Zahl; die dritte ist der im Mittel
+  // heißeste Tag des Monats. Jahresaggregat ist das MITTEL, nicht das
+  // Maximum: ein Jahresmittel der Tageshöchstwerte ist der Mittelwert über
+  // die zwölf Monatsmittel.
+  { code: 'tlmax_mittel', annual: 'mean', nonNeg: false },
+  { code: 'tlmin_mittel', annual: 'mean', nonNeg: false },
   { code: 'rr', annual: 'sum', nonNeg: true },
   { code: 'so_h', annual: 'sum', nonNeg: true },
   { code: 'rf_mittel', annual: 'mean', nonNeg: false },

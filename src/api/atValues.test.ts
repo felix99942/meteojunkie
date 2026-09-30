@@ -152,12 +152,47 @@ describe('Allzeit-Verfügbarkeit', () => {
     expect(isParamAvailable(getAtParameter('gefuehlt'), rec)).toBe(false)
   })
 
-  it('jeder Registry-Parameter mit Monatscode außer Schnee hat Rekorde', () => {
-    // Hält Registry und Ingest-Codeliste (scripts/at-ingest-records.mjs)
-    // zusammen: ein neuer Monatsparameter ohne Rekord-Ingest fiele hier auf.
+  /**
+   * Hält Registry und Ingest-Codeliste (`scripts/at-ingest-records.mjs`)
+   * zusammen: ein neuer Monatsparameter ohne Rekord-Ingest fiele hier auf.
+   *
+   * ZWEI AUSNAHMEN, beide benannt statt stillschweigend geduldet: die Mittel
+   * der Tagesextreme kamen 2026-09-30 dazu, weil das Klimaarchiv nach
+   * „durchschnittlichen Maxima" gefragt wurde — sie haben NORMALE (dafür
+   * genügte ein Lauf des Normal-Ingests, ~10 Requests), aber noch keine
+   * REKORDE. Der Rekord-Ingest läuft rund 20 Minuten, zieht 290 MB und
+   * beansprucht 22 % des Stundenbudgets; er rechnet ausserdem beide Pässe
+   * und schreibt alle 522 Stationsdateien neu. Wer „der September mit dem
+   * höchsten mittleren Tagesmaximum" beantworten will, ergänzt die zwei
+   * Codes in `CODES` dort und lässt ihn einmal laufen — dann fällt diese
+   * Ausnahme weg.
+   */
+  const OHNE_REKORDE = new Set(['tlmax_mittel', 'tlmin_mittel'])
+
+  it('jeder Registry-Parameter mit Monatscode hat Rekorde — bis auf die benannten', () => {
     for (const p of AT_PARAMETERS) {
       if (!p.monthlyCode) continue
-      expect(hasRecords(p)).toBe(true)
+      expect(hasRecords(p), p.code).toBe(!OHNE_REKORDE.has(p.code))
+    }
+    // Und die Ausnahmen gibt es wirklich, sonst prüft die Zeile oben nichts.
+    for (const code of OHNE_REKORDE) expect(AT_PARAMETERS.some((p) => p.code === code)).toBe(true)
+  })
+
+  // Sie sind trotzdem vollwertig, wo es sie gibt: Monat, Saison, Jahr und
+  // Klimaperiode — nur der Tag fehlt (siehe `monthlyOnly`).
+  it('gibt den Mitteln der Tagesextreme alles ausser dem Tag', () => {
+    for (const code of ['tlmax_mittel', 'tlmin_mittel']) {
+      const p = getAtParameter(code)
+      expect(p.monthlyOnly, code).toBe(true)
+      expect(isParamAvailable(p, { kind: 'day', day: '2026-09-29' }), code).toBe(false)
+      expect(isParamAvailable(p, { kind: 'month', year: 2024, month: 9 }), code).toBe(true)
+      expect(isParamAvailable(p, { kind: 'year', year: 2024 }), code).toBe(true)
+      expect(
+        isParamAvailable(p, { kind: 'normal', periodId: '1991-2020', month: 9 }),
+        code,
+      ).toBe(true)
+      // Kein Allzeit-Zeitbezug, solange es keine Rekorde gibt.
+      expect(isParamAvailable(p, rec), code).toBe(false)
     }
   })
 })

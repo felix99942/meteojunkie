@@ -3,7 +3,8 @@
 // nichts anders aggregiert werden als dort.
 
 import { describe, expect, it } from 'vitest'
-import { buildHistory, historyStart, historyStats } from './atHistory'
+import { buildHistory, historyStart, historyStats, scopeLabel } from './atHistory'
+import { getAtParameter } from '../config/atParameters'
 
 /** Monatsreihe bauen: [year, month, value]. */
 function series(rows: [number, number, number | null][]) {
@@ -113,5 +114,34 @@ describe('historyStats', () => {
 
   it('meldet null, wenn nichts vollständig ist', () => {
     expect(historyStats([{ year: 1, value: null }])).toBeNull()
+  })
+})
+
+// Der Zeitbezug im Klartext. Er steht jetzt fett in der Überschrift des
+// Detailfensters UND unter dem Diagramm — deshalb liegt er im Kern und nicht
+// in einer der beiden Komponenten.
+describe('scopeLabel', () => {
+  const MONATE = [
+    'Jänner', 'Februar', 'März', 'April', 'Mai', 'Juni',
+    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+  ]
+
+  it('benennt Monat, Jahreszeit und Jahr', () => {
+    expect(scopeLabel({ kind: 'month', month: 7 }, MONATE)).toBe('Juli')
+    expect(scopeLabel({ kind: 'season', season: 'JJA' }, MONATE)).toBe('Sommer')
+    expect(scopeLabel({ kind: 'year' }, MONATE)).toBe('Jahr')
+  })
+
+  // Die Monatsnamen kommen von aussen (die Komponenten formatieren sie mit
+  // `Intl`), der Index darf also nicht verrutschen.
+  it('indiziert die Monate ab eins, nicht ab null', () => {
+    expect(scopeLabel({ kind: 'month', month: 1 }, MONATE)).toBe('Jänner')
+    expect(scopeLabel({ kind: 'month', month: 12 }, MONATE)).toBe('Dezember')
+  })
+
+  // Genau die Überschrift, um die es ging: „Niederschlag Summe Jahr".
+  it('ergibt mit dem Registry-Label die Überschrift des Fensters', () => {
+    const label = getAtParameter('rr').label
+    expect(`${label} ${scopeLabel({ kind: 'year' }, MONATE)}`).toBe('Niederschlag Summe Jahr')
   })
 })

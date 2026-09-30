@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregate,
   anomaly,
+  anomalyBarColors,
+  RECORD_TONES,
+  recordToneColors,
   anomalyDisplay,
   anomalyScaleFor,
   AT_PARAMETERS,
@@ -323,6 +326,159 @@ describe('Registry-Identität', () => {
       expect(p.agg).toBe('count')
       expect(p.monthlyCode).toBe(p.code)
       expect(p.countRule?.source).not.toBe(p.code)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Kälte-Kenntage: das OBERE Ende bedeutet KALT, also dreht die Farbpolarität.
+// Der Anlass war das Stationsdetail — roter ▲ auf „86 Frosttage, Winter 1963",
+// während die Karte dieselben 86 Tage über COLD_RAMP hellblau zeichnet.
+// ---------------------------------------------------------------------------
+
+describe('highIsCold — gedrehte Farbpolarität', () => {
+  const rgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16)
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+  }
+
+  it('markiert genau die Kälte-Kenntage', () => {
+    const cold = AT_PARAMETERS.filter((p) => p.highIsCold).map((p) => p.code)
+    expect(cold).toEqual(['tage_frost', 'tage_eis'])
+    // Gegenprobe: Hitze- und Ereignis-Kenntage bleiben normal gepolt —
+    // „mehr Regentage" ist weder warm noch kalt.
+    expect(getAtParameter('tage_tropen').highIsCold).toBeUndefined()
+    expect(getAtParameter('tage_rr_1').highIsCold).toBeUndefined()
+  })
+
+  it('färbt MEHR Frosttage blau und WENIGER rot', () => {
+    const sc = anomalyScaleFor(getAtParameter('tage_frost'), false)
+    const mehr = rgb(colorForValue(sc, 20) as string)
+    const weniger = rgb(colorForValue(sc, -20) as string)
+    expect(mehr.b).toBeGreaterThan(mehr.r)
+    expect(weniger.r).toBeGreaterThan(weniger.b)
+  })
+
+  it('… und lässt die Hitzetage anders herum', () => {
+    const sc = anomalyScaleFor(getAtParameter('tage_tropen'), false)
+    const mehr = rgb(colorForValue(sc, 20) as string)
+    expect(mehr.r).toBeGreaterThan(mehr.b)
+  })
+
+  it('dreht auch den Klimaperioden-Vergleich', () => {
+    const sc = anomalyScaleFor(getAtParameter('tage_eis'), true)
+    const mehr = rgb(colorForValue(sc, 1.8) as string)
+    expect(mehr.b).toBeGreaterThan(mehr.r)
+  })
+
+  // Balken und Karte MÜSSEN dieselbe Lesart treffen — sonst sagt der Balken
+  // „wärmer", wo die Karte darüber „kälter" zeigt.
+  it('dreht die Balken der Perioden-Historie mit', () => {
+    const frost = anomalyBarColors(getAtParameter('tage_frost'))
+    const hitze = anomalyBarColors(getAtParameter('tage_tropen'))
+    expect(frost.pos).toBe(hitze.neg)
+    expect(frost.neg).toBe(hitze.pos)
+    expect(rgb(frost.pos).b).toBeGreaterThan(rgb(frost.pos).r)
+  })
+
+  // Die gespiegelte Skala darf nur die FARBEN tauschen, nicht die Schwellen:
+  // sonst wanderte die Neutralzone.
+  it('spiegelt nur die Farben, nicht die Schwellen', () => {
+    const frost = anomalyScaleFor(getAtParameter('tage_frost'), false)
+    const hitze = anomalyScaleFor(getAtParameter('tage_tropen'), false)
+    expect(frost.stops.map((s) => s.value)).toEqual(hitze.stops.map((s) => s.value))
+    expect(frost.stops.map((s) => s.color)).toEqual(
+      hitze.stops.map((s) => s.color).slice().reverse(),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Farbe der Rekordpfeile im Stationsdetail. Sie muss sich wie die Balken der
+// Perioden-Historie im selben Fenster lesen — und als TEXT lesbar sein.
+// ---------------------------------------------------------------------------
+
+describe('recordToneColors', () => {
+  const rgb = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16)
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+  }
+  /** Relative Leuchtdichte nach WCAG. */
+  const lum = (hex: string) => {
+    const { r, g, b } = rgb(hex)
+    const f = (v: number) => {
+      const c = v / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+  }
+  const contrast = (a: string, b: string) => {
+    const la = lum(a)
+    const lb = lum(b)
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  }
+  /** Hintergrund der Rekordzellen (`--bg-control` im Detailfenster). */
+  const BG = '#232428'
+
+  it('färbt Temperatur warm nach oben', () => {
+    const t = recordToneColors(getAtParameter('tlmax'))
+    expect(rgb(t.high).r).toBeGreaterThan(rgb(t.high).b)
+    expect(rgb(t.low).b).toBeGreaterThan(rgb(t.low).r)
+  })
+
+  /**
+   * DER ANLASS: beim Niederschlag stand ein roter ▲ auf der nassesten
+   * Jahreszeit, während das Balkendiagramm zwei Zentimeter darüber Nässe
+   * türkis zeichnete. Jetzt liest sich beides gleich.
+   */
+  it('färbt Niederschlag nass nach oben — wie die Balken darüber', () => {
+    for (const code of ['rr', 'tage_rr_1']) {
+      const t = recordToneColors(getAtParameter(code))
+      // Türkis: mehr Grün+Blau als Rot.
+      expect(rgb(t.high).b, code).toBeGreaterThan(rgb(t.high).r)
+      expect(rgb(t.high).g, code).toBeGreaterThan(rgb(t.high).r)
+      // Trocken: warmer Ockerton.
+      expect(rgb(t.low).r, code).toBeGreaterThan(rgb(t.low).b)
+      // Und dieselbe Leserichtung wie die Balken der Perioden-Historie.
+      const bars = anomalyBarColors(getAtParameter(code))
+      expect(rgb(bars.pos).b, code).toBeGreaterThan(rgb(bars.pos).r)
+      expect(rgb(bars.neg).r, code).toBeGreaterThan(rgb(bars.neg).b)
+    }
+  })
+
+  // Die Kälte-Kenntage bleiben umgedreht (eigene Regel, `highIsCold`), und
+  // die Niederschlagsregel darf sie nicht überschreiben.
+  it('lässt die Kälte-Kenntage umgedreht', () => {
+    const t = recordToneColors(getAtParameter('tage_frost'))
+    expect(rgb(t.high).b).toBeGreaterThan(rgb(t.high).r)
+    expect(rgb(t.low).r).toBeGreaterThan(rgb(t.low).b)
+  })
+
+  // Sonne braucht keinen eigenen Eintrag: viel Sonne = warmes Orange ist
+  // schon die richtige Lesart.
+  it('lässt die Sonnenscheindauer bei warm/kalt', () => {
+    expect(recordToneColors(getAtParameter('so_h'))).toEqual(
+      recordToneColors(getAtParameter('tl_mittel')),
+    )
+  })
+
+  /**
+   * Als TEXT müssen die Farben lesbar sein — und genau daran scheiterte das
+   * naheliegende „nimm einfach die Balkenfarben": gemessen kommt das
+   * BrBG-Türkis #35978f auf 4,4:1, das Trüb-Blau der Sonnenrampe #4d6183
+   * sogar nur auf 2,5:1. Die Pfeilfarben sind aufgehellte Fassungen.
+   */
+  it('hält jede Pfeilfarbe über 4,5:1 auf dem Zellenhintergrund', () => {
+    for (const c of RECORD_TONES) expect(contrast(c, BG), c).toBeGreaterThanOrEqual(4.5)
+    // Die rohen Balkenfarben täten das NICHT — deshalb gibt es zwei Sätze.
+    expect(contrast('#35978f', BG)).toBeLessThan(4.5)
+    expect(contrast('#4d6183', BG)).toBeLessThan(3)
+  })
+
+  it('gibt für jede Größe zwei verschiedene Farben', () => {
+    for (const p of AT_PARAMETERS) {
+      const t = recordToneColors(p)
+      expect(t.high, p.code).not.toBe(t.low)
     }
   })
 })

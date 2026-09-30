@@ -9,7 +9,13 @@ import { getAtParameter } from '../config/atParameters'
 import {
   answerFromNormals,
   answerFromNormalsRange,
+  answerFromPeriod,
   answerFromRecords,
+  areaFor,
+  areaIn,
+  askValuePeriod,
+  matchState,
+  valuePeriodLabel,
   matchStations,
   mergeRecords,
   normalize,
@@ -23,10 +29,18 @@ import {
   directionNote,
   formatRecordWhen,
   measureStem,
+  matchesTerrain,
+  MOUNTAIN_M,
 } from './climateAsk'
 
-const st = (id: number, name: string, isActive = true, validFrom = '1980-01-01'): AtStation =>
-  ({ id, name, state: 'X', lat: 47, lon: 15, altitude: 300, isActive, validFrom }) as AtStation
+const st = (
+  id: number,
+  name: string,
+  isActive = true,
+  validFrom = '1980-01-01',
+  state = 'X',
+): AtStation =>
+  ({ id, name, state, lat: 47, lon: 15, altitude: 300, isActive, validFrom }) as AtStation
 
 const STATIONS: AtStation[] = [
   // Echte Werte: Flughafen fuehrt die Salzburger Reihe seit 1874 fort,
@@ -44,6 +58,10 @@ const STATIONS: AtStation[] = [
   st(20212, 'Klagenfurt Flughafen'),
   st(11803, 'Warth'),
   st(11010, 'Linz Stadt'),
+  // Für die Bundesland-Fragen: „Tirol" ist kein Ortsname, steckt aber in
+  // Stationsnamen — genau der Fall, an dem sich Land und Station scheiden.
+  st(11804, 'St. Johann in Tirol', true, '1980-01-01', 'Tirol'),
+  st(14200, 'Bruck an der Mur', true, '1980-01-01', 'Steiermark'),
 ]
 
 const ask = (q: string) => parseQuestion(q, STATIONS)
@@ -1050,5 +1068,312 @@ describe('Tagesebene', () => {
     expect(a?.what).toContain('einzelner Tag')
     // 404 mm war die Monatssumme — eine Größenordnung daneben.
     expect(a?.value).not.toBe(404)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Bundesland als Gebiet und die WERTfrage („Frosttage im Jänner 2024").
+// ---------------------------------------------------------------------------
+
+describe('Bundesland als Gebiet', () => {
+  it('erkennt ein eindeutiges Bundesland', () => {
+    const q = ask('anzahl der frosttage in der steiermark')
+    expect(q.state).toBe('Steiermark')
+    expect(q.area).toBe('state')
+  })
+
+  it('schreibt es wie AtStation.state — der Name IST der Schlüssel', () => {
+    expect(matchState(['niederosterreich'])).toBe('Niederösterreich')
+    expect(matchState(['karnten'])).toBe('Kärnten')
+    // Getrennt geschrieben ist dieselbe Frage; die Normalisierung macht daraus
+    // zwei Tokens.
+    expect(matchState(['nieder', 'osterreich'])).toBe('Niederösterreich')
+    // Abkürzungen nur EXAKT — drei Zeichen treffen unscharf alles.
+    expect(matchState(['noe'])).toBe('Niederösterreich')
+    expect(matchState(['nor'])).toBe(null)
+  })
+
+  // „Salzburg" und „Wien" heißen Land UND Stadt. Der ORT hat Vorrang, sonst
+  // änderte sich die Antwort auf die häufigste Frage des Fensters.
+  it('lässt dem gleichnamigen ORT den Vorrang', () => {
+    const q = ask('höchste temperatur in wien')
+    // Das Land ist erkannt und damit einen Klick entfernt — gefragt ist aber
+    // die Stadt. (Hier trägt „Wien" in der Testliste nur EINE Station, in den
+    // echten Daten zwölf; deshalb `station` statt `place`.)
+    expect(q.state).toBe('Wien')
+    expect(q.area).toBe('station')
+    expect(ask('höchste temperatur in salzburg').area).toBe('place')
+  })
+
+  it('… bis die Frage das Land ausdrücklich nennt', () => {
+    expect(ask('höchste temperatur im bundesland salzburg').area).toBe('state')
+    expect(ask('höchste temperatur in ganz salzburg').area).toBe('state')
+  })
+
+  // Gegenprobe zur Falle: „Tirol" steckt in Stationsnamen. Nennt die Frage
+  // AUSSER dem Landesnamen noch ein Wort der Station, ist die Station gemeint.
+  it('unterscheidet „in Tirol" von „St. Johann in Tirol"', () => {
+    expect(ask('meiste frosttage in tirol').area).toBe('state')
+    const q = ask('meiste frosttage in st. johann in tirol')
+    expect(q.area).toBe('station')
+    expect(q.station?.name).toBe('St. Johann in Tirol')
+  })
+
+  it('„in österreich" schlägt das Bundesland', () => {
+    expect(ask('meiste frosttage in tirol oder österreich').area).toBe('austria')
+  })
+})
+
+describe('Kenntage als Größe', () => {
+  it('versteht „Anzahl der Frosttage"', () => {
+    const q = ask('anzahl der frosttage in innsbruck im jänner 2024')
+    expect(q.param).toBe('tage_frost')
+    expect(q.month).toBe(1)
+    expect(q.year).toBe(2024)
+  })
+
+  it('versteht Hitzetage', () => {
+    expect(ask('hitzetage in wien 2024').param).toBe('tage_tropen')
+    expect(ask('tropentage in wien 2024').param).toBe('tage_tropen')
+  })
+
+  // Der Kenntag steht VOR seiner Rohgröße in der Registry: sonst greift die
+  // Kompositum-Regel auf „niederschlag" und die Antwort käme in mm.
+  it('liest „Niederschlagstage" als Kenntag, nicht als Niederschlag', () => {
+    expect(ask('meiste niederschlagstage in salzburg').param).toBe('tage_rr_1')
+    expect(ask('regentage in salzburg 2024').param).toBe('tage_rr_1')
+    // Gegenprobe: die Summe bleibt die Summe.
+    expect(ask('höchste niederschlagssumme in salzburg').param).toBe('rr')
+  })
+})
+
+describe('WERTfrage — ein benannter Zeitraum statt eines Rekords', () => {
+  it('macht aus einer Jahreszahl eine Wertfrage', () => {
+    const q = ask('anzahl der frosttage in innsbruck im jänner 2024')
+    expect(q.scope).toBe('value')
+    expect(askValuePeriod(q)).toEqual({ kind: 'month', year: 2024, month: 1 })
+    expect(valuePeriodLabel(q)).toBe('Jänner 2024')
+  })
+
+  it('ohne engeren Zeitraum gilt das ganze Jahr', () => {
+    const q = ask('frosttage in innsbruck 2024')
+    expect(askValuePeriod(q)).toEqual({ kind: 'year', year: 2024 })
+    expect(valuePeriodLabel(q)).toBe('Jahr 2024')
+  })
+
+  it('kennt die Jahreszeit — der Winter spannt zwei Jahre', () => {
+    const q = ask('niederschlag im winter 2024 in salzburg')
+    expect(askValuePeriod(q)).toEqual({ kind: 'season', year: 2024, season: 'DJF' })
+    expect(valuePeriodLabel(q)).toBe('Winter 2023/24')
+  })
+
+  // „Seit Messbeginn" schlägt die Jahreszahl: „höchste Temperatur seit 1900"
+  // fragt weiterhin nach dem Rekord.
+  it('bleibt bei einem Zeit-Marker eine Rekordfrage', () => {
+    const q = ask('höchste temperatur seit messbeginn 1900 in salzburg')
+    expect(q.scope).toBe('record')
+    expect(askValuePeriod(q)).toBe(null)
+  })
+
+  it('ohne Jahreszahl gibt es keinen Zeitraum', () => {
+    expect(askValuePeriod(ask('meiste frosttage in salzburg'))).toBe(null)
+  })
+
+  it('antwortet bei EINER Station mit der Zahl', () => {
+    const q = { ...ask('frosttage in innsbruck 2024'), area: 'station' as const }
+    const a = answerFromPeriod(q, { 11035: 88 }, [11035], () => 'Innsbruck Universität', 'Innsbruck')
+    expect(a?.value).toBe(88)
+    expect(a?.unit).toBe('d')
+    expect(a?.when).toBe('Jahr 2024')
+    expect(a?.year).toBe(2024)
+    // Bei einer Stationsfrage stünde die Station doppelt da.
+    expect(a?.where).toBeUndefined()
+  })
+
+  // Über eine Stationsmenge gibt es bewusst KEINE eine Zahl — dieselbe
+  // Begründung wie beim langjährigen Mittel: ein ungewichtetes Mittel über
+  // ungleich hoch gelegene Stationen wäre von den Bergstationen dominiert.
+  it('antwortet über ein Bundesland mit der SPANNE', () => {
+    const q = { ...ask('meiste frosttage in tirol 2024'), area: 'state' as const, extreme: 'max' as const }
+    const names: Record<number, string> = { 1: 'Tal', 2: 'Gipfel' }
+    const a = answerFromPeriod(q, { 1: 40, 2: 210 }, [1, 2], (id) => names[id], 'Tirol')
+    expect(a?.value).toBe(210)
+    expect(a?.where).toBe('Gipfel')
+    expect(a?.whereId).toBe(2)
+    expect(a?.what).toBe('meiste Frosttage in Tirol')
+    // Der Zeitraum steht als `when` daneben, nicht doppelt im Text.
+    expect(a?.when).toBe('Jahr 2024')
+    expect(a?.note).toContain('40,0 d')
+    expect(a?.note).toContain('Tal')
+  })
+
+  // Zwei der neun Bundesländer tragen einen Artikel — aus demselben Grund wie
+  // die handgeschriebenen Superlative: aus dem Namen folgt er nicht.
+  it('setzt beim Bundesland den richtigen Artikel', () => {
+    expect(areaIn('Steiermark')).toBe('in der Steiermark')
+    expect(areaIn('Burgenland')).toBe('im Burgenland')
+    expect(areaIn('Tirol')).toBe('in Tirol')
+    expect(areaIn('Österreich')).toBe('in Österreich')
+    expect(areaFor('Burgenland')).toBe('für das Burgenland')
+    expect(areaFor('Steiermark')).toBe('für die Steiermark')
+    expect(areaFor('Kärnten')).toBe('für Kärnten')
+  })
+
+  it('… und kehrt sich mit der Richtung um', () => {
+    const q = { ...ask('wenigste frosttage in tirol 2024'), area: 'state' as const, extreme: 'min' as const }
+    const a = answerFromPeriod(q, { 1: 40, 2: 210 }, [1, 2], (id) => ({ 1: 'Tal', 2: 'Gipfel' })[id]!, 'Tirol')
+    expect(a?.value).toBe(40)
+    expect(a?.where).toBe('Tal')
+  })
+
+  it('gibt ohne einen einzigen Wert nichts zurück', () => {
+    const q = { ...ask('frosttage in tirol 2024'), area: 'state' as const }
+    expect(answerFromPeriod(q, { 1: null, 2: null }, [1, 2], () => 'x', 'Tirol')).toBe(null)
+    expect(answerFromPeriod(q, null, [1, 2], () => 'x', 'Tirol')).toBe(null)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MITTEL DER TAGESEXTREME. Drei Zahlen, die alle plausibel aussehen, und nur
+// eine beantwortet die Frage — live gemessen für Salzburg Flughafen,
+// September 1991–2020 (klima-v2-1m, 2026-09-30):
+//   tl_mittel     14,3 °C   Monatsmittel
+//   tlmax_mittel  20,0 °C   Mittel der TAGESmaxima   ← gefragt
+//   tlmax         27,6 °C   Mittel der MONATSmaxima
+// ---------------------------------------------------------------------------
+
+describe('durchschnittliche Maxima', () => {
+  it('versteht die Frage, an der es scheiterte', () => {
+    const q = ask('durchschnittliche Maxima in salzburg im september')
+    // Vorher: tl_mittel — „Maxima" war gar kein Größenwort, und heraus kam
+    // das Monatsmittel.
+    expect(q.param).toBe('tlmax_mittel')
+    expect(q.scope).toBe('normal')
+    expect(q.month).toBe(9)
+  })
+
+  it('versteht die Minima genauso', () => {
+    expect(ask('durchschnittliche minima im februar in graz').param).toBe('tlmin_mittel')
+    expect(ask('mittleres tagesminimum im jänner in innsbruck').param).toBe('tlmin_mittel')
+  })
+
+  /**
+   * „mittleres" fiel durch den Rost: `hasAny` vergleicht ab vier Zeichen mit
+   * Ähnlichkeit ≥ 0,85, und „mittleres" gegen „mittel" liegt bei 0,67. Ohne
+   * die ausgeschriebenen Beugungen blieb der Scope auf `record`.
+   */
+  it('erkennt die Beugungen von „mittel" als Mittelwort', () => {
+    for (const w of ['mittleres', 'mittlere', 'mittlerer', 'durchschnittliche']) {
+      expect(ask(`${w} tagesmaximum im juli in salzburg`).scope, w).toBe('normal')
+    }
+  })
+
+  /**
+   * DER KERN: ein generisches Wort darf die Suche nicht beenden.
+   * „durchschnittliche TEMPERATUR MAXIMA" traf zuerst „temperatur" (als
+   * `generic` markiert), brach ab und antwortete mit dem Monatsmittel.
+   */
+  it('lässt ein bestimmtes Größenwort ein generisches überstimmen', () => {
+    const q = ask('was sind die durchschnittlichen temperatur maxima im juli für wien hohe warte')
+    expect(q.param).toBe('tlmax_mittel')
+    // Gegenprobe: steht das bestimmte Wort VORNE, bleibt es dabei.
+    expect(ask('tagesmaximum der temperatur im juli in salzburg').param).toBe('tlmax')
+  })
+
+  // Ohne Mittelwort bleibt es das Monatsextrem — beides sind gültige Fragen,
+  // und die Auswahl im Fenster trennt sie mit einem Klick.
+  it('bleibt ohne Mittelwort beim Monatsextrem', () => {
+    expect(ask('höchste temperatur im juli in salzburg').param).toBe('tlmax')
+    expect(ask('höchstes tagesmaximum in salzburg').param).toBe('tlmax')
+    expect(ask('kälteste nacht in salzburg').param).toBe('tlmin')
+  })
+
+  // Und die alten Fälle bleiben, wie sie waren.
+  // Der Antworttext muss die GRÖSSE nennen — bei drei ähnlich aussehenden
+  // Temperaturmitteln ist das der Unterschied zwischen Auskunft und
+  // Zahlensalat. In der Spannen-Fassung fehlte sie, während die
+  // Stationsfassung sie längst nannte.
+  it('nennt die Größe auch in der Spannen-Antwort', () => {
+    const q = { ...ask('durchschnittliche Maxima in salzburg im september'), area: 'place' as const }
+    const normals = {
+      1: { tlmax_mittel: { monthly: [0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0], seasonal: [], annual: 15 } },
+      2: { tlmax_mittel: { monthly: [0, 0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0], seasonal: [], annual: 16 } },
+    }
+    const a = answerFromNormalsRange(
+      q,
+      normals as never,
+      'tlmax_mittel',
+      (id) => `S${id}`,
+      '1991–2020',
+      [1, 2],
+      'Salzburg',
+    )
+    expect(a?.value).toBe(22)
+    expect(a?.what).toContain('Mittleres Tagesmaximum')
+    expect(a?.what).toContain('in Salzburg')
+  })
+
+  it('rührt die übrigen Fragen nicht an', () => {
+    expect(ask('wie warm ist es im juli in wien normalerweise').param).toBe('tl_mittel')
+    expect(ask('wärmster juli in salzburg').param).toBe('tl_mittel')
+    expect(ask('höchster jahresniederschlag in salzburg').param).toBe('rr')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// HÖHENFILTER. Ohne ihn beantwortet sich „meiste Eistage in Österreich" jedes
+// Mal mit dem Sonnblick. Gemessen über die Rekord-Assets (höchster
+// Jahreswert): Eistage 292 d (Sonnblick 3109 m) gegen 112 d ohne
+// Bergstationen (Präbichl), Frosttage 351 gegen 227, Niederschlag 4.167 mm
+// (Feuerkogel) gegen 3.451 mm (Loibl Tunnel) — Hitzetage dagegen unverändert
+// 57 d (Bad Deutsch-Altenburg), weil die Berge dort ohnehin nicht gewinnen.
+// ---------------------------------------------------------------------------
+
+describe('Höhenfilter', () => {
+  it('liest „nur Bergstationen" und „ohne Bergstationen"', () => {
+    expect(ask('meiste eistage in österreich').terrain).toBe('all')
+    expect(ask('meiste eistage in österreich nur bergstationen').terrain).toBe('high')
+    expect(ask('meiste eistage in österreich ohne bergstationen').terrain).toBe('low')
+  })
+
+  // „ohne" steht getrennt vor dem Wort und dreht es um — in beide Richtungen.
+  it('dreht die Bedeutung mit „ohne" um', () => {
+    expect(ask('höchste temperatur in österreich ohne berge').terrain).toBe('low')
+    expect(ask('meiste frosttage im flachland').terrain).toBe('low')
+    expect(ask('meiste frosttage ohne tieflagen').terrain).toBe('high')
+  })
+
+  /**
+   * Ein reiner HÖHENschnitt, keine topografische Einteilung — und am Rand
+   * zwangsläufig willkürlich. Die beiden Fälle stehen hier, damit niemand
+   * später eine saubere Trennung hineinliest, die die Stammdaten nicht
+   * hergeben.
+   */
+  it('schneidet bei 1500 m, mit den bekannten Grenzfällen', () => {
+    expect(MOUNTAIN_M).toBe(1500)
+    // Galtür 1587 m ist ein TALORT und zählt trotzdem als Berg …
+    expect(matchesTerrain(1587, 'high')).toBe(true)
+    // … der Schöckl 1443 m ist ein GIPFEL und zählt nicht.
+    expect(matchesTerrain(1443, 'high')).toBe(false)
+    expect(matchesTerrain(1443, 'low')).toBe(true)
+  })
+
+  it('lässt bei „alle" jede Station durch', () => {
+    for (const h of [0, 1499, 1500, 3109, null]) {
+      expect(matchesTerrain(h, 'all'), String(h)).toBe(true)
+    }
+  })
+
+  // Eine Station ohne bekannte Höhe als „Berg" zu zählen wäre die
+  // gefährlichere Annahme: sie gewänne jede Kälte-Frage, ohne dass man es
+  // sähe.
+  it('zählt eine Station ohne Höhe als Tal', () => {
+    expect(matchesTerrain(null, 'low')).toBe(true)
+    expect(matchesTerrain(undefined, 'high')).toBe(false)
+  })
+
+  it('stört die übrigen Fragen nicht', () => {
+    expect(ask('höchste temperatur in wien').terrain).toBe('all')
+    expect(ask('durchschnittliche Maxima in salzburg im september').terrain).toBe('all')
   })
 })

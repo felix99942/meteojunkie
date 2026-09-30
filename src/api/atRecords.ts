@@ -59,6 +59,11 @@ export function monthOfYearRange(year: number, month: number): { start: string; 
   return monthRange(`${year}-${pad2(month)}`)
 }
 
+/** Das ganze Jahr — Suchfenster für einen JAHRESrekord (`ParamRecords.ann`). */
+export function yearRange(year: number): { start: string; end: string } {
+  return { start: `${year}-01-01`, end: `${year}-12-31` }
+}
+
 export interface ExtremeDay {
   /** Tag des Rekords (YYYY-MM-DD). */
   day: string

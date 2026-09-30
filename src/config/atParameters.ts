@@ -117,6 +117,37 @@ export interface AtParameterSpec {
    * Tageswerten von `source`.
    */
   countRule?: CountRule
+  /**
+   * Es gibt diese Größe NUR im Monatsdatensatz, nicht im Tagesdatensatz.
+   *
+   * Gilt für die Mittelwerte der Tagesextreme (`tlmax_mittel`,
+   * `tlmin_mittel`): für EINEN Tag ist „Mittelwert der Maximalwerte" genau
+   * das Tagesmaximum, also dieselbe Zahl wie `tlmax` — GeoSphere führt sie im
+   * Tagesdatensatz deshalb gar nicht, und eine Tageskarte davon wäre eine
+   * Dublette. `isParamAvailable()` sperrt sie im Tag-Modus, sonst liefe die
+   * Abfrage gegen ein Feld, das es nicht gibt.
+   */
+  monthlyOnly?: true
+  /**
+   * Das OBERE Ende dieser Größe bedeutet KALT — die Farbpolarität dreht sich
+   * also um. Gilt für die Kälte-Kenntage: der Winter mit den MEISTEN
+   * Frosttagen ist der kälteste, nicht der wärmste.
+   *
+   * Ohne das Feld stand im Stationsdetail ein roter ▲ auf „86 Frosttage,
+   * Winter 1963" und ein blauer ▼ auf dem frostärmsten Winter — genau
+   * verkehrt, und im Widerspruch zur KARTE, die dieselben 86 Tage längst über
+   * `COLD_RAMP` hellblau zeichnet. Betroffen sind alle drei Stellen, an denen
+   * die Farbe „warm/kalt" sagt: die Rekordpfeile, die Balken der
+   * Perioden-Historie (`anomalyBarColors`) und die Anomalieskala der Karte
+   * (`anomalyScale`/`climateAnomalyScale`). Sie MÜSSEN zusammen kippen —
+   * dieselbe Lesart in Balken und Karte ist eine gesetzte Regel, siehe
+   * `anomalyBarColors`.
+   *
+   * NICHT für Niederschlag, Sonne und Niederschlagstage: die sagen nicht
+   * warm/kalt, sondern nass/trocken bzw. trüb/sonnig, und haben dafür ihre
+   * eigenen Rampen.
+   */
+  highIsCold?: true
 }
 
 // Divergierende Temperatur-Anomalie (K): blau (kalt) → neutral → rot (warm).
@@ -343,10 +374,41 @@ const SUN_CLIMATE_SCALE: ColorScale = {
   ],
 }
 
+/**
+ * Eine divergierende Skala SPIEGELN: gleiche Schwellen, getauschte Farbenden.
+ * Gebraucht für die Kälte-Kenntage (`highIsCold`), wo „mehr" kälter heißt —
+ * die Schwellen bleiben, nur die Bedeutung der Enden dreht sich. Bewusst
+ * abgeleitet und nicht als zweite Farbtabelle gepflegt: zwei Listen, die
+ * spiegelbildlich gleich bleiben müssen, laufen auseinander.
+ */
+function reverseColors(scale: ColorScale): ColorScale {
+  const colors = scale.stops.map((st) => st.color)
+  return {
+    ...scale,
+    stops: scale.stops.map((st, i) => ({ ...st, color: colors[colors.length - 1 - i] })),
+  }
+}
+
+/** Δ Tage, für Größen, deren oberes Ende KALT ist (Frost-/Eistage). */
+const DAYS_ANOM_SCALE_COLD = reverseColors(DAYS_ANOM_SCALE)
+/** Dasselbe für den Vergleich zweier Klimaperioden. */
+const CLIMATE_DELTA_SCALE_COLD = reverseColors(CLIMATE_DELTA_SCALE)
+
 export const AT_PARAMETERS: AtParameterSpec[] = [
   { code: 'tl_mittel', monthlyCode: 'tl_mittel', liveCode: 'tl', liveAgg: 'mean', label: 'Temperatur Mittel', shortLabel: 'Mittel', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittlere Lufttemperatur in 2 m Höhe. Tageswert aus Termin- und Extremwerten; Monat und Jahr sind Mittelwerte daraus.' },
   { code: 'tlmax', monthlyCode: 'tlmax', liveCode: 'tlmax', liveAgg: 'max', label: 'Temperatur Maximum', shortLabel: 'Maximum', unit: '°C', category: 'Temperatur', agg: 'max', annualAgg: 'max', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Höchste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der HÖCHSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
   { code: 'tlmin', monthlyCode: 'tlmin', liveCode: 'tlmin', liveAgg: 'min', label: 'Temperatur Minimum', shortLabel: 'Minimum', unit: '°C', category: 'Temperatur', agg: 'min', annualAgg: 'min', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Tiefste Lufttemperatur in 2 m Höhe. Monat und Jahr sind der TIEFSTE Tageswert im Zeitraum — ein Rekord fällt deshalb auf einen konkreten Tag.' },
+  // MITTELWERT DER TAGESEXTREME — eine EIGENE Größe, nicht eine Variante von
+  // `tlmax`/`tlmin`, und die Verwechslung war der Anlass. Gemessen für
+  // Salzburg Flughafen, September 1991–2020 (klima-v2-1m, live):
+  //   tl_mittel     14,3 °C   Monatsmittel aus Termin- und Extremwerten
+  //   tlmax_mittel  20,0 °C   Mittel der TAGESmaxima  ← „durchschnittliche Maxima"
+  //   tlmax         27,6 °C   Mittel der MONATSmaxima (der heißeste Tag, gemittelt)
+  // Die dritte Zahl sieht plausibel aus und beantwortet eine ganz andere
+  // Frage; genau davor warnt schon die Notiz zur Verifikation, die die
+  // Normal-Assets ausdrücklich NICHT als Tagesklimatologie benutzt.
+  { code: 'tlmax_mittel', monthlyCode: 'tlmax_mittel', label: 'Mittleres Tagesmaximum', shortLabel: 'Mittl. Maximum', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', monthlyOnly: true, anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittel der TAGESHÖCHSTWERTE eines Monats — die Zahl, die man meint, wenn man nach „durchschnittlichen Maxima" fragt. Nicht zu verwechseln mit „Temperatur Maximum": das ist der höchste Tageswert des Zeitraums, im September in Salzburg 27,6 statt 20,0 °C. Nur ab Monat, für einen einzelnen Tag wäre es das Tagesmaximum selbst.' },
+  { code: 'tlmin_mittel', monthlyCode: 'tlmin_mittel', label: 'Mittleres Tagesminimum', shortLabel: 'Mittl. Minimum', unit: '°C', category: 'Temperatur', agg: 'mean', annualAgg: 'mean', monthlyOnly: true, anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, description: 'Mittel der TAGESTIEFSTWERTE eines Monats — die übliche Angabe für „nachts durchschnittlich so kalt". Nicht das Monatsminimum („Temperatur Minimum"), das die kälteste Nacht des Zeitraums nennt. Nur ab Monat.' },
   { code: 'gefuehlt', label: 'Gefühlte Temperatur', shortLabel: 'Gefühlt', unit: '°C', category: 'Temperatur', agg: 'last', annualAgg: 'last', anomalyKind: 'delta', anomalyUnit: 'K', scale: COLOR_SCALES.temperature_2m, anomalyScale: TEMP_ANOM_SCALE, derived: 'apparentTemperature', description: 'Berechnet aus Lufttemperatur, Wasserdampfdruck (aus rel. Feuchte) und Windgeschwindigkeit nach der AU-BOM/Steadman-Formel — derselben, die Open-Meteo für die Vorhersage nutzt. Nur für den LAUFENDEN Tag: GeoSphere führt weder eine historische noch eine Monats-/Jahresgröße dafür, und der Tagesdatensatz kennt keinen zeitgleichen Termin-Wind. Zeigt den aktuellsten Wert aus den 10-Minuten-Messwerten, nicht ein Tagesmittel.' },
   { code: 'rr', monthlyCode: 'rr', liveCode: 'rr', liveAgg: 'sum', label: 'Niederschlag Summe', shortLabel: 'Summe', unit: 'mm', category: 'Niederschlag', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: COLOR_SCALES.precipitation, monthScale: PRECIP_MONTH_SCALE, seasonScale: PRECIP_SEASON_SCALE, yearScale: PRECIP_YEAR_SCALE, anomalyScale: PERCENT_ANOM_SCALE, description: 'Niederschlagshöhe als 24-Stunden-Summe (Termin 6 UTC). Monat und Jahr sind Summen — der Rekord ist ein nasser Monat, kein einzelner Tag.' },
   { code: 'so_h', monthlyCode: 'so_h', liveCode: 'so', liveAgg: 'sum', liveFactor: 1 / 3600, label: 'Sonnenschein', shortLabel: 'Sonnenscheindauer', unit: 'h', category: 'Sonne', agg: 'sum', annualAgg: 'sum', anomalyKind: 'percent', anomalyUnit: '%', scale: SUNSHINE_SCALE, monthScale: SUNSHINE_MONTH_SCALE, seasonScale: SUNSHINE_SEASON_SCALE, yearScale: SUNSHINE_YEAR_SCALE, anomalyScale: SUN_ANOM_SCALE, climateAnomalyScale: SUN_CLIMATE_SCALE, description: 'Sonnenscheindauer in Stunden. Monat und Jahr sind Summen — der Rekord ist ein sonniger Monat, kein einzelner Tag.' },
@@ -366,8 +428,8 @@ export const AT_PARAMETERS: AtParameterSpec[] = [
   // Mit `code: 'tlmax'` hätten sie den echten Temperaturparameter verdeckt.
   { code: 'tage_sommer', monthlyCode: 'tage_sommer', label: 'Sommertage', shortLabel: 'Sommertage', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '>=', value: 25 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, HOT_RAMP), monthScale: countScale(31, HOT_RAMP), seasonScale: countScale(80, HOT_RAMP), yearScale: countScale(120, HOT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesmaximum von mindestens 25 °C. Monat und Jahr sind ANZAHLEN — der Rekord ist ein sommertagreicher Monat, kein einzelner Tag.' },
   { code: 'tage_tropen', monthlyCode: 'tage_tropen', label: 'Hitzetage', shortLabel: 'Hitzetage (≥ 30 °C)', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '>=', value: 30 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(20, HOT_RAMP), monthScale: countScale(20, HOT_RAMP), seasonScale: countScale(45, HOT_RAMP), yearScale: countScale(60, HOT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesmaximum von mindestens 30 °C (GeoSphere führt sie als „Tropentage"). Monat und Jahr sind Anzahlen.' },
-  { code: 'tage_frost', monthlyCode: 'tage_frost', label: 'Frosttage', shortLabel: 'Frosttage', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmin', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(250, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit einem Tagesminimum unter 0 °C. Monat und Jahr sind Anzahlen.' },
-  { code: 'tage_eis', monthlyCode: 'tage_eis', label: 'Eistage', shortLabel: 'Eistage (Dauerfrost)', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(180, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage, an denen auch das Tagesmaximum unter 0 °C bleibt (Dauerfrost). Monat und Jahr sind Anzahlen.' },
+  { code: 'tage_frost', monthlyCode: 'tage_frost', label: 'Frosttage', shortLabel: 'Frosttage', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmin', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(250, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE_COLD, climateAnomalyScale: CLIMATE_DELTA_SCALE_COLD, highIsCold: true, description: 'Tage mit einem Tagesminimum unter 0 °C. Monat und Jahr sind Anzahlen.' },
+  { code: 'tage_eis', monthlyCode: 'tage_eis', label: 'Eistage', shortLabel: 'Eistage (Dauerfrost)', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'tlmax', op: '<', value: 0 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, COLD_RAMP), monthScale: countScale(31, COLD_RAMP), seasonScale: countScale(92, COLD_RAMP), yearScale: countScale(180, COLD_RAMP), anomalyScale: DAYS_ANOM_SCALE_COLD, climateAnomalyScale: CLIMATE_DELTA_SCALE_COLD, highIsCold: true, description: 'Tage, an denen auch das Tagesmaximum unter 0 °C bleibt (Dauerfrost). Monat und Jahr sind Anzahlen.' },
   { code: 'tage_rr_1', monthlyCode: 'tage_rr_1', label: 'Niederschlagstage', shortLabel: 'Tage ≥ 1 mm', unit: 'd', category: 'Kenntage', agg: 'count', annualAgg: 'sum', countRule: { source: 'rr', op: '>=', value: 1 }, anomalyKind: 'delta', anomalyUnit: 'd', scale: countScale(31, EVENT_RAMP), monthScale: countScale(31, EVENT_RAMP), seasonScale: countScale(70, EVENT_RAMP), yearScale: countScale(200, EVENT_RAMP), anomalyScale: DAYS_ANOM_SCALE, description: 'Tage mit mindestens 1 mm Niederschlag. Sagt etwas anderes als die Niederschlagssumme: viele kleine Regentage oder wenige große.' },
 ]
 
@@ -412,9 +474,64 @@ export function anomalyScaleFor(spec: AtParameterSpec, climate: boolean): ColorS
  * bei Rot/Blau (RdBu), wie es die Wetter-Anomalieskala schon nutzt.
  */
 export function anomalyBarColors(spec: AtParameterSpec): { pos: string; neg: string } {
-  if (spec.category === 'Niederschlag') return { pos: '#35978f', neg: '#bf812d' }
+  // `isWetDry` statt nur der Kategorie: die Niederschlagstage stehen unter
+  // „Kenntage" und bekamen deshalb Rot/Blau — mehr Regentage sind aber
+  // nasser, nicht wärmer.
+  if (isWetDry(spec)) return { pos: '#35978f', neg: '#bf812d' }
   if (spec.category === 'Sonne') return { pos: '#f2a01e', neg: '#4d6183' }
+  // Kälte-Kenntage: „mehr" ist kälter, also blau nach oben und rot nach unten
+  // — dieselbe Drehung, die `anomalyScale` für die Karte macht.
+  if (spec.highIsCold) return { pos: '#4393c3', neg: '#d6604d' }
   return { pos: '#d6604d', neg: '#4393c3' }
+}
+
+/**
+ * Farben der REKORDPFEILE im Stationsdetail — je Größe, nicht fest.
+ *
+ * Die Leserichtung ist dieselbe wie bei den Balken der Perioden-Historie
+ * (`anomalyBarColors`), die im SELBEN Fenster direkt darüber stehen: was dort
+ * „mehr davon" bedeutet, muss hier „höchster Wert" bedeuten. Vorher sprachen
+ * die Pfeile als einzige Stelle des Fensters durchgehend Warm/Kalt — beim
+ * Niederschlag stand damit ein roter ▲ auf der nassesten Jahreszeit, während
+ * das Balkendiagramm zwei Zentimeter darüber Nässe türkis zeichnete.
+ *
+ * **Die Balkenfarben lassen sich dafür NICHT einfach übernehmen**: als TEXT
+ * sind sie zu dunkel. Gemessen auf dem Zellenhintergrund (#232428) kommt das
+ * BrBG-Türkis #35978f auf 4,4:1 und das BrBG-Braun #bf812d auf 4,7:1, das
+ * Trüb-Blau der Sonnenrampe #4d6183 sogar nur auf 2,5:1 — die heutigen
+ * Pfeilfarben liegen bei 6,2:1. Die Werte hier sind deshalb aufgehellte
+ * Fassungen derselben Farbtöne, auf dieses Niveau gebracht (ein Test hält
+ * die Kontraste fest).
+ */
+const TONE_WARM = '#ec8a5a'
+const TONE_COLD = '#6aa9e0'
+/** BrBG, aufgehellt: 6,8:1 bzw. 6,3:1 statt 4,4 und 4,7. */
+const TONE_WET = '#49bdb0'
+const TONE_DRY = '#d69a3f'
+
+/** Alle Pfeilfarben — für den Kontrast-Test. */
+export const RECORD_TONES = [TONE_WARM, TONE_COLD, TONE_WET, TONE_DRY]
+
+/**
+ * Sagt eine Größe NASS/TROCKEN statt WARM/KALT?
+ *
+ * Die Niederschlagssumme offensichtlich — aber auch die NIEDERSCHLAGSTAGE,
+ * die in der Registry unter „Kenntage" stehen und deshalb sonst
+ * durchgerutscht wären: mehr Regentage sind nasser, nicht wärmer.
+ */
+function isWetDry(spec: AtParameterSpec): boolean {
+  return spec.category === 'Niederschlag' || spec.code === 'tage_rr_1'
+}
+
+/** Farbe für den höchsten und den tiefsten Wert dieser Größe. */
+export function recordToneColors(spec: AtParameterSpec): { high: string; low: string } {
+  // Kälte-Kenntage: „mehr" ist kälter (siehe `highIsCold`).
+  if (spec.highIsCold) return { high: TONE_COLD, low: TONE_WARM }
+  if (isWetDry(spec)) return { high: TONE_WET, low: TONE_DRY }
+  // Alles Übrige liest sich warm/kalt — und für die Sonnenscheindauer ist das
+  // bereits richtig (viel Sonne = warmes Orange, wenig = kühles Blau), sie
+  // braucht deshalb keinen eigenen Eintrag.
+  return { high: TONE_WARM, low: TONE_COLD }
 }
 
 /**

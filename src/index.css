@@ -2012,9 +2012,24 @@ button:focus-visible {
   min-width: 0;
 }
 
-.atask-understood select {
+.atask-understood select,
+.atask-understood input {
   font-size: 12px;
   min-width: 0;
+}
+
+/* Die Jahreszahl steht in derselben Zeile wie die Auswahlfelder und muss
+   aussehen wie eines: die globale Regel oben fasst nur `input[type=text]`,
+   ein number-Input bliebe sonst auf der Browservorgabe stehen. */
+.atask-year {
+  background: var(--bg-control);
+  color: var(--ink-secondary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .atask-answer {
@@ -2430,9 +2445,18 @@ button:focus-visible {
   color: var(--ink-muted);
 }
 
+/* Zeile unter dem Stationsnamen: WAS hier gerade zu sehen ist. Die Größe
+   samt Zeitbezug steht fett voran, der erklärende Rest bleibt klein — sie
+   ist die Zeile, an der man das Fenster liest, und war vorher durchgehend
+   grau auf 11 px. */
 .atdetail-sub {
   color: var(--ink-secondary);
   font-size: 11px;
+}
+
+.atdetail-what {
+  font-size: 13px;
+  color: var(--ink);
 }
 
 .atdetail-stats {
@@ -2503,13 +2527,12 @@ button:focus-visible {
   font-size: 10px;
 }
 
-.atdetail-recmax {
-  color: #ec8a5a;
-}
-
-.atdetail-recmin {
-  color: #6aa9e0;
-}
+/* Die Farbe der Rekordwerte steht NICHT hier, sondern in der Registry
+   (`recordToneColors` in `config/atParameters.ts`): sie hängt an der GRÖSSE
+   — warm/kalt bei der Temperatur, nass/trocken beim Niederschlag, und bei
+   den Kälte-Kenntagen ist der höchste Wert der kälteste. Eine CSS-Klasse
+   könnte das nicht entscheiden, deshalb setzt die Komponente die Farbe
+   direkt. */
 
 .atdetail-chart {
   position: relative;
