@@ -146,3 +146,37 @@ export function drawLightningCrosses(
   }
   ctx.restore()
 }
+
+/**
+ * Zeichnet die RINGE einer Altersstufe — dieselbe Aussage wie ein Kreuz, nur
+ * für die zweite Blitzquelle (MTG Lightning Imager).
+ *
+ * Zwei Symbole, weil die beiden Quellen überlappen: über Deutschland liegt
+ * der Ring um das DWD-Kreuz (zwei Quellen, die sich einig sind), östlich und
+ * südlich der DWD-Abdeckung steht er allein. Mit zweimal Kreuzen sähe die
+ * Überlappung nach doppelt gezeichneten Blitzen aus.
+ *
+ * Halo-Logik wie bei den Kreuzen: erst alle dunklen Ringe, dann alle farbigen
+ * — sonst radiert der Halo des nächsten Rings die Farbe des vorigen an.
+ */
+export function drawFlashRings(
+  ctx: CanvasRenderingContext2D,
+  cells: LightningCell[],
+  size: { width: number; height: number },
+  color: string,
+  radius: { base: number; perLevel: number },
+): void {
+  if (cells.length === 0) return
+  ctx.save()
+  for (const pass of [0, 1]) {
+    ctx.strokeStyle = pass === 0 ? 'rgba(0,0,0,0.75)' : color
+    for (const c of cells) {
+      const r = radius.base + c.level * radius.perLevel
+      ctx.lineWidth = pass === 0 ? Math.max(2.2, r * 0.7) : Math.max(1.2, r * 0.42)
+      ctx.beginPath()
+      ctx.arc(c.x * size.width, c.y * size.height, r, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+}

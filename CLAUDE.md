@@ -1290,11 +1290,13 @@ npm run preview   # gebautes dist/ servieren
   auf dem neuesten Bild steht oder die Schleife läuft (`atLiveEdge`) — wer ein
   älteres Bild ansieht, wird nicht weggerissen und bekommt den Knopf
   „● neuer Stand".
-  **OVERLAYS vom selben Dienst** (`RADAR_OVERLAYS`, Häkchen in der Leiste):
+  **OVERLAYS, fast alle vom selben Dienst** (`RADAR_OVERLAYS`, Häkchen in der
+  Leiste):
   **Blitze** (`Blitzdichte`) sind voreingestellt an, **Cluster**
-  (`Gewittercluster`) und **KONRAD** (`K3D_EVAL_current_cells` +
-  `K3D_EVAL_cur_track_lines`) auf Wunsch. Alles 5-Minuten-Takt, CORS offen,
-  GeoNutzV — und alles NUR Gegenwart: die `fcst_*`-Layer des
+  (`Gewittercluster`), **KONRAD** (`K3D_EVAL_current_cells` +
+  `K3D_EVAL_cur_track_lines`) und **MTG-Blitze** (s. u., der einzige
+  Nicht-DWD-Layer) auf Wunsch. Alles 5-Minuten-Takt, CORS offen,
+  die DWD-Layer nach GeoNutzV — und alles NUR Gegenwart: die `fcst_*`-Layer des
   KONRAD-Verfahrens (Prognosekegel, Vorhersagespuren) bleiben draußen wie die
   Radarvorhersage auch. **`Gewitterzellen` war dabei und ist auf Wunsch wieder
   raus**: dieselben Punktsymbole in derselben Skala wie die Cluster, nur je
@@ -1313,6 +1315,65 @@ npm run preview   # gebautes dist/ servieren
   `InvalidDimensionValue` (live gesehen für 15:00 UTC, während die Cluster
   dieselbe Minute hatten). Ohne das Merken liefe der Nachlade-Effekt endlos auf
   dieselbe Zeit. Die Legendenzeile sagt dann „nichts gemeldet", nicht „Fehler".
+  **POLARITÄT UND STROMSTÄRKE GIBT ES NICHT — nachgemessen, nicht erneut
+  suchen** (2026-09-29). `GetFeatureInfo` auf `Blitzdichte` liefert GENAU zwei
+  Felder, `GRAY_INDEX` (den Dichtewert) und `TIME`; `opendata.dwd.de` hat gar
+  kein `lightning`-Verzeichnis; der GeoSphere Data Hub führt unter 67
+  Datensätzen keinen einzigen zu Blitz/Gewitter/ALDIS; und
+  `data.blitzortung.org/Data/Protected/Strikes/` antwortet mit **HTTP 401**
+  bei **null Access-Control-Headern** — doppelt zu, und Zugangsdaten im
+  Frontend wären ohnehin öffentlich (dieselbe Regel wie beim API-Key).
+  Vorzeichen und Scheitelstrom misst nur ein bodengebundenes VLF/LF-Netz mit
+  kalibrierter Amplitude (ALDIS/EUCLID, Vaisala, nowcast/LINET) — lizenzpflichtig,
+  als Live-Stream mit Schlüssel, also mit einem deployten Backend. Das hat diese
+  Seite nicht (`server/` ist Vite-Dev-Middleware, ausgeliefert wird GitHub Pages),
+  und der Deploy-Cron alle 3 h trägt keinen Blitzmonitor. Eine OPTISCHE Messung
+  aus dem All kann beides prinzipiell nicht liefern und unterscheidet auch
+  Wolken- nicht von Erdblitzen.
+  **Deshalb der MTG Lightning Imager als ZWEITE Blitzquelle** — und er ist
+  wegen der ABDECKUNG da, nicht wegen der Auflösung: die DWD-Blitzdichte endet
+  im Süden bei 46,95 °N (Kärnten fehlt), das Radarecho im Osten bei
+  13,2–14,4 °O (Linz, Wien, Graz, Klagenfurt fehlen) — MTG sieht von 0° aus
+  die ganze Scheibe, also genau diese Ecken. Layer `mtg_fd:li_afa`
+  (Accumulated Flash Area, L2) auf demselben EUMETView-WMS wie der
+  Satellitenbereich; live geprüft 2026-09-29: CORS `*`, keyless, PNG8
+  transparent ~5 KB über diese Fläche, 5-Minuten-Takt (`PT5M`), Archiv ab
+  30.05.2025.
+  **Dafür kann `WmsImageSource` jetzt eine FREMDE Quelle sein**: `wmsBase`,
+  `capsBase` und `area` (Vorgaben sind der DWD-Workspace). `area` ist keine
+  Bequemlichkeit — das MTG-Capabilities meldet die ganze sichtbare Halbkugel
+  (±70°) und führt **gar keine EPSG:3857-BoundingBox** (nur CRS:84 und
+  EPSG:4326, gemessen), `parseRadarCapabilities` fiele dort also auf `null`
+  zurück, obwohl die Zeiten da sind. Angefordert wird deshalb über die
+  Registry-Fläche — dieselbe Box wie das DWD-Radargitter, damit beide Overlays
+  denselben Boden abdecken.
+  **Gezeichnet werden RINGE, kein Bild** (`RadarOverlay.cells`, `CellSymbols`,
+  `drawFlashRings`): ein rohes AFA-Bild wäre derselbe Fehler, der bei der
+  DWD-Dichte schon verworfen wurde — die Rampe ist YlOrRd (`#FFF2AE → #8B0026`,
+  am Legendenbild abgetastet) und liest sich über dem Echo wie ein zweites
+  Echo. **Eine maschinenlesbare Klassenliste gibt es nicht**: der SLD des
+  Layers trägt nur einen nackten `RasterSymbolizer` ohne ColorMap (über
+  `request=GetStyles` nachgeladen), die Farben stecken in der Farbtabelle des
+  Rasters — die Stufe ist deshalb eine relative Intensität und wird auch nur so
+  benannt. **Ring statt Kreuz, weil sich die Quellen ÜBERLAPPEN**: über
+  Deutschland liegt der Ring um das DWD-Kreuz (zwei Quellen, die sich einig
+  sind), östlich und südlich davon steht er allein — mit zweimal Kreuzen sähe
+  die Überlappung nach doppelt gezeichneten Blitzen aus. Die Altersfarben sind
+  dieselben (`LIGHTNING_AGES`): die Zeitlesart darf nicht je Quelle eine
+  andere sein. Welche Overlays selbst zeichnen, entscheidet das Feld `cells`
+  und nicht mehr eine fest verdrahtete Id — mit `id === 'blitze'` wäre der
+  zweite Layer still als rohes Bild auf der Karte gelandet.
+  **Die MTG-Zeitdimension hinkt dem Radarstand ein bis zwei Schritte
+  hinterher** (live gesehen: Radar 19:05, MTG 19:00 — die sichere Richtung,
+  siehe die `nearestValue`-Falle im Satellitenabschnitt). Die Beschriftung
+  eines Zellen-Overlays nennt deshalb den jüngsten Zeitschritt IM
+  Altersfenster, der Zellen hat, nicht `current`: sonst stand „keine Blitze"
+  unter einer Karte voller Ringe. Das BILD greift weiter nie zurück — dort
+  trägt die Farbe das Alter, ein Rückgriff wäre eine falsche Aussage.
+  **Die Quellenzeile trennt die Lizenzen** (`RadarOverlay.credit`): „Nutzung
+  nach GeoNutzV" gilt für den DWD, nicht für EUMETSAT — ein pauschaler Satz
+  über beiden wäre die falsche Angabe, und Attribution ist Lizenzbedingung.
+  `view.eumetsat.int` steht im Impressum jetzt auch für diesen Bereich.
   **`format=image/png8` für ALLES**, gemessen: gleiche Farbanzahl (der Stil hat
   unter 256 Farben), aber halbe Größe — Radar 44 statt 93 KB, ein LEERES
   Symbol-Overlay **1,1 statt 37,7 KB**. Bei 13 Bildern je Schleife und bis zu
@@ -1428,12 +1489,82 @@ npm run preview   # gebautes dist/ servieren
   kämen die Regionen Frankreichs, Italiens, Tschechiens und Polens mit
   (`ADMIN1_COUNTRIES` in `scripts/build-basemap.mjs`, 224 KB, AT 132 / DE 773 /
   CH 334 Liniensegmente).
+  **DOPPLERWIND UND EINZELNE ELEVATIONEN GIBT ES NICHT — nachgemessen
+  (2026-09-29), nicht erneut suchen.** Der vollständige Radar-Katalog des WMS
+  sind AUSSCHLIESSLICH Komposite: WN (dBZ), RV (mm/h), RADOLAN-RW/RY/SY/W4 und
+  die „No Data No Echo"-Maske. Keine Radialgeschwindigkeit, keine Elevation,
+  kein Dual-Pol. Die ROHdaten liegen dagegen offen auf
+  `opendata.dwd.de/weather/radar/sites/` — `sweep_vol_v` (Doppler-
+  Radialgeschwindigkeit), `sweep_vol_z` (Reflektivität je Elevation),
+  `sweep_vol_zdr`/`rhohv`/`phidp` (Dual-Pol), 17 Standorte × 10 Elevationen
+  (`vradh_00`…`09`), 5-Minuten-Volumenscan, ODIM-HDF5, 46 KB je Elevation und
+  Standort; dazu `mesocyclones/` als XML. **Erreichbar sind sie trotzdem
+  nicht**: `opendata.dwd.de` sendet KEINE `Access-Control-*`-Header (gemessen
+  bei HEAD und GET auf eine echte Datei) — der Browser kommt gar nicht heran.
+  Dazu zwei weitere Wände, jede für sich genügend: HDF5 bräuchte einen
+  Binärparser im Frontend (dieselbe Entscheidung wie beim GeoSphere-Nowcast),
+  und die Daten stehen in POLARkoordinaten je Standort, müssten also selbst
+  komposit-iert, ENTFALTET (Velocity-Aliasing — der eigentliche Aufwand) und
+  projiziert werden; dieser Bereich ist bewusst als „fertige Karten fremder
+  Dienste" gebaut, genau um kein eigenes Radar-Rendering zu haben. Menge
+  obendrein: eine Elevation über Deutschland = 17 Dateien ≈ 780 KB je
+  Zeitschritt, ein volles Volumen 170 Dateien ≈ 7,8 MB alle 5 Minuten. Wer es
+  will, braucht einen Server, der holt, entfaltet, komposit-iert und Kacheln
+  ausliefert — dieselbe Wand wie bei der Blitzpolarität, keine neue.
+  **RADOLAN ist die zweite Hälfte der Produktliste, und es ist eine andere ART
+  Zahl** (`rw`/`ry`/`w4`/`sy`, alle Werte live gemessen 2026-09-29): RADOLAN
+  eicht das Radar an den Niederschlagsmessern der Bodenstationen. Damit fällt
+  der größte Fehler der reinen Radarmessung weg — die Z-R-Beziehung nimmt eine
+  Tropfengrößenverteilung an, die sie nicht messen kann (dieselbe Begründung,
+  aus der dieser Bereich dBZ statt mm/h als Vorgabe zeigt). Der Preis ist
+  Zeit: **RW** (Stundensumme, angeeicht, `PT10M`) erscheint rund eine halbe
+  Stunde nach dem Termin, ein Nowcast ist das nicht. **RY** (`PT5M`) ist
+  qualitätsgeprüft und abschattungskorrigiert, aber NICHT geeicht — die Stufe
+  dazwischen. **W4** (4-Wochen-Summe) und **SY** (Summe des laufenden
+  hydrologischen Jahres, seit 1. November — die übliche Bilanzperiode, weil
+  sie den Winterniederschlag samt Schneeschmelze in EIN Jahr legt) laufen im
+  TAGEStakt und sind klimatologische Bilder, keine Wetterbilder.
+  **Die Abdeckung ist eine ANDERE als bei WN/RV**: lon 2,07–15,72 · lat
+  47,14–55,09, und der DWD sagt dazu ausdrücklich „Daten nur innerhalb
+  Deutschlands" — im Bild sichtbar als scharfe Kante an der Staatsgrenze. Von
+  Österreich liegt nichts Brauchbares drin; die Legendenzeile sagt das auch so.
+  **`maskOpacity` und die Randlinien-Regel sind deswegen GETRENNT**
+  (`WmsImageSource.edgeLine`) — das ist die wichtigste Änderung an der
+  Mechanik. Bisher war `maskOpacity` beides: Beschreibung der Maske UND
+  Schalter für die Nachbearbeitung. Mit RADOLAN geht das auseinander:
+  RW und RY HABEN die graue Maske (gemessen Alphawert 77 = 0,3), dürfen die
+  Regel aber auf keinen Fall durchlaufen — ihre Rampe führt **`#DA28C6` als
+  echte Klassenfarbe** (40–60 mm/h), und genau diese Farbe kommt der
+  Mischlinie der Regel bis auf drei Einheiten nahe (die Warnung stand schon
+  für die Blitzdichte da, die dieselbe 13-Farben-Rampe benutzt). Umgekehrt
+  tragen W4 und SY **gar keine Maske** (kein einziges Maskenpixel im Bild) und
+  SY mit `#E720CE` eine weitere magentanahe Klassenfarbe. Gemessen ist
+  ausserdem, dass die Randlinie in KEINEM RADOLAN-Bild vorkommt — sie ist eine
+  Eigenheit von WN/RV. Wer ein Produkt ergänzt, setzt `edgeLine` nur, wenn er
+  die Linie im Bild wirklich gesehen hat; ein Test hält die Zuordnung fest.
+  **Tagesprodukte brauchen Tagesfenster** (`RadarProduct.historyOptions`,
+  7/14/30 Tage statt 30 min–3 h): mit „1 h" bestünde die Schleife aus einem
+  einzigen Bild. Die Vorgabe ist bewusst die kürzeste — ein W4-Bild wiegt
+  gemessen 311 KB bei 1.200 px, 30 Tage wären über 9 MB bei einem fremden,
+  kostenlosen Dienst. Beim Produktwechsel korrigiert ein Effekt einen
+  Fensterwert, den die neue Auswahl nicht kennt (dasselbe Muster wie die
+  Schwellen-Korrektur in `VerifyPanel`).
+  **Die OVERLAYS gibt es nur zu den Nowcast-Kompositen** (`supportsOverlays`,
+  entschieden am TAKT und nicht an einer Id-Liste): über einer 4-Wochen-Summe
+  ist „Blitze der letzten 5 Minuten" keine Ergänzung, sondern ein Widerspruch
+  — und technisch fällt es sofort auf die Nase, weil die Tages-Zeitstempel
+  nicht in der 5-Minuten-Dimension der Overlays stehen (live gesehen: 30
+  vergebliche Abrufe je Umschaltung, alle mit ServiceException). Die Häkchen
+  bleiben sichtbar, aber gesperrt samt Begründung im Tooltip.
+  **Ein Produktwechsel verwirft jetzt auch die META**, nicht nur die Bilder:
+  sonst rechnet `times` einen Augenblick lang mit der Zeitdimension des ALTEN
+  Produkts und dem neuen Layer. Solange alles im 5-Minuten-Takt lief, fiel das
+  nicht auf; zwischen 5 Minuten und einem Tag liegen Faktoren, und jede
+  solche Zeit beantwortet der Dienst mit einer ServiceException.
   Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
   `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
   kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
-  Echo**, gemessen) und weitere Produkte desselben Dienstes (`RADOLAN-RW` angeeichte
-  Stundensummen, `RADOLAN-RY`) — die Registry `RADAR_PRODUCTS` ist dafür schon
-  eine Liste.
+  Echo**, gemessen).
 - **Satellitenbilder** (`SatellitePanel.tsx`, Registry/Kern `config/satellite.ts`
   mit Tests, Abruf `api/eumetsat.ts`, AppView `satellite`) — zweiter Bereich,
   der fertige Karten holt statt Zahlen. Quelle ist **EUMETView**, der

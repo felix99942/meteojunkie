@@ -8,11 +8,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   analysisTime,
+  FLASH_AREA_COLORS,
   LIGHTNING_AGES,
   RADAR_IMAGE_WIDTH,
   RADAR_OVERLAYS,
   RADAR_PRODUCTS,
   RV_LEGEND,
+  RW_LEGEND,
+  RY_LEGEND,
+  SY_LEGEND,
+  W4_LEGEND,
   sourceImageWidth,
   WN_LEGEND,
   DEFAULT_RADAR_PRODUCT,
@@ -23,9 +28,11 @@ import {
   radarTimes,
   radarImageCoordinates,
   radarImageHeight,
+  radarCapabilitiesUrl,
   radarImageUrl,
   type RadarMeta,
 } from './radar'
+import { mercBox } from './wmsTime'
 
 const P = DEFAULT_RADAR_PRODUCT
 
@@ -213,23 +220,60 @@ describe('Produkt-Registry', () => {
     expect(DEFAULT_RADAR_PRODUCT.legend).toBe(WN_LEGEND)
   })
 
-  it('führt beide Produkte mit Vorhersageteil und 5-Minuten-Takt', () => {
-    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv'])
+  it('führt die sechs Produkte in Registry-Reihenfolge', () => {
+    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'rw', 'ry', 'w4', 'sy'])
     for (const p of RADAR_PRODUCTS) {
-      expect(p.stepMs, p.id).toBe(300_000)
-      expect(p.forecastMs, p.id).toBe(7_200_000)
-      expect(p.legend.length, p.id).toBeGreaterThan(10)
-      // Die Maskendeckkraft steht im Produktstil und unterscheidet sich —
-      // geraten werden darf sie nicht, die Nachbearbeitung färbt darauf um.
-      expect(p.maskOpacity, p.id).toBeGreaterThan(0)
-      expect(p.maskOpacity, p.id).toBeLessThan(1)
+      expect(p.stepMs, p.id).toBeGreaterThan(0)
+      expect(p.legend.length, p.id).toBeGreaterThan(8)
+      expect(p.unit, p.id).toBeTruthy()
     }
-    expect(RADAR_PRODUCTS[0].maskOpacity).toBe(0.5)
-    expect(RADAR_PRODUCTS[1].maskOpacity).toBe(0.3)
+  })
+
+  // NUR die beiden Nowcast-Komposite tragen die 2-h-Verlagerungsrechnung am
+  // Ende ihrer Zeitdimension; RADOLAN ist reine Analyse.
+  it('schneidet den Vorhersageteil nur bei WN und RV ab', () => {
+    for (const p of RADAR_PRODUCTS) {
+      expect(p.forecastMs, p.id).toBe(p.id === 'wn' || p.id === 'rv' ? 7_200_000 : 0)
+    }
+  })
+
+  // Gemessen an den gelieferten Bildern (2026-09-29), nicht geraten: die
+  // Nachbearbeitung färbt auf genau diese Deckkraft um.
+  it('kennt die Maskendeckkraft je Produkt — und wo es keine gibt', () => {
+    const mask = Object.fromEntries(RADAR_PRODUCTS.map((p) => [p.id, p.maskOpacity]))
+    expect(mask).toEqual({ wn: 0.5, rv: 0.3, rw: 0.3, ry: 0.3, w4: null, sy: null })
+  })
+
+  /**
+   * **Der wichtigste Test dieser Datei.** Die Randlinien-Regel darf NUR
+   * laufen, wo die Linie wirklich gezeichnet wird. RW und RY haben eine
+   * Maske, aber keine Linie — und ihre Rampe führt `#DA28C6` als echte
+   * Klassenfarbe, die der Mischlinie der Regel bis auf 3 Einheiten nahekommt.
+   * Würde `edgeLine` an `maskOpacity` hängen (wie vor RADOLAN), löschte die
+   * Regel dort irgendwann echten Starkregen.
+   */
+  it('lässt die Randlinien-Regel nur auf WN und RV los', () => {
+    expect(RADAR_PRODUCTS.filter((p) => p.edgeLine).map((p) => p.id)).toEqual(['wn', 'rv'])
+    // Und die Produkte, die sie NICHT durchlaufen, führen genau deshalb
+    // magentanahe Klassenfarben.
+    expect(RW_LEGEND.map((s) => s.color)).toContain('#DA28C6')
+    expect(RY_LEGEND.map((s) => s.color)).toContain('#DA28C6')
+    expect(SY_LEGEND.map((s) => s.color)).toContain('#E720CE')
+  })
+
+  // Tagesprodukte brauchen Tagesfenster: mit „1 h" bestünde die Schleife aus
+  // einem einzigen Bild und der Zeitschieber hätte keine Funktion.
+  it('gibt den Summenprodukten eigene Fensterlängen', () => {
+    for (const p of RADAR_PRODUCTS) {
+      const daily = p.stepMs === 86_400_000
+      expect(Boolean(p.historyOptions), p.id).toBe(daily)
+      if (daily) expect(p.historyOptions![0].min).toBeGreaterThanOrEqual(24 * 60)
+    }
+    expect(RADAR_PRODUCTS.filter((p) => p.historyOptions).map((p) => p.id)).toEqual(['w4', 'sy'])
   })
 
   it('hat in jeder Skala eindeutige Farben (React-Key und Legende)', () => {
-    for (const legend of [WN_LEGEND, RV_LEGEND]) {
+    for (const legend of [WN_LEGEND, RV_LEGEND, RW_LEGEND, RY_LEGEND, SY_LEGEND, W4_LEGEND]) {
       const colors = legend.map((s) => s.color)
       expect(new Set(colors).size).toBe(colors.length)
       for (const s of legend) expect(s.color).toMatch(/^#[0-9A-F]{6}$/)
@@ -239,21 +283,33 @@ describe('Produkt-Registry', () => {
   // Die Maske ist KEIN Skalenschritt — sie markiert die Abdeckungsgrenze und
   // steht als eigene Zeile in der Legende.
   it('führt die Maskenfarbe nicht als Skalenschritt', () => {
-    for (const legend of [WN_LEGEND, RV_LEGEND]) {
+    for (const legend of [WN_LEGEND, RV_LEGEND, RW_LEGEND, RY_LEGEND, SY_LEGEND, W4_LEGEND]) {
       expect(legend.map((s) => s.color)).not.toContain('#7D7D7D')
     }
   })
 })
 
 describe('Overlays', () => {
-  it('sind alle vom DWD-WMS und ohne Vorhersageteil', () => {
-    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'cluster', 'konrad'])
+  it('laufen im 5-Minuten-Takt und ohne Vorhersageteil', () => {
+    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'cluster', 'konrad', 'mtgli'])
     for (const o of RADAR_OVERLAYS) {
-      expect(o.layer, o.id).toMatch(/^dwd:/)
       expect(o.stepMs, o.id).toBe(300_000)
       // Die `fcst_*`-Layer bleiben draußen, wie die Radarvorhersage auch.
       expect(o.forecastMs, o.id).toBe(0)
       expect(o.layer, o.id).not.toMatch(/fcst/)
+    }
+  })
+
+  // Bis auf den MTG-Blitz-Layer kommt alles vom DWD. Der Test hält die
+  // Ausnahme fest, damit sie eine bleibt: jede weitere Fremdquelle braucht
+  // eigene Endpunkte UND eine eigene Fläche (siehe `WmsImageSource.area`).
+  it('kommen bis auf MTG alle vom DWD-WMS', () => {
+    for (const o of RADAR_OVERLAYS) {
+      if (o.id === 'mtgli') continue
+      expect(o.layer, o.id).toMatch(/^dwd:/)
+      expect(o.wmsBase, o.id).toBeUndefined()
+      expect(o.capsBase, o.id).toBeUndefined()
+      expect(o.area, o.id).toBeUndefined()
     }
   })
 
@@ -307,5 +363,70 @@ describe('Overlays', () => {
     const on = RADAR_OVERLAYS.filter((o) => o.defaultOn).map((o) => o.id)
     expect(on).toEqual(['blitze'])
     expect(RADAR_OVERLAYS.map((o) => o.layer)).not.toContain('dwd:Gewitterzellen')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MTG Lightning Imager als ZWEITE Blitzquelle. Er ist wegen der ABDECKUNG da:
+// die DWD-Blitzdichte endet im Süden bei 46,95 °N, das Radarecho im Osten bei
+// 13,2–14,4 °O. Alles hier ist live gemessen (2026-09-29).
+// ---------------------------------------------------------------------------
+
+describe('MTG-Blitz-Overlay', () => {
+  const mtg = RADAR_OVERLAYS.find((o) => o.id === 'mtgli')!
+
+  it('holt Bild und Zeitdimension bei EUMETSAT, nicht beim DWD', () => {
+    expect(mtg.layer).toBe('mtg_fd:li_afa')
+    expect(mtg.capsLayer).toBe('li_afa')
+    const caps = radarCapabilitiesUrl(mtg)
+    expect(caps).toContain('view.eumetsat.int')
+    // Der LAYER-EIGENE virtuelle WMS, nicht der ganze Dienst: 7 KB statt
+    // 282 KB — derselbe Trick wie beim Radar und beim Satelliten.
+    expect(caps).toContain('/mtg_fd/li_afa/wms')
+    const meta: RadarMeta = { extent: META.extent, geo: mtg.area!, merc: mercBox(mtg.area!) }
+    const url = radarImageUrl(mtg, meta, {
+      time: Date.parse('2026-07-15T14:00:00Z'),
+      width: 400,
+      height: 390,
+    })
+    expect(url.startsWith('https://view.eumetsat.int/geoserver/wms?')).toBe(true)
+    expect(url).toContain('crs=EPSG%3A3857')
+    expect(url).toContain('time=2026-07-15T14%3A00%3A00Z')
+  })
+
+  // Der Dienst meldet die ganze sichtbare Halbkugel (±70°) und führt gar
+  // keine EPSG:3857-BoundingBox — die Fläche MUSS also aus der Registry
+  // kommen, und sie deckt sich mit dem DWD-Radargitter.
+  it('bringt seine Fläche selbst mit — die des Radargitters', () => {
+    expect(mtg.area).toEqual({ west: 1.5, east: 18.7, south: 45.7, north: 56.2 })
+    // Genau das, was die DWD-Blitzdichte NICHT abdeckt.
+    expect(mtg.area!.south).toBeLessThan(46.95)
+    expect(mtg.area!.east).toBeGreaterThan(14.4)
+  })
+
+  // Ein rohes AFA-Bild über dem Radarecho wäre derselbe Fehler, der bei der
+  // DWD-Dichte schon verworfen wurde: die Rampe ist YlOrRd und liest sich wie
+  // ein zweites Echo.
+  it('wird als RINGE gezeichnet, nicht als Fläche', () => {
+    expect(mtg.cells?.symbol).toBe('rings')
+    expect(mtg.legend.kind).toBe('rings')
+    // Dieselben Altersfarben wie die DWD-Kreuze: die Zeitlesart darf nicht
+    // je Quelle eine andere sein.
+    expect(mtg.legend.items).toBe(LIGHTNING_AGES)
+    expect(mtg.cells?.palette).toBe(FLASH_AREA_COLORS)
+    expect(FLASH_AREA_COLORS).toHaveLength(7)
+    expect(FLASH_AREA_COLORS[0]).toBe('#FFF2AE')
+    expect(FLASH_AREA_COLORS[6]).toBe('#8B0026')
+  })
+
+  it('bleibt voreingestellt AUS — der DWD deckt den Kern schon ab', () => {
+    expect(mtg.defaultOn).toBe(false)
+  })
+
+  // Beide Blitzquellen zeichnen selbst; alles andere geht als Bild auf die
+  // Karte. Das Panel entscheidet daran, nicht an der Id.
+  it('ist neben den DWD-Blitzen die zweite Zellquelle', () => {
+    expect(RADAR_OVERLAYS.filter((o) => o.cells).map((o) => o.id)).toEqual(['blitze', 'mtgli'])
+    expect(RADAR_OVERLAYS.find((o) => o.id === 'blitze')!.cells?.symbol).toBe('crosses')
   })
 })

@@ -1,5 +1,10 @@
-// Abruf des DWD-Radars (siehe `config/radar.ts` für Quelle, Abdeckung und
-// Farbskala).
+// Abruf der Bildquellen des Radarbereichs (siehe `config/radar.ts` für
+// Quelle, Abdeckung und Farbskala).
+//
+// Fast alles kommt vom DWD-WMS; die EINE Ausnahme ist der MTG Lightning
+// Imager bei EUMETSAT, der als Overlay dazukommt, weil er die Abdeckungslücke
+// im Süden und Osten schließt. Er läuft durch DIESELBEN Funktionen — die
+// Quelle bringt ihre Endpunkte und ihre Fläche mit (`WmsImageSource`).
 //
 // Läuft über **plain `fetch`, NICHT über `apiGet`**: das ist der DWD-WMS und
 // hat mit dem Open-Meteo-Budget und dessen Zähler nichts zu tun — dieselbe
@@ -13,14 +18,15 @@
 import { extractLightningCells, toPalette, type LightningCell } from '../render/lightning'
 import { maskRadarEdge } from '../render/radarImage'
 import {
-  LIGHTNING_BLOCK_PX,
-  LIGHTNING_DENSITY_COLORS,
+  metaForSource,
   parseRadarCapabilities,
   radarCapabilitiesUrl,
   radarImageUrl,
+  type CellSymbols,
   type RadarMeta,
   type WmsImageSource,
 } from '../config/radar'
+import { extractTimeDimension, parseTimeExtent } from '../config/wmsTime'
 
 /**
  * Zeitdimension und Fläche des Produkts.
@@ -41,10 +47,22 @@ export async function fetchRadarMeta(
   if (!opts.force && hit && Date.now() - hit.at < META_TTL_MS) return hit.meta
 
   const res = await fetch(radarCapabilitiesUrl(source), { signal: opts.signal })
-  if (!res.ok) throw new Error(`DWD-WMS: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`WMS: HTTP ${res.status}`)
   const xml = await res.text()
-  const meta = parseRadarCapabilities(xml)
-  if (!meta) throw new Error('DWD-WMS: Zeitdimension nicht lesbar')
+  // Bringt die Quelle ihre Fläche selbst mit, wird aus dem Capabilities NUR
+  // die Zeitdimension gelesen: das MTG-Capabilities meldet die ganze
+  // sichtbare Halbkugel und führt keine EPSG:3857-BoundingBox — der
+  // Radar-Parser fiele dort auf `null` zurück, obwohl die Zeiten da sind.
+  const meta = source.area
+    ? (() => {
+        const dim = extractTimeDimension(xml)
+        const raw = dim ? parseTimeExtent(dim) : null
+        if (!raw) return null
+        const extent = raw.stepMs > 0 ? raw : { ...raw, stepMs: source.stepMs }
+        return metaForSource(source, extent)
+      })()
+    : parseRadarCapabilities(xml)
+  if (!meta) throw new Error('WMS: Zeitdimension nicht lesbar')
   metaCache.set(source.capsLayer, { at: Date.now(), meta })
   return meta
 }
@@ -147,7 +165,11 @@ export async function loadRadarImages(
         if (!blob.type.startsWith('image/')) {
           throw new Error(`Antwort ist ${blob.type || 'kein Bild'}`)
         }
-        const imageUrl = await toCleanImageUrl(blob, source.maskOpacity)
+        // Die Randlinien-Regel läuft NUR, wo die Linie wirklich gezeichnet
+        // wird (`edgeLine`) — nicht überall, wo es eine Maske gibt. RW und RY
+        // haben beides getrennt: Maske ja, Randlinie nein, und ihre Rampe
+        // führt eine Farbe, die der Regel gefährlich nahekommt.
+        const imageUrl = await toCleanImageUrl(blob, source.edgeLine ? source.maskOpacity : null)
         if (opts.signal?.aborted) return
         opts.onLoaded(time, imageUrl)
       } catch (err) {
@@ -160,8 +182,19 @@ export async function loadRadarImages(
   await Promise.all(Array.from({ length: concurrency }, worker))
 }
 
-/** Einmal umgerechnet, nicht je Bild (13 Farben). */
-const DENSITY_PALETTE = toPalette(LIGHTNING_DENSITY_COLORS)
+/**
+ * Farbtabellen einmal umgerechnet, nicht je Bild — je Quelle eine (die
+ * DWD-Dichte hat 13 Stufen, die MTG-Blitzfläche 7).
+ */
+const paletteCache = new Map<string[], number[][]>()
+function paletteFor(colors: string[]): number[][] {
+  let p = paletteCache.get(colors)
+  if (!p) {
+    p = toPalette(colors)
+    paletteCache.set(colors, p)
+  }
+  return p
+}
 
 /**
  * Blitze werden NICHT als Bild behalten, sondern zu ZELLEN eingekocht
@@ -172,6 +205,7 @@ const DENSITY_PALETTE = toPalette(LIGHTNING_DENSITY_COLORS)
  */
 export async function loadLightningCells(
   source: WmsImageSource,
+  cells: CellSymbols,
   meta: RadarMeta,
   times: number[],
   opts: {
@@ -217,15 +251,15 @@ export async function loadLightningCells(
         ctx.drawImage(bitmap, 0, 0)
         bitmap.close()
         const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const cells = extractLightningCells(
+        const found = extractLightningCells(
           frame.data,
           canvas.width,
           canvas.height,
-          LIGHTNING_BLOCK_PX,
-          DENSITY_PALETTE,
+          cells.blockPx,
+          paletteFor(cells.palette),
         )
         if (opts.signal?.aborted) return
-        opts.onLoaded(time, cells)
+        opts.onLoaded(time, found)
       } catch (err) {
         if (opts.signal?.aborted) return
         opts.onError?.(time, err)

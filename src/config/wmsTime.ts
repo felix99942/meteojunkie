@@ -13,6 +13,15 @@
 // Fassungen derselben Parser pflegen; `config/radar.ts` re-exportiert die
 // Namen weiter, seine öffentliche Form bleibt also unverändert.
 
+/**
+ * Die beiden Dienste, die diesen Kern benutzen. Sie stehen hier und nicht in
+ * `config/radar.ts` bzw. `config/satellite.ts`, weil sie inzwischen von BEIDEN
+ * Seiten gebraucht werden: das Radar bindet mit dem MTG Lightning Imager einen
+ * EUMETSAT-Layer als Overlay ein (siehe `RADAR_OVERLAYS`).
+ */
+export const DWD_GEOSERVER = 'https://maps.dwd.de/geoserver'
+export const EUMETSAT_GEOSERVER = 'https://view.eumetsat.int/geoserver'
+
 export interface TimeExtent {
   /** Erster verfügbarer Zeitschritt. */
   start: number

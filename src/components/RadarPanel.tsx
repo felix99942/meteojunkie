@@ -47,8 +47,6 @@ import {
   analysisTime,
   DEFAULT_RADAR_PRODUCT,
   LIGHTNING_AGES,
-  LIGHTNING_ARM,
-  LIGHTNING_ARM_PER_LEVEL,
   MASK_COLOR,
   nearestFrame,
   RADAR_IMAGE_WIDTH,
@@ -58,10 +56,11 @@ import {
   radarImageHeight,
   radarTimes,
   sourceImageWidth,
+  supportsOverlays,
   type RadarMeta,
   type RadarOverlay,
 } from '../config/radar'
-import { drawLightningCrosses, type LightningCell } from '../render/lightning'
+import { drawFlashRings, drawLightningCrosses, type LightningCell } from '../render/lightning'
 import {
   BASE_STYLE,
   buildGraticuleBox,
@@ -131,13 +130,21 @@ interface OverlayState {
   meta?: RadarMeta
   /** Symbol-Overlays: fertige Bild-URL je Zeitschritt. */
   images: Record<number, string>
-  /** Blitze: Zellen je Zeitschritt — daraus wird das Kreuzbild gezeichnet. */
+  /**
+   * Blitzquellen: Zellen je Zeitschritt — daraus wird das Symbolbild
+   * gezeichnet (Kreuze beim DWD, Ringe bei MTG).
+   */
   cells: Record<number, LightningCell[]>
   error?: string
 }
 
-/** Blitze sind der EINZIGE Sonderfall: Kreuze statt Dichtefläche. */
-const LIGHTNING_ID = 'blitze'
+/**
+ * Overlays mit eigener Symbolzeichnung — beide Blitzquellen. Erkannt am
+ * Registry-Feld `cells`, nicht an der Id: der MTG-Layer kam als zweiter dazu,
+ * und ein fest verdrahtetes `id === 'blitze'` hätte ihn stillschweigend als
+ * rohes Bild auf die Karte gelegt.
+ */
+const cellOverlays = () => RADAR_OVERLAYS.filter((o) => o.cells)
 
 /**
  * Metadaten und Bilder aller EINGESCHALTETEN Overlays.
@@ -202,8 +209,8 @@ function useOverlays(active: RadarOverlay[], times: number[]): Record<string, Ov
       const meta = st?.meta
       if (!meta) continue
       const last = analysisTime(meta, overlay)
-      const lightning = overlay.id === LIGHTNING_ID
-      const have = lightning ? st.cells : st.images
+      const symbols = overlay.cells
+      const have = symbols ? st.cells : st.images
       const missing = times.filter(
         (t) =>
           t >= meta.extent.start &&
@@ -220,8 +227,8 @@ function useOverlays(active: RadarOverlay[], times: number[]): Record<string, Ov
         failedRef.current.add(`${overlay.id}|${time}`)
         console.error('[radar]', overlay.id, new Date(time).toISOString(), err)
       }
-      if (lightning) {
-        loadLightningCells(overlay, meta, missing, {
+      if (symbols) {
+        loadLightningCells(overlay, symbols, meta, missing, {
           ...size,
           signal: ac.signal,
           onLoaded: (time, cells) =>
@@ -306,6 +313,23 @@ export function RadarPanel() {
   const [playing, setPlaying] = useState(false)
   const [waitTick, setWaitTick] = useState(0)
 
+  /**
+   * Fensterlängen DIESES Produkts. Die Summenprodukte laufen im Tagestakt:
+   * mit „1 h" bestünde ihre Schleife aus einem einzigen Bild.
+   */
+  const historyOptions = product.historyOptions ?? HISTORY_OPTIONS
+  /**
+   * Korrektur beim Produktwechsel — dasselbe Muster wie die
+   * Schwellen-Korrektur in `VerifyPanel` und die Variablen-Korrektur in
+   * `PanelHeader`: steht der Zustand auf einem Wert, den die neue Auswahl
+   * gar nicht kennt, zeigt das Auswahlfeld leer und die Schleife rechnet mit
+   * einer Länge, die niemand eingestellt hat.
+   */
+  useEffect(() => {
+    if (!historyOptions.some((o) => o.min === historyMin)) setHistoryMin(historyOptions[0].min)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id])
+
   const times = useMemo(
     () => (meta ? radarTimes(meta, product, historyMin * 60_000) : []),
     [meta, product, historyMin],
@@ -361,7 +385,15 @@ export function RadarPanel() {
   // --- Bilder ---------------------------------------------------------------
   // Produktwechsel verwirft alles: zwei Skalen dürfen nie in einer Schleife
   // stehen.
+  //
+  // **Und auch die META**, sonst rechnet `times` für einen Augenblick mit der
+  // Zeitdimension des ALTEN Produkts und dem neuen Layer. Solange alle
+  // Produkte im 5-Minuten-Takt liefen, fiel das nicht auf; mit RADOLAN
+  // liegen zwischen den Takten Faktoren (5 min ↔ 1 Tag), und der Dienst
+  // beantwortet jede solche Zeit mit einer ServiceException (live gesehen:
+  // zwei vergebliche Abrufe je Umschaltung).
   useEffect(() => {
+    setMeta(null)
     setImages({})
     setFailed(0)
   }, [product])
@@ -402,10 +434,22 @@ export function RadarPanel() {
   const loaded = times.filter((t) => images[t] !== undefined).length
 
   // --- Overlays -------------------------------------------------------------
-  const activeOverlays = useMemo(
-    () => RADAR_OVERLAYS.filter((o) => overlayOn[o.id]),
-    [overlayOn],
+  /**
+   * Overlays gibt es nur zu den Nowcast-Kompositen (siehe `supportsOverlays`).
+   * Das Häkchen bleibt sichtbar, aber gesperrt: verschwände es, wäre nicht
+   * zu sehen, dass der Bereich es überhaupt kann.
+   */
+  const overlaysAllowed = supportsOverlays(product)
+  const overlayLive = useCallback(
+    (id: string) => overlaysAllowed && Boolean(overlayOn[id]),
+    [overlaysAllowed, overlayOn],
   )
+  const activeOverlays = useMemo(
+    () => (overlaysAllowed ? RADAR_OVERLAYS.filter((o) => overlayOn[o.id]) : []),
+    [overlayOn, overlaysAllowed],
+  )
+  /** Für die Quellenzeile: was unter die GeoNutzV fällt, und was nicht. */
+  const dwdOverlays = useMemo(() => activeOverlays.filter((o) => !o.credit), [activeOverlays])
   const overlays = useOverlays(activeOverlays, times)
 
   // --- Schleife -------------------------------------------------------------
@@ -567,32 +611,41 @@ export function RadarPanel() {
   // Farbe, von ALT nach NEU gezeichnet, damit das jüngste Kreuz obenliegt.
   // Gezeichnet wird in die Fläche des BLITZ-Layers (eigene Ecken!), nicht in
   // die des Radars.
-  const lightningCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const lightningUrl = useMemo(() => {
-    const st = overlays[LIGHTNING_ID]
-    if (!st?.meta || !current || !overlayOn[LIGHTNING_ID]) return null
-    const overlay = RADAR_OVERLAYS.find((o) => o.id === LIGHTNING_ID)
-    if (!overlay) return null
-    const buckets = LIGHTNING_AGES.map((_, k) => st.cells[current - k * overlay.stepMs] ?? [])
-    if (buckets.every((b) => b.length === 0)) return null
+  const symbolCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const symbolUrls = useMemo(() => {
+    const out: Record<string, string> = {}
+    if (!current) return out
+    for (const overlay of cellOverlays()) {
+      const st = overlays[overlay.id]
+      const symbols = overlay.cells
+      if (!st?.meta || !symbols || !overlayLive(overlay.id)) continue
+      const buckets = LIGHTNING_AGES.map((_, k) => st.cells[current - k * overlay.stepMs] ?? [])
+      if (buckets.every((b) => b.length === 0)) continue
 
-    const width = RADAR_IMAGE_WIDTH
-    const height = radarImageHeight(st.meta, width)
-    const canvas = lightningCanvasRef.current ?? document.createElement('canvas')
-    lightningCanvasRef.current = canvas
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.clearRect(0, 0, width, height)
-    for (let k = buckets.length - 1; k >= 0; k--) {
-      drawLightningCrosses(ctx, buckets[k], { width, height }, LIGHTNING_AGES[k].color, {
-        base: LIGHTNING_ARM,
-        perLevel: LIGHTNING_ARM_PER_LEVEL,
-      })
+      const width = RADAR_IMAGE_WIDTH
+      const height = radarImageHeight(st.meta, width)
+      // EINE Leinwand für alle Symbol-Overlays: `toDataURL()` ist synchron,
+      // die Runde je Overlay läuft also in einem Block ab, bevor die nächste
+      // beginnt — dieselbe Überlegung wie bei der Nachbearbeitung der
+      // Radarbilder in `api/dwdRadar.ts`.
+      const canvas = symbolCanvasRef.current ?? document.createElement('canvas')
+      symbolCanvasRef.current = canvas
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) continue
+      ctx.clearRect(0, 0, width, height)
+      const size = { width, height }
+      const scale = { base: symbols.base, perLevel: symbols.perLevel }
+      for (let k = buckets.length - 1; k >= 0; k--) {
+        const color = LIGHTNING_AGES[k].color
+        if (symbols.symbol === 'rings') drawFlashRings(ctx, buckets[k], size, color, scale)
+        else drawLightningCrosses(ctx, buckets[k], size, color, scale)
+      }
+      out[overlay.id] = canvas.toDataURL('image/png')
     }
-    return canvas.toDataURL('image/png')
-  }, [overlays, current, overlayOn])
+    return out
+  }, [overlays, current, overlayLive])
 
   // Overlay-Bilder einhängen bzw. austauschen. Jedes Overlay ist eine eigene
   // image-Source mit EIGENEN Ecken (eigene Fläche!) und liegt ÜBER dem Radar,
@@ -602,10 +655,21 @@ export function RadarPanel() {
     const out: Record<string, number | null> = {}
     for (const o of RADAR_OVERLAYS) {
       const st = overlays[o.id]
-      if (o.id === LIGHTNING_ID) {
-        // Die Blitze tragen ihr Alter in der FARBE — ein Rückgriff auf einen
-        // älteren Zeitschritt wäre hier eine falsche Aussage.
-        out[o.id] = st && current && st.cells[current] !== undefined ? current : null
+      if (o.cells) {
+        // Das BILD greift nie auf einen älteren Zeitschritt zurück — die
+        // Blitze tragen ihr Alter in der Farbe, ein Rückgriff wäre dort eine
+        // falsche Aussage. Diese Angabe ist aber die BESCHRIFTUNG, und die
+        // muss sagen, was gerade zu sehen ist: gezeichnet wird das ganze
+        // Altersfenster, also gilt der jüngste Zeitschritt DARIN, der Zellen
+        // hat. Mit `st.cells[current]` allein stand „keine Blitze" unter
+        // einer Karte voller Ringe — die MTG-Zeitdimension hinkt dem
+        // Radarstand regelmäßig ein bis zwei Schritte hinterher.
+        out[o.id] =
+          st && current
+            ? (LIGHTNING_AGES.map((_, k) => current - k * o.stepMs).find(
+                (t) => st.cells[t] !== undefined && st.cells[t].length > 0,
+              ) ?? null)
+            : null
         continue
       }
       out[o.id] = st && current ? pickOverlayTime(st.images, current, o.stepMs) : null
@@ -620,14 +684,13 @@ export function RadarPanel() {
       const sourceId = `overlay-${o.id}`
       const st = overlays[o.id]
       const shownAt = overlayShown[o.id]
-      const url =
-        o.id === LIGHTNING_ID
-          ? (lightningUrl ?? undefined)
-          : st && shownAt != null
-            ? st.images[shownAt]
-            : undefined
+      const url = o.cells
+        ? symbolUrls[o.id]
+        : st && shownAt != null
+          ? st.images[shownAt]
+          : undefined
       const source = map.getSource(sourceId) as maplibregl.ImageSource | undefined
-      if (!url || !st?.meta || !overlayOn[o.id]) {
+      if (!url || !st?.meta || !overlayLive(o.id)) {
         if (map.getLayer(sourceId)) map.removeLayer(sourceId)
         if (source) map.removeSource(sourceId)
         continue
@@ -648,7 +711,7 @@ export function RadarPanel() {
         )
       }
     }
-  }, [overlays, overlayShown, overlayOn, lightningUrl, mapReady])
+  }, [overlays, overlayShown, overlayLive, symbolUrls, mapReady])
 
   const applyPending = useCallback(() => {
     if (!pending) return
@@ -691,7 +754,7 @@ export function RadarPanel() {
         >
           Rückblick{' '}
           <select value={historyMin} onChange={(e) => setHistoryMin(Number(e.target.value))}>
-            {HISTORY_OPTIONS.map((o) => (
+            {historyOptions.map((o) => (
               <option key={o.min} value={o.min}>
                 {o.label}
               </option>
@@ -705,10 +768,19 @@ export function RadarPanel() {
             Information. */}
         <span className="radar-overlays">
           {RADAR_OVERLAYS.map((o) => (
-            <label key={o.id} className="radar-opt" title={o.note}>
+            <label
+              key={o.id}
+              className="radar-opt"
+              title={
+                overlaysAllowed
+                  ? o.note
+                  : `Overlays gibt es nur zu den Nowcast-Kompositen — über „${product.label}" wäre „${o.label}" der letzten Minuten eine Aussage über einen ganz anderen Zeitraum.`
+              }
+            >
               <input
                 type="checkbox"
-                checked={overlayOn[o.id] ?? false}
+                disabled={!overlaysAllowed}
+                checked={overlayLive(o.id)}
                 onChange={(e) => setOverlayOn((prev) => ({ ...prev, [o.id]: e.target.checked }))}
               />{' '}
               {o.label}
@@ -787,7 +859,7 @@ export function RadarPanel() {
               wirklich gezeigt wird, sobald sie von der Bildzeit abweicht
               (die Blitzdichte hängt einen Schritt zurück, siehe
               `pickOverlayTime`). */}
-          {RADAR_OVERLAYS.filter((o) => overlayOn[o.id]).map((o) => {
+          {RADAR_OVERLAYS.filter((o) => overlayLive(o.id)).map((o) => {
             const shownAt = overlayShown[o.id]
             const st = overlays[o.id]
             const lag = shownAt != null && current != null && shownAt !== current
@@ -830,7 +902,7 @@ export function RadarPanel() {
                   // antwortet dann mit „InvalidDimensionValue" statt mit einem
                   // leeren Bild. „Nichts gemeldet" ist deshalb die richtige
                   // Auskunft, nicht „Fehler".
-                  <em>{o.id === LIGHTNING_ID ? 'keine Blitze' : 'nichts gemeldet'}</em>
+                  <em>{o.cells ? 'keine Blitze' : 'nichts gemeldet'}</em>
                 ) : lag ? (
                   <em>{fmtTime.format(new Date(shownAt))} UTC</em>
                 ) : null}
@@ -838,14 +910,24 @@ export function RadarPanel() {
             )
           })}
           {/* Die Maske ist die ABDECKUNGSGRENZE und braucht diesen Satz: ohne
-              ihn liest man das Grau als „kein Niederschlag". */}
-          <span
-            className="radar-legend-nodata"
-            title="Reichweite der deutschen Radare. Gemessen 2026-09-16: die Maske beginnt je nach Breite zwischen 13,2 °O (47 °N) und 14,4 °O (49 °N) — Vorarlberg, Tirol und das Land Salzburg sind erfasst, Linz, Wien, Graz und Klagenfurt nicht."
-          >
-            <i style={{ background: MASK_COLOR, opacity: product.maskOpacity }} />
-            keine Radardaten — die Abdeckung endet im Osten Österreichs
-          </span>
+              ihn liest man das Grau als „kein Niederschlag". Die
+              RADOLAN-Summenprodukte zeichnen sie gar nicht — dort hätte die
+              Zeile nichts zu erklären. */}
+          {product.maskOpacity != null && (
+            <span
+              className="radar-legend-nodata"
+              title={
+                product.id === 'rw' || product.id === 'ry'
+                  ? 'Reichweite der deutschen Radare. RADOLAN liefert Daten NUR über Deutschland (Angabe des DWD) — von Österreich liegt hier nichts Brauchbares.'
+                  : 'Reichweite der deutschen Radare. Gemessen 2026-09-16: die Maske beginnt je nach Breite zwischen 13,2 °O (47 °N) und 14,4 °O (49 °N) — Vorarlberg, Tirol und das Land Salzburg sind erfasst, Linz, Wien, Graz und Klagenfurt nicht.'
+              }
+            >
+              <i style={{ background: MASK_COLOR, opacity: product.maskOpacity }} />
+              {product.id === 'rw' || product.id === 'ry'
+                ? 'keine Radardaten — RADOLAN deckt nur Deutschland ab'
+                : 'keine Radardaten — die Abdeckung endet im Osten Österreichs'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -867,8 +949,10 @@ export function RadarPanel() {
         >
           maps.dwd.de
         </a>
-        {activeOverlays.length > 0 && (
-          <> · Overlays: {activeOverlays.map((o) => o.note.split(':')[0]).join(', ')}</>
+        {/* NUR die DWD-Overlays hier — die GeoNutzV gilt für den DWD, nicht
+            für einen fremden Dienst. */}
+        {dwdOverlays.length > 0 && (
+          <> · Overlays: {dwdOverlays.map((o) => o.note.split(':')[0]).join(', ')}</>
         )}
         , Nutzung nach{' '}
         <a
@@ -878,7 +962,25 @@ export function RadarPanel() {
         >
           GeoNutzV
         </a>
-        . Nur Messung, keine Vorhersage. Zeiten in UTC.
+        .
+        {/* Fremde Quellen bekommen ihren EIGENEN Satz samt Nennung — ein
+            pauschales „Nutzung nach GeoNutzV" darüber wäre falsch. */}
+        {activeOverlays
+          .filter((o) => o.credit)
+          .map((o) => (
+            <span key={o.id}>
+              {' '}
+              <a href={o.credit!.href} target="_blank" rel="noreferrer" title={o.note}>
+                {o.credit!.name}
+              </a>{' '}
+              — {o.note.split(':')[0]} über{' '}
+              <a href="https://view.eumetsat.int/productviewer" target="_blank" rel="noreferrer">
+                EUMETView
+              </a>
+              .
+            </span>
+          ))}{' '}
+        Nur Messung, keine Vorhersage. Zeiten in UTC.
       </span>
     </div>
   )

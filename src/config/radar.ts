@@ -71,10 +71,13 @@
 // einen Binärparser. Nicht erneut als „vielleicht doch"-Weg prüfen.
 
 import {
+  DWD_GEOSERVER,
+  EUMETSAT_GEOSERVER,
   extractTimeDimension,
   frameTimes,
   imageCoordinates,
   imageHeightFor,
+  mercBox,
   parseTimeExtent,
   type GeoBox,
   type MercBox,
@@ -82,7 +85,9 @@ import {
 } from './wmsTime'
 
 /** Basis-URL des DWD-GeoServers (Workspace `dwd`). */
-export const DWD_WMS_BASE = 'https://maps.dwd.de/geoserver/dwd/wms'
+export const DWD_WMS_BASE = `${DWD_GEOSERVER}/dwd/wms`
+/** Basis für den LAYER-EIGENEN virtuellen WMS desselben Workspace. */
+const DWD_CAPS_BASE = `${DWD_GEOSERVER}/dwd`
 
 // --- Farbskalen ------------------------------------------------------------
 
@@ -150,6 +155,86 @@ export const RV_LEGEND: RadarLegendStep[] = [
 ]
 
 /**
+ * Niederschlagshöhe der letzten STUNDE in mm (Produkt RADOLAN-RW).
+ *
+ * Dieselbe 13-Farben-Rampe, die der DWD auch für RY und für die Blitzdichte
+ * benutzt — nur die Schwellen unterscheiden sich. **Sie führt `#DA28C6`**, und
+ * das ist der Grund, warum RW und RY die Randlinien-Nachbearbeitung NICHT
+ * durchlaufen dürfen (siehe `WmsImageSource.edgeLine`).
+ */
+export const RW_LEGEND: RadarLegendStep[] = [
+  { color: '#FCFFC1', label: '0,1' },
+  { color: '#FBFF5C', label: '0,2' },
+  { color: '#DFFC26', label: '0,5' },
+  { color: '#A0D626', label: '1' },
+  { color: '#45C379', label: '2' },
+  { color: '#00D6D8', label: '5' },
+  { color: '#11A1D6', label: '10' },
+  { color: '#0702FC', label: '15' },
+  { color: '#9232B7', label: '25' },
+  { color: '#DA28C6', label: '40' },
+  { color: '#E70D0C', label: '60' },
+  { color: '#880E0D', label: '80' },
+  { color: '#4F0E0D', label: '100' },
+]
+
+/** Niederschlagshöhe je 5 Minuten in mm (Produkt RADOLAN-RY) — gleiche Rampe, andere Schwellen. */
+export const RY_LEGEND: RadarLegendStep[] = [
+  { color: '#FCFFC1', label: '0,01' },
+  { color: '#FBFF5C', label: '0,02' },
+  { color: '#DFFC26', label: '0,05' },
+  { color: '#A0D626', label: '0,1' },
+  { color: '#45C379', label: '0,25' },
+  { color: '#00D6D8', label: '0,5' },
+  { color: '#11A1D6', label: '1' },
+  { color: '#0702FC', label: '1,5' },
+  { color: '#9232B7', label: '2,5' },
+  { color: '#DA28C6', label: '4' },
+  { color: '#E70D0C', label: '6' },
+  { color: '#880E0D', label: '10' },
+]
+
+/**
+ * Niederschlagssumme des laufenden HYDROLOGISCHEN JAHRES in mm (Produkt
+ * RADOLAN-SY), also seit dem 1. November. Eigene Rampe mit Schwellen bis
+ * 1.200 mm — eine Jahressumme hat nichts mit einer Stundensumme gemein.
+ */
+export const SY_LEGEND: RadarLegendStep[] = [
+  { color: '#FFFFC6', label: '0,1' },
+  { color: '#FFFF5A', label: '40' },
+  { color: '#FFD700', label: '80' },
+  { color: '#ADFF2F', label: '120' },
+  { color: '#A5D721', label: '200' },
+  { color: '#42C37B', label: '300' },
+  { color: '#BFEFFF', label: '400' },
+  { color: '#00D7DE', label: '450' },
+  { color: '#10A2D6', label: '500' },
+  { color: '#0000FF', label: '550' },
+  { color: '#9430B5', label: '600' },
+  { color: '#E720CE', label: '650' },
+  { color: '#FFA500', label: '700' },
+  { color: '#E70C08', label: '800' },
+  { color: '#840C08', label: '900' },
+  { color: '#946163', label: '1000' },
+  { color: '#FFFFFF', label: '1200' },
+]
+
+/** Niederschlagssumme der letzten 4 WOCHEN in mm (Produkt RADOLAN-W4). */
+export const W4_LEGEND: RadarLegendStep[] = [
+  { color: '#AED1EA', label: '0,1' },
+  { color: '#586AF4', label: '30' },
+  { color: '#000BF3', label: '60' },
+  { color: '#006F8F', label: '90' },
+  { color: '#00CC33', label: '120' },
+  { color: '#77FF00', label: '150' },
+  { color: '#FFD600', label: '180' },
+  { color: '#FF4700', label: '210' },
+  { color: '#EC0616', label: '240' },
+  { color: '#BD0A4F', label: '270' },
+  { color: '#890F89', label: '300' },
+]
+
+/**
  * Alles, was eine WMS-Bildquelle dieses Bereichs braucht — das Radarprodukt
  * UND jedes Overlay. Bewusst EIN Typ: der Abruf (`api/dwdRadar.ts`), die
  * Nachbearbeitung und der Zeitschieber behandeln beide gleich, sie
@@ -180,13 +265,30 @@ export interface WmsImageSource {
   forecastMs: number
   /**
    * Deckkraft der „Keine Daten"-Maske im Produktstil — **oder `null`, wenn die
-   * Quelle keine hat**. Das ist gleichzeitig der Schalter für die
-   * Nachbearbeitung: die Randlinien-Regel darf NUR auf die Radarprodukte
-   * laufen. Die Blitzdichte führt mit #DA28C6 eine Skalenfarbe, die der Regel
-   * bis auf 3 Einheiten nahekommt — auf einem Overlay hätte sie nichts zu
-   * suchen und würde irgendwann genau dort zuschlagen.
+   * Quelle keine hat**. Rein BESCHREIBEND: sie sagt der Legende, ob und wie
+   * kräftig das Grau der Abdeckungsgrenze zu zeigen ist. Gemessen an den
+   * gelieferten Bildern: WN 0,5 · RV/RW/RY 0,3 (Alphawert 77 von 255) ·
+   * SY/W4 gar keine.
    */
   maskOpacity: number | null
+  /**
+   * Zeichnet dieses Produkt die magentafarbene RANDLINIE, die weggerechnet
+   * werden muss (`render/radarImage.ts`)? Nur WN und RV tun das — an den
+   * RADOLAN-Bildern ist sie gemessen NICHT vorhanden (2026-09-29, kein
+   * einziges magentanahes Pixel in RW/RY/W4).
+   *
+   * **Das ist bewusst ein EIGENES Feld und nicht mehr an `maskOpacity`
+   * gekoppelt.** Die beiden fielen bisher zusammen, weil es nur zwei Produkte
+   * gab; mit RADOLAN gehen sie auseinander: RW und RY HABEN die graue Maske
+   * (0,3), dürfen die Regel aber auf keinen Fall durchlaufen — ihre Rampe
+   * führt `#DA28C6` als echte Klassenfarbe (40–60 mm/h), und genau diese
+   * Farbe kommt der Mischlinie der Regel bis auf 3 Einheiten nahe (die
+   * Warnung stand schon für die Blitzdichte da, die dieselbe Rampe benutzt).
+   * Umgekehrt trägt SY mit `#E720CE` (650–700 mm) eine weitere, und hat gar
+   * keine Maske. Wer ein Produkt ergänzt, setzt das Feld nur, wenn er die
+   * Linie im Bild wirklich gesehen hat.
+   */
+  edgeLine?: true
   /**
    * Breite des angeforderten Bildes. Vorgabe ist `RADAR_IMAGE_WIDTH`; die
    * SYMBOL-Overlays brauchen mehr, weil ihre Kreise und Pfeile in Pixeln des
@@ -194,6 +296,27 @@ export interface WmsImageSource {
    * unscharf und zu groß auf der Karte stehen.
    */
   imageWidth?: number
+  /**
+   * GetMap-Endpunkt, falls die Quelle NICHT vom DWD kommt. Vorgabe ist
+   * `DWD_WMS_BASE`; der MTG-Blitz-Layer liegt bei EUMETSAT (derselbe Dienst,
+   * den der Satellitenbereich benutzt).
+   */
+  wmsBase?: string
+  /**
+   * Basis für den layer-eigenen virtuellen WMS (`<capsBase>/<capsLayer>/wms`).
+   * Vorgabe ist der DWD-Workspace.
+   */
+  capsBase?: string
+  /**
+   * EIGENE Fläche, statt sie aus dem GetCapabilities zu lesen.
+   *
+   * Nötig für Layer, deren Dienst die ganze sichtbare Halbkugel meldet
+   * (MTG: ±70°, ein Bild darüber wäre für Mitteleuropa nutzlos) — und dort
+   * sowieso, weil das MTG-Capabilities **gar keine EPSG:3857-BoundingBox**
+   * führt (gemessen 2026-09-29: nur CRS:84 und EPSG:4326), die
+   * Mercator-Ecken also ohnehin selbst gerechnet werden müssen.
+   */
+  area?: GeoBox
 }
 
 export interface RadarProduct extends WmsImageSource {
@@ -207,12 +330,23 @@ export interface RadarProduct extends WmsImageSource {
    */
   /** Einheit der Skala — Beschriftung der Legende. */
   unit: string
-  /** Deckkraft der Maske; bei den Radarprodukten immer gesetzt. */
-  maskOpacity: number
+  /**
+   * Deckkraft der Maske — `null` bei den Summenprodukten SY und W4, die
+   * gemessen gar keine führen (dort fällt die Zeile „keine Radardaten" in der
+   * Legende weg, sie hätte nichts zu erklären).
+   */
+  maskOpacity: number | null
   /** Farbstufen, 1:1 aus dem GetLegendGraphic des Layers (siehe unten). */
   legend: RadarLegendStep[]
   /** Kurzbeschreibung für den Tooltip der Produktauswahl. */
   note: string
+  /**
+   * Eigene Fensterlängen der Schleife, falls die Vorgabe (Minuten) nicht
+   * passt. Die Summenprodukte laufen im TAGEStakt: mit „1 h" bestünde die
+   * Schleife aus einem einzigen Bild, und der Zeitschieber hätte keine
+   * Funktion mehr. Erster Eintrag ist die Vorgabe.
+   */
+  historyOptions?: { min: number; label: string }[]
 }
 
 /**
@@ -231,6 +365,18 @@ export interface RadarProduct extends WmsImageSource {
  * (WN ohne Vorhersageteil — dessen Zeitdimension endet genau 120 min früher
  * und war die Gegenprobe für `analysisTime`).
  */
+/**
+ * Fensterlängen der TAGESprodukte (SY, W4). Der Vorgabewert steht vorn und
+ * ist bewusst kurz: ein W4-Bild wiegt gemessen 311 KB bei 1.200 px, 30 Tage
+ * wären also über 9 MB bei einem fremden, kostenlosen Dienst. Die Zahl ist in
+ * MINUTEN, wie überall in diesem Bereich.
+ */
+const DAILY_HISTORY = [
+  { min: 7 * 24 * 60, label: '7 Tage' },
+  { min: 14 * 24 * 60, label: '14 Tage' },
+  { min: 30 * 24 * 60, label: '30 Tage' },
+]
+
 export const RADAR_PRODUCTS: RadarProduct[] = [
   {
     id: 'wn',
@@ -241,6 +387,7 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
     forecastMs: 120 * 60_000,
     unit: 'dBZ',
     maskOpacity: 0.5,
+    edgeLine: true,
     legend: WN_LEGEND,
     note: 'Deutsches Radarkomposit WN: Reflektivität in dBZ — die Messgröße des Radars. Analyse und 2-h-Verlagerung, 1 km, alle 5 Minuten',
   },
@@ -253,12 +400,96 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
     forecastMs: 120 * 60_000,
     unit: 'mm/h',
     maskOpacity: 0.3,
+    edgeLine: true,
     legend: RV_LEGEND,
     note: 'Dasselbe Komposit als Niederschlagsrate (Produkt RV) — aus der Reflektivität über eine Z-R-Beziehung abgeleitet',
+  },
+  // --- RADOLAN ------------------------------------------------------------
+  //
+  // Die vier folgenden Produkte sind KEINE weitere Ansicht desselben Echos,
+  // sondern eine andere ART Zahl: RADOLAN eicht das Radar an den
+  // Niederschlagsmessern der Bodenstationen. Damit fällt der größte Fehler
+  // der reinen Radarmessung weg — die Z-R-Beziehung nimmt eine
+  // Tropfengrößenverteilung an, die sie nicht messen kann (siehe die
+  // Begründung, warum dieser Bereich dBZ zeigt und nicht mm/h). Die Eichung
+  // braucht dafür Zeit: RW erscheint erst rund eine halbe Stunde nach dem
+  // Termin, ein Nowcast ist das nicht.
+  //
+  // **Abdeckung ist eine andere als bei WN/RV** (gemessen 2026-09-29):
+  // lon 2,07–15,72 · lat 47,14–55,09, und der DWD sagt dazu ausdrücklich
+  // „Daten nur innerhalb Deutschlands". Von Österreich liegt damit nichts
+  // Brauchbares drin — diese Produkte sind für den deutschen Teil der Karte.
+  {
+    id: 'rw',
+    label: 'Stundensumme, angeeicht (mm)',
+    layer: 'dwd:RADOLAN-RW',
+    capsLayer: 'RADOLAN-RW',
+    // PT10M, nicht 5 Minuten wie WN/RV — gemessen aus der Zeitdimension.
+    stepMs: 10 * 60_000,
+    forecastMs: 0,
+    unit: 'mm/1 h',
+    maskOpacity: 0.3,
+    legend: RW_LEGEND,
+    note: 'RADOLAN-RW: Niederschlagshöhe der letzten Stunde, an den Stationsmessungen ANGEEICHT — die einzige Radarzahl dieses Bereichs, der man Millimeter wirklich glauben kann. 1 km, alle 10 Minuten, nur über Deutschland. Dafür rund eine halbe Stunde Verzug: die Eichung braucht die Stationswerte',
+  },
+  {
+    id: 'ry',
+    label: '5-Minuten-Summe (mm)',
+    layer: 'dwd:RADOLAN-RY',
+    capsLayer: 'RADOLAN-RY',
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    unit: 'mm/5 min',
+    maskOpacity: 0.3,
+    legend: RY_LEGEND,
+    note: 'RADOLAN-RY: qualitätsgeprüfte Radardaten nach Abschattungskorrektur, mit verfeinerter Z-R-Beziehung in Niederschlagshöhe umgerechnet — NICHT an Stationen geeicht (das ist RW), aber korrigiert. 1 km, alle 5 Minuten, nur über Deutschland',
+  },
+  {
+    id: 'w4',
+    label: 'Summe 4 Wochen (mm)',
+    layer: 'dwd:RADOLAN-W4',
+    capsLayer: 'RADOLAN-W4',
+    stepMs: 24 * 60 * 60_000,
+    forecastMs: 0,
+    unit: 'mm/4 Wochen',
+    // Gemessen: kein einziges Maskenpixel im Bild — die Summenprodukte
+    // zeichnen die Abdeckungsgrenze nicht.
+    maskOpacity: null,
+    legend: W4_LEGEND,
+    note: 'RADOLAN-W4: aufsummierte angeeichte Radardaten der letzten 4 Wochen. Ein KLIMATOLOGISCHES Bild, kein Wetterbild — es beantwortet „wie nass war der letzte Monat", nicht „regnet es gerade". Ändert sich täglich, nicht minütlich',
+    historyOptions: DAILY_HISTORY,
+  },
+  {
+    id: 'sy',
+    label: 'Summe hydrolog. Jahr (mm)',
+    layer: 'dwd:RADOLAN-SY',
+    capsLayer: 'RADOLAN-SY',
+    stepMs: 24 * 60 * 60_000,
+    forecastMs: 0,
+    unit: 'mm seit 1.11.',
+    maskOpacity: null,
+    legend: SY_LEGEND,
+    note: 'RADOLAN-SY: fortlaufende Niederschlagssumme des laufenden HYDROLOGISCHEN Jahres, also seit dem 1. November — die übliche Bilanzperiode der Hydrologie, weil sie den Winterniederschlag samt Schneeschmelze in EIN Jahr legt statt ihn an Silvester zu zerschneiden. Wächst monoton; die Zeitschleife zeigt, wo die Summe zuletzt zugelegt hat',
+    historyOptions: DAILY_HISTORY,
   },
 ]
 
 export const DEFAULT_RADAR_PRODUCT = RADAR_PRODUCTS[0]
+
+/**
+ * Passen die Overlays zu diesem Produkt?
+ *
+ * Nur zu den NOWCAST-Kompositen. Über einer 4-Wochen-Summe ist „Blitze der
+ * letzten 5 Minuten" keine Ergänzung, sondern ein Widerspruch — und technisch
+ * fällt es sofort auf die Nase: die Zeitschritte eines Tagesprodukts liegen
+ * nicht in der Dimension eines 5-Minuten-Layers, der Dienst antwortet je Bild
+ * mit einer ServiceException (live gesehen: 30 vergebliche Abrufe beim
+ * Umschalten auf W4). Entschieden am TAKT und nicht an einer Id-Liste, damit
+ * ein weiteres Summenprodukt nicht wieder in dieselbe Falle läuft.
+ */
+export function supportsOverlays(p: RadarProduct): boolean {
+  return p.stepMs <= 15 * 60_000
+}
 
 // --- Overlays --------------------------------------------------------------
 //
@@ -343,11 +574,78 @@ export const LIGHTNING_DENSITY_COLORS = [
 ]
 
 /**
+ * Farbrampe der MTG-BLITZFLÄCHE (`li_afa`), am Legendenbild abgetastet
+ * (2026-09-29) — ColorBrewer YlOrRd in sieben Stufen.
+ *
+ * **Nicht aus dem Stil gelesen, weil der keine hergibt**: der SLD des Layers
+ * trägt nur einen nackten `RasterSymbolizer` ohne ColorMap (nachgeladen über
+ * `request=GetStyles`), die Farben stecken in der Farbtabelle des Rasters.
+ * Anders als bei den DWD-Skalen gibt es hier also KEINE ablesbaren
+ * Klassengrenzen — die Stufe ist eine relative Intensität und wird in der
+ * Legende auch nur so benannt. Gebraucht wird die Rampe, um aus der
+ * Pixelfarbe die Stufe zurückzulesen und damit die Ringgröße zu staffeln.
+ */
+export const FLASH_AREA_COLORS = [
+  '#FFF2AE',
+  '#FEDF84',
+  '#FEB24C',
+  '#FD7D37',
+  '#F64227',
+  '#CD0B21',
+  '#8B0026',
+]
+
+/**
+ * Fläche, über die der MTG-Blitz-Layer angefordert wird.
+ *
+ * Bewusst DIESELBE Box wie das DWD-Radargitter (lon 1,5–18,7 · lat
+ * 45,7–56,2, gemessen aus dessen Capabilities): so decken beide Overlays
+ * denselben Boden ab, und der Vergleich „wo sieht die eine Quelle etwas, die
+ * andere nicht" ist unmittelbar. Der Dienst selbst meldet die ganze sichtbare
+ * Halbkugel (±70°) — ein Bild darüber wäre für Mitteleuropa nutzlos.
+ */
+export const FLASH_AREA_BOX: GeoBox = { west: 1.5, east: 18.7, south: 45.7, north: 56.2 }
+
+/**
  * Pixelblock, mit dem die Zellen aus dem grob angeforderten Dichtebild
  * zusammengefasst werden (siehe `render/lightning.ts`): eine 10-km-Zelle deckt
  * bei ~4,7 km/px je nach Breite 3 bis 4 Pixel ab.
  */
 export const LIGHTNING_BLOCK_PX = 4
+
+/**
+ * Overlays, die NICHT als Bild auf die Karte gehen, sondern zu ZELLEN
+ * eingekocht und selbst gezeichnet werden.
+ *
+ * Der Grund steht ausführlich in `render/lightning.ts`: eine eingefärbte
+ * Blitzfläche sieht aus wie ein zweites Radarecho und legt sich als Schleier
+ * über genau das Echo, das man lesen will. Beide Blitzquellen haben dieses
+ * Problem — die DWD-Dichte läuft über Gelb/Grün/Türkis, die MTG-Blitzfläche
+ * über YlOrRd (`#FFF2AE → #8B0026`, am Legendenbild abgetastet; eine
+ * maschinenlesbare Klassenliste gibt es nicht, der SLD des Layers trägt
+ * gemessen KEINE ColorMap). Gezeichnet wird deshalb punktförmig, mit der
+ * FARBE als Alter — eine Information, die keine der beiden Skalen hergibt.
+ */
+export interface CellSymbols {
+  /** Farbklassen des Quellbildes; daraus wird die Stufe zurückgelesen. */
+  palette: string[]
+  /**
+   * Pixelblock, der zu EINER Zelle zusammengefasst wird — das Bild wird grob
+   * angefordert, eine Produktzelle deckt darin trotzdem mehrere Pixel ab.
+   */
+  blockPx: number
+  /**
+   * KREUZ oder RING. Zwei Symbole, weil zwei Quellen dasselbe Gebiet
+   * überlappen: über Deutschland liegen DWD-Kreuz und MTG-Ring übereinander
+   * (zwei Quellen, die sich einig sind), östlich und südlich davon steht der
+   * Ring allein — mit zweimal Kreuzen sähe die Überlappung wie ein Fehler aus.
+   */
+  symbol: 'crosses' | 'rings'
+  /** Grundmaß in Pixeln bei `RADAR_IMAGE_WIDTH`. */
+  base: number
+  /** Zuschlag je Stufe — die GRÖSSE trägt die Intensität. */
+  perLevel: number
+}
 
 export interface RadarOverlay extends WmsImageSource {
   id: string
@@ -359,6 +657,16 @@ export interface RadarOverlay extends WmsImageSource {
   /** Beim Öffnen des Bereichs schon an? */
   defaultOn: boolean
   note: string
+  /** Gesetzt → selbst gezeichnete Symbole statt des rohen Bildes. */
+  cells?: CellSymbols
+  /**
+   * Gesetzt, wenn die Quelle NICHT vom DWD kommt — dann gilt für sie auch
+   * nicht die GeoNutzV, und die Quellenzeile muss sie getrennt nennen.
+   * Attribution ist Lizenzbedingung, keine Höflichkeit (siehe
+   * `Attribution.tsx`), und ein pauschales „Nutzung nach GeoNutzV" über einem
+   * EUMETSAT-Layer wäre schlicht die falsche Angabe.
+   */
+  credit?: { name: string; href: string }
 }
 
 /**
@@ -396,6 +704,13 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
     imageWidth: 400,
     opacity: 1,
     defaultOn: true,
+    cells: {
+      palette: LIGHTNING_DENSITY_COLORS,
+      blockPx: LIGHTNING_BLOCK_PX,
+      symbol: 'crosses',
+      base: LIGHTNING_ARM,
+      perLevel: LIGHTNING_ARM_PER_LEVEL,
+    },
     legend: {
       kind: 'crosses',
       caption: 'Blitze, Minuten zurück',
@@ -445,6 +760,45 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
       ],
     },
     note: 'KONRAD3D: Umrisse der aktuell erkannten Gewitterzellen (Farbe = Schwerestufe 0–3) samt ihrer bisherigen Zugspuren. Prognosekegel und Vorhersagespuren des Verfahrens sind bewusst nicht dabei.',
+  },
+  // Der EINZIGE Eintrag, der nicht vom DWD kommt — und er ist wegen der
+  // ABDECKUNG da. Die DWD-Blitzdichte endet im Süden bei 46,95 °N (Kärnten
+  // fehlt), das Radarecho im Osten bei 13,2–14,4 °O (Linz, Wien, Graz,
+  // Klagenfurt fehlen). MTG sieht von 0° aus die ganze Scheibe, also auch
+  // genau diese Ecken. Live geprüft (2026-09-29): CORS `*`, keyless, PNG8
+  // transparent, ~5 KB über diese Fläche, 5-Minuten-Takt, Archiv ab
+  // 30.05.2025.
+  {
+    id: 'mtgli',
+    label: 'MTG-Blitze',
+    layer: 'mtg_fd:li_afa',
+    capsLayer: 'li_afa',
+    wmsBase: `${EUMETSAT_GEOSERVER}/wms`,
+    capsBase: `${EUMETSAT_GEOSERVER}/mtg_fd`,
+    area: FLASH_AREA_BOX,
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    maskOpacity: null,
+    // Grob wie die DWD-Dichte: gezeichnet werden Ringe je Zelle, und der
+    // Lightning Imager löst über Mitteleuropa ohnehin nur ~10 km auf (500 m
+    // gilt am Subsatellitenpunkt, hier steht er schräg).
+    imageWidth: 400,
+    opacity: 1,
+    defaultOn: false,
+    cells: {
+      palette: FLASH_AREA_COLORS,
+      blockPx: LIGHTNING_BLOCK_PX,
+      symbol: 'rings',
+      base: 2.2,
+      perLevel: 0.5,
+    },
+    legend: {
+      kind: 'rings',
+      caption: 'MTG-Blitze, Minuten zurück',
+      items: LIGHTNING_AGES,
+    },
+    credit: { name: 'EUMETSAT', href: 'https://www.eumetsat.int/' },
+    note: 'MTG Lightning Imager, Accumulated Flash Area: OPTISCH aus dem All gesehene Blitzfläche, 5-Minuten-Takt. Ringfarbe = Alter wie bei den DWD-Kreuzen, Ringgröße = Intensitätsstufe. Deckt im Gegensatz zur DWD-Blitzdichte ganz Österreich ab. Eine optische Messung liefert weder Polarität noch Stromstärke und unterscheidet Wolken- nicht von Erdblitzen — dafür bräuchte es ein bodengebundenes VLF/LF-Netz, das es offen nicht gibt.',
   },
 ]
 
@@ -554,9 +908,22 @@ export function radarTimes(
 
 export function radarCapabilitiesUrl(source: WmsImageSource): string {
   return (
-    `https://maps.dwd.de/geoserver/dwd/${source.capsLayer}/wms` +
+    `${source.capsBase ?? DWD_CAPS_BASE}/${source.capsLayer}/wms` +
     '?service=WMS&version=1.3.0&request=GetCapabilities'
   )
+}
+
+/**
+ * Fläche und Zeitdimension einer Quelle zusammenführen.
+ *
+ * Bringt die Quelle eine eigene `area` mit, gilt die — und die
+ * Mercator-Ecken werden selbst gerechnet. Das ist kein Feinschliff: das
+ * MTG-Capabilities meldet die ganze sichtbare Halbkugel und führt gar keine
+ * EPSG:3857-BoundingBox, aus der man sie nehmen könnte.
+ */
+export function metaForSource(source: WmsImageSource, extent: TimeExtent): RadarMeta {
+  const geo = source.area!
+  return { extent, geo, merc: mercBox(geo) }
 }
 
 /**
@@ -595,7 +962,7 @@ export function radarImageUrl(
     height: String(opts.height),
     time: new Date(opts.time).toISOString().replace('.000', ''),
   })
-  return `${DWD_WMS_BASE}?${q.toString()}`
+  return `${source.wmsBase ?? DWD_WMS_BASE}?${q.toString()}`
 }
 
 /**

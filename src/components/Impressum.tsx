@@ -67,7 +67,9 @@ const THIRD_PARTY_HOSTS = [
   },
   {
     host: 'view.eumetsat.int',
-    what: 'Satellitenbilder von Meteosat (nur im Bereich „Satellit")',
+    what:
+      'Satellitenbilder von Meteosat (im Bereich „Satellit") und die Blitzflächen des ' +
+      'MTG Lightning Imager (zuschaltbar im Bereich „Radar")',
     href: 'https://www.eumetsat.int/data-privacy-statement',
     hrefLabel: 'Datenschutzerklärung von EUMETSAT',
   },
@@ -359,7 +361,9 @@ export function Impressum() {
             <code>maps.dwd.de</code> — sie sind minutenaktuell und lassen sich nicht
             vorverarbeiten; Abrufe dorthin entstehen also nur, solange der Bereich „Radar"
             offen ist. Für die Satellitenbilder gilt dasselbe: sie kommen direkt von{' '}
-            <code>view.eumetsat.int</code>, und nur, solange der Bereich „Satellit" offen ist.
+            <code>view.eumetsat.int</code>, und nur, solange der Bereich „Satellit" offen ist —
+            oder solange im Bereich „Radar" das Blitz-Overlay des MTG Lightning Imager
+            eingeschaltet ist, das von derselben Adresse kommt.
           </p>
 
           <h3>Speicherung auf dem Endgerät</h3>
