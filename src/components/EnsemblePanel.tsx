@@ -42,16 +42,16 @@ const HRES_LINE = '#d95926'
 const CURSOR_LINE = '#e8b23a'
 
 /**
- * Quantil-Säulen (Niederschlag): Dichtefüllung im selben Blau wie das Band —
- * es ist dieselbe Aussage, nur je Termin statt als Verlauf. Die
- * Memberstriche sind HELLER als die Füllung, damit jeder einzelne Lauf auf
- * der dichtesten Stelle noch zu sehen ist.
+ * Quantil-Balken (Niederschlag) im selben Blau wie das Band — es ist
+ * dieselbe Aussage, nur je Termin statt als Verlauf. Nach außen hin
+ * schmaler UND blasser: Hauptbalken, Aufsatz, Strich.
  */
-const BAR_RGB = '57,135,229'
-/** Klammern bei P10/P90 — dünn und zurückhaltend, sie sollen nur bezeichnen. */
-const BAR_CAP = 'rgba(160,205,252,0.9)'
-const BAR_SPINE = 'rgba(120,175,240,0.4)'
-const BAR_TICK = 'rgba(214,236,255,0.9)'
+const BAR_BODY = 'rgba(57,135,229,0.62)'
+const BAR_TAIL = 'rgba(57,135,229,0.3)'
+const BAR_OUTLINE = 'rgba(130,190,250,0.85)'
+const BAR_EXTREME = 'rgba(170,210,250,0.9)'
+/** Mittel: NEUTRAL, damit es neben den drei farbigen Marken nicht mitspricht. */
+const BAR_MEAN = '#e6e3dd'
 /**
  * Der Median IN der Säule ist heller als die Medianlinie sonst: er liegt auf
  * der blauen Dichtefüllung, und Blau auf Blau ist keine Marke. In der
@@ -248,9 +248,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             x: (t) => u.valToPos(xs[t], 'x', true),
             y: (v) => u.valToPos(v, 'y', true),
             stats,
-            members,
             width: barWidth(spacing, step, baseHours) * dpr,
-            ticks: showMembers,
             dpr,
             // Hauptlauf und Kontrolllauf als Marken IN der Säule: sonst muss
             // man den Wert aus der Linie ablesen, die gerade irgendwo durch
@@ -262,11 +260,12 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
               ...(members[0] ? [{ values: members[0], color: CONTROL_LINE }] : []),
             ],
             colors: {
-              densityRgb: BAR_RGB,
-              cap: BAR_CAP,
-              spine: BAR_SPINE,
-              tick: BAR_TICK,
+              body: BAR_BODY,
+              tail: BAR_TAIL,
+              outline: BAR_OUTLINE,
+              extreme: BAR_EXTREME,
               median: BAR_MEDIAN,
+              mean: BAR_MEAN,
             },
             clip: { left: u.bbox.left, top: u.bbox.top, width: u.bbox.width, height: u.bbox.height },
           })
@@ -466,27 +465,25 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         {variable.kind === 'accum' && (
           <label
             className="ens-toggle"
-            title="Verteilung je Termin als Säule (min…max, P10–P90, P25–P75, Median) statt als Linienbündel — beim Niederschlag springen die Member, ein Linienbündel ist dort nicht lesbar."
+            title="Verteilung je Termin als Balken (P10–P90 mit Median und Mittel, Aufsätze bis P5/P95, Striche an Minimum und Maximum) statt als Linienbündel — beim Niederschlag springen die Member, ein Linienbündel ist dort nicht lesbar."
           >
             <input type="checkbox" checked={bars} onChange={(e) => setBars(e.target.checked)} />
-            Quantil-Säulen
+            Quantil-Balken
           </label>
         )}
-        <label
-          className="ens-toggle"
-          title={
-            barView
-              ? 'Ein Strich je Member IN der Säule — wo sie sich stapeln, liegt die Masse der Verteilung'
-              : 'Alle Member als Spaghetti zeigen'
-          }
-        >
-          <input
-            type="checkbox"
-            checked={showMembers}
-            onChange={(e) => setShowMembers(e.target.checked)}
-          />
-          Member
-        </label>
+        {/* Die Einzelläufe stehen NICHT im Balken (siehe render/quantileBars.ts)
+            — der Haken gehört deshalb zur Linienansicht und verschwindet mit
+            ihr, statt als wirkungsloses Bedienelement stehen zu bleiben. */}
+        {!barView && (
+          <label className="ens-toggle" title="Alle Member als Spaghetti zeigen">
+            <input
+              type="checkbox"
+              checked={showMembers}
+              onChange={(e) => setShowMembers(e.target.checked)}
+            />
+            Member
+          </label>
+        )}
       </div>
 
       {/* Legende: ohne sie ist nicht ablesbar, welche Linie was ist. */}
@@ -497,9 +494,14 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         <span title="Ungestörter Ensemble-Member in Ensemble-Auflösung — die Referenz INNERHALB der Verteilung, nicht der Hauptlauf.">
           <i className="ens-dash" style={{ background: CONTROL_LINE }} /> Kontrolllauf
         </span>
-        <span title="Mittlerer Member je Zeitschritt (50. Perzentil)">
+        <span title="Mittlerer Member je Zeitschritt (50. Perzentil) — die Hälfte der Member liegt darunter.">
           <i style={{ background: barView ? BAR_MEDIAN : MEDIAN_LINE, height: 3 }} /> Median
         </span>
+        {barView && (
+          <span title="Arithmetisches Mittel aller Member. Bei schiefer Verteilung liegt es ÜBER dem Median: dreißig trockene Member und fünf nasse ergeben Median 0 und Mittel 2 mm — beide Zahlen stimmen und beantworten verschiedene Fragen.">
+            <i style={{ background: BAR_MEAN, height: 3 }} /> Mittel
+          </span>
+        )}
         {/* Das Band gibt es in der Säulenansicht nicht — dort steht dieselbe
             Aussage in jeder Säule. */}
         {!barView && (
@@ -508,20 +510,13 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           </span>
         )}
         {barView && (
-          <span title="Die BREITE der Säule ist die Zahl der Member auf dieser Höhe: unten breit heißt „die Masse liegt hier“, oben ein schmaler Strich heißt „ein einzelner Member“. Die beiden Klammern markieren P10 und P90, dazwischen liegen 80 % der Member.">
-            <i className="ens-barswatch" /> Breite = Memberzahl · Klammern P10/P90
+          <span title="Der Hauptbalken umfasst P10–P90, also 80 % der Member. Darauf sitzen schmalere Aufsätze bis P5 und P95, darüber die Striche an Minimum und Maximum: nach außen hin schmaler und blasser, weil ein einzelner Lauf nicht so schwer wiegen darf wie die Mehrheit.">
+            <i className="ens-barswatch" /> Balken P10–P90 · Aufsatz P5/P95 · Strich min/max
           </span>
         )}
-        {showMembers && (
-          <span
-            title={
-              barView
-                ? 'Ein Strich je Member in der Säule — die Quantilgrenzen sagen nicht, wie es dazwischen aussieht. Wo sich die Striche stapeln, liegt die Masse.'
-                : 'Alle gestörten Member als Spaghetti'
-            }
-          >
+        {showMembers && !barView && (
+          <span title="Alle gestörten Member als Spaghetti">
             <i style={{ background: 'rgba(120,170,230,0.6)' }} /> {model.members - 1} Member
-            {barView ? ' (Striche)' : ''}
           </span>
         )}
         <span className="ens-hint label-muted">
@@ -561,8 +556,11 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
               Kontrolllauf{' '}
               <strong>{readout.control != null ? fmtVal(readout.control) : '—'}</strong>
             </span>
-            <span style={{ color: MEDIAN_LINE }}>
+            <span style={{ color: barView ? BAR_MEDIAN : MEDIAN_LINE }}>
               Median <strong>{fmtVal(readout.r.median)}</strong>
+            </span>
+            <span className="label-muted">
+              Mittel <strong>{fmtVal(readout.r.mean)}</strong>
             </span>
             <span className="label-muted">
               P10–P90 {fmtVal(readout.r.p10)}…{fmtVal(readout.r.p90)} · Spanne{' '}

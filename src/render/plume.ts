@@ -20,11 +20,28 @@ export interface PlumeStats {
   /** Je Zeitschritt: Anzahl Mitglieder mit Wert. */
   count: number[]
   min: (number | null)[]
+  /**
+   * P5 und P95 — die Stufe zwischen dem Hauptbereich und den Extremen. Die
+   * Balkendarstellung zeichnet sie als schmalere Aufsätze auf den
+   * P10–P90-Balken; ohne sie springt das Bild vom „üblichen Bereich" direkt
+   * auf den einen Ausreißer.
+   */
+  p5: (number | null)[]
   p10: (number | null)[]
   p25: (number | null)[]
   median: (number | null)[]
+  /**
+   * Arithmetisches MITTEL, nicht der Median. Bei einer schiefen Verteilung —
+   * und die Niederschlagsverteilung ist es fast immer — liegen die beiden
+   * weit auseinander: dreißig trockene Member und fünf nasse ergeben Median
+   * 0 und Mittel 2 mm. Beide Zahlen stimmen und beantworten verschiedene
+   * Fragen („der typische Lauf" gegen „die erwartete Menge"), deshalb stehen
+   * beide im Balken.
+   */
+  mean: (number | null)[]
   p75: (number | null)[]
   p90: (number | null)[]
+  p95: (number | null)[]
   max: (number | null)[]
 }
 
@@ -34,11 +51,14 @@ export function plumeStats(members: (number | null)[][]): PlumeStats {
   const out: PlumeStats = {
     count: new Array(nt).fill(0),
     min: new Array(nt).fill(null),
+    p5: new Array(nt).fill(null),
     p10: new Array(nt).fill(null),
     p25: new Array(nt).fill(null),
     median: new Array(nt).fill(null),
+    mean: new Array(nt).fill(null),
     p75: new Array(nt).fill(null),
     p90: new Array(nt).fill(null),
+    p95: new Array(nt).fill(null),
     max: new Array(nt).fill(null),
   }
   const buf: number[] = []
@@ -53,11 +73,14 @@ export function plumeStats(members: (number | null)[][]): PlumeStats {
     buf.sort((a, b) => a - b)
     out.min[t] = buf[0]
     out.max[t] = buf[buf.length - 1]
+    out.p5[t] = percentileOf(buf, 0.05)
     out.p10[t] = percentileOf(buf, 0.1)
     out.p25[t] = percentileOf(buf, 0.25)
     out.median[t] = percentileOf(buf, 0.5)
     out.p75[t] = percentileOf(buf, 0.75)
     out.p90[t] = percentileOf(buf, 0.9)
+    out.p95[t] = percentileOf(buf, 0.95)
+    out.mean[t] = buf.reduce((a, b) => a + b, 0) / buf.length
   }
   return out
 }
@@ -150,6 +173,7 @@ export interface PlumeReadout {
   min: number
   p10: number
   median: number
+  mean: number
   p90: number
   max: number
   /** Spannweite p10…p90 als Maß für die Unsicherheit. */
@@ -165,6 +189,7 @@ export function readoutAt(stats: PlumeStats, t: number): PlumeReadout | null {
     min: stats.min[t] as number,
     p10,
     median: stats.median[t] as number,
+    mean: stats.mean[t] as number,
     p90,
     max: stats.max[t] as number,
     spread: p90 - p10,

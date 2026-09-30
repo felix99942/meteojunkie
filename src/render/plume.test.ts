@@ -43,6 +43,30 @@ describe('plumeStats', () => {
     expect(s.max).toEqual([18, 36])
   })
 
+  /**
+   * MITTEL UND MEDIAN SIND NICHT DASSELBE, und beim Niederschlag laufen sie
+   * regelmäßig weit auseinander: hier liegen vier von fünf Membern trocken,
+   * der Median ist 0 und das Mittel 4 mm. Beide Zahlen stimmen und
+   * beantworten verschiedene Fragen — „der typische Lauf" gegen „die
+   * erwartete Menge" —, deshalb stehen im Balken beide.
+   */
+  it('rechnet das Mittel neben dem Median', () => {
+    const s = plumeStats([[0], [0], [0], [0], [20]])
+    expect(s.median).toEqual([0])
+    expect(s.mean).toEqual([4])
+  })
+
+  // P5/P95 sind die Stufe zwischen dem Hauptbalken und den Extremen. Bei
+  // elf gleichmäßig verteilten Werten liegen sie ein halbes Intervall vom
+  // Rand entfernt.
+  it('liefert P5 und P95', () => {
+    const s = plumeStats(Array.from({ length: 11 }, (_, i) => [i * 10]))
+    expect(s.p5).toEqual([5])
+    expect(s.p95).toEqual([95])
+    expect(s.p10).toEqual([10])
+    expect(s.p90).toEqual([90])
+  })
+
   it('wertet je Zeitschritt nur die vorhandenen Mitglieder aus', () => {
     const s = plumeStats([
       [10, null],

@@ -632,13 +632,17 @@ button:focus-visible {
   border-bottom: 1px solid rgba(57, 135, 229, 0.6);
 }
 
-/* Die Säule in klein: oben schmal, unten breit — dasselbe Muster wie im
-   Diagramm (Breite = Memberzahl), damit man es wiedererkennt. */
+/* Der Balken in klein: Strich, schmaler Aufsatz, Hauptbalken, Aufsatz,
+   Strich — dasselbe Muster wie im Diagramm, damit man es wiedererkennt. */
 .ens-legend i.ens-barswatch {
   width: 11px;
-  height: 14px;
-  background: rgba(57, 135, 229, 0.65);
-  clip-path: polygon(41% 0, 59% 0, 59% 45%, 100% 72%, 100% 100%, 0 100%, 0 72%, 41% 45%);
+  height: 15px;
+  background:
+    linear-gradient(rgba(170, 210, 250, 0.9) 0 0) center 0 / 6px 1px no-repeat,
+    linear-gradient(rgba(57, 135, 229, 0.3) 0 0) center 2px / 6px 2px no-repeat,
+    linear-gradient(rgba(57, 135, 229, 0.62) 0 0) center 4px / 11px 7px no-repeat,
+    linear-gradient(rgba(57, 135, 229, 0.3) 0 0) center 11px / 6px 2px no-repeat,
+    linear-gradient(rgba(170, 210, 250, 0.9) 0 0) center 14px / 6px 1px no-repeat;
 }
 
 .ens-hint {

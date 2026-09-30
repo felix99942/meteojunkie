@@ -969,58 +969,46 @@ npm run preview   # gebautes dist/ servieren
   einen Verlauf, den KEIN EINZIGER Member hat. Gefragt ist an einem
   Niederschlagstermin ohnehin nicht „wie läuft es", sondern „wie viel und wie
   sicher" — also die Verteilung an diesem einen Termin.
-  Gezeichnet wird eine **VERTEILUNGSSÄULE (Geigenform)**: die BREITE auf
-  jeder Höhe ist die Zahl der Member dort, dazu ein dünnes Rückgrat mit
-  Klammern bei P10 und P90 und drei Bezugsmarken.
-  **FLÄCHE IST AUFMERKSAMKEIT — deshalb folgt sie der Memberzahl.** Zwei
-  Vorstufen sind daran gescheitert und stehen hier, damit niemand
-  zurückrudert: erst drei gefüllte Quantilstufen bis zum Maximum, dann eine
-  Kastengrafik (Kasten P10–P90, Fühler bis min/max). Beide malten einen
-  geschlossenen Block bis P90 — bei Median 0,5 mm und P90 8 mm sah das nach
-  „8 mm kommen" aus, obwohl die Hälfte der Member unter 0,5 mm liegt. Genau
-  das war die Rückmeldung („wirkt viel mehr, als dann runterkommt"), und sie
-  ist kein Geschmacksurteil: gleich breite Fläche behauptet auf ganzer Höhe
-  gleich viel Information. Jetzt ist die Säule unten breit und läuft nach
-  oben in einen schmalen Strich aus, wo einzelne Member liegen.
-  **Skaliert wird mit der WURZEL** (`violinWidths`): beim Niederschlag liegen
-  regelmäßig dreißig von einundfünfzig Membern im untersten Abschnitt —
-  linear bekäme jeder andere 1/30 der Breite, also den Mindestwert von 2 px,
-  und oben wäre nicht mehr zu unterscheiden, ob dort einer liegt oder fünf.
-  Mit der Wurzel sind es 18 % und 41 %. Ein Abschnitt OHNE Member bleibt
-  leer: die Lücke zwischen „trocken" und „20 mm" ist eine Aussage.
-  Die Abschnitte kommen aus `densityBins` (4 px) und werden über die
-  NACHBARN geglättet (`smoothBins`, Dreier-Mittel) — nicht über einen
-  geschätzten Kern; ungeglättet hat bei 51 Membern fast jeder Abschnitt
-  null, einen oder zwei Treffer, und die Fläche flackerte wie Rauschen.
-  **Jeder Member bleibt als feiner Strich einzeln stehen**, so breit wie die
-  Fläche an seiner Stelle. Der „Member"-Haken schaltet die Striche;
-  Spaghetti gibt es in dieser Ansicht nicht — es wären dieselben Werte
-  doppelt —, das Band entfällt samt Legendeneintrag.
-  **Das Rückgrat P10–P90 ist zwei Pixel breit**, mit Klammern an den Enden:
-  es sagt „dazwischen liegen 80 %" und hält die Striche einer Säule optisch
-  zusammen, ohne wieder Fläche zu beanspruchen.
-  **Median, Hauptlauf und Kontrolllauf stehen als MARKEN IN der Säule**, in
-  ihren Farben, jede mit dunkler Unterlegung und beidseitigem Überstand:
-  ohne die Unterlegung verschwindet gerade die wichtigste — der Median — im
-  dichtesten Teil der Füllung, und genau dort liegt er meistens. Der Median
-  ist in der Säulenansicht ZUSÄTZLICH heller (`BAR_MEDIAN`, auch für Linie
-  und Legendenpunkt): der übliche Akzentblauton liegt auf der blauen
-  Dichtefüllung und ist dort keine Marke.
+  Gezeichnet wird die am Markt übliche **QUANTIL-BALKEN**-Form
+  (ECMWF-/Wetterzentrale-Manier): Hauptbalken **P10–P90** mit **Median und
+  MITTEL** als Marken darin, darauf schmalere und blassere Aufsätze bis
+  **P5 und P95**, darüber die **Striche an Minimum und Maximum** mit dünner
+  Verbindung. Dazu Hauptlauf und Kontrolllauf als Marken in ihren Farben.
+  **Die Einzelläufe stehen NICHT im Balken** — wer sie sehen will, schaltet
+  die Balken ab und bekommt die Spaghetti; der „Member"-Haken verschwindet
+  deshalb in dieser Ansicht, statt als wirkungsloses Bedienelement stehen zu
+  bleiben.
+  **Median UND Mittel, weil sie beim Niederschlag weit auseinanderliegen**:
+  dreißig trockene Member und fünf nasse ergeben Median 0 und Mittel 2 mm.
+  Beide Zahlen stimmen und beantworten verschiedene Fragen („der typische
+  Lauf" gegen „die erwartete Menge"); sie stehen auch in der Ablesezeile.
+  `PlumeStats` führt dafür jetzt `p5`, `p95` und `mean`.
+  **ZWEI VORSTUFEN SIND GESCHEITERT und stehen hier, damit niemand
+  zurückrudert.** Die erste zeichnete drei gefüllte Quantilstufen bis zum
+  MAXIMUM: ein einzelner nasser Ausreißer zog den Balken auf das Dreifache,
+  und die 80 %, um die es geht, quetschten sich unten in ein paar Pixel. Die
+  zweite ersetzte die Fläche durch eine GEIGENFORM (Breite = Memberzahl je
+  Höhenabschnitt, Wurzelskalierung, ein Strich je Member) — rechnerisch
+  ehrlich und gegen den falschen Eindruck wirksam, in der Praxis aber unruhig
+  und ohne Mehrwert gegenüber den Quantilen, die man ohnehin abliest. Die
+  Lehre aus beiden steckt in der jetzigen Form: **Fläche ist
+  Aufmerksamkeit**, deshalb nach außen hin schmaler UND blasser (Hauptbalken
+  → Aufsatz → Strich), statt überall gleich viel Farbe zu setzen.
   **Der Abstand wird bei jedem Zeichnen neu gerastert** (`barStepHours`, nur
   runde Stundenvielfache 1/2/3/6/12/24/48, `barIndices` hängt sie an die
   UTC-Zeit statt an den Datenbeginn — sonst stünden zwei Panels versetzt).
   Zwei Zahlen dahinter, beide gemessen: mit 7 px Mindestabstand stand die
   SUMMENansicht (361 Stundenwerte über 15 Tage) als geschlossener Block da,
   mit **14 px** bleibt über den vollen Horizont der 6-Stunden-Schritt, und
-  beim Hineinzoomen rücken die Säulen von selbst auf 3 h und 1 h nach. Der
+  beim Hineinzoomen rücken die Balken von selbst auf 3 h und 1 h nach. Der
   Mindestabstand ist eine Sache der ANZEIGE: `valToPos(…, true)` rechnet in
   GERÄTEpixeln, ohne die Division durch `devicePixelRatio` stünden die
-  Säulen auf einem HiDPI-Schirm doppelt so dicht (genau so war es zuerst).
-  Gezeichnet wird im `draw`-Hook, also ÜBER den Kurven: die Stufen sind
-  halbdurchlässig, Hauptlauf und Kontrolllauf bleiben dahinter sichtbar,
-  während die Striche scharf obenauf liegen — darunter verschluckte sie die
-  Bandfüllung. Bei Temperatur, Druck und Wind bleibt es bei der Plume; dort
-  ist sie richtig, und der Umschalter erscheint gar nicht.
+  Balken auf einem HiDPI-Schirm doppelt so dicht (genau so war es zuerst).
+  Gezeichnet wird im `draw`-Hook, also ÜBER den Kurven: Hauptlauf und
+  Kontrolllauf bleiben als Linien dahinter sichtbar, ihre Marken liegen
+  scharf obenauf — darunter verschluckte sie die Bandfüllung. Bei
+  Temperatur, Druck und Wind bleibt es bei der Plume; dort ist sie richtig,
+  und der Umschalter erscheint gar nicht.
   Die suffixlose Reihe der Antwort
   ist der **Kontrolllauf**, NICHT der Hauptlauf — der kommt als eigener
   deterministischer Abruf dazu (1 Call). Eigene Modell- UND Variablenregistry
