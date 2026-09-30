@@ -12,6 +12,7 @@ import {
   columnFromProfile,
   computeSounding,
   thetaEProfile,
+  wetBulbColumn,
   type SoundingColumn,
   type SurfacePoint,
 } from './sounding'
@@ -306,5 +307,89 @@ describe('thetaEProfile', () => {
 
   it('liefert null, wenn es keine zwei Level gibt', () => {
     expect(thetaEProfile(col([1000], [20], [10], [0]))).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FEUCHTKUGEL UND DCAPE. Beide leben von derselben Größe — davon, wie weit
+// Verdunstung die Luft abkühlen kann. Geprüft wird deshalb gegen den
+// KONTRAST zweier Profile, die sich NUR in der Feuchte der Mittelschicht
+// unterscheiden: gleiche Temperaturen, gleiche Höhen, anderer Taupunkt.
+// ---------------------------------------------------------------------------
+
+describe('Feuchtkugel und DCAPE', () => {
+  const PP = [1000, 925, 850, 700, 600, 500, 400, 300]
+  const ZZ = [110, 780, 1500, 3100, 4300, 5700, 7300, 9400]
+  const TT = [28, 22, 18, 8, 0, -9, -22, -40]
+  const two = (v: number[]) => v.map((x) => [x])
+  const build2 = (Td: number[]) =>
+    computeSounding(
+      columnFromProfile(
+        PP,
+        two(TT),
+        two(Td),
+        two(PP.map(() => 10)),
+        two(PP.map(() => 270)),
+        two(ZZ),
+        0,
+        null,
+      ) as SoundingColumn,
+    )
+  const trocken = build2([22, 17, 8, -12, -20, -28, -40, -55])
+  const feucht = build2([24, 21, 17, 7, -1, -10, -23, -41])
+
+  /**
+   * DER GRUND FÜR DIE ZAHL: trockene Mittelschicht heißt kräftige
+   * Verdunstungskühlung heißt schwerer Abwind — das Kennzeichen für
+   * Fallböen. Gemessen 1004 gegen 544 J/kg bei IDENTISCHEM Temperaturprofil;
+   * der Unterschied ist allein die Feuchte.
+   */
+  it('gibt der trockenen Mittelschicht die höhere DCAPE', () => {
+    expect(trocken.dcape).toBeGreaterThan(900)
+    expect(feucht.dcape).toBeLessThan(700)
+    expect(trocken.dcape as number).toBeGreaterThan((feucht.dcape as number) * 1.5)
+  })
+
+  // Das Startniveau ist das θe-Minimum und muss in den untersten 400 hPa
+  // liegen — höher gesucht fände man irgendwann die Stratosphäre.
+  it('startet den Abwind innerhalb der untersten 400 hPa', () => {
+    expect(trocken.dcapeSourceP).not.toBeNull()
+    expect(trocken.dcapeSourceP as number).toBeGreaterThanOrEqual(1000 - 400)
+    expect(trocken.dcapeSourceP as number).toBeLessThan(1000)
+  })
+
+  /**
+   * Die FEUCHTKUGEL-Nullgradgrenze liegt immer TIEFER als die trockene, und
+   * der Abstand ist die Feuchte: bei trockener Mitte 1230 m, bei feuchter
+   * keine 90 m. Genau dieser Unterschied entscheidet, ob es im Tal regnet
+   * oder schneit.
+   */
+  it('setzt die feuchte Nullgradgrenze unter die trockene', () => {
+    for (const s of [trocken, feucht]) {
+      expect(s.wetBulbZeroZ as number).toBeLessThan(s.freezingLevelZ as number)
+    }
+    const dTrocken = (trocken.freezingLevelZ as number) - (trocken.wetBulbZeroZ as number)
+    const dFeucht = (feucht.freezingLevelZ as number) - (feucht.wetBulbZeroZ as number)
+    expect(dTrocken).toBeGreaterThan(500)
+    expect(dFeucht).toBeLessThan(200)
+  })
+
+  it('liefert für jedes Level eine Feuchtkugel zwischen Td und T', () => {
+    const col = columnFromProfile(
+      PP,
+      two(TT),
+      two([22, 17, 8, -12, -20, -28, -40, -55]),
+      two(PP.map(() => 10)),
+      two(PP.map(() => 270)),
+      two(ZZ),
+      0,
+      null,
+    ) as SoundingColumn
+    const tw = wetBulbColumn(col)
+    expect(tw).toHaveLength(col.p.length)
+    for (let i = 0; i < tw.length; i++) {
+      expect(tw[i], `${col.p[i]} hPa`).toBeLessThanOrEqual(col.T[i])
+      expect(tw[i], `${col.p[i]} hPa`).toBeGreaterThanOrEqual(col.Td[i])
+    }
   })
 })

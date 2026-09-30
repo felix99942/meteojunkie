@@ -4,7 +4,7 @@
 // implementierte Funktionen dieses Moduls.
 
 import { describe, expect, it } from 'vitest'
-import { moistAdiabatTemp, potentialTemperature, thetaE } from './thermo'
+import { moistAdiabatTemp, potentialTemperature, thetaE, wetBulb } from './thermo'
 
 describe('thetaE', () => {
   /**
@@ -47,5 +47,49 @@ describe('thetaE', () => {
     const latent = thetaE(20, 15, 1000) - thetaE(20, -40, 1000)
     expect(latent).toBeGreaterThan(20)
     expect(latent).toBeLessThan(40)
+  })
+})
+
+describe('wetBulb', () => {
+  /**
+   * DIE ORDNUNG IST DIE PROBE: die Feuchtkugeltemperatur liegt zwischen
+   * Taupunkt und Temperatur — immer. Dreht sich das um, stimmt entweder die
+   * Richtung der Feuchtadiabate oder das LCL nicht.
+   */
+  it('liegt zwischen Taupunkt und Temperatur', () => {
+    for (const [t, td, p] of [
+      [30, 5, 1000],
+      [20, 10, 1000],
+      [0, -10, 850],
+      [-5, -12, 700],
+      [35, 30, 1013],
+    ]) {
+      const tw = wetBulb(t, td, p)
+      expect(tw, `${t}/${td}@${p}`).toBeLessThanOrEqual(t)
+      expect(tw, `${t}/${td}@${p}`).toBeGreaterThanOrEqual(td)
+    }
+  })
+
+  it('fällt bei gesättigter Luft mit beiden zusammen', () => {
+    expect(wetBulb(15, 15, 1000)).toBeCloseTo(15, 6)
+    expect(wetBulb(-3, -3, 700)).toBeCloseTo(-3, 6)
+  })
+
+  /**
+   * Gegen die PSYCHROMETERTAFEL: 20 °C bei 10 °C Taupunkt und 1000 hPa
+   * ergeben rund 14 °C Feuchtkugeltemperatur. Die Rechnung kommt auf 13,98 —
+   * eine unabhängige Zahl, die ein Vorzeichen- oder Druckfehler sofort
+   * zerstörte.
+   */
+  it('trifft den Tafelwert', () => {
+    expect(wetBulb(20, 10, 1000)).toBeGreaterThan(13.5)
+    expect(wetBulb(20, 10, 1000)).toBeLessThan(14.5)
+  })
+
+  // Je trockener, desto größer der Abstand — die Verdunstungskühlung.
+  it('kühlt umso stärker, je trockener die Luft ist', () => {
+    const feucht = 25 - wetBulb(25, 20, 1000)
+    const trocken = 25 - wetBulb(25, 0, 1000)
+    expect(trocken).toBeGreaterThan(feucht * 3)
   })
 })

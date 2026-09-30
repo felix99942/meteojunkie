@@ -17,10 +17,17 @@ import {
   thetaE,
   toK,
   virtualTemperature,
+  wetBulb,
 } from './thermo'
 
 const RD = 287.04 // J/(kg·K)
 const G = 9.80665 // m/s²
+/**
+ * Suchtiefe für das Startniveau des Abwinds (hPa über Grund). 400 hPa ist die
+ * SPC-Konvention — tiefer gesucht fände man irgendwann die Stratosphäre, die
+ * mit einem Gewitterabwind nichts zu tun hat.
+ */
+const DCAPE_DEPTH_HPA = 400
 
 /** Umgebungssondierung an einem Zeitpunkt: Boden (höchster Druck) zuerst. */
 export interface SoundingColumn {
@@ -77,6 +84,30 @@ export interface SoundingParams {
   totalTotals: number | null
   freezingLevelP: number | null // hPa
   freezingLevelZ: number | null // m
+  /**
+   * FEUCHTKUGEL-Nullgradgrenze (m) — die Höhe, in der Tw = 0 °C.
+   *
+   * Die praktisch wichtigere der beiden Nullgradgrenzen: Schnee, der in
+   * ungesättigte Luft fällt, kühlt sie durch Schmelzen und Verdunsten auf die
+   * FEUCHTKUGELtemperatur ab und bleibt deshalb bis etwa hierher erhalten.
+   * Bei trockener Luft liegt sie mehrere hundert Meter unter der
+   * „trockenen" Nullgradgrenze — genau der Unterschied, der entscheidet, ob
+   * es im Tal regnet oder schneit.
+   */
+  wetBulbZeroZ: number | null // m
+  wetBulbZeroP: number | null // hPa
+  /**
+   * DCAPE (J/kg) — die Energie, die einem ABWIND zur Verfügung steht.
+   *
+   * Gegenstück zu CAPE: ein Paket, das im Gewitter durch Verdunstung
+   * abgekühlt wird, sinkt, solange es kälter bleibt als seine Umgebung.
+   * Hohe Werte bei trockener Mittelschicht sind das Kennzeichen für
+   * FALLBÖEN (Downbursts) — der Fall, in dem am Boden Sturm ankommt, ohne
+   * dass viel Regen fällt.
+   */
+  dcape: number | null
+  /** Startniveau des Abwinds (hPa) — Minimum von θe in den untersten 400 hPa. */
+  dcapeSourceP: number | null
   shear06: number | null // m/s (0–6 km Bulk)
 }
 
@@ -427,6 +458,71 @@ function pwat(fine: { p: number[]; Td: number[] }): number {
   return sum / G // kg/m² == mm
 }
 
+/**
+ * DCAPE: Abwindenergie eines durch Verdunstung gekühlten Pakets.
+ *
+ * **Warum es die Größe gibt.** CAPE beantwortet, wie kräftig der AUFWIND
+ * wird; DCAPE, wie kräftig der ABWIND am Boden ankommt. Ein Gewitter, dessen
+ * Niederschlag in eine trockene Mittelschicht fällt, kühlt diese Luft durch
+ * Verdunstung stark ab — sie wird schwerer als ihre Umgebung und stürzt.
+ * Hohe DCAPE bei trockener Mitte ist das Kennzeichen für FALLBÖEN, also für
+ * Sturm am Boden ohne viel Regen. Genau deshalb steht die Zahl hier.
+ *
+ * **Verfahren** (SPC-Konvention): Startniveau ist das Minimum der
+ * äquivalentpotentiellen Temperatur in den untersten 400 hPa — die Schicht,
+ * aus der ein Abwind am ehesten stammt, weil dort die Luft am „energieärmsten"
+ * ist. Das Paket startet GESÄTTIGT bei der Feuchtkugeltemperatur dieses
+ * Niveaus (mehr kann Verdunstung nicht kühlen) und sinkt feuchtadiabatisch
+ * zum Boden; integriert wird die Fläche, auf der es KÄLTER ist als die
+ * Umgebung.
+ *
+ * Nur die negative Auftriebsfläche zählt: wäre das Paket irgendwo wärmer,
+ * bremste dieser Abschnitt den Abwind, statt ihn zu treiben — ihn
+ * gutzuschreiben, machte die Zahl größer und die Aussage falscher.
+ */
+function downdraftCape(
+  fine: { p: number[]; T: number[]; Td: number[] },
+): { dcape: number; sourceP: number } | null {
+  const pSurf = fine.p[0]
+  let srcIdx = -1
+  let minTe = Infinity
+  for (let i = 0; i < fine.p.length; i++) {
+    if (fine.p[i] < pSurf - DCAPE_DEPTH_HPA) break
+    const te = thetaE(fine.T[i], fine.Td[i], fine.p[i])
+    if (te < minTe) {
+      minTe = te
+      srcIdx = i
+    }
+  }
+  // Direkt am Boden gibt es nichts abzusinken.
+  if (srcIdx <= 0) return null
+
+  const pSrc = fine.p[srcIdx]
+  const tSrc = wetBulb(fine.T[srcIdx], fine.Td[srcIdx], pSrc)
+
+  let dcape = 0
+  let prevBuoy: number | null = null
+  for (let i = srcIdx; i >= 0; i--) {
+    const p = fine.p[i]
+    const tParcel = i === srcIdx ? tSrc : moistAdiabatTemp(tSrc, pSrc, p)
+    const tvP = virtualTemperature(tParcel, saturationMixingRatio(tParcel, p))
+    const tvE = virtualTemperature(fine.T[i], mixingRatioFromDewpoint(fine.Td[i], p))
+    const buoy = RD * (tvE - tvP) // > 0, solange das Paket KÄLTER ist
+    if (prevBuoy != null) {
+      const dlnp = Math.log(fine.p[i]) - Math.log(fine.p[i + 1]) // > 0 (abwärts)
+      const seg = 0.5 * (prevBuoy + buoy) * dlnp
+      if (seg > 0) dcape += seg
+    }
+    prevBuoy = buoy
+  }
+  return { dcape, sourceP: pSrc }
+}
+
+/** Feuchtkugeltemperatur je Level der Spalte — für die Kurve im Skew-T. */
+export function wetBulbColumn(col: SoundingColumn): number[] {
+  return col.p.map((p, i) => wetBulb(col.T[i], col.Td[i], p))
+}
+
 function crossingP(col: SoundingColumn, targetT: number): number | null {
   for (let i = 0; i < col.T.length - 1; i++) {
     const a = col.T[i] - targetT
@@ -527,6 +623,26 @@ export function computeSounding(col: SoundingColumn): SoundingParams {
     }
   }
 
+  // FEUCHTKUGEL-Nullgradgrenze: dieselbe Interpolation wie oben, nur auf dem
+  // Tw-Profil. Sie liegt IMMER tiefer als die trockene — bei feuchter Luft
+  // knapp darunter, bei trockener mehrere hundert Meter.
+  const tw = wetBulbColumn(col)
+  const wetBulbZeroP = crossingP({ ...col, T: tw }, 0)
+  let wetBulbZeroZ: number | null = null
+  if (wetBulbZeroP != null) {
+    const lnPz: number[] = []
+    const zVals: number[] = []
+    for (let i = 0; i < col.z.length; i++) {
+      const z = col.z[i]
+      if (z == null || !Number.isFinite(z)) continue
+      lnPz.push(lnP[i])
+      zVals.push(z)
+    }
+    if (zVals.length >= 2) wetBulbZeroZ = interpDesc(lnPz, zVals, Math.log(wetBulbZeroP))
+  }
+
+  const dd = downdraftCape(fine)
+
   return {
     pwat: pwat(fine),
     sb,
@@ -537,6 +653,10 @@ export function computeSounding(col: SoundingColumn): SoundingParams {
     totalTotals,
     freezingLevelP,
     freezingLevelZ,
+    wetBulbZeroP,
+    wetBulbZeroZ,
+    dcape: dd ? dd.dcape : null,
+    dcapeSourceP: dd ? dd.sourceP : null,
     shear06,
   }
 }

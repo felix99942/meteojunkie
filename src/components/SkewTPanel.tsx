@@ -17,6 +17,7 @@ import {
   columnFromProfile,
   computeSounding,
   thetaEProfile,
+  wetBulbColumn,
   type SoundingColumn,
   type SoundingParams,
   type SurfacePoint,
@@ -99,6 +100,23 @@ const TABLE_ROWS: { label: string; get: (s: SoundingParams) => string }[] = [
         ? `${Math.round(s.freezingLevelZ / 10) * 10} m`
         : dash(s.freezingLevelP != null ? `${Math.round(s.freezingLevelP)} hPa` : null),
   },
+  /**
+   * FEUCHTKUGEL-Nullgradgrenze — die für den Niederschlagstyp entscheidende
+   * der beiden. Schnee, der in ungesättigte Luft fällt, kühlt sie durch
+   * Schmelzen und Verdunsten auf die Feuchtkugeltemperatur ab und überlebt
+   * deshalb bis etwa hierher; bei trockener Luft sind das mehrere hundert
+   * Meter unter der „trockenen" Nullgradgrenze darüber.
+   */
+  {
+    label: '0 °C feucht',
+    get: (s) =>
+      s.wetBulbZeroZ != null
+        ? `${Math.round(s.wetBulbZeroZ / 10) * 10} m`
+        : dash(s.wetBulbZeroP != null ? `${Math.round(s.wetBulbZeroP)} hPa` : null),
+  },
+  // DCAPE: Energie des ABWINDS. Hoch bei trockener Mittelschicht — das
+  // Kennzeichen für Fallböen (Sturm am Boden ohne viel Regen).
+  { label: 'DCAPE', get: (s) => dash(s.dcape != null ? `${Math.round(s.dcape)}` : null) },
   { label: 'Shear 0–6 km', get: (s) => dash(s.shear06 != null ? `${Math.round(s.shear06 * MS_TO_KT)} kt` : null) },
 ]
 
@@ -119,10 +137,11 @@ function strokeColumnLine(
   values: number[],
   color: string,
   linedash: number[],
+  lineWidth = 2,
 ): void {
   ctx.save()
   ctx.strokeStyle = color
-  ctx.lineWidth = 2
+  ctx.lineWidth = lineWidth
   ctx.setLineDash(linedash)
   ctx.beginPath()
   let pen = false
@@ -178,6 +197,13 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
    * kostet nur Platz, keine Daten — gerechnet wird aus denselben Leveln.
    */
   const [showThetaE, setShowThetaE] = useState(true)
+  /**
+   * Feuchtkugelkurve. Sie liegt zwischen T und Td und ist die Kurve, an der
+   * man abliest, wie weit Verdunstung die Luft abkühlen kann — Schneefall-
+   * grenze (Tw = 0 °C) und Abwindtemperatur hängen daran. Bei mehreren
+   * Modellen wird es zu dritt eng, deshalb abschaltbar.
+   */
+  const [showWetBulb, setShowWetBulb] = useState(true)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
@@ -313,6 +339,10 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         }
         strokeColumnLine(ctx, g, col, col.T, color, [])
         strokeColumnLine(ctx, g, col, col.Td, color, [4, 3])
+        // Feuchtkugel: fein gepunktet und dünner als T/Td — sie ist die
+        // dritte Kurve desselben Modells und soll die beiden nicht
+        // überstimmen.
+        if (showWetBulb) strokeColumnLine(ctx, g, col, wetBulbColumn(col), color, [1, 3], 1.2)
         if (!barb) barb = { col, color }
       })
 
@@ -366,7 +396,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     ro.observe(container)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE])
+  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE, showWetBulb])
 
   // Hodograf in sein Overlay zeichnen (nur wenn geöffnet)
   useEffect(() => {
@@ -441,6 +471,14 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         <button
           type="button"
           className="skewt-params-toggle"
+          onClick={() => setShowWetBulb((v) => !v)}
+          title="Feuchtkugelkurve ein-/ausblenden: die Temperatur, auf die Verdunstung die Luft abkühlen kann. Sie liegt zwischen Taupunkt und Temperatur; an Tw = 0 °C liest man die Schneefallgrenze ab."
+        >
+          Tw {showWetBulb ? '✕' : '▾'}
+        </button>
+        <button
+          type="button"
+          className="skewt-params-toggle"
           onClick={() => setShowThetaE((v) => !v)}
           title="θe-Spalte ein-/ausblenden: äquivalentpotentielle Temperatur über die Höhe, hinterlegt mit der Schichtung — rot = potentiell instabil (θe nimmt nach oben ab), blau = stabil, grau = neutral."
         >
@@ -479,7 +517,8 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             className="skewt-hint"
             title="Bezugspaket ist ML (Mittel der untersten 100 hPa) — daraus stammen der Parzellenweg im Diagramm und der LI. SB (bodenbasiert) und MU (labilstes Paket) stehen zum Vergleich daneben. CAPE/CIN in J/kg."
           >
-            — T · - - Td · ⋯ ML-Paket · <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
+            — T · - - Td{showWetBulb ? ' · ··· Tw' : ''} · ⋯ ML-Paket ·{' '}
+            <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
             <span style={{ color: '#4a93e8' }}>▉ CIN</span>
           </span>
           {/* Die Bänder der θe-Spalte brauchen eine Lesart — eine Farbe ohne

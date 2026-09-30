@@ -101,6 +101,32 @@ function moistDtDp(tC: number, p: number): number {
 }
 
 /**
+ * FEUCHTKUGELTEMPERATUR (°C) nach NORMAND.
+ *
+ * Die Temperatur, auf die sich Luft abkühlt, wenn man sie bei konstantem
+ * Druck bis zur Sättigung verdunsten lässt — also das, was ein absinkendes,
+ * in trockene Luft geratenes Paket wirklich erreicht. Sie liegt IMMER
+ * zwischen Taupunkt und Temperatur und fällt bei gesättigter Luft mit beiden
+ * zusammen.
+ *
+ * Normands Regel: vom Ausgangspunkt trockenadiabatisch zum LCL, von dort
+ * FEUCHTadiabatisch zurück auf den Ausgangsdruck. Beides liegt schon vor
+ * (`lcl`, `moistAdiabatTemp` integriert in beide Richtungen), die Funktion
+ * ist deshalb nur die Verkettung — und genau deswegen verlässlich: sie erbt
+ * die Genauigkeit der beiden geprüften Bausteine.
+ *
+ * Zwei Anwendungen im Skew-T: die Kurve zeigt, wie weit Verdunstung die Luft
+ * abkühlen KANN (Schneefallgrenze liest man an Tw = 0 °C, nicht an T = 0 °C),
+ * und der Abwind eines Gewitters startet mit dieser Temperatur (siehe
+ * `downdraftCape`).
+ */
+export function wetBulb(tC: number, tdC: number, p: number): number {
+  if (tdC >= tC) return tC
+  const { pressure: pLcl, temperature: tLcl } = lcl(p, tC, tdC)
+  return moistAdiabatTemp(tLcl, pLcl, p)
+}
+
+/**
  * ÄQUIVALENTPOTENTIELLE TEMPERATUR θe (K) — Bolton (1980), Gl. 43.
  *
  * Die Größe, die ein Luftpaket kennzeichnet, wenn man ihm BEIDES mitgibt: die

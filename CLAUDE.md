@@ -1593,6 +1593,36 @@ npm run preview   # gebautes dist/ servieren
   (`.skewt.has-thetae`, `right: 120px` = THETAE_W + Fiedernrand) — sonst läge
   die Tabelle darauf und die Spalte wäre nur bei geschlossener Tabelle zu
   sehen.
+- **FEUCHTKUGELKURVE UND DCAPE** (`wetBulb` in `lib/thermo.ts`,
+  `wetBulbColumn`/`downdraftCape` in `lib/sounding.ts`; Umschalter „Tw",
+  Vorgabe AN). Die Feuchtkugeltemperatur ist die Temperatur, auf die
+  Verdunstung die Luft abkühlen KANN; sie liegt immer zwischen Taupunkt und
+  Temperatur und fällt bei Sättigung mit beiden zusammen. Gerechnet nach
+  NORMAND — trockenadiabatisch zum LCL, von dort feuchtadiabatisch zurück auf
+  den Ausgangsdruck —, also aus den beiden schon vorhandenen, geprüften
+  Bausteinen; gegen die Psychrometertafel: 20 °C bei 10 °C Taupunkt und
+  1000 hPa ergeben 13,98 °C.
+  Gezeichnet fein gepunktet und dünner als T/Td: sie ist die dritte Kurve
+  DESSELBEN Modells und soll die beiden nicht überstimmen.
+  **Zwei Zahlen hängen daran, beide in der Kennzahlentabelle.**
+  **„0 °C feucht"** ist die Feuchtkugel-Nullgradgrenze und die für den
+  Niederschlagstyp entscheidende der beiden: Schnee, der in ungesättigte Luft
+  fällt, kühlt sie durch Schmelzen und Verdunsten auf Tw ab und überlebt
+  deshalb bis etwa dorthin. Gemessen an zwei Profilen, die sich NUR in der
+  Feuchte der Mittelschicht unterscheiden: 1230 m unter der trockenen
+  Nullgradgrenze bei trockener Mitte, keine 90 m bei feuchter.
+  **DCAPE** ist das Gegenstück zu CAPE — die Energie des ABWINDS. Startniveau
+  ist das θe-Minimum in den untersten 400 hPa (SPC-Konvention), das Paket
+  startet GESÄTTIGT bei der Feuchtkugeltemperatur dieses Niveaus (mehr kann
+  Verdunstung nicht kühlen) und sinkt feuchtadiabatisch zum Boden; integriert
+  wird nur die Fläche, auf der es KÄLTER ist als die Umgebung — ein wärmerer
+  Abschnitt bremste den Abwind, ihn gutzuschreiben machte die Zahl größer und
+  die Aussage falscher. Hohe Werte bei trockener Mitte sind das Kennzeichen
+  für FALLBÖEN, also Sturm am Boden ohne viel Regen; derselbe Kontrast
+  gemessen: **1004 gegen 544 J/kg bei identischem Temperaturprofil**.
+  Beide Größen sind gegen diesen Kontrast getestet, nicht gegen feste Zahlen:
+  was zählt, ist dass die Feuchte der Mittelschicht sie in die richtige
+  Richtung bewegt.
 - **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
   (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
   hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch
