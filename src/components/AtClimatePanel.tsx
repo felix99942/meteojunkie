@@ -146,7 +146,8 @@ export function AtClimatePanel() {
   /** Was ins Einstiegsfeld getippt wurde, bevor das Fenster aufging. */
   const [askSeed, setAskSeed] = useState('')
   /**
-   * Station, auf die „In der Karte zeigen" gesprungen ist. Eigener Zustand
+   * Station, auf die „In der Karte zeigen" gesprungen ist bzw. die in der
+   * Rangliste/Stationssuche angeklickt wurde. Eigener Zustand
    * NEBEN `selected`, weil die Markierung das SCHLIESSEN des Detailfensters
    * überleben muss: das Fenster liegt über der Karte, man macht es genau
    * deshalb zu, um die markierte Station zu sehen. Ein Klick auf eine andere
@@ -1075,9 +1076,12 @@ export function AtClimatePanel() {
                 }
                 signed={anomActive && anom.signed}
                 onSelect={(i) => {
-                setSelected(shown[i])
-                setMarked(null)
-              }}
+                  // Wie „In der Karte zeigen": die Station bleibt markiert,
+                  // auch wenn das Detail geschlossen wird — man sucht sie ja
+                  // gerade in der Karte.
+                  setSelected(shown[i])
+                  setMarked(shown[i])
+                }}
                 onHover={setRankHover}
                 onClose={() => {
                   setShowRank(false)

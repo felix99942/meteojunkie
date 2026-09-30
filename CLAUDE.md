@@ -568,7 +568,11 @@ npm run preview   # gebautes dist/ servieren
   Zustand `marked` neben `selected` in `AtClimatePanel`): das Fenster liegt
   über der Karte, man macht es genau deshalb zu. Weggeräumt wird sie erst,
   wenn eine ANDERE Station angeklickt wird — die ist dann selbst markiert,
-  solange ihr Detail offen ist. Der Hover in der Rangliste bleibt davon
+  solange ihr Detail offen ist. **Ein Klick in der Rangliste bzw.
+  Stationssuche markiert DAUERHAFT wie „In der Karte zeigen"**: auch dort
+  sucht man eine Station, um sie in der Karte zu finden; nur der Klick
+  direkt in die Karte markiert bloss für die Dauer des Details — die
+  Station steht dort ja schon unter dem Zeiger. Der Hover in der Rangliste bleibt davon
   getrennt die leichte Hervorhebung (`highlightIdx`): sonst überschriebe
   jedes Überfahren gerade die Markierung, die man sucht. Gegen die echte Stationsliste gemessen: 14 von 14
   Beispielfragen richtig.
