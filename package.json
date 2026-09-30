@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
+    "katex": "^0.18.10",
     "maplibre-gl": "^5.24.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

@@ -883,6 +883,178 @@ button:focus-visible {
   background: var(--bg-control-hover);
 }
 
+/* INFO-KNOPF: gross und in Akzentfarbe, damit man die Dokumentation findet,
+   ohne sie zwischen den Layout-Schaltern zu suchen. */
+.skewt-info-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(24, 25, 27, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 4px;
+  padding: 3px 10px 3px 4px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.skewt-info-btn:hover,
+.skewt-info-btn[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--accent) 22%, rgb(24, 25, 27));
+}
+
+.skewt-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font: italic 700 14px Georgia, 'Times New Roman', serif;
+}
+
+/* Dokumentationsfenster: über dem Diagramm, Satzbreite gedeckelt — Formeln
+   und Fliesstext lesen sich nicht über die volle Panelbreite. */
+.skewt-info {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 8px;
+  z-index: 9;
+  width: min(820px, calc(100% - 16px));
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 21, 23, 0.98);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  color: var(--ink-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.skewt-info-loading {
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+}
+
+.skewt-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.skewt-info-head h2 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.skewt-info-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  font: inherit;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+
+.skewt-info-close:hover {
+  background: var(--bg-control-hover);
+}
+
+.skewt-info-body {
+  overflow: auto;
+  padding: 4px 22px 18px;
+}
+
+.skewt-info-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0 4px;
+}
+
+.skewt-info-toc button {
+  background: none;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 10px;
+}
+
+.skewt-info-toc button:hover {
+  background: var(--bg-control-hover);
+  color: var(--ink);
+}
+
+.skewt-info section {
+  scroll-margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+}
+
+.skewt-info h3 {
+  margin: 4px 0 8px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.skewt-info h4 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.skewt-info p {
+  margin: 6px 0;
+}
+
+.skewt-info b {
+  color: var(--ink);
+}
+
+/* Abgesetzte Formel: leicht hinterlegt, bei zu schmalem Fenster waagrecht
+   scrollbar statt über den Rand. */
+.skewt-info-formula {
+  margin: 10px 0;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 3px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: var(--ink);
+}
+
+.skewt-info-formula .katex-display {
+  margin: 0.5em 0;
+}
+
+.skewt-info .katex {
+  font-size: 1.08em;
+}
+
+.skewt-info-note {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
 /* Hodograf-Overlay — unten links, Diagramm bleibt darunter. */
 .skewt-hodo {
   position: absolute;

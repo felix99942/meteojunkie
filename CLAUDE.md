@@ -1712,6 +1712,18 @@ npm run preview   # gebautes dist/ servieren
   (`:has(input:not(:checked))`), damit man sieht, was gerade NICHT im Bild
   ist. Schriftgröße 12 px wie die Bedienleisten der übrigen Bereiche: als
   10-px-Zeile im Kennzahlenkasten war die Legende eine Fußnote.
+- **„ⓘ Info" im Skew-T dokumentiert die RECHNUNG** (`SoundingInfo.tsx`,
+  Knopf `.skewt-info-btn` gross und in Akzentfarbe vor den Layout-Schaltern):
+  ML-CAPE, CIN, DCAPE und Feuchtkugeltemperatur, jeweils mit den Formeln,
+  die in `lib/sounding.ts`/`lib/thermo.ts` WIRKLICH stehen — nicht die
+  Lehrbuchdefinition. Genau das braucht, wer die Zahlen gegen ein anderes
+  Programm hält: CAPE/CIN/DCAPE gibt es in mehreren Konventionen, und
+  abweichende Werte heissen meist schlicht abweichende Rechnung. **Ändert
+  sich dort ein Verfahren, muss der Text mit** — er ist Handarbeit, kein
+  Generat. Formelsatz mit **KaTeX** (einzige Abhängigkeit dafür), per
+  `React.lazy` erst beim ersten Klick geladen: 82 KB gzip samt Schriften
+  kosten den Bereich sonst bei jedem Aufruf. Inhaltsverzeichnis als KNÖPFE
+  mit `scrollIntoView`, nicht als `#`-Links — die änderten die Adresse.
 - **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
   (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
   hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch

@@ -4,7 +4,7 @@
 // fürs Bezugsmodell — der gehobene Parzellenweg mit CAPE (rot) / CIN (blau).
 // Darunter eine Vergleichstabelle der Kennzahlen (Parameter × Modell).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { seriesKey } from '../lib/dataKey'
 import { useProfiles } from '../api/queries'
 import type { Profile } from '../api/openmeteo'
@@ -39,6 +39,10 @@ import {
   type SkewTGeometry,
 } from '../render/skewt'
 import { useWorkbench, type PanelConfig } from '../state/workbench'
+
+// Die Dokumentation bringt KaTeX samt Schriften mit — erst beim ersten Klick
+// auf „Info" laden, nicht mit dem Bereich.
+const SoundingInfo = lazy(() => import('./SoundingInfo'))
 
 const MS_TO_KT = 1.94384
 /** Mindest-Pixelabstand zwischen Windbarben (verhindert Überlappung, thint adaptiv). */
@@ -192,6 +196,8 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   // ein Sounding aufschlägt, und seit die Grenze zur Karte ziehbar ist, hat
   // das Diagramm den Platz dafür. Ausblenden bleibt möglich.
   const [showParams, setShowParams] = useState(true)
+  const [showInfo, setShowInfo] = useState(false)
+  const closeInfo = useCallback(() => setShowInfo(false), [])
   const [showHodo, setShowHodo] = useState(false)
   /**
    * θe-Spalte neben dem Diagramm. Vorgabe AN: sie beantwortet eine Frage, die
@@ -562,6 +568,21 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       </div>
 
       <div className="skewt-toggles">
+        {/* Bewusst GROSS und abgesetzt: die Frage „wie ist das gerechnet"
+            stellt man einmal, dann aber dringend — sie soll nicht zwischen
+            den Layout-Schaltern gesucht werden müssen. */}
+        <button
+          type="button"
+          className="skewt-info-btn"
+          onClick={() => setShowInfo((v) => !v)}
+          aria-expanded={showInfo}
+          title="Wie ML-CAPE, CIN, DCAPE und die Feuchtkugeltemperatur gerechnet werden"
+        >
+          <span className="skewt-info-icon" aria-hidden="true">
+            i
+          </span>
+          Info
+        </button>
         <button
           type="button"
           className="skewt-params-toggle"
@@ -587,6 +608,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           Kennzahlen {showParams ? '✕' : '▾'}
         </button>
       </div>
+      {showInfo && (
+        <Suspense fallback={<div className="skewt-info skewt-info-loading">Lade Dokumentation …</div>}>
+          <SoundingInfo onClose={closeInfo} />
+        </Suspense>
+      )}
       {showHodo && (
         <div ref={hodoContainerRef} className="skewt-hodo">
           <canvas ref={hodoCanvasRef} />
