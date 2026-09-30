@@ -325,7 +325,14 @@ export function drawDowndraft(
  * Gehobenes Paket ins Skew-T zeichnen: CAPE (rot) und CIN (blau) schattiert,
  * Parzellenweg gepunktet, LCL/LFC/EL markiert. Für EIN Bezugsmodell.
  */
-export function drawParcel(ctx: CanvasRenderingContext2D, g: SkewTGeometry, r: ParcelResult): void {
+export function drawParcel(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  r: ParcelResult,
+  /** Welche Schichten gezeichnet werden — die Legende schaltet sie einzeln. */
+  show: { path?: boolean; cape?: boolean; cin?: boolean } = {},
+): void {
+  const { path = true, cape = true, cin = true } = show
   const lfcIdx = r.lfcP != null ? r.fineP.indexOf(r.lfcP) : -1
   const elIdx = r.elP != null ? r.fineP.indexOf(r.elP) : -1
 
@@ -335,8 +342,14 @@ export function drawParcel(ctx: CanvasRenderingContext2D, g: SkewTGeometry, r: P
   ctx.clip()
 
   // CIN unterhalb LFC (Paket kälter), CAPE zwischen LFC und EL (Paket wärmer)
-  if (lfcIdx > 0) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, 0, lfcIdx, CIN_FILL)
-  if (lfcIdx >= 0 && elIdx > lfcIdx) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, lfcIdx, elIdx, CAPE_FILL)
+  if (cin && lfcIdx > 0) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, 0, lfcIdx, CIN_FILL)
+  if (cape && lfcIdx >= 0 && elIdx > lfcIdx) {
+    fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, lfcIdx, elIdx, CAPE_FILL)
+  }
+  if (!path) {
+    ctx.restore()
+    return
+  }
 
   // Parzellenweg (gepunktet)
   ctx.strokeStyle = PARCEL_LINE

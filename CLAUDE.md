@@ -1640,6 +1640,19 @@ npm run preview   # gebautes dist/ servieren
   verwechselt wird. Gefüllt wird abschnittsweise nur dort, wo das Paket
   KÄLTER ist als die Umgebung — dieselbe Einschränkung wie in der Rechnung.
   Nur für das Bezugsmodell, wie der Parzellenweg.
+- **DIE BILDLEGENDE IST DAS SCHALTBRETT** (`.skewt-legend`, links oben unter
+  der Zeitangabe): sie sagt, was welche Farbe bedeutet — und schaltet
+  dieselbe Schicht gleich ein und aus (Tw, ML-Paket, CAPE, CIN, DCAPE).
+  Wer eine Fläche loswerden will, sucht sie dort, wo ihre Farbe erklärt ist,
+  nicht in einer Knopfreihe am anderen Ende des Panels; die Umschalter „Tw"
+  und „DCAPE" oben sind dafür entfallen. Oben bleiben nur die, die das
+  LAYOUT ändern (θe-Spalte, Hodograf, Kennzahlen).
+  **Bewusst AUSSERHALB der Kennzahlentabelle**: die kann man zuklappen, die
+  Legende muss stehen bleiben. T und Td haben kein Häkchen — ohne sie gäbe es
+  kein Diagramm. Ein abgeschalteter Eintrag bleibt lesbar, tritt aber zurück
+  (`:has(input:not(:checked))`), damit man sieht, was gerade NICHT im Bild
+  ist. Schriftgröße 12 px wie die Bedienleisten der übrigen Bereiche: als
+  10-px-Zeile im Kennzahlenkasten war die Legende eine Fußnote.
 - **Die Kennzahlen stehen dauerhaft im Diagramm, oben rechts**
   (`.skewt-params`): sie sind der Grund, warum man ein Sounding aufschlägt —
   hinter einem Knopf kostete jeder Blick einen Klick. Möglich wurde es durch

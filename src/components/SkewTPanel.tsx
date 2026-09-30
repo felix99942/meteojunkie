@@ -212,6 +212,15 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
    * in der Tabelle nicht besser sagt.
    */
   const [showDowndraft, setShowDowndraft] = useState(true)
+  /**
+   * Die übrigen Schichten des Diagramms. Sie stehen als Häkchen IN der
+   * Legende — die Legende sagt ohnehin, was welche Farbe bedeutet, und wer
+   * eine Fläche sucht, sucht sie dort. Ein zweiter Satz Knöpfe oben wäre
+   * dieselbe Auskunft an einer zweiten Stelle.
+   */
+  const [showParcel, setShowParcel] = useState(true)
+  const [showCape, setShowCape] = useState(true)
+  const [showCin, setShowCin] = useState(true)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
   // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
@@ -342,7 +351,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         // ML statt SB, weil das SB-Paket abends durch die Grenzschichtproblematik
         // (nächtliche Bodeninversion) irreführendes CAPE liefert.
         if (!refParcelDrawn && sounds[i]) {
-          drawParcel(ctx, g, sounds[i]!.ml)
+          drawParcel(ctx, g, sounds[i]!.ml, {
+            path: showParcel,
+            cape: showCape,
+            cin: showCin,
+          })
           // Der Abwind ZUERST wäre falsch herum: die DCAPE-Fläche liegt
           // unten, wo auch CIN liegt, und soll obenauf sichtbar bleiben.
           const dd = sounds[i]!.downdraft
@@ -410,7 +423,18 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     ro.observe(container)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedKey, panelTime, modelsKey, panel.modelSlots, showThetaE, showWetBulb, showDowndraft])
+  }, [
+    loadedKey,
+    panelTime,
+    modelsKey,
+    panel.modelSlots,
+    showThetaE,
+    showWetBulb,
+    showDowndraft,
+    showParcel,
+    showCape,
+    showCin,
+  ])
 
   // Hodograf in sein Overlay zeichnen (nur wenn geöffnet)
   useEffect(() => {
@@ -481,23 +505,63 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           </span>
         )}
       </span>
+      {/* BILDLEGENDE ALS SCHALTBRETT, links oben unter der Zeit.
+          Sie sagt, was welche Farbe bedeutet — und schaltet dieselbe Schicht
+          gleich ein und aus: wer eine Fläche loswerden will, sucht sie dort,
+          wo ihre Farbe erklärt ist, nicht in einer Knopfreihe am anderen Ende.
+          Bewusst AUSSERHALB der Kennzahlentabelle: die kann man zuklappen, die
+          Legende muss stehen bleiben. T und Td haben kein Häkchen — ohne sie
+          gäbe es kein Diagramm. */}
+      <div className="skewt-legend">
+        <span className="skewt-legend-static">
+          <i className="sl-line" /> T
+        </span>
+        <span className="skewt-legend-static">
+          <i className="sl-line sl-dash" /> Td
+        </span>
+        <label title="Feuchtkugeltemperatur: worauf Verdunstung die Luft abkühlen kann. Liegt zwischen Td und T; an Tw = 0 °C liest man die Schneefallgrenze ab.">
+          <input
+            type="checkbox"
+            checked={showWetBulb}
+            onChange={(e) => setShowWetBulb(e.target.checked)}
+          />
+          <i className="sl-line sl-dot" style={{ color: WETBULB_LINE }} /> Tw
+        </label>
+        <label title="Weg des gehobenen ML-Pakets samt LCL/LFC/EL-Marken am linken Rand.">
+          <input
+            type="checkbox"
+            checked={showParcel}
+            onChange={(e) => setShowParcel(e.target.checked)}
+          />
+          <i className="sl-line sl-dot" style={{ color: 'rgb(232,228,220)' }} /> ML-Paket
+        </label>
+        <label title="Fläche, auf der das gehobene Paket WÄRMER ist als die Umgebung — die Energie des Aufwinds.">
+          <input
+            type="checkbox"
+            checked={showCape}
+            onChange={(e) => setShowCape(e.target.checked)}
+          />
+          <i className="sl-area" style={{ background: 'rgba(214,58,43,0.55)' }} /> CAPE
+        </label>
+        <label title="Fläche, auf der das Paket unterhalb des LFC KÄLTER ist — die Sperre, die erst überwunden werden muss.">
+          <input
+            type="checkbox"
+            checked={showCin}
+            onChange={(e) => setShowCin(e.target.checked)}
+          />
+          <i className="sl-area" style={{ background: 'rgba(74,147,232,0.55)' }} /> CIN
+        </label>
+        <label title="Absinkender, durch Verdunstung gekühlter Abwind vom θe-Minimum zum Boden. Die Fläche IST die DCAPE.">
+          <input
+            type="checkbox"
+            checked={showDowndraft}
+            onChange={(e) => setShowDowndraft(e.target.checked)}
+          />
+          <i className="sl-area" style={{ background: 'rgba(118,104,224,0.6)' }} /> DCAPE
+        </label>
+      </div>
+
       <div className="skewt-toggles">
-        <button
-          type="button"
-          className="skewt-params-toggle"
-          onClick={() => setShowDowndraft((v) => !v)}
-          title="Abwindweg ein-/ausblenden: das durch Verdunstung gekühlte Paket sinkt vom θe-Minimum feuchtadiabatisch zum Boden. Die violette Fläche IST die DCAPE — die Energie, die den Abwind treibt."
-        >
-          DCAPE {showDowndraft ? '✕' : '▾'}
-        </button>
-        <button
-          type="button"
-          className="skewt-params-toggle"
-          onClick={() => setShowWetBulb((v) => !v)}
-          title="Feuchtkugelkurve ein-/ausblenden: die Temperatur, auf die Verdunstung die Luft abkühlen kann. Sie liegt zwischen Taupunkt und Temperatur; an Tw = 0 °C liest man die Schneefallgrenze ab."
-        >
-          Tw {showWetBulb ? '✕' : '▾'}
-        </button>
         <button
           type="button"
           className="skewt-params-toggle"
@@ -535,25 +599,14 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
               Erklärsatz, den man einmal liest, kostet sonst jede Sitzung
               Fläche. Das Bezugspaket steht ohnehin an den Zeilen („LI (ML)",
               „CIN (ML)"), der Rest im Tooltip. */}
+          {/* Die Bildlegende steht jetzt als eigene Leiste über dem Diagramm
+              (`.skewt-legend`) — dort schaltet sie zugleich die Schichten.
+              Hier bleibt nur, was die TABELLE erklärt. */}
           <span
             className="skewt-hint"
-            title="Bezugspaket ist ML (Mittel der untersten 100 hPa) — daraus stammen der Parzellenweg im Diagramm und der LI. SB (bodenbasiert) und MU (labilstes Paket) stehen zum Vergleich daneben. CAPE/CIN in J/kg."
+            title="Bezugspaket ist ML (Mittel der untersten 100 hPa) — daraus stammen der Parzellenweg im Diagramm und der LI. SB (bodenbasiert) und MU (labilstes Paket) stehen zum Vergleich daneben."
           >
-            — T · - - Td{' '}
-            {showWetBulb && (
-              <>
-                · <span style={{ color: WETBULB_LINE }}>··· Tw</span>{' '}
-              </>
-            )}
-            · ⋯ ML-Paket ·{' '}
-            <span style={{ color: '#d63a2b' }}>▉ CAPE</span>{' '}
-            <span style={{ color: '#4a93e8' }}>▉ CIN</span>
-            {showDowndraft && (
-              <>
-                {' '}
-                <span style={{ color: 'rgb(150,142,240)' }}>▉ DCAPE</span>
-              </>
-            )}
+            Bezugspaket ML · CAPE/CIN/DCAPE in J/kg
           </span>
           {/* Die Bänder der θe-Spalte brauchen eine Lesart — eine Farbe ohne
               Legende ist Dekoration. Steht hier statt unter der Spalte: dort
