@@ -48,14 +48,10 @@ const CURSOR_LINE = '#e8b23a'
  * der dichtesten Stelle noch zu sehen ist.
  */
 const BAR_RGB = '57,135,229'
-const BAR_OUTLINE = 'rgba(90,165,245,0.75)'
-/**
- * Der Fühler tritt gegenüber dem Kasten ZURÜCK. Bei voller Deckkraft ist er
- * das Auffälligste im Bild — ein einzelner nasser Member zieht einen langen
- * Strich, und der zog den Blick von den 80 % der Member ab, um die es geht.
- */
-const BAR_WHISKER = 'rgba(120,180,245,0.5)'
-const BAR_TICK = 'rgba(214,236,255,0.85)'
+/** Klammern bei P10/P90 — dünn und zurückhaltend, sie sollen nur bezeichnen. */
+const BAR_CAP = 'rgba(160,205,252,0.9)'
+const BAR_SPINE = 'rgba(120,175,240,0.4)'
+const BAR_TICK = 'rgba(214,236,255,0.9)'
 /**
  * Der Median IN der Säule ist heller als die Medianlinie sonst: er liegt auf
  * der blauen Dichtefüllung, und Blau auf Blau ist keine Marke. In der
@@ -267,8 +263,8 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             ],
             colors: {
               densityRgb: BAR_RGB,
-              outline: BAR_OUTLINE,
-              whisker: BAR_WHISKER,
+              cap: BAR_CAP,
+              spine: BAR_SPINE,
               tick: BAR_TICK,
               median: BAR_MEDIAN,
             },
@@ -512,8 +508,8 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           </span>
         )}
         {barView && (
-          <span title="Kasten = P10–P90 (80 % der Member), Füllung = Dichte der Member, Fühler mit Kappe = Minimum und Maximum. Der Kasten endet bewusst bei P90: ein einzelner nasser Ausreißer quetschte sonst die Mehrheit der Member in ein paar Pixel.">
-            <i className="ens-barswatch" /> Kasten P10–P90 · Fühler bis min/max
+          <span title="Die BREITE der Säule ist die Zahl der Member auf dieser Höhe: unten breit heißt „die Masse liegt hier“, oben ein schmaler Strich heißt „ein einzelner Member“. Die beiden Klammern markieren P10 und P90, dazwischen liegen 80 % der Member.">
+            <i className="ens-barswatch" /> Breite = Memberzahl · Klammern P10/P90
           </span>
         )}
         {showMembers && (

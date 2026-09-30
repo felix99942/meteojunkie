@@ -155,22 +155,52 @@ export interface BarMark {
 }
 
 export interface QuantileBarColors {
-  /** Grundton der Dichtefüllung als „r,g,b" — die Deckkraft rechnet der Zeichner. */
+  /** Grundton der Verteilungsfläche als „r,g,b" — Deckkraft rechnet der Zeichner. */
   densityRgb: string
-  /** Umriss des Kastens. */
-  outline: string
-  /** Fühler und Kappen. */
-  whisker: string
+  /** Klammern bei P10 und P90. */
+  cap: string
+  /** Rückgrat zwischen den Klammern. */
+  spine: string
   /** Ein Strich je Member. */
   tick: string
   median: string
 }
 
 /** Höhe eines Dichteabschnitts in Pixeln — feiner sieht man bei 51 Membern nicht. */
-const BIN_PX = 5
-/** Deckkraft der Dichtefüllung: leer … dichtester Abschnitt. */
-const DENSITY_MIN = 0.07
-const DENSITY_MAX = 0.78
+const BIN_PX = 4
+/** Deckkraft der Verteilungsfläche. */
+const BODY_ALPHA = 0.5
+/** Schmalste sichtbare Stelle: EIN Member soll noch einen Strich ergeben. */
+const MIN_W_PX = 2
+
+/**
+ * Breite je Höhenabschnitt: proportional zur Zahl der Member dort.
+ *
+ * **Das ist der Kern der Darstellung.** Eine Säule mit KONSTANTER Breite
+ * behauptet auf ganzer Höhe dieselbe Menge Information: bei Median 0,5 mm
+ * und P90 8 mm stand ein geschlossener Block bis 8 mm im Bild, und der sah
+ * nach „8 mm kommen" aus, obwohl die Hälfte der Member unter 0,5 mm liegt.
+ * Fläche ist Aufmerksamkeit — also muss die Fläche der Memberzahl folgen.
+ *
+ * Ein Abschnitt OHNE Member bekommt Breite 0 und bleibt leer: eine Lücke
+ * zwischen zwei Häufungen („entweder trocken oder 20 mm") ist eine Aussage
+ * und kein Darstellungsfehler.
+ *
+ * **Skaliert wird mit der WURZEL, nicht linear**, und das ist kein Schönen
+ * der Zahlen: beim Niederschlag liegen regelmäßig dreißig von einundfünfzig
+ * Membern im untersten Abschnitt. Linear bekäme jeder andere Abschnitt
+ * 1/30 der Breite — also den Mindestwert von 2 px —, und die ganze obere
+ * Hälfte zerfiele in gleich aussehende Striche, die nicht mehr
+ * unterscheiden, ob dort ein Member liegt oder fünf. Mit der Wurzel sind es
+ * 18 % und 41 % der Breite: die Masse unten bleibt klar die Masse, und
+ * darüber ist wieder ablesbar, wie viel wo liegt. Dieselbe Überlegung wie
+ * bei Flächensymbolen, die man nach der Wurzel der Menge skaliert.
+ */
+export function violinWidths(counts: number[], maxW: number, minW = MIN_W_PX): number[] {
+  const peak = Math.max(...counts, 0)
+  if (peak <= 0) return counts.map(() => 0)
+  return counts.map((c) => (c <= 0 ? 0 : Math.max(minW, Math.sqrt(c / peak) * maxW)))
+}
 
 /**
  * Säulen zeichnen. `x`/`y` projizieren Datenindex bzw. Wert auf Pixel; die
@@ -185,7 +215,7 @@ export function drawQuantileBars(
     stats: PlumeStats
     members: (number | null)[][]
     width: number
-    /** Striche je Member zeichnen (sonst nur Dichte und Quantile). */
+    /** Striche je Member zeichnen (sonst nur die Verteilungsfläche). */
     ticks: boolean
     /** Zusätzliche Marken in der Säule, in Zeichenreihenfolge. */
     marks?: BarMark[]
@@ -198,7 +228,6 @@ export function drawQuantileBars(
 ): void {
   const { stats, members, width: w, colors, clip } = opts
   const dpr = opts.dpr ?? 1
-  const half = w / 2
   ctx.save()
   ctx.beginPath()
   ctx.rect(clip.left, clip.top, clip.width, clip.height)
@@ -211,94 +240,95 @@ export function drawQuantileBars(
    * Marke quer durch die Säule: dunkel unterlegt und beidseitig überstehend,
    * damit sie auf der blauen Fläche UND neben ihr steht. Ohne die
    * Unterlegung verschwindet gerade die wichtigste Marke — der Median — im
-   * dichtesten Teil der Füllung, und genau dort liegt er meistens.
+   * dichtesten Teil der Fläche, und genau dort liegt er meistens.
    */
-  const mark = (v: number | null | undefined, color: string, left: number, bw: number) => {
+  const mark = (v: number | null | undefined, color: string, mid: number, half: number) => {
     if (v == null || !Number.isFinite(v)) return
     const my = Math.round(opts.y(v))
-    const over = 3 * dpr
+    const hw = half + 3 * dpr
     ctx.fillStyle = 'rgba(8,9,11,0.9)'
-    ctx.fillRect(left - over, my - 2.5 * dpr, bw + 2 * over, 5 * dpr)
+    ctx.fillRect(mid - hw, my - 2.5 * dpr, hw * 2, 5 * dpr)
     ctx.fillStyle = color
-    ctx.fillRect(left - over, my - 1.5 * dpr, bw + 2 * over, 3 * dpr)
+    ctx.fillRect(mid - hw, my - 1.5 * dpr, hw * 2, 3 * dpr)
   }
 
   for (const t of opts.indices) {
     if (stats.count[t] === 0) continue
     const cx = opts.x(t)
     if (cx < clip.left - w || cx > clip.left + clip.width + w) continue
-    const left = Math.round(cx - half)
-    const bw = Math.max(1, Math.round(w))
+    const mid = Math.round(cx)
+    const maxW = Math.max(2, Math.round(w))
     const p10 = stats.p10[t]
     const p90 = stats.p90[t]
     const lo = stats.min[t]
     const hi = stats.max[t]
     if (p10 == null || p90 == null || lo == null || hi == null) continue
 
-    const yTop = opts.y(p90)
-    const yBot = opts.y(p10)
-    const boxTop = Math.round(Math.min(yTop, yBot))
-    const boxH = Math.max(1, Math.round(Math.abs(yBot - yTop)))
+    const yHi = opts.y(hi)
+    const yLo = opts.y(lo)
+    const top = Math.round(Math.min(yHi, yLo))
+    const span = Math.max(1, Math.round(Math.abs(yLo - yHi)))
 
-    // 1) DICHTE im Kasten. Abschnittsweise gefüllt: je mehr Member in einem
-    //    Abschnitt liegen, desto kräftiger das Blau.
     const ys: number[] = []
     for (const m of members) {
       const v = m[t]
       if (v != null && Number.isFinite(v)) ys.push(opts.y(v))
     }
-    const bins = Math.max(1, Math.round(boxH / (BIN_PX * dpr)))
-    const counts = smoothBins(densityBins(ys, boxTop, boxH, bins))
-    const peak = Math.max(1, ...counts)
-    const binH = boxH / counts.length
-    for (let i = 0; i < counts.length; i++) {
-      const a = DENSITY_MIN + (DENSITY_MAX - DENSITY_MIN) * (counts[i] / peak)
-      ctx.fillStyle = `rgba(${colors.densityRgb},${a.toFixed(3)})`
-      ctx.fillRect(left, boxTop + i * binH, bw, Math.ceil(binH) + 1)
+
+    // 1) VERTEILUNGSFLÄCHE über die GANZE Spannweite: Breite = Memberzahl in
+    //    diesem Höhenabschnitt. Ein einzelner nasser Member ergibt oben einen
+    //    schmalen Strich, die Masse unten eine breite Fläche — und genau so
+    //    soll es sich lesen.
+    const bins = Math.max(1, Math.round(span / (BIN_PX * dpr)))
+    const counts = smoothBins(densityBins(ys, top, span, bins))
+    const widths = violinWidths(counts, maxW, MIN_W_PX * dpr)
+    const binH = span / counts.length
+    ctx.fillStyle = `rgba(${colors.densityRgb},${BODY_ALPHA})`
+    for (let i = 0; i < widths.length; i++) {
+      if (widths[i] <= 0) continue
+      const bwi = Math.round(widths[i])
+      ctx.fillRect(Math.round(mid - bwi / 2), top + i * binH, bwi, Math.ceil(binH) + 1)
     }
 
-    // 2) FÜHLER zu Minimum und Maximum, mit Kappe — der Kasten endet bei P90,
-    //    der Ausreißer gehört trotzdem ins Bild.
-    ctx.strokeStyle = colors.whisker
-    ctx.lineWidth = dpr
-    const mid = Math.round(left + bw / 2) + 0.5 * dpr
-    const capW = Math.max(3 * dpr, Math.round(bw * 0.55))
-    const whisker = (from: number, to: number) => {
-      const yf = Math.round(opts.y(from))
-      const yt = Math.round(opts.y(to))
-      if (Math.abs(yt - yf) < 1) return
-      ctx.beginPath()
-      ctx.moveTo(mid, yf)
-      ctx.lineTo(mid, yt)
-      ctx.moveTo(mid - capW / 2, yt + 0.5 * dpr)
-      ctx.lineTo(mid + capW / 2, yt + 0.5 * dpr)
-      ctx.stroke()
+    // 2) RÜCKGRAT von P10 bis P90 mit KLAMMERN an den Enden — statt eines
+    //    Kastens. Es sagt „dazwischen liegen 80 %" und hält die Striche einer
+    //    Säule optisch zusammen, beansprucht dafür aber nur zwei Pixel
+    //    Breite: ein gefüllter Kasten bis P90 war genau das, was den Eindruck
+    //    von zu viel Niederschlag erzeugt hat.
+    const yP10 = Math.round(opts.y(p10))
+    const yP90 = Math.round(opts.y(p90))
+    ctx.fillStyle = colors.spine
+    ctx.fillRect(
+      Math.round(mid - dpr),
+      Math.min(yP10, yP90),
+      Math.max(1, Math.round(2 * dpr)),
+      Math.max(1, Math.abs(yP10 - yP90)),
+    )
+    ctx.fillStyle = colors.cap
+    const capW = Math.max(4 * dpr, Math.round(maxW * 0.8))
+    for (const cy of [yP10, yP90]) {
+      ctx.fillRect(Math.round(mid - capW / 2), cy, capW, Math.max(1, Math.round(dpr)))
     }
-    whisker(p90, hi)
-    whisker(p10, lo)
 
-    // 3) UMRISS des Kastens — die Kante trennt „80 % der Member" vom
-    //    Fühlerbereich; ohne sie verläuft die Dichte ins Nichts.
-    ctx.strokeStyle = colors.outline
-    ctx.lineWidth = dpr
-    ctx.strokeRect(left + 0.5 * dpr, boxTop + 0.5 * dpr, bw - dpr, boxH - dpr)
-
-    // 4) JEDER MEMBER als feiner Strich. Im Kasten über die volle Breite, im
-    //    Fühlerbereich schmaler — dort ist er ein Ausreißer und soll nicht
-    //    wie ein zweiter Kasten aussehen.
+    // 3) JEDER MEMBER als feiner Strich, so breit wie die Fläche an seiner
+    //    Stelle — die Fläche sagt „hier ist die Masse", die Striche sagen,
+    //    aus wie vielen Einzelläufen sie besteht.
     if (opts.ticks) {
       ctx.fillStyle = colors.tick
       for (const yv of ys) {
-        const inBox = yv >= boxTop - 1 && yv <= boxTop + boxH + 1
-        const tw = inBox ? Math.max(1, bw - 2 * dpr) : Math.max(2 * dpr, Math.round(bw * 0.5))
+        let bi = Math.floor(((yv - top) / span) * widths.length)
+        if (bi < 0) bi = 0
+        if (bi >= widths.length) bi = widths.length - 1
+        const tw = Math.max(MIN_W_PX * dpr, Math.round(widths[bi]))
         ctx.fillRect(Math.round(mid - tw / 2), Math.round(yv), tw, Math.max(1, Math.round(dpr)))
       }
     }
 
-    // 5) BEZUGSMARKEN zuoberst: Median, dann was der Aufrufer mitgibt
+    // 4) BEZUGSMARKEN zuoberst: Median, dann was der Aufrufer mitgibt
     //    (Hauptlauf, Kontrolllauf).
-    mark(stats.median[t], colors.median, left, bw)
-    for (const m of opts.marks ?? []) mark(m.values[t], m.color, left, bw)
+    const half = maxW / 2
+    mark(stats.median[t], colors.median, mid, half)
+    for (const m of opts.marks ?? []) mark(m.values[t], m.color, mid, half)
   }
   ctx.restore()
 }

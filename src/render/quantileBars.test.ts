@@ -3,7 +3,14 @@
 // ob aus der Verteilung eine lesbare Reihe oder eine geschlossene Fläche wird.
 
 import { describe, expect, it } from 'vitest'
-import { barIndices, barStepHours, barWidth, densityBins, smoothBins } from './quantileBars'
+import {
+  barIndices,
+  barStepHours,
+  barWidth,
+  densityBins,
+  smoothBins,
+  violinWidths,
+} from './quantileBars'
 
 const H = 3_600_000
 
@@ -128,5 +135,43 @@ describe('smoothBins', () => {
 
   it('lässt sehr kurze Listen in Ruhe', () => {
     expect(smoothBins([4, 1])).toEqual([4, 1])
+  })
+})
+
+describe('violinWidths', () => {
+  /**
+   * DER KERN DER DARSTELLUNG. Eine Säule konstanter Breite behauptet auf
+   * ganzer Höhe dieselbe Menge Information — bei Median 0,5 mm und P90 8 mm
+   * stand ein geschlossener Block bis 8 mm im Bild und sah nach „8 mm
+   * kommen" aus. Fläche ist Aufmerksamkeit, also folgt die Breite der
+   * Memberzahl.
+   */
+  it('gibt dem dichtesten Abschnitt die volle Breite', () => {
+    expect(violinWidths([10, 0, 0], 20)[0]).toBe(20)
+  })
+
+  // Leer heißt leer: eine Lücke zwischen zwei Häufungen („entweder trocken
+  // oder 20 mm") ist eine Aussage, kein Darstellungsfehler.
+  it('lässt leere Abschnitte leer', () => {
+    expect(violinWidths([10, 0, 5], 20)[1]).toBe(0)
+    expect(violinWidths([0, 0], 20)).toEqual([0, 0])
+  })
+
+  /**
+   * WURZEL, NICHT LINEAR. Beim Niederschlag liegen regelmäßig dreißig von
+   * einundfünfzig Membern im untersten Abschnitt; linear bekäme jeder andere
+   * 1/30 der Breite (also den Mindestwert), und oben wäre nicht mehr zu
+   * unterscheiden, ob dort einer liegt oder fünf.
+   */
+  it('staucht das Verhältnis mit der Wurzel', () => {
+    const w = violinWidths([100, 25], 40)
+    expect(w[0]).toBe(40)
+    // linear wären es 10 px, mit der Wurzel die Hälfte der vollen Breite
+    expect(w[1]).toBeCloseTo(20, 6)
+  })
+
+  it('hält einen einzelnen Member sichtbar', () => {
+    const w = violinWidths([400, 1], 20, 2)
+    expect(w[1]).toBe(2)
   })
 })

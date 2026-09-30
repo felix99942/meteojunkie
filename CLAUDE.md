@@ -969,29 +969,36 @@ npm run preview   # gebautes dist/ servieren
   einen Verlauf, den KEIN EINZIGER Member hat. Gefragt ist an einem
   Niederschlagstermin ohnehin nicht „wie läuft es", sondern „wie viel und wie
   sicher" — also die Verteilung an diesem einen Termin.
-  Gezeichnet wird eine **KASTENGRAFIK**: Kasten P10–P90, Fühler mit Kappe
-  hinauf zum Maximum und hinunter zum Minimum, Dichtefüllung dazwischen,
-  darüber drei Bezugsmarken.
-  **Der Kasten endet bei P90, nicht beim Maximum** — das ist der Unterschied
-  zwischen lesbar und unlesbar: beim Niederschlag zieht EIN nasser Ausreißer
-  die Säule auf das Dreifache, und die 80 % der Member, um die es geht,
-  quetschen sich unten in ein paar Pixel. Der Ausreißer gehört trotzdem ins
-  Bild und steht als Fühler darüber, wie in jeder Kastengrafik. Der Fühler
-  ist bewusst BLASSER als der Kasten (0,5 statt 0,85): bei voller Deckkraft
-  war der eine lange Strich das Auffälligste im Bild.
-  **Die Füllung zeigt die DICHTE** (`densityBins` + `smoothBins`,
-  5-px-Abschnitte, Deckkraft 0,07…0,78 auf den dichtesten Abschnitt
-  normiert): dreißig Member auf 1 mm und fünf bei 25 mm ist eine andere
-  Aussage als eine gleichmäßige Verteilung mit demselben P10/P90, und an drei
-  festen Quantilstufen sah man das nicht. Geglättet wird über die
-  NACHBARABSCHNITTE (Dreier-Mittel), nicht über einen geschätzten Kern —
-  ungeglättet hat bei 51 Membern auf 60 Abschnitte fast jeder null, einen
-  oder zwei Treffer, und die Fläche flackerte. **Dazu bleibt JEDER Member
-  als feiner Strich einzeln stehen**, im Kasten über die volle Breite, im
-  Fühlerbereich schmaler (dort ist er ein Ausreißer und soll nicht wie ein
-  zweiter Kasten aussehen). Der „Member"-Haken schaltet die Striche;
+  Gezeichnet wird eine **VERTEILUNGSSÄULE (Geigenform)**: die BREITE auf
+  jeder Höhe ist die Zahl der Member dort, dazu ein dünnes Rückgrat mit
+  Klammern bei P10 und P90 und drei Bezugsmarken.
+  **FLÄCHE IST AUFMERKSAMKEIT — deshalb folgt sie der Memberzahl.** Zwei
+  Vorstufen sind daran gescheitert und stehen hier, damit niemand
+  zurückrudert: erst drei gefüllte Quantilstufen bis zum Maximum, dann eine
+  Kastengrafik (Kasten P10–P90, Fühler bis min/max). Beide malten einen
+  geschlossenen Block bis P90 — bei Median 0,5 mm und P90 8 mm sah das nach
+  „8 mm kommen" aus, obwohl die Hälfte der Member unter 0,5 mm liegt. Genau
+  das war die Rückmeldung („wirkt viel mehr, als dann runterkommt"), und sie
+  ist kein Geschmacksurteil: gleich breite Fläche behauptet auf ganzer Höhe
+  gleich viel Information. Jetzt ist die Säule unten breit und läuft nach
+  oben in einen schmalen Strich aus, wo einzelne Member liegen.
+  **Skaliert wird mit der WURZEL** (`violinWidths`): beim Niederschlag liegen
+  regelmäßig dreißig von einundfünfzig Membern im untersten Abschnitt —
+  linear bekäme jeder andere 1/30 der Breite, also den Mindestwert von 2 px,
+  und oben wäre nicht mehr zu unterscheiden, ob dort einer liegt oder fünf.
+  Mit der Wurzel sind es 18 % und 41 %. Ein Abschnitt OHNE Member bleibt
+  leer: die Lücke zwischen „trocken" und „20 mm" ist eine Aussage.
+  Die Abschnitte kommen aus `densityBins` (4 px) und werden über die
+  NACHBARN geglättet (`smoothBins`, Dreier-Mittel) — nicht über einen
+  geschätzten Kern; ungeglättet hat bei 51 Membern fast jeder Abschnitt
+  null, einen oder zwei Treffer, und die Fläche flackerte wie Rauschen.
+  **Jeder Member bleibt als feiner Strich einzeln stehen**, so breit wie die
+  Fläche an seiner Stelle. Der „Member"-Haken schaltet die Striche;
   Spaghetti gibt es in dieser Ansicht nicht — es wären dieselben Werte
   doppelt —, das Band entfällt samt Legendeneintrag.
+  **Das Rückgrat P10–P90 ist zwei Pixel breit**, mit Klammern an den Enden:
+  es sagt „dazwischen liegen 80 %" und hält die Striche einer Säule optisch
+  zusammen, ohne wieder Fläche zu beanspruchen.
   **Median, Hauptlauf und Kontrolllauf stehen als MARKEN IN der Säule**, in
   ihren Farben, jede mit dunkler Unterlegung und beidseitigem Überstand:
   ohne die Unterlegung verschwindet gerade die wichtigste — der Median — im
