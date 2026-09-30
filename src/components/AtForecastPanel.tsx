@@ -4,7 +4,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { loadForecast, loadMosStations, type ForecastData, type MosStation } from '../api/mosApi'
-import { FORECAST_PARAMS, getForecastSpec } from '../config/atForecast'
+import {
+  FORECAST_PARAMS,
+  forecastFreshness,
+  getForecastSpec,
+  STALE_RUN_HOURS,
+} from '../config/atForecast'
+import { formatRunLong } from '../config/runs'
 import { colorForValue } from '../config/colorscales'
 import { globalKeyAllowed } from '../lib/globalKeys'
 import { DACH_VIEW } from '../render/atmap'
@@ -126,7 +132,34 @@ export function AtForecastPanel() {
     return data?.kind === 'hourly' ? Date.parse(t) : Date.parse(`${t}T12:00:00Z`)
   }, [steps, clampedIdx, data])
 
-  const runLabel = data ? fmtHour.format(new Date(data.meta.run)) : ''
+  /**
+   * WIE ALT IST DER STAND? Die Laufangabe stand hier als reine Uhrzeit — ein
+   * sechs Wochen alter Lauf sah damit aus wie der von heute, und genau das
+   * ist lokal passiert (die Vorhersage-JSONs sind nicht im Repo, sie
+   * entstehen beim Bauen). Jetzt mit Tagesbezug wie überall sonst, plus
+   * einem sichtbaren Hinweis, sobald der Stand alt oder verbraucht ist.
+   *
+   * Anders als bei den Open-Meteo-Bereichen ist der Lauf hier GEMELDET und
+   * nicht geschätzt — deshalb kein `RUN_TITLE`-Vorbehalt.
+   */
+  const stand = useMemo(() => {
+    if (!data) return null
+    const now = Date.now()
+    const runMs = Date.parse(data.meta.run)
+    const last = steps[steps.length - 1]
+    // Ein Tageswert gilt bis zum Ende SEINES Tages, nicht bis Mitternacht davor.
+    const lastMs = last
+      ? data.kind === 'hourly'
+        ? Date.parse(last)
+        : Date.parse(`${last}T23:59:59Z`)
+      : Number.NaN
+    return {
+      label: Number.isFinite(runMs)
+        ? formatRunLong({ initTime: runMs, initHourUtc: new Date(runMs).getUTCHours() }, now)
+        : '',
+      freshness: forecastFreshness(runMs, lastMs, now),
+    }
+  }, [data, steps])
 
   return (
     <div className="atclima">
@@ -156,11 +189,29 @@ export function AtForecastPanel() {
           <span className="atclima-step">{stepLabel}</span>
         </div>
         <span className="atclima-sub">
-          {loading
-            ? 'lädt …'
-            : error
-              ? `⚠ ${error}`
-              : `${covered} Stationen · Werte in ${spec.unit}${runLabel ? ` · Lauf ${runLabel}` : ''}`}
+          {loading ? (
+            'lädt …'
+          ) : error ? (
+            `⚠ ${error}`
+          ) : (
+            <>
+              {covered} Stationen · Werte in {spec.unit}
+              {stand?.label ? ` · Lauf ${stand.label}` : ''}
+              {stand && stand.freshness !== 'fresh' && (
+                <span
+                  className="atclima-stale"
+                  title={
+                    stand.freshness === 'expired'
+                      ? 'Der letzte Vorhersagetermin liegt in der Vergangenheit — dieser Stand ist verbraucht. Die Vorhersage-Dateien entstehen beim Bauen (auf der Seite alle 3 h per Cron, lokal über „npm run ingest:mos:forecast").'
+                      : `Der Lauf ist älter als ${STALE_RUN_HOURS} Stunden. MOSMIX rechnet ~4×/Tag — hier fehlen also mindestens zwei Läufe.`
+                  }
+                >
+                  {' '}
+                  ⚠ {stand.freshness === 'expired' ? 'Stand verbraucht' : 'alter Lauf'}
+                </span>
+              )}
+            </>
+          )}
         </span>
       </div>
       <div className="atclima-body">

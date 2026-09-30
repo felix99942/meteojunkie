@@ -897,6 +897,25 @@ npm run preview   # gebautes dist/ servieren
   modulweit). Die Reihen werden über ihre TERMINE ausgerichtet
   (`alignSeries`), nicht über den Index. Klimadaten bleiben davon unberührt
   (Österreich/TAWES).
+  **LOKAL IST DIE VORHERSAGE SO ALT WIE DER LETZTE EIGENE INGEST** — die
+  JSONs sind gitignored und entstehen beim Bauen: auf der Seite alle 3 h per
+  Cron, im Arbeitsbaum nur durch `npm run ingest:mos:forecast`. Am
+  2026-09-30 stand hier deshalb ein Lauf vom 18.08. im Bild (Tmax 18.8.–
+  28.8.), und **man sah es nicht**: die Laufangabe war auf die reine Uhrzeit
+  formatiert, ein sechs Wochen alter Lauf sah aus wie der von heute.
+  Aufgefallen ist es nur, weil Tmin/Tmax Datumsangaben tragen — bei den
+  stündlichen Größen steht dort Wochentag und Uhrzeit, und ein „Di., 18:00"
+  aus dem August liest sich wie heute. Seither steht der Lauf mit
+  TAGESBEZUG da (`formatRunLong` wie in den übrigen Bereichen; anders als
+  dort ist er hier GEMELDET und nicht geschätzt, also ohne `RUN_TITLE`),
+  und `forecastFreshness` setzt einen sichtbaren Hinweis: „⚠ alter Lauf"
+  ab `STALE_RUN_HOURS` = 12 h (bei ~4 Läufen/Tag zwei verpasste Zyklen),
+  „⚠ Stand verbraucht", sobald der letzte Termin in der VERGANGENHEIT liegt
+  — Letzteres schlägt Ersteres, denn dann ist es keine Vorhersage mehr.
+  Fehlen die Zeiten (kaputte Meta), wird NICHT gewarnt: ein Fehlalarm bei
+  jedem Ladefehler entwertet den Hinweis. Der Fall kann auch auf der Seite
+  auftreten — `deploy.yml` lässt den Ingest mit `continue-on-error` laufen,
+  ein DWD-Ausfall darf das Deployment nicht blockieren.
 - **Mit der Maus ablesen, mit dem Klick navigieren** — gilt in Punktprognosen
   (`Meteogram.tsx`) UND Ensemble (`EnsemblePanel.tsx`): ein `setCursor`-Hook
   führt `hoverIdx`, Legende bzw. Ablesezeile zeigen den ÜBERFAHRENEN

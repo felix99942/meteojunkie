@@ -1482,6 +1482,15 @@ button:focus-visible {
   color: var(--ink-muted);
 }
 
+/* Alter bzw. verbrauchter MOS-Stand. Die Laufangabe daneben bleibt gedämpft —
+   auffällig soll das Urteil sein, nicht die Zeitangabe. */
+.atclima-stale {
+  color: var(--warn);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* Klimaperiode: Hinweis auf die Deckungsregel der Normale (kein Warnzustand). */
 .atclima-hint {
   color: var(--ink-muted);
