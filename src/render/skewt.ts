@@ -243,6 +243,52 @@ function fillBetween(
   ctx.fill()
 }
 
+/**
+ * Fläche zwischen zwei Kurven füllen, ABER nur dort, wo das Paket wirklich
+ * auf der erwarteten Seite liegt.
+ *
+ * **Warum das nötig ist.** Gerechnet wird der Auftrieb über die
+ * VIRTUALtemperatur (so gehört es sich — feuchte Luft ist bei gleicher
+ * Temperatur leichter), gezeichnet werden aber die ECHTEN Temperaturen, weil
+ * das die Kurven sind, die man im Skew-T abliest. Beide Kriterien kippen an
+ * leicht verschiedenen Stellen: gemessen (Montpellier, 30.09.2026, ECMWF
+ * IFS) liegt das LFC aus der Virtualtemperatur bei 803 hPa, die Kurven
+ * kreuzen sich erst bei 763 hPa.
+ *
+ * Ohne diese Prüfung malte der Füller den Streifen dazwischen trotzdem — und
+ * zwar auf der FALSCHEN Seite: rot eingefärbt, obwohl das Paket dort sichtbar
+ * links (kälter) der Umgebung liegt. Dasselbe am Boden, wo das ML-Paket
+ * wärmer startet als die Bodentemperatur und die blaue CIN-Fläche über einen
+ * Bereich lief, in dem das Paket wärmer ist.
+ *
+ * Die Zahl bleibt davon unberührt: sie kommt weiter aus der
+ * Virtualtemperatur. Die Fläche ist ihr Bild, nicht ihre Definition.
+ */
+function fillRuns(
+  ctx: CanvasRenderingContext2D,
+  g: SkewTGeometry,
+  fineP: number[],
+  parcelT: number[],
+  envT: number[],
+  iStart: number,
+  iEnd: number,
+  fill: string,
+  wantWarmer: boolean,
+): void {
+  let run = -1
+  for (let i = iStart; i <= iEnd; i++) {
+    const ok = wantWarmer ? parcelT[i] > envT[i] : parcelT[i] < envT[i]
+    if (ok && run < 0) run = i
+    if (run >= 0 && (!ok || i === iEnd)) {
+      // Ein Schritt über das Ende hinaus schließt die Fläche an der
+      // Kreuzung, statt sie einen Gitterpunkt davor abzuschneiden.
+      const last = ok ? i : Math.min(i, iEnd)
+      if (last > run) fillBetween(ctx, g, fineP, parcelT, envT, run, last, fill)
+      run = -1
+    }
+  }
+}
+
 function levelMarker(
   ctx: CanvasRenderingContext2D,
   g: SkewTGeometry,
@@ -282,19 +328,7 @@ export function drawDowndraft(
   ctx.clip()
 
   // Abschnittsweise füllen: zusammenhängende Stücke mit kälterem Paket.
-  let runStart = -1
-  for (let i = 0; i < r.fineP.length; i++) {
-    const colder = r.parcelT[i] < r.envT[i]
-    if (colder && runStart < 0) runStart = i
-    const end = !colder || i === r.fineP.length - 1
-    if (runStart >= 0 && end) {
-      const last = colder ? i : i - 1
-      if (last > runStart) {
-        fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, runStart, last, DCAPE_FILL)
-      }
-      runStart = -1
-    }
-  }
+  fillRuns(ctx, g, r.fineP, r.parcelT, r.envT, 0, r.fineP.length - 1, DCAPE_FILL, false)
 
   ctx.strokeStyle = DCAPE_LINE
   ctx.lineWidth = 1.5
@@ -342,9 +376,13 @@ export function drawParcel(
   ctx.clip()
 
   // CIN unterhalb LFC (Paket kälter), CAPE zwischen LFC und EL (Paket wärmer)
-  if (cin && lfcIdx > 0) fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, 0, lfcIdx, CIN_FILL)
+  // — jeweils NUR dort, wo das auch für die gezeichneten Kurven gilt
+  // (Begründung bei `fillRuns`).
+  if (cin && lfcIdx > 0) {
+    fillRuns(ctx, g, r.fineP, r.parcelT, r.envT, 0, lfcIdx, CIN_FILL, false)
+  }
   if (cape && lfcIdx >= 0 && elIdx > lfcIdx) {
-    fillBetween(ctx, g, r.fineP, r.parcelT, r.envT, lfcIdx, elIdx, CAPE_FILL)
+    fillRuns(ctx, g, r.fineP, r.parcelT, r.envT, lfcIdx, elIdx, CAPE_FILL, true)
   }
   if (!path) {
     ctx.restore()

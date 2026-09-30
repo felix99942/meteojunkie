@@ -535,7 +535,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           />
           <i className="sl-line sl-dot" style={{ color: 'rgb(232,228,220)' }} /> ML-Paket
         </label>
-        <label title="Fläche, auf der das gehobene Paket WÄRMER ist als die Umgebung — die Energie des Aufwinds.">
+        <label title="Fläche, auf der das gehobene Paket WÄRMER ist als die Umgebung — die Energie des Aufwinds. Sie beginnt etwas über der LFC-Marke: gerechnet wird der Auftrieb über die Virtualtemperatur (feuchte Luft ist bei gleicher Temperatur leichter), gezeichnet sind die echten Temperaturen, und die kreuzen sich erst ein Stück höher.">
           <input
             type="checkbox"
             checked={showCape}

@@ -1640,6 +1640,26 @@ npm run preview   # gebautes dist/ servieren
   verwechselt wird. Gefüllt wird abschnittsweise nur dort, wo das Paket
   KÄLTER ist als die Umgebung — dieselbe Einschränkung wie in der Rechnung.
   Nur für das Bezugsmodell, wie der Parzellenweg.
+- **DIE FLÄCHEN WERDEN ABSCHNITTSWEISE GEFÜLLT, nicht über den ganzen
+  Bereich** (`fillRuns` in `render/skewt.ts`) — sonst malen sie auf der
+  falschen Seite. Gerechnet wird der Auftrieb über die VIRTUALtemperatur (so
+  gehört es sich: feuchte Luft ist bei gleicher Temperatur leichter),
+  gezeichnet werden die ECHTEN Temperaturen, weil das die Kurven sind, die
+  man im Skew-T abliest. Beide Kriterien kippen an leicht verschiedenen
+  Stellen: gemessen (Montpellier, 30.09.2026 15 UTC, ECMWF IFS) liegt das
+  **LFC aus der Virtualtemperatur bei 803 hPa, die Kurven kreuzen sich erst
+  bei 763 hPa**. Ungeprüft färbte der Füller den Streifen dazwischen ROT,
+  obwohl das Paket dort sichtbar auf der kalten Seite liegt — als
+  Falschaussage gemeldet („LFC und CAPE-Fläche passen nicht zusammen").
+  Dasselbe am Boden: **das ML-Paket startet wärmer als die
+  Bodentemperatur** (gemessen 22,03 gegen 20,80 °C — die mittlere θ der
+  untersten 100 hPa ist in einer stabilen Grundschicht höher als die des
+  Bodens, das ist richtig so), und die blaue CIN-Fläche lief über diesen
+  Bereich hinweg. Beide Flächen prüfen jetzt je Abschnitt das Vorzeichen der
+  GEZEICHNETEN Differenz; die ZAHLEN bleiben unangetastet bei der
+  Virtualtemperatur. Der Rest-Versatz zwischen LFC-Marke und Flächenbeginn
+  ist die Virtualtemperatur selbst und steht im Tooltip der CAPE-Zeile — jede
+  Sondierungssoftware hat ihn.
 - **DIE BILDLEGENDE IST DAS SCHALTBRETT** (`.skewt-legend`, links oben unter
   der Zeitangabe): sie sagt, was welche Farbe bedeutet — und schaltet
   dieselbe Schicht gleich ein und aus (Tw, ML-Paket, CAPE, CIN, DCAPE).
