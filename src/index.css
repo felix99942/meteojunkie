@@ -632,6 +632,21 @@ button:focus-visible {
   border-bottom: 1px solid rgba(57, 135, 229, 0.6);
 }
 
+/* Die Säule in klein: außen hell, innen kräftig — dieselbe Staffelung wie im
+   Diagramm, damit das Muster wiedererkennbar ist. */
+.ens-legend i.ens-barswatch {
+  width: 9px;
+  height: 13px;
+  background:
+    linear-gradient(
+      rgba(57, 135, 229, 0.16) 0 2px,
+      rgba(57, 135, 229, 0.3) 2px 4px,
+      rgba(57, 135, 229, 0.46) 4px 9px,
+      rgba(57, 135, 229, 0.3) 9px 11px,
+      rgba(57, 135, 229, 0.16) 11px 13px
+    );
+}
+
 .ens-hint {
   margin-left: auto;
   cursor: default !important;

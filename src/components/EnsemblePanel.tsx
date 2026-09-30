@@ -22,6 +22,7 @@ import {
 import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { TIME_RANGE } from '../config/time'
 import { accumulateMembers, bucketMembers, plumeStats, readoutAt } from '../render/plume'
+import { barIndices, barStepHours, barWidth, drawQuantileBars } from '../render/quantileBars'
 import { cursorRangeEnd, useWorkbench, type PanelConfig } from '../state/workbench'
 import { QuickPoints } from './QuickPoints'
 
@@ -39,6 +40,24 @@ const MEDIAN_LINE = '#3987e5'
 const CONTROL_LINE = '#d55181'
 const HRES_LINE = '#d95926'
 const CURSOR_LINE = '#e8b23a'
+
+/**
+ * Quantil-Säulen (Niederschlag): Stufen von außen nach innen immer kräftiger,
+ * dazu ein Strich je Member. Derselbe Blauton wie das Band — es ist dieselbe
+ * Aussage, nur je Termin statt als Verlauf.
+ */
+const BAR_OUTER = 'rgba(57,135,229,0.16)'
+const BAR_MID = 'rgba(57,135,229,0.30)'
+const BAR_INNER = 'rgba(57,135,229,0.46)'
+const BAR_TICK = 'rgba(200,225,255,0.55)'
+/**
+ * Mindestabstand zweier Säulen in CSS-Pixeln. Mit 7 px stand die
+ * Summenansicht (361 Stundenwerte über 15 Tage) als geschlossener Block da —
+ * die Säulen berührten sich, und aus der Verteilung wurde eine Fläche. 14 px
+ * lassen über den vollen Horizont den 6-Stunden-Schritt übrig; beim
+ * Hineinzoomen rücken sie automatisch auf 3 h und 1 h nach.
+ */
+const MIN_BAR_GAP = 14
 
 /** Kleinster Zeitausschnitt beim Zoomen (6 h) — darunter wird es sinnlos fein. */
 const MIN_ZOOM_RANGE_SEC = 6 * 3600
@@ -68,6 +87,16 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const hres = useDeterministicSeries(location, model.id, variable.id)
 
   const [showMembers, setShowMembers] = useState(true)
+  /**
+   * Quantil-Säulen statt Spaghetti — Vorgabe bei Summengrößen.
+   *
+   * Beim Niederschlag springen die Member (Member 7 hat den Schauer um 14
+   * Uhr, Member 12 um 20 Uhr, zwanzig andere gar nicht); als Linienbündel ist
+   * das ein Knäuel, und das Band dazwischen liest sich wie ein Verlauf, den
+   * kein einziger Member hat. Bei Temperatur und Druck ist die Plume dagegen
+   * genau richtig, dort bleibt es bei den Linien.
+   */
+  const [bars, setBars] = useState(true)
   const [zoomed, setZoomed] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
@@ -77,6 +106,8 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   // unlesbar. Zwei brauchbare Sichten — kumulierte Summe (Gesamtmenge) oder
   // 6-h-Mengen je Mitglied (zeitlicher Ablauf, Wetterzentrale-Manier).
   const bucketed = variable.kind === 'accum' && panel.ensembleAccumView === '6h'
+  /** Säulen gibt es nur, wo sie etwas können — bei den Summengrößen. */
+  const barView = variable.kind === 'accum' && bars
   // In der 6-h-Ansicht ist der Wert eine Menge JE INTERVALL, nicht der Stand
   // einer Summenkurve — das muss an der Zahl stehen, sonst liest man 6-h-Mengen
   // als Gesamtmenge.
@@ -179,11 +210,59 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       },
     }
 
+    /**
+     * QUANTIL-SÄULEN. Gezeichnet im `draw`-Hook, also ÜBER den Kurven: die
+     * Stufen sind halbdurchlässig, Hauptlauf und Kontrolllauf bleiben dahinter
+     * sichtbar, während die Striche der Member scharf obenauf liegen.
+     * Zeichnen wir sie darunter, verschluckt sie die Bandfüllung.
+     *
+     * Der Abstand wird bei JEDEM Zeichnen neu bestimmt — beim Hineinzoomen
+     * rücken die Säulen also von 12 h über 6 h auf 1 h zusammen, statt in
+     * einer festen Rasterung stehen zu bleiben.
+     */
+    const baseHours =
+      prepared.times.length > 1 ? (prepared.times[1] - prepared.times[0]) / 3_600_000 : 1
+    const barsPlugin: uPlot.Plugin = {
+      hooks: {
+        draw: (u) => {
+          if (!barView || xs.length < 2) return
+          // `valToPos(…, true)` rechnet in GERÄTEpixeln — der Mindestabstand
+          // ist aber eine Sache der Anzeige, nicht der Gerätedichte. Auf
+          // einem HiDPI-Schirm stünden die Säulen sonst doppelt so dicht.
+          const dpr = window.devicePixelRatio || 1
+          const spacing =
+            Math.abs(u.valToPos(xs[1], 'x', true) - u.valToPos(xs[0], 'x', true)) / dpr
+          if (!Number.isFinite(spacing) || spacing <= 0) return
+          const step = barStepHours(spacing, baseHours, MIN_BAR_GAP)
+          drawQuantileBars(u.ctx, {
+            indices: barIndices(prepared.times, step),
+            x: (t) => u.valToPos(xs[t], 'x', true),
+            y: (v) => u.valToPos(v, 'y', true),
+            stats,
+            members,
+            width: barWidth(spacing, step, baseHours) * dpr,
+            ticks: showMembers,
+            colors: {
+              outer: BAR_OUTER,
+              mid: BAR_MID,
+              inner: BAR_INNER,
+              tick: BAR_TICK,
+              median: MEDIAN_LINE,
+            },
+            clip: { left: u.bbox.left, top: u.bbox.top, width: u.bbox.width, height: u.bbox.height },
+          })
+        },
+      },
+    }
+
     // Serienreihenfolge: p90/p10 (Band), Median, Kontrolllauf, Hauptlauf, dann
     // Mitglieder. Das Band bezieht sich über `bands` auf die Perzentil-Serien.
+    // In der Säulenansicht entfallen die Spaghetti: dieselben Member stehen
+    // dort als Striche IN den Säulen, beides zugleich wäre doppelt.
+    const spaghetti = showMembers && !barView
     const data: (number | null)[][] = [stats.p90, stats.p10, stats.median, members[0] ?? []]
     if (prepared.deterministic) data.push(prepared.deterministic)
-    if (showMembers) for (let m = 1; m < members.length; m++) data.push(members[m])
+    if (spaghetti) for (let m = 1; m < members.length; m++) data.push(members[m])
 
     const opts: uPlot.Options = {
       width: Math.max(el.clientWidth, 100),
@@ -194,7 +273,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       // gezogen wird verschoben (wie in der Österreich-Karte). Ein Rechteck
       // aufzuziehen trifft den gewünschten Ausschnitt nie beim ersten Versuch.
       cursor: { y: false, drag: { x: false, y: false, setScale: false } },
-      plugins: [cursorPlugin],
+      plugins: [barsPlugin, cursorPlugin],
       hooks: {
         // Überfahrener Zeitschritt für die Ablesezeile; `null` beim Verlassen.
         setCursor: [(u: uPlot) => setHoverIdx(u.cursor.idx ?? null)],
@@ -202,12 +281,16 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       scales: variable.zeroBased
         ? { y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.05 : 1] } }
         : {},
-      bands: [{ series: [1, 2], fill: BAND_FILL }],
+      // In der Säulenansicht KEIN Band: es zeichnet zwischen zwei Terminen
+      // einen Verlauf, den beim Niederschlag kein Member hat — genau das,
+      // was die Säulen ersetzen sollen. Die Serien bleiben (der Bandbezug
+      // hängt an festen Indizes), nur unsichtbar.
+      bands: barView ? [] : [{ series: [1, 2], fill: BAND_FILL }],
       series: [
         {},
-        { label: 'P90', stroke: BAND_LINE, width: 1, points: { show: false } },
-        { label: 'P10', stroke: BAND_LINE, width: 1, points: { show: false } },
-        { label: 'Median', stroke: MEDIAN_LINE, width: 2, points: { show: false } },
+        { label: 'P90', stroke: barView ? 'transparent' : BAND_LINE, width: 1, points: { show: false } },
+        { label: 'P10', stroke: barView ? 'transparent' : BAND_LINE, width: 1, points: { show: false } },
+        { label: 'Median', stroke: MEDIAN_LINE, width: barView ? 1 : 2, points: { show: false } },
         {
           label: 'Kontrolllauf',
           stroke: CONTROL_LINE,
@@ -218,7 +301,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         ...(prepared.deterministic
           ? [{ label: 'Hauptlauf', stroke: HRES_LINE, width: 2, points: { show: false } }]
           : []),
-        ...(showMembers
+        ...(spaghetti
           ? members.slice(1).map(() => ({
               stroke: MEMBER_LINE,
               width: 1,
@@ -326,7 +409,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       plotRef.current = null
       setZoomed(false)
     }
-  }, [prepared, showMembers, variable.zeroBased, setCursorTime])
+  }, [prepared, showMembers, barView, variable.zeroBased, setCursorTime])
 
   /** Zoom aufheben — dasselbe wie Doppelklick im Plot. */
   const resetZoom = () => {
@@ -356,7 +439,23 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         <span className="label-muted" title={`${model.label} · ${RUN_TITLE}`}>
           Lauf {formatRunLong(latestRun(model, Date.now()), Date.now())}
         </span>
-        <label className="ens-toggle" title="Alle Member als Spaghetti zeigen">
+        {variable.kind === 'accum' && (
+          <label
+            className="ens-toggle"
+            title="Verteilung je Termin als Säule (min…max, P10–P90, P25–P75, Median) statt als Linienbündel — beim Niederschlag springen die Member, ein Linienbündel ist dort nicht lesbar."
+          >
+            <input type="checkbox" checked={bars} onChange={(e) => setBars(e.target.checked)} />
+            Quantil-Säulen
+          </label>
+        )}
+        <label
+          className="ens-toggle"
+          title={
+            barView
+              ? 'Ein Strich je Member IN der Säule — wo sie sich stapeln, liegt die Masse der Verteilung'
+              : 'Alle Member als Spaghetti zeigen'
+          }
+        >
           <input
             type="checkbox"
             checked={showMembers}
@@ -377,12 +476,28 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         <span title="Mittlerer Member je Zeitschritt (50. Perzentil)">
           <i style={{ background: MEDIAN_LINE, height: 3 }} /> Median
         </span>
-        <span title="80 % der Member liegen in diesem Band">
-          <i className="ens-bandswatch" /> P10–P90
-        </span>
+        {/* Das Band gibt es in der Säulenansicht nicht — dort steht dieselbe
+            Aussage in jeder Säule. */}
+        {!barView && (
+          <span title="80 % der Member liegen in diesem Band">
+            <i className="ens-bandswatch" /> P10–P90
+          </span>
+        )}
+        {barView && (
+          <span title="Säule je Termin: hell min…max, mittel P10–P90, kräftig P25–P75 (die mittlere Hälfte).">
+            <i className="ens-barswatch" /> Säule = Spannweite · P10–P90 · P25–P75
+          </span>
+        )}
         {showMembers && (
-          <span title="Alle gestörten Member als Spaghetti">
+          <span
+            title={
+              barView
+                ? 'Ein Strich je Member in der Säule — die Quantilgrenzen sagen nicht, wie es dazwischen aussieht. Wo sich die Striche stapeln, liegt die Masse.'
+                : 'Alle gestörten Member als Spaghetti'
+            }
+          >
             <i style={{ background: 'rgba(120,170,230,0.6)' }} /> {model.members - 1} Member
+            {barView ? ' (Striche)' : ''}
           </span>
         )}
         <span className="ens-hint label-muted">

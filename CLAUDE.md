@@ -959,6 +959,40 @@ npm run preview   # gebautes dist/ servieren
   erneut aus der Doku übernehmen. **`deterministicDays` ist getrennt von
   `forecastDays`**: die Forecast-API deckelt bei 16 Tagen, mit dem
   Ensemble-Horizont (GEFS 35) scheitert der Hauptlauf-Abruf komplett.
+  **BEIM NIEDERSCHLAG SIND ES QUANTIL-SÄULEN, KEINE PLUME**
+  (`render/quantileBars.ts` mit Tests, Umschalter „Quantil-Säulen" in der
+  Leiste, Vorgabe AN bei `kind: 'accum'` — gilt für BEIDE Ansichten, Summe
+  wie 6-h-Menge). Eine Plume lebt davon, dass die Member PARALLEL laufen und
+  sich auffächern; beim Niederschlag springen sie stattdessen — Member 7 hat
+  den Schauer um 14 Uhr, Member 12 um 20 Uhr, zwanzig andere gar nicht. Als
+  Linienbündel ist das ein Knäuel, und das P10–P90-Band dazwischen zeichnet
+  einen Verlauf, den KEIN EINZIGER Member hat. Gefragt ist an einem
+  Niederschlagstermin ohnehin nicht „wie läuft es", sondern „wie viel und wie
+  sicher" — also die Verteilung an diesem einen Termin.
+  Die Säule staffelt sie von außen nach innen (min…max · P10–P90 · P25–P75,
+  jede Stufe kräftiger) plus Median. **Der Kern ist der STRICH JE MEMBER
+  darin**: die Quantilgrenzen sagen nicht, wie es dazwischen aussieht, und
+  gerade beim Niederschlag ist die Verteilung selten glatt — dreißig Member
+  auf 0 mm und fünf bei 25 mm ist eine andere Aussage als eine gleichmäßige
+  Verteilung mit demselben p10/p90, und man sieht sie nur daran, wo sich die
+  halbdurchlässigen Striche stapeln. Der „Member"-Haken schaltet sie
+  (Spaghetti gibt es in dieser Ansicht nicht — es wären dieselben Werte
+  doppelt), das Band entfällt samt Legendeneintrag.
+  **Der Abstand wird bei jedem Zeichnen neu gerastert** (`barStepHours`, nur
+  runde Stundenvielfache 1/2/3/6/12/24/48, `barIndices` hängt sie an die
+  UTC-Zeit statt an den Datenbeginn — sonst stünden zwei Panels versetzt).
+  Zwei Zahlen dahinter, beide gemessen: mit 7 px Mindestabstand stand die
+  SUMMENansicht (361 Stundenwerte über 15 Tage) als geschlossener Block da,
+  mit **14 px** bleibt über den vollen Horizont der 6-Stunden-Schritt, und
+  beim Hineinzoomen rücken die Säulen von selbst auf 3 h und 1 h nach. Der
+  Mindestabstand ist eine Sache der ANZEIGE: `valToPos(…, true)` rechnet in
+  GERÄTEpixeln, ohne die Division durch `devicePixelRatio` stünden die
+  Säulen auf einem HiDPI-Schirm doppelt so dicht (genau so war es zuerst).
+  Gezeichnet wird im `draw`-Hook, also ÜBER den Kurven: die Stufen sind
+  halbdurchlässig, Hauptlauf und Kontrolllauf bleiben dahinter sichtbar,
+  während die Striche scharf obenauf liegen — darunter verschluckte sie die
+  Bandfüllung. Bei Temperatur, Druck und Wind bleibt es bei der Plume; dort
+  ist sie richtig, und der Umschalter erscheint gar nicht.
   Die suffixlose Reihe der Antwort
   ist der **Kontrolllauf**, NICHT der Hauptlauf — der kommt als eigener
   deterministischer Abruf dazu (1 Call). Eigene Modell- UND Variablenregistry
