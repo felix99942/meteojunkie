@@ -838,15 +838,33 @@ export function hasRecords(spec: AtParameterSpec): boolean {
 export interface RecordLevel {
   v: (number | null)[]
 }
-export interface RecordIndex {
-  code: string
-  ids: number[]
+/** Die vier Ebenen eines Blocks — im Monats- wie im Tagesteil dieselben. */
+export interface RecordIndexBlock {
   /** Bester EINZELMONAT der Reihe. */
   abs: { max: RecordLevel; min: RecordLevel }
   /** Bester JAHRESwert der Reihe (nur vollständige Jahre). */
   ann: { max: RecordLevel; min: RecordLevel }
   mon: { max: RecordLevel; min: RecordLevel }[] // 12, Jänner … Dezember
   sea: Record<Season, { max: RecordLevel; min: RecordLevel }>
+}
+
+export interface RecordIndex extends RecordIndexBlock {
+  code: string
+  ids: number[]
+  /**
+   * GEGENRICHTUNG der Extremgrößen aus TAGESwerten — dieselbe Form, nur für
+   * `tlmax`/`tlmin`/`rr` besetzt (siehe `ParamRecords.day`).
+   *
+   * **Er fehlte hier lange, und das war ein Fehler mit Folgen**: der
+   * Höhenfilter des Klimaarchivs bestimmt seinen Gewinner aus diesem Index.
+   * Ohne Tagesblock konnte er die Tagesebene nicht rechnen — „kältester Tag
+   * in Österreich ohne Bergstationen" antwortete mit −33,2 °C vom Sonnblick,
+   * also der UNGEFILTERTEN Zahl (richtig sind −26,0 °C, Lunz, 612 m). Die
+   * Werte lagen die ganze Zeit in den Stationsdateien, sie waren nur nie in
+   * die Karten-Sicht übernommen. Optional, weil ältere Assets ihn nicht
+   * führen.
+   */
+  day?: RecordIndexBlock
 }
 
 const recordIndexPromises = new Map<string, Promise<RecordIndex>>()
@@ -875,8 +893,26 @@ export function loadRecordIndex(code: string): Promise<RecordIndex> {
  * Klimaperioden-Normal (`normalValue`), damit sich beide Zeitbezüge gleich
  * bedienen lassen.
  */
-export function recordLevel(
+/**
+ * Dieselbe Ebenenwahl im TAGESblock. `null`, wenn das Asset ihn nicht führt —
+ * dann gibt es die Auskunft nicht, und der Aufrufer muss das sagen, statt
+ * auf die Monatsebene auszuweichen: die beantwortet eine andere Frage.
+ */
+export function recordDayLevel(
   idx: RecordIndex,
+  period: {
+    extreme: 'max' | 'min'
+    month: number | null
+    season?: Season | null
+    annual?: boolean
+  },
+): RecordLevel | null {
+  if (!idx.day) return null
+  return recordLevel({ ...idx, ...idx.day }, period)
+}
+
+export function recordLevel(
+  idx: RecordIndexBlock,
   period: {
     extreme: 'max' | 'min'
     month: number | null

@@ -35,6 +35,7 @@ import {
   loadNormals,
   loadRecordIndex,
   loadStationRecords,
+  recordDayLevel,
   recordLevel,
   type NationalRecords,
   type NormalsMap,
@@ -385,18 +386,23 @@ export function AtAskBox({
    * Tagesfrage), ist der gefilterte Landesrekord nicht zu haben — die UI
    * sagt das, statt eine Zahl von der falschen Ebene zu zeigen.
    */
-  const dayBlockNeeded =
+  /**
+   * Kommt die Antwort aus dem TAGESblock? Dieselbe Bedingung wie in
+   * `answerFromRecords` — die Gegenrichtung einer Extremgröße und die
+   * ausdrückliche Tagesfrage.
+   */
+  const fromDay =
     query != null && spec != null && (query.daily === true || !directionDerivable(spec, query.extreme))
   const filteredNational =
     query != null &&
     assetCode != null &&
     query.scope === 'record' &&
     query.area === 'austria' &&
-    query.terrain !== 'all' &&
-    !dayBlockNeeded
-  const [pick, setPick] = useState<{ id: number; rec: StationRecords } | null>(null)
+    query.terrain !== 'all'
+  /** `'none'` = gerechnet, aber kein Ergebnis (Asset ohne Tagesblock). */
+  const [pick, setPick] = useState<{ id: number; rec: StationRecords } | 'none' | null>(null)
   const pickKey = filteredNational && query
-    ? [assetCode, query.terrain, query.extreme, query.month, query.season, query.annual].join('|')
+    ? [assetCode, query.terrain, query.extreme, query.month, query.season, query.annual, fromDay].join('|')
     : null
   useEffect(() => {
     setPick(null)
@@ -405,12 +411,17 @@ export function AtAskBox({
     const want = query.extreme
     void loadRecordIndex(assetCode)
       .then(async (idx) => {
-        const level = recordLevel(idx, {
+        const at = {
           extreme: want,
           month: query.month,
           season: query.season,
           annual: query.annual,
-        })
+        }
+        // Der Tagesblock ist eine ANDERE Ebene — auf die Monatsebene
+        // auszuweichen beantwortete eine andere Frage (der kälteste TAG
+        // gegen den kältesten Monats-Höchstwert).
+        const level = fromDay ? recordDayLevel(idx, at) : recordLevel(idx, at)
+        if (!level) return 'none' as const
         let best: { id: number; v: number } | null = null
         for (let i = 0; i < idx.ids.length; i++) {
           const v = level.v[i]
@@ -418,9 +429,9 @@ export function AtAskBox({
           if (!inTerrain(idx.ids[i])) continue
           if (!best || (want === 'max' ? v > best.v : v < best.v)) best = { id: idx.ids[i], v }
         }
-        if (!best) return null
+        if (!best) return 'none' as const
         const rec = await loadStationRecords(best.id)
-        return rec ? { id: best.id, rec } : null
+        return rec ? { id: best.id, rec } : ('none' as const)
       })
       .then((r) => {
         if (alive) setPick(r)
@@ -431,7 +442,7 @@ export function AtAskBox({
     }
     // Absichtlich nur der Schlüssel — `query` ist jede Renderrunde neu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickKey])
+  }, [pickKey, fromDay])
 
   /** Station an eine Antwort hängen, die aus EINER Stationsdatei stammt. */
   const withStation = (a: ReturnType<typeof answerFromRecords>, id?: number) =>
@@ -454,7 +465,13 @@ export function AtAskBox({
                 areaLabel,
               )
             : filteredNational
-              ? withStation(answerFromRecords(query, pick?.rec[assetCode], areaLabel), pick?.id)
+              ? // NIE auf die ungefilterte Zahl zurückfallen: „kältester Tag
+                // ohne Bergstationen" zeigte so −33,2 °C vom Sonnblick, also
+                // genau das, was der Filter ausschließen sollte. Lieber keine
+                // Zahl und die Erklärung darunter.
+                pick && pick !== 'none'
+                ? withStation(answerFromRecords(query, pick.rec[assetCode], areaLabel), pick.id)
+                : null
               : answerFromRecords(query, national?.[assetCode])
           : query.area === 'place' || query.area === 'state'
             ? query.scope === 'normal'
@@ -905,15 +922,12 @@ export function AtAskBox({
 
           {/* Der gefilterte Landesrekord kommt aus dem Karten-Index, und der
               kennt den Tagesblock nicht (Begründung bei `filteredNational`). */}
-          {query.scope === 'record' &&
-            query.area === 'austria' &&
-            query.terrain !== 'all' &&
-            dayBlockNeeded && (
-              <div className="atask-note label-muted">
-                Für diese Ebene lässt sich der Höhenfilter nicht rechnen — sie kommt aus dem
-                Tagesdatensatz, der landesweit nur ungefiltert vorliegt.
-              </div>
-            )}
+          {filteredNational && pick === 'none' && (
+            <div className="atask-note label-muted">
+              Für diese Ebene lässt sich der Höhenfilter nicht rechnen — der Karten-Index führt
+              sie nicht. Ohne Filter gibt es die Antwort.
+            </div>
+          )}
           {/* Die Wertfrage ist der einzige Pfad mit einem Abruf — und der
               einzige, der ins Leere laufen kann, weil der Zeitraum vor dem
               Messbeginn der Station liegt. Beides gehört gesagt. */}

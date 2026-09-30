@@ -36,6 +36,7 @@
 //   node scripts/at-ingest-records.mjs
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { buildRecordIndexes } from './at-build-record-index.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -520,36 +521,21 @@ async function main() {
   // EINE Datei je Parameter, damit die Karte nur den GEWÄHLTEN lädt. Aufbau als
   // Parallel-Arrays über `ids`: dieselbe Information wie die Stationsdateien,
   // aber ohne 34-mal wiederholte Schlüsselnamen je Station.
-  for (const c of CODES) {
-    const entries = mapIdx.get(c.code)
-    if (!entries.size) continue
-    const idList = [...entries.keys()].sort((a, b) => a - b)
-    const level = (pick) => ({ v: idList.map((id) => pick(entries.get(id))) })
-    const out = {
-      meta: { source: BASE, since: START, until: END, note: 'Monatsextreme, keine Einzeltag-Rekorde' },
-      code: c.code,
-      ids: idList,
-      abs: {
-        max: level((e) => e.abs.max?.v ?? null),
-        min: level((e) => e.abs.min?.v ?? null),
-      },
-      ann: {
-        max: level((e) => e.ann.max?.v ?? null),
-        min: level((e) => e.ann.min?.v ?? null),
-      },
-      mon: Array.from({ length: 12 }, (_, m) => ({
-        max: level((e) => e.mon[m].max?.v ?? null),
-        min: level((e) => e.mon[m].min?.v ?? null),
-      })),
-      sea: Object.fromEntries(
-        ['DJF', 'MAM', 'JJA', 'SON'].map((sid) => [
-          sid,
-          { max: level((e) => e.sea[sid].max?.v ?? null), min: level((e) => e.sea[sid].min?.v ?? null) },
-        ]),
-      ),
-    }
-    await writeFile(join(outDir, `_map-${c.code}.json`), JSON.stringify(out))
-  }
+  //
+  // Gebaut wird er aus den eben geschriebenen STATIONSDATEIEN, nicht aus dem
+  // Zwischenstand im Speicher — und zwar von derselben Funktion, die ihn auch
+  // ohne API-Abruf neu erzeugen kann (`scripts/at-build-record-index.mjs`,
+  // npm `ingest:at:recidx`). Zwei Fassungen derselben Umformung wären zwei
+  // Gelegenheiten auseinanderzulaufen, und genau das war passiert: die
+  // eingebaute Fassung kannte den TAGESBLOCK nicht, obwohl der Tagespass ihn
+  // längst in die Stationsdateien schrieb.
+  const idxWritten = await buildRecordIndexes(outDir, {
+    source: BASE,
+    since: START,
+    until: END,
+    note: 'Monatsextreme, Tagesblock aus dem Tagespass',
+  })
+  process.stdout.write(`Karten-Index: ${idxWritten.join(', ')}\n`)
 
   process.stdout.write(
     `Geschrieben: public/at/records/*.json (${written} Stationen) + _national.json + ${CODES.length} Karten-Indizes\n`,

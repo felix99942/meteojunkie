@@ -4,6 +4,7 @@ import type { AtStation } from './geosphere'
 import { describe, expect, it } from 'vitest'
 import {
   hasRecords,
+  recordDayLevel,
   histalpCovers,
   isParamAvailable,
   normalFor,
@@ -253,5 +254,46 @@ describe('monthlyIds', () => {
 
   it('behält die Reihenfolge der Eingabe', () => {
     expect(monthlyIds([st(9, true), st(4, true), st(7, true)])).toEqual([9, 4, 7])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tagesblock des Karten-Index. Er fehlte, und der Höhenfilter des
+// Klimaarchivs fiel dadurch auf die UNGEFILTERTE Zahl zurück: „kältester Tag
+// in Österreich ohne Bergstationen" antwortete mit −33,2 °C vom Sonnblick
+// statt mit −26,0 °C aus Lunz.
+// ---------------------------------------------------------------------------
+
+describe('recordDayLevel', () => {
+  const lv = (...v: (number | null)[]) => ({ v })
+  const blk = (absMax: number | null, absMin: number | null) => ({
+    abs: { max: lv(absMax), min: lv(absMin) },
+    ann: { max: lv(absMax), min: lv(absMin) },
+    mon: Array.from({ length: 12 }, () => ({ max: lv(null), min: lv(null) })),
+    sea: { DJF: { max: lv(null), min: lv(null) }, MAM: { max: lv(null), min: lv(null) },
+           JJA: { max: lv(null), min: lv(null) }, SON: { max: lv(null), min: lv(null) } },
+  })
+  const idx = { code: 'tlmax', ids: [1], ...blk(30, -12), day: blk(null, -26) }
+
+  it('liest den TAGESblock, nicht den Monatsblock', () => {
+    // Der Monatsblock nennt den tiefsten Monats-HÖCHSTWERT (−12), der
+    // Tagesblock den kältesten TAG (−26). Zwei verschiedene Fragen.
+    expect(recordLevel(idx, { extreme: 'min', month: null }).v[0]).toBe(-12)
+    expect(recordDayLevel(idx, { extreme: 'min', month: null })!.v[0]).toBe(-26)
+  })
+
+  /**
+   * Fehlt der Block (Assets von vor 2026-09-30), gibt es `null` — und NICHT
+   * die Monatsebene. Genau dieser Rückfall war der Fehler: er sieht richtig
+   * aus und beantwortet etwas anderes.
+   */
+  it('gibt null statt auf die Monatsebene auszuweichen', () => {
+    const ohne = { code: 'tlmax', ids: [1], ...blk(30, -12) }
+    expect(recordDayLevel(ohne, { extreme: 'min', month: null })).toBeNull()
+  })
+
+  it('wählt im Tagesblock dieselbe Ebene wie sonst', () => {
+    const withAnn = { ...idx, day: { ...idx.day, ann: { max: lv(null), min: lv(-19) } } }
+    expect(recordDayLevel(withAnn, { extreme: 'min', month: null, annual: true })!.v[0]).toBe(-19)
   })
 })

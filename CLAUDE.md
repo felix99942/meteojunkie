@@ -506,6 +506,52 @@ npm run preview   # gebautes dist/ servieren
   springt auf den Zeitraum DER ANTWORT (Rekordjahr und -monat), nicht auf das
   laufende Jahr. Gegen die echte Stationsliste gemessen: 14 von 14
   Beispielfragen richtig.
+  **HÖHENFILTER: alle / nur Bergstationen / ohne Bergstationen**
+  (`AskTerrain`, Auswahl „Lage" im Fenster). Bei etlichen Größen ist er der
+  Unterschied zwischen einer Auskunft und einer Trivialität — „meiste
+  Eistage in Österreich" beantwortet sich sonst jedes Mal mit dem Sonnblick.
+  Gemessen über die Rekord-Assets (höchster Jahreswert): Eistage **292 d**
+  (Sonnblick 3109 m) gegen **112 d** ohne Bergstationen (Präbichl),
+  Frosttage 351 gegen 227 (St. Jakob i. D.), Niederschlag 4.167 mm
+  (Feuerkogel) gegen 3.451 mm (Loibl Tunnel) — Hitzetage dagegen
+  UNVERÄNDERT 57 d (Bad Deutsch-Altenburg): die Gegenprobe, wo die Berge
+  ohnehin nicht gewinnen, ändert der Filter nichts.
+  **Die Grenze ist ein reiner HÖHENschnitt bei 1500 m** (`MOUNTAIN_M`),
+  keine topografische Einteilung, und am Rand zwangsläufig willkürlich:
+  Galtür (1587 m) ist ein Talort und zählt als Berg, der Schöckl (1443 m)
+  ist ein Gipfel und zählt nicht. Eine saubere Trennung Gipfel/Talboden
+  geben die Stammdaten nicht her. 1500 m, weil dort die Dauersiedlung endet;
+  von 513 Stationen liegen 44 (9 %) darüber, ab 1000 m wären es 109 (21 %).
+  Eine Station OHNE bekannte Höhe zählt als Tal — als Berg gezählt gewänne
+  sie jede Kältefrage, ohne dass man es sähe. Der Filter steht im
+  ANTWORTTEXT („… in Österreich, ohne Bergstationen"): „112 Tage in
+  Österreich" allein wäre schlicht falsch.
+  **Der gefilterte LANDESrekord geht weder über `_national.json` noch über
+  die Stationsdateien** — die eine Datei ist über alle Stationen
+  vorgerechnet und nicht nachträglich filterbar, die andere wären bei „ohne
+  Bergstationen" rund 470 Abrufe. Genommen wird der KARTEN-INDEX
+  (`_map-<code>.json`): daraus den Gewinner unter den erlaubten Stationen
+  bestimmen und NUR DESSEN Stationsdatei nachladen — zwei Abrufe, und die
+  Antwort bekommt Datum und alle Ebenen wie sonst.
+  **Der Index führt seit 2026-09-30 auch den TAGESblock** — vorher nicht,
+  und das war ein Fehler mit genau der Wirkung, die der Filter verhindern
+  soll: „kältester Tag in Österreich ohne Bergstationen" antwortete mit
+  −33,2 °C vom Sonnblick, also der UNGEFILTERTEN Zahl (richtig sind
+  −26,0 °C, Lunz 612 m, 30.12.1939). Dieselbe Klasse traf jede Frage aus dem
+  Tagesblock: Gegenrichtung einer Extremgröße („wärmste Nacht"),
+  ausdrückliche Tagesfrage („höchster Tagesniederschlag" — ohne
+  Bergstationen 233,2 mm, Loibl Tunnel). Die Werte lagen die ganze Zeit in
+  den Stationsdateien, sie waren nur nie in die Karten-Sicht übernommen.
+  **Zwei Lehren stehen darin.** Erstens: der Index ist eine ABGELEITETE
+  Sicht auf die Stationsdateien und lässt sich jederzeit daraus neu bauen —
+  `scripts/at-build-record-index.mjs` (npm `ingest:at:recidx`) tut das **ohne
+  einen einzigen API-Abruf**, während der volle Rekord-Ingest 20 Minuten,
+  290 MB und 22 % des Stundenbudgets kostet. Der Ingest ruft seither
+  dieselbe Funktion, statt eine zweite Fassung der Umformung zu pflegen; die
+  eingebaute Fassung war es, die den Tagesblock nicht kannte. Zweitens:
+  **wenn der Filter nicht zu rechnen ist, gibt es KEINE Zahl.** Der Rückfall
+  auf die ungefilterte Antwort war der eigentliche Schaden — sie sieht
+  richtig aus und ist genau das, was ausgeschlossen werden sollte.
   **Rangliste** (`AtRankList` + Rechenkern `atRank.ts`) reiht die
   geladenen Kartenwerte (auch Anomalien) — rein clientseitig, kein zusätzlicher
   Request; Hover markiert die Station in der Karte (`highlightIdx`), Klick

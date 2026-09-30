@@ -19,7 +19,8 @@
     "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs",
     "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs",
     "build:relief": "node scripts/build-relief.mjs",
-    "build:ground": "node scripts/build-ground.mjs"
+    "build:ground": "node scripts/build-ground.mjs",
+    "ingest:at:recidx": "node scripts/at-build-record-index.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
