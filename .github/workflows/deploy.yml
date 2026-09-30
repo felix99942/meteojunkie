@@ -92,6 +92,8 @@ jobs:
           VITE_IMPRESSUM_STREET: ${{ vars.IMPRESSUM_STREET || secrets.IMPRESSUM_STREET }}
           VITE_IMPRESSUM_CITY: ${{ vars.IMPRESSUM_CITY || secrets.IMPRESSUM_CITY }}
           VITE_IMPRESSUM_EMAIL: ${{ vars.IMPRESSUM_EMAIL || secrets.IMPRESSUM_EMAIL }}
+          # Kartenkacheln Klima/MOS; fehlt der Schlüssel, bleibt der Hintergrund dunkel.
+          VITE_CARTO_KEY: ${{ vars.CARTO_KEY || secrets.CARTO_KEY }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,11 +1,17 @@
 // Zeichen-/Projektions-Helfer der statischen Österreich-Klimakarte (Schritt 2).
 //
 // Bewusst leichtgewichtig und Canvas-basiert (kein MapLibre/Slippy-Map): eine
-// feste equirectangulare Projektion auf die Österreich-Bounding-Box, mit
-// cos(φ)-Korrektur der Längengrade, damit das Land nicht verzerrt. Reicht für
-// eine Übersichtskarte und rendert 1000+ Stationspunkte plus die Grenzlinien
+// feste WEB-MERCATOR-Projektion auf den Kartenausschnitt. Reicht für eine
+// Übersichtskarte und rendert 1000+ Stationspunkte plus die Grenzlinien
 // mühelos. Gleiche Idiome wie render/skewt.ts (Geometrie-Objekt + reine
 // Zeichenfunktionen, DPR-Handling im Komponenten-Layer).
+//
+// MERCATOR, weil darunter Kartenkacheln (CARTO/OpenStreetMap) liegen, und die sind in
+// EPSG:3857 gerechnet. Die frühere equirectangulare Projektion (mit fester
+// cos(φ)-Korrektur der Mitte) hätte die Stationen gegen die Kacheln
+// verschoben: im DACH-Ausschnitt ändert sich der Mercator-Massstab zwischen
+// 45,6 und 55,2 °N um ein Viertel, am Kartenrand lägen die Punkte sichtbar
+// neben ihrem Ort. Über der Österreich-Box sehen beide praktisch gleich aus.
 
 /** Minimale Stationsform fürs Zeichnen — TAWES (AtStation) wie MOS erfüllen sie. */
 export interface MapStation {
@@ -29,9 +35,19 @@ export interface MapGeometry {
   height: number
   /** Projektionsparameter (intern). */
   lonMin: number
-  latMax: number
+  /** Mercator-y der Oberkante, in Grad-Äquivalent (siehe `mercY`). */
+  yMax: number
+  /** CSS-Pixel je Grad Länge (= je Grad Mercator-y). */
   scale: number
-  kx: number // cos(latMid)
+}
+
+/**
+ * Mercator-Ordinate in GRAD-Äquivalent: gleiche Einheit wie die Länge, damit
+ * ein Massstab für beide Achsen gilt (die Projektion ist winkeltreu).
+ */
+export function mercY(lat: number): number {
+  const phi = (lat * Math.PI) / 180
+  return (Math.log(Math.tan(Math.PI / 4 + phi / 2)) * 180) / Math.PI
 }
 
 /** Projektionsgeometrie in ein Rechteck (CSS-Pixel) einpassen, Form erhalten. */
@@ -42,10 +58,9 @@ export function makeMapGeometry(
   height: number,
   view = AT_VIEW,
 ): MapGeometry {
-  const latMid = (view.latMin + view.latMax) / 2
-  const kx = Math.cos((latMid * Math.PI) / 180)
-  const geoW = (view.lonMax - view.lonMin) * kx
-  const geoH = view.latMax - view.latMin
+  const yMax = mercY(view.latMax)
+  const geoW = view.lonMax - view.lonMin
+  const geoH = yMax - mercY(view.latMin)
   const scale = Math.min(width / geoW, height / geoH)
   // zentriert einpassen: verbleibenden Rand gleichmäßig verteilen
   const usedW = geoW * scale
@@ -56,18 +71,70 @@ export function makeMapGeometry(
     width: usedW,
     height: usedH,
     lonMin: view.lonMin,
-    latMax: view.latMax,
+    yMax,
     scale,
-    kx,
   }
 }
 
 /** Geo-Koordinate → Canvas-Pixel. */
 export function project(g: MapGeometry, lon: number, lat: number): { x: number; y: number } {
   return {
-    x: g.left + (lon - g.lonMin) * g.kx * g.scale,
-    y: g.top + (g.latMax - lat) * g.scale,
+    x: g.left + (lon - g.lonMin) * g.scale,
+    y: g.top + (g.yMax - mercY(lat)) * g.scale,
   }
+}
+
+// --- Kacheln (XYZ-Schema, wie OpenStreetMap und CARTO) -------------------
+
+/** Höchste genutzte Zoomstufe (CARTO reicht bis 20, feiner braucht die Karte nie). */
+export const TILE_MAX_ZOOM = 19
+const TILE_PX = 256
+
+/**
+ * Zoomstufe, deren Kacheln bei diesem Massstab etwa 1:1 in GERÄTEpixeln
+ * stehen. Gerundet statt aufgerundet: die Kacheln werden damit um höchstens
+ * √2 gestreckt oder gestaucht — aufgerundet hiesse das bis zu viermal so
+ * viele Abrufe für ein Bild, das man kaum schärfer sieht.
+ */
+export function tileZoom(scale: number, dpr = 1): number {
+  const z = Math.round(Math.log2((scale * dpr * 360) / TILE_PX))
+  return Math.max(0, Math.min(TILE_MAX_ZOOM, z))
+}
+
+export interface TileRect {
+  z: number
+  x: number
+  y: number
+  /** Linke obere Ecke und Kantenlänge in CSS-Pixeln (Kacheln sind quadratisch). */
+  px: number
+  py: number
+  size: number
+}
+
+/** Bildschirmlage einer Kachel. */
+export function tileRect(g: MapGeometry, z: number, x: number, y: number): TileRect {
+  const n = 2 ** z
+  const size = (360 / n) * g.scale
+  const lon = (x / n) * 360 - 180
+  const my = (1 - (2 * y) / n) * 180 // Mercator-y der Oberkante, Grad-Äquivalent
+  return { z, x, y, px: g.left + (lon - g.lonMin) * g.scale, py: g.top + (g.yMax - my) * g.scale, size }
+}
+
+/** Alle Kacheln der Stufe z, die das Rechteck 0…w × 0…h (CSS-Pixel) berühren. */
+export function visibleTiles(g: MapGeometry, z: number, w: number, h: number): TileRect[] {
+  const n = 2 ** z
+  const step = (360 / n) * g.scale
+  const lonAt = (px: number) => g.lonMin + (px - g.left) / g.scale
+  const myAt = (py: number) => g.yMax - (py - g.top) / g.scale
+  const clamp = (v: number) => Math.max(0, Math.min(n - 1, v))
+  const x0 = clamp(Math.floor(((lonAt(0) + 180) / 360) * n))
+  const x1 = clamp(Math.floor(((lonAt(w) + 180) / 360) * n))
+  const y0 = clamp(Math.floor(((1 - myAt(0) / 180) / 2) * n))
+  const y1 = clamp(Math.floor(((1 - myAt(h) / 180) / 2) * n))
+  const out: TileRect[] = []
+  if (!(step > 0)) return out
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) out.push(tileRect(g, z, x, y))
+  return out
 }
 
 /** Grenz-/Küstenlinien (GeoJSON-LineStrings, [lon,lat]) zeichnen. */

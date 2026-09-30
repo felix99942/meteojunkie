@@ -90,9 +90,44 @@ npm run preview   # gebautes dist/ servieren
   älter erzeugte `stations.json` sich wie bisher verhält statt die Karte zu
   leeren. Wer einen weiteren Datensatz anbindet, braucht dieselbe Prüfung —
   das ist kein Einzelfall, sondern die Hausregel dieser API. Karte ist ein
-  leichtes **Canvas** (`render/atmap.ts`, feste equirect-Projektion — NICHT
+  leichtes **Canvas** (`render/atmap.ts`, feste WEB-MERCATOR-Projektion — NICHT
   MapLibre), Werte stehen direkt beschriftet in der Karte (keine Colorbar, so
-  gewünscht). Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
+  gewünscht).
+  **Darunter liegt eine Karte: CARTO „Dark Matter"** auf OpenStreetMap-Daten
+  (`render/osmTiles.ts`, `basemaps.cartocdn.com`, auf Wunsch statt des
+  schwarzen Hintergrunds; gilt für Klima UND MOS, beide zeichnen über
+  `AtClimateMap`). Das ist die EINE Ausnahme von „Basemap ist komplett
+  lokal" — die Begründung dort (MapLibres `load`-Event hinge an fremden
+  Kacheln) trifft auf ein eigenes Canvas nicht zu: fehlt eine Kachel, bleibt
+  sie dunkel, und alles andere steht. **Deshalb Mercator statt der früheren
+  equirect-Projektion mit fester cos(φ)-Korrektur**: die Kacheln sind
+  EPSG:3857, und im DACH-Ausschnitt (45,6–55,2 °N) ändert sich der
+  Mercator-Massstab um ein Viertel — die Stationen lägen am Rand sichtbar
+  neben ihrem Ort. `atmap.test.ts` prüft die Lage gegen die Kachelformel aus
+  dem OSM-Wiki, nicht gegen die eigene Projektion. **Dark Matter statt des
+  OSM-Standardstils** (der war die erste Fassung): der Standardstil ist hell
+  und bunt, Wald-Grün und Seen-Blau sind auch Farben der Skalen, und
+  entsättigt plus abgedunkelt sah er matschig aus. Dark Matter ist von sich
+  aus farbarm — die Werte bleiben die einzige Farbe, ohne Nachbearbeitung.
+  **Hohe Pixeldichte über `@2x`-Kacheln DERSELBEN Stufe**
+  (`setRetinaTiles`), nicht über eine feinere Stufe: die hätte die
+  Schärfe, aber Ortsnamen und Linien in halber Grösse. Zoomstufe ~1:1
+  (`tileZoom`, gerundet — aufgerundet wären es bis zu viermal so viele
+  Abrufe), geholt wird nur der sichtbare Ausschnitt, nichts vorgeladen
+  (kostenlos bis 75.000 Kartenaufrufe im Monat); solange eine Kachel lädt,
+  springt eine gröbere ein. Gescheiterte Kacheln bleiben gemerkt, sonst
+  fragte jedes Neuzeichnen sie erneut an. **Namensnennung „© OpenStreetMap-
+  Mitwirkende © CARTO" steht AUF der Karte** (`.atmap-osm`,
+  Lizenzbedingung), `basemaps.cartocdn.com` in der Datenschutzerklärung.
+  **CARTO ist seit September 2026 SCHLÜSSELPFLICHTIG** — ohne `?key=` kommt
+  HTTP 200 mit einem Wasserzeichen „API KEY REQUIRED" statt der Karte,
+  gleiches Format, gleiche Grösse für jede Kachel; man sieht es nur im Bild.
+  Kostenlos, ohne Konto, nicht kommerziell bis 5 Mio. Abrufe im Monat
+  (carto.com/basemaps/apikey). Eingespeist wie die Impressum-Angaben:
+  `VITE_CARTO_KEY` lokal in `.env.local`, im Deploy die Repository-Variable
+  `CARTO_KEY`. **Fehlt er, wird GAR NICHTS geholt** (`TILES_AVAILABLE`),
+  auch die Namensnennung entfällt — ein dunkler Hintergrund ist die
+  ehrlichere Anzeige als ein Wasserzeichenteppich. Registry `config/atParameters.ts` (Tag→`klima-v2-1d`,
   Monat/Jahr→`klima-v2-1m`; Anomalien vs. Normal 1991–2020). Sechs Zeitbezüge:
   Tag · Monat · Saison · Jahr · Klimaperiode · Allzeit (s. u.) — die letzten
   beiden lesen vorberechnete Assets und kosten keinen Request. „Aktuell"-Knopf
@@ -2889,7 +2924,8 @@ npm run preview   # gebautes dist/ servieren
   beginnen, werden gar nicht erst geokodiert — eine halb getippte Koordinate
   ist kein Ortsname. Geocoding läuft über plain `fetch`, NICHT über `apiGet`:
   es zählt nicht ins Forecast-Budget.
-- **Basemap ist komplett lokal** — bewusst KEIN externer Tile-Dienst (kein
+- **Basemap ist komplett lokal** (Ausnahme: die CARTO-Kacheln unter der
+  Klima-/MOS-Karte, Begründung dort) — bewusst KEIN externer Tile-Dienst (kein
   API-Key, kein Fremd-Rate-Limit; MapLibres `load`-Event hinge sonst an
   fremden Tile-Requests, an denen das ganze Panel gegated ist).
   Layer bottom→top: Hintergrund → Feld → Gradnetz → Bundeslandgrenzen

@@ -73,6 +73,14 @@ const THIRD_PARTY_HOSTS = [
     href: 'https://www.eumetsat.int/data-privacy-statement',
     hrefLabel: 'Datenschutzerklärung von EUMETSAT',
   },
+  {
+    host: 'basemaps.cartocdn.com',
+    what:
+      'Kartenkacheln des Hintergrunds der Österreich-Klimakarte und der MOS-Vorhersage ' +
+      '(CARTO, Stil „Dark Matter")',
+    href: 'https://carto.com/privacy',
+    hrefLabel: 'Datenschutzerklärung von CARTO',
+  },
 ]
 
 export function Impressum() {
@@ -275,6 +283,25 @@ export function Impressum() {
               .
             </li>
             <li>
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+                © OpenStreetMap-Mitwirkende
+              </a>{' '}
+              und{' '}
+              <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
+                © CARTO
+              </a>{' '}
+              — Kartenhintergrund der Österreich-Klimakarte und der MOS-Vorhersage (Stil
+              „Dark Matter“ von CARTO auf OpenStreetMap-Daten). Daten unter der{' '}
+              <a
+                href="https://opendatacommons.org/licenses/odbl/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Database License
+              </a>
+              .
+            </li>
+            <li>
               <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">
                 Natural Earth
               </a>{' '}
@@ -363,7 +390,9 @@ export function Impressum() {
             offen ist. Für die Satellitenbilder gilt dasselbe: sie kommen direkt von{' '}
             <code>view.eumetsat.int</code>, und nur, solange der Bereich „Satellit" offen ist —
             oder solange im Bereich „Radar" das Blitz-Overlay des MTG Lightning Imager
-            eingeschaltet ist, das von derselben Adresse kommt.
+            eingeschaltet ist, das von derselben Adresse kommt. Die Kartenkacheln von{' '}
+            <code>basemaps.cartocdn.com</code> werden nur im Bereich „Klima + MOS" geladen, und
+            nur für den gerade sichtbaren Ausschnitt.
           </p>
 
           <h3>Speicherung auf dem Endgerät</h3>

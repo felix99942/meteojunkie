@@ -20,6 +20,11 @@ interface ImportMetaEnv {
   readonly VITE_IMPRESSUM_STREET?: string
   readonly VITE_IMPRESSUM_CITY?: string
   readonly VITE_IMPRESSUM_EMAIL?: string
+  /**
+   * Schlüssel für die CARTO-Kartenkacheln (Klima-/MOS-Karte). Kostenlos,
+   * carto.com/basemaps/apikey. Fehlt er, bleibt der Kartenhintergrund dunkel.
+   */
+  readonly VITE_CARTO_KEY?: string
 }
 
 interface ImportMeta {

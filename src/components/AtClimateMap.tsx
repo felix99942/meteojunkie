@@ -4,6 +4,10 @@
 //
 // Basiskarte (Natural-Earth-Linien, auf die AT-Domain zugeschnitten) wird als
 // URL-Asset geladen statt in den JS-Bundle gezogen — wie in MapPanel.
+//
+// Darunter liegen Kacheln im Stil CARTO „Dark Matter" (render/osmTiles.ts,
+// OpenStreetMap-Daten): dunkel und farbarm, damit die farbigen Werte die
+// einzige Farbe in der Karte bleiben.
 
 import { useEffect, useRef, useState } from 'react'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
@@ -16,7 +20,9 @@ import {
   nearestStation,
   type MapGeometry,
   type MapStation,
+  tileZoom,
 } from '../render/atmap'
+import { drawOsmTiles, onTileLoad, setRetinaTiles, TILES_AVAILABLE } from '../render/osmTiles'
 
 interface BorderFeature {
   geometry: { type: string; coordinates: number[][] }
@@ -177,6 +183,11 @@ export function AtClimateMap({
       const g = { ...base, left: base.left * zoom + ox, top: base.top * zoom + oy, scale: base.scale * zoom }
       geomRef.current = g
 
+      // Ab 1,5-facher Pixeldichte @2x-Kacheln derselben Stufe (siehe setRetinaTiles).
+      const retina = dpr >= 1.5
+      setRetinaTiles(retina)
+      drawOsmTiles(ctx, g, tileZoom(g.scale, retina ? dpr / 2 : dpr), w, h)
+
       if (basemap) {
         if (basemap.admin1) drawBorderLines(ctx, g, basemap.admin1.features, COLORS.admin1, 1)
         if (basemap.coast) drawBorderLines(ctx, g, basemap.coast.features, COLORS.coast, 1)
@@ -215,6 +226,23 @@ export function AtClimateMap({
     ro.observe(container)
     return () => ro.disconnect()
   }, [basemap, stations, colors, values, hover, view, labelMinGap, highlightIdx, markedIdx])
+
+  // Nachgeladene Kacheln: gebündelt im nächsten Frame neu zeichnen — beim
+  // Öffnen kommen ein paar Dutzend fast gleichzeitig.
+  useEffect(() => {
+    let frame = 0
+    const off = onTileLoad(() => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        drawRef.current()
+      })
+    })
+    return () => {
+      off()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [])
 
   // Zoom per Mausrad (um den Cursor). Nativer Listener mit passive:false, damit
   // preventDefault das Seiten-Scrollen zuverlässig unterbindet.
@@ -331,6 +359,19 @@ export function AtClimateMap({
         </div>
       )}
       <span className="atmap-help">Rad = Zoom · Ziehen = Verschieben · Doppelklick = Reset</span>
+      {/* Namensnennung ist Lizenzbedingung und muss AUF der Karte stehen — nur, wenn es die Karte gibt. */}
+      {TILES_AVAILABLE && (
+        <span className="atmap-osm">
+          Karte ©{' '}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+            OpenStreetMap-Mitwirkende
+          </a>{' '}
+          ©{' '}
+          <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
+            CARTO
+          </a>
+        </span>
+      )}
     </div>
   )
 }
