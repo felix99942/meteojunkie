@@ -793,16 +793,71 @@ button:focus-visible {
    Kennzahlentabelle: die kann man zuklappen, die Legende muss bleiben.
    Die Schrift ist bewusst so gross wie die Bedienleisten der übrigen
    Bereiche (12 px) — als 10-px-Zeile im Kasten war sie eine Fussnote. */
-.skewt-legend {
+/* Block links oben: Legende und darunter die Zusatzschichten. Gemeinsam
+   positioniert, damit die Schalterzeile auch dann direkt unter der Legende
+   steht, wenn diese bei schmalem Panel umbricht. */
+.skewt-topleft {
   position: absolute;
   top: 28px;
   left: 4px;
   z-index: 5;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: calc(100% - 140px);
+}
+
+.skewt-layers {
+  display: flex;
+  gap: 6px;
+}
+
+.skewt-layer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(24, 25, 27, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Zustandslampe vor dem Text: aus = hohler Ring, an = gefüllt in Akzentfarbe. */
+.skewt-layer-btn::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+.skewt-layer-btn:hover {
+  background: var(--bg-control-hover);
+  color: var(--ink-secondary);
+}
+
+.skewt-layer-btn[aria-pressed='true'] {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, rgb(24, 25, 27));
+}
+
+.skewt-layer-btn[aria-pressed='true']::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.skewt-legend {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 3px 12px;
-  max-width: calc(100% - 140px);
   padding: 3px 8px;
   background: rgba(24, 25, 27, 0.85);
   border: 1px solid var(--border);

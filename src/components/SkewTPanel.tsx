@@ -518,53 +518,79 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           Bewusst AUSSERHALB der Kennzahlentabelle: die kann man zuklappen, die
           Legende muss stehen bleiben. T und Td haben kein Häkchen — ohne sie
           gäbe es kein Diagramm. */}
-      <div className="skewt-legend">
-        <span className="skewt-legend-static">
-          <i className="sl-line" /> T
-        </span>
-        <span className="skewt-legend-static">
-          <i className="sl-line sl-dash" /> Td
-        </span>
-        <label title="Feuchtkugeltemperatur: worauf Verdunstung die Luft abkühlen kann. Liegt zwischen Td und T; an Tw = 0 °C liest man die Schneefallgrenze ab.">
-          <input
-            type="checkbox"
-            checked={showWetBulb}
-            onChange={(e) => setShowWetBulb(e.target.checked)}
-          />
-          <i className="sl-line sl-dot" style={{ color: WETBULB_LINE }} /> Tw
-        </label>
-        <label title="Weg des gehobenen ML-Pakets samt LCL/LFC/EL-Marken am linken Rand.">
-          <input
-            type="checkbox"
-            checked={showParcel}
-            onChange={(e) => setShowParcel(e.target.checked)}
-          />
-          <i className="sl-line sl-dot" style={{ color: 'rgb(232,228,220)' }} /> ML-Paket
-        </label>
-        <label title="Fläche, auf der das gehobene Paket WÄRMER ist als die Umgebung — die Energie des Aufwinds. Sie beginnt etwas über der LFC-Marke: gerechnet wird der Auftrieb über die Virtualtemperatur (feuchte Luft ist bei gleicher Temperatur leichter), gezeichnet sind die echten Temperaturen, und die kreuzen sich erst ein Stück höher.">
-          <input
-            type="checkbox"
-            checked={showCape}
-            onChange={(e) => setShowCape(e.target.checked)}
-          />
-          <i className="sl-area" style={{ background: 'rgba(214,58,43,0.55)' }} /> CAPE
-        </label>
-        <label title="Fläche, auf der das Paket unterhalb des LFC KÄLTER ist — die Sperre, die erst überwunden werden muss.">
-          <input
-            type="checkbox"
-            checked={showCin}
-            onChange={(e) => setShowCin(e.target.checked)}
-          />
-          <i className="sl-area" style={{ background: 'rgba(74,147,232,0.55)' }} /> CIN
-        </label>
-        <label title="Absinkender, durch Verdunstung gekühlter Abwind vom θe-Minimum zum Boden. Die Fläche IST die DCAPE.">
-          <input
-            type="checkbox"
-            checked={showDowndraft}
-            onChange={(e) => setShowDowndraft(e.target.checked)}
-          />
-          <i className="sl-area" style={{ background: 'rgba(118,104,224,0.6)' }} /> DCAPE
-        </label>
+      <div className="skewt-topleft">
+        <div className="skewt-legend">
+          <span className="skewt-legend-static">
+            <i className="sl-line" /> T
+          </span>
+          <span className="skewt-legend-static">
+            <i className="sl-line sl-dash" /> Td
+          </span>
+          <label title="Feuchtkugeltemperatur: worauf Verdunstung die Luft abkühlen kann. Liegt zwischen Td und T; an Tw = 0 °C liest man die Schneefallgrenze ab.">
+            <input
+              type="checkbox"
+              checked={showWetBulb}
+              onChange={(e) => setShowWetBulb(e.target.checked)}
+            />
+            <i className="sl-line sl-dot" style={{ color: WETBULB_LINE }} /> Tw
+          </label>
+          <label title="Weg des gehobenen ML-Pakets samt LCL/LFC/EL-Marken am linken Rand.">
+            <input
+              type="checkbox"
+              checked={showParcel}
+              onChange={(e) => setShowParcel(e.target.checked)}
+            />
+            <i className="sl-line sl-dot" style={{ color: 'rgb(232,228,220)' }} /> ML-Paket
+          </label>
+          <label title="Fläche, auf der das gehobene Paket WÄRMER ist als die Umgebung — die Energie des Aufwinds. Sie beginnt etwas über der LFC-Marke: gerechnet wird der Auftrieb über die Virtualtemperatur (feuchte Luft ist bei gleicher Temperatur leichter), gezeichnet sind die echten Temperaturen, und die kreuzen sich erst ein Stück höher.">
+            <input
+              type="checkbox"
+              checked={showCape}
+              onChange={(e) => setShowCape(e.target.checked)}
+            />
+            <i className="sl-area" style={{ background: 'rgba(214,58,43,0.55)' }} /> CAPE
+          </label>
+          <label title="Fläche, auf der das Paket unterhalb des LFC KÄLTER ist — die Sperre, die erst überwunden werden muss.">
+            <input
+              type="checkbox"
+              checked={showCin}
+              onChange={(e) => setShowCin(e.target.checked)}
+            />
+            <i className="sl-area" style={{ background: 'rgba(74,147,232,0.55)' }} /> CIN
+          </label>
+          <label title="Absinkender, durch Verdunstung gekühlter Abwind vom θe-Minimum zum Boden. Die Fläche IST die DCAPE.">
+            <input
+              type="checkbox"
+              checked={showDowndraft}
+              onChange={(e) => setShowDowndraft(e.target.checked)}
+            />
+            <i className="sl-area" style={{ background: 'rgba(118,104,224,0.6)' }} /> DCAPE
+          </label>
+        </div>
+        {/* ZUSATZSCHICHTEN direkt unter der Legende: θe-Spalte und Hodograf
+            ändern, was man sieht, und gehören deshalb dorthin, wo man die
+            Bildinhalte schaltet — nicht klein zwischen „Info" und „Kennzahlen"
+            an den rechten Rand. Als Umschalter mit sichtbarem Zustand. */}
+        <div className="skewt-layers">
+          <button
+            type="button"
+            className="skewt-layer-btn"
+            aria-pressed={showThetaE}
+            onClick={() => setShowThetaE((v) => !v)}
+            title="θe-Spalte ein-/ausblenden: äquivalentpotentielle Temperatur über die Höhe, hinterlegt mit der Schichtung — rot = potentiell instabil (θe nimmt nach oben ab), blau = stabil, grau = neutral."
+          >
+            θe-Spalte
+          </button>
+          <button
+            type="button"
+            className="skewt-layer-btn"
+            aria-pressed={showHodo}
+            onClick={() => setShowHodo((v) => !v)}
+            title="Hodograf ein-/ausblenden (unten links im Diagramm)"
+          >
+            Hodograf
+          </button>
+        </div>
       </div>
 
       <div className="skewt-toggles">
@@ -582,22 +608,6 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             i
           </span>
           Info
-        </button>
-        <button
-          type="button"
-          className="skewt-params-toggle"
-          onClick={() => setShowThetaE((v) => !v)}
-          title="θe-Spalte ein-/ausblenden: äquivalentpotentielle Temperatur über die Höhe, hinterlegt mit der Schichtung — rot = potentiell instabil (θe nimmt nach oben ab), blau = stabil, grau = neutral."
-        >
-          θe {showThetaE ? '✕' : '▾'}
-        </button>
-        <button
-          type="button"
-          className="skewt-params-toggle"
-          onClick={() => setShowHodo((v) => !v)}
-          title="Hodograf ein-/ausblenden"
-        >
-          Hodograf {showHodo ? '✕' : '▾'}
         </button>
         <button
           type="button"
