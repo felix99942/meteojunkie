@@ -519,7 +519,23 @@ npm run preview   # gebautes dist/ servieren
   aus `VerifyPanel`).
   „In der Karte zeigen"
   springt auf den Zeitraum DER ANTWORT (Rekordjahr und -monat), nicht auf das
-  laufende Jahr. Gegen die echte Stationsliste gemessen: 14 von 14
+  laufende Jahr.
+  **Die Station wird dabei STARK markiert** (`markedIdx` in `AtClimateMap`,
+  `drawStationPoints`/`drawStationLabels`): Ring um den Punkt, der Wert groß
+  (22 px) in einem Kästchen mit Akzentrand, ZULETZT gezeichnet und damit über
+  den Nachbarlabels. In einem Netz aus bis zu 500 gleich aussehenden Zahlen
+  war die bisherige Hervorhebung — gelbe Schrift in normaler Größe — nicht zu
+  finden. Zwei Feinheiten, beide Absicht: die markierte Station behält ihre
+  WERTFARBE (der Hover ersetzt sie durch Gelb, hier nähme das genau die
+  Information weg, wegen der man hingesprungen ist), und der Kasten klappt
+  nach UNTEN, wenn die Station zu nah am oberen Kartenrand steht.
+  **Die Markierung überlebt das Schließen des Detailfensters** (eigener
+  Zustand `marked` neben `selected` in `AtClimatePanel`): das Fenster liegt
+  über der Karte, man macht es genau deshalb zu. Weggeräumt wird sie erst,
+  wenn eine ANDERE Station angeklickt wird — die ist dann selbst markiert,
+  solange ihr Detail offen ist. Der Hover in der Rangliste bleibt davon
+  getrennt die leichte Hervorhebung (`highlightIdx`): sonst überschriebe
+  jedes Überfahren gerade die Markierung, die man sucht. Gegen die echte Stationsliste gemessen: 14 von 14
   Beispielfragen richtig.
   **HÖHENFILTER: alle / nur Bergstationen / ohne Bergstationen**
   (`AskTerrain`, Auswahl „Lage" im Fenster). Bei etlichen Größen ist er der

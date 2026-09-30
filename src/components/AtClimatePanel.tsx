@@ -145,6 +145,14 @@ export function AtClimatePanel() {
   const [showAsk, setShowAsk] = useState(false)
   /** Was ins Einstiegsfeld getippt wurde, bevor das Fenster aufging. */
   const [askSeed, setAskSeed] = useState('')
+  /**
+   * Station, auf die „In der Karte zeigen" gesprungen ist. Eigener Zustand
+   * NEBEN `selected`, weil die Markierung das SCHLIESSEN des Detailfensters
+   * überleben muss: das Fenster liegt über der Karte, man macht es genau
+   * deshalb zu, um die markierte Station zu sehen. Ein Klick auf eine andere
+   * Station räumt sie weg.
+   */
+  const [marked, setMarked] = useState<AtStation | null>(null)
   const [rankHover, setRankHover] = useState<number | null>(null)
 
   const init = useMemo(latestPeriods, [])
@@ -504,13 +512,17 @@ export function AtClimatePanel() {
     return isoDay(dec > new Date() ? new Date() : dec)
   }, [period])
 
-  // Die geöffnete Station bleibt in der Karte markiert; ein Hover in der
-  // Rangliste hat Vorrang.
+  // Die geöffnete Station bleibt in der Karte STARK markiert (Ring + Wert in
+  // einem Kästchen) — das ist auch das Ziel von „In der Karte zeigen" aus dem
+  // Klimaarchiv. Der Hover in der Rangliste ist davon getrennt und bleibt die
+  // leichte Hervorhebung: sonst überschriebe jedes Überfahren die Markierung,
+  // die man gerade sucht.
   const selectedIdx = useMemo(() => {
-    if (!selected) return null
-    const i = shown.findIndex((s) => s.id === selected.id)
+    const st = selected ?? marked
+    if (!st) return null
+    const i = shown.findIndex((s) => s.id === st.id)
     return i >= 0 ? i : null
-  }, [selected, shown])
+  }, [selected, marked, shown])
 
   const periodLabel = useMemo(() => {
     if (period.kind === 'day') return fmtDayLabel.format(new Date(`${period.day}T12:00:00Z`))
@@ -953,8 +965,12 @@ export function AtClimatePanel() {
               colors={colors}
               values={displayValues}
               unit={unit}
-              onSelect={(i) => setSelected(shown[i])}
-              highlightIdx={rankHover ?? selectedIdx}
+              onSelect={(i) => {
+                setSelected(shown[i])
+                setMarked(null)
+              }}
+              highlightIdx={rankHover}
+              markedIdx={selectedIdx}
             />
             {/* Was die Karte zeigt, gehört IN die Karte — groß und zentral.
                 Klein in der Werkzeugleiste hat es niemand gelesen, und genau
@@ -1058,7 +1074,10 @@ export function AtClimatePanel() {
                         : `${spec.description} Gereiht wird „${shownQuantity}".`
                 }
                 signed={anomActive && anom.signed}
-                onSelect={(i) => setSelected(shown[i])}
+                onSelect={(i) => {
+                setSelected(shown[i])
+                setMarked(null)
+              }}
                 onHover={setRankHover}
                 onClose={() => {
                   setShowRank(false)
@@ -1091,6 +1110,7 @@ export function AtClimatePanel() {
                     if (year != null) setYear(year)
                   }
                   setSelected(st)
+                  setMarked(st)
                   setShowAsk(false)
                 }}
               />

@@ -71,6 +71,7 @@ const COLORS = {
   pointStroke: 'rgba(30,30,30,0.9)',
   noData: 'rgba(140,135,129,0.5)',
   highlight: '#e8b23a',
+  mark: '#ffd24a',
 }
 
 export function AtClimateMap({
@@ -83,6 +84,7 @@ export function AtClimateMap({
   basemapUrl = austriaBasemapUrl,
   labelMinGap = 0,
   highlightIdx = null,
+  markedIdx = null,
 }: {
   stations: MapStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
@@ -104,6 +106,14 @@ export function AtClimateMap({
    * Label-Ausdünnung hinweg — sonst bliebe sie im dichten Netz unsichtbar.
    */
   highlightIdx?: number | null
+  /**
+   * STARK markierte Station: Ring um den Punkt, Wert groß in einem Kästchen.
+   * Das ist die geöffnete Station bzw. die, auf die „In der Karte zeigen"
+   * aus dem Klimaarchiv gesprungen ist — sie soll in einem Netz aus
+   * Hunderten gleich aussehender Zahlen sofort zu finden sein. Anders als
+   * beim Hover bleibt ihre WERTFARBE erhalten.
+   */
+  markedIdx?: number | null
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -175,17 +185,28 @@ export function AtClimateMap({
       // Punkte bei dichten Netzen (DACH) kleiner, damit die Karte nicht zuläuft.
       const pointR = labelMinGap > 0 ? 3 : 5
       const hi = hoverIdxRef.current >= 0 ? hoverIdxRef.current : (highlightIdx ?? -1)
+      const mk = markedIdx ?? -1
       drawStationPoints(ctx, g, stations, {
         radius: pointR,
         fill: COLORS.pointFill,
         stroke: COLORS.pointStroke,
         highlightIdx: hi,
         highlightFill: COLORS.highlight,
+        markedIdx: mk,
+        markStroke: COLORS.mark,
         colors,
         noDataFill: COLORS.noData,
       })
       // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
-      if (values) drawStationLabels(ctx, g, stations, values, formatValue, colors, hi, labelMinGap)
+      if (values) {
+        drawStationLabels(ctx, g, stations, values, formatValue, {
+          colors,
+          highlightIdx: hi,
+          markedIdx: mk,
+          markColor: COLORS.mark,
+          minGap: labelMinGap,
+        })
+      }
     }
 
     drawRef.current = draw
@@ -193,7 +214,7 @@ export function AtClimateMap({
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover, view, labelMinGap, highlightIdx])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap, highlightIdx, markedIdx])
 
   // Zoom per Mausrad (um den Cursor). Nativer Listener mit passive:false, damit
   // preventDefault das Seiten-Scrollen zuverlässig unterbindet.

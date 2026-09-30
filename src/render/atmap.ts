@@ -111,6 +111,14 @@ export function drawStationPoints(
     stroke: string
     highlightIdx?: number
     highlightFill?: string
+    /**
+     * STARK markierte Station — die geöffnete bzw. die, auf die „In der Karte
+     * zeigen" gesprungen ist. Sie behält ihre WERTFARBE und bekommt einen
+     * Ring: die Farbe zu ersetzen (wie beim Hover) nähme ihr genau die
+     * Information, wegen der man hingesprungen ist.
+     */
+    markedIdx?: number
+    markStroke?: string
     colors?: (string | null)[]
     noDataFill?: string
   },
@@ -121,17 +129,47 @@ export function drawStationPoints(
     const s = stations[i]
     const { x, y } = project(g, s.lon, s.lat)
     const hl = i === opts.highlightIdx
+    const mk = i === opts.markedIdx
     const perStation = opts.colors ? opts.colors[i] : opts.fill
     const noData = opts.colors && perStation == null
-    const r = noData ? opts.radius - 0.8 : hl ? opts.radius + 2 : opts.radius
+    const r = noData ? opts.radius - 0.8 : hl || mk ? opts.radius + 2 : opts.radius
     ctx.beginPath()
     ctx.arc(x, y, Math.max(0.8, r), 0, Math.PI * 2)
-    ctx.fillStyle = hl && opts.highlightFill ? opts.highlightFill : (perStation ?? opts.noDataFill ?? opts.fill)
+    ctx.fillStyle =
+      hl && !mk && opts.highlightFill
+        ? opts.highlightFill
+        : (perStation ?? opts.noDataFill ?? opts.fill)
     ctx.fill()
+    ctx.lineWidth = 1
     ctx.strokeStyle = opts.stroke
     ctx.stroke()
+    if (mk && opts.markStroke) {
+      ctx.beginPath()
+      ctx.arc(x, y, Math.max(0.8, r) + 4, 0, Math.PI * 2)
+      ctx.lineWidth = 2
+      ctx.strokeStyle = opts.markStroke
+      ctx.stroke()
+    }
   }
   ctx.restore()
+}
+
+/** Rechteck mit runden Ecken als Pfad — `ctx.roundRect` ist jung (Safari 16.4). */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
 }
 
 /**
@@ -145,11 +183,26 @@ export function drawStationLabels(
   stations: MapStation[],
   values: (number | null)[],
   format: (v: number) => string,
-  colors?: (string | null)[],
-  highlightIdx?: number,
-  /** Mindestabstand (px) zwischen Labels; >0 dünnt bei dichten Netzen aus. 0 = alle. */
-  minGap = 0,
+  opts: {
+    colors?: (string | null)[]
+    /** Leicht hervorgehoben (Hover): gelbe Schrift, gleiche Größe. */
+    highlightIdx?: number
+    /**
+     * STARK markiert: größere Zahl in einem Kästchen, ZULETZT gezeichnet.
+     *
+     * Das ist die Station, die eine Frage ans Klimaarchiv beantwortet hat
+     * („In der Karte zeigen") bzw. deren Detail offen ist. In einem Netz aus
+     * bis zu 500 gleich aussehenden Zahlen war sie vorher nur an der
+     * Schriftfarbe zu erkennen — zu wenig, um sie auf Anhieb zu finden.
+     */
+    markedIdx?: number
+    markColor?: string
+    /** Mindestabstand (px) zwischen Labels; >0 dünnt bei dichten Netzen aus. 0 = alle. */
+    minGap?: number
+  } = {},
 ): void {
+  const { colors, highlightIdx, markedIdx, minGap = 0 } = opts
+  const markColor = opts.markColor ?? '#ffd24a'
   ctx.save()
   ctx.font = '700 16px system-ui, sans-serif'
   ctx.textAlign = 'center'
@@ -160,6 +213,9 @@ export function drawStationLabels(
   for (let i = 0; i < stations.length; i++) {
     const v = values[i]
     if (v == null || !Number.isFinite(v)) continue
+    // Die markierte Station kommt ZULETZT — ihr Kästchen soll über den
+    // Nachbarlabels liegen, nicht unter ihnen.
+    if (i === markedIdx) continue
     const { x, y } = project(g, stations[i].lon, stations[i].lat)
     if (occupied && i !== highlightIdx) {
       const cx = Math.floor(x / minGap)
@@ -178,6 +234,27 @@ export function drawStationLabels(
     // Schrift in der Wertfarbe; hervorgehobene Station gelb, ohne Farbe hell.
     ctx.fillStyle = i === highlightIdx ? '#ffd24a' : (colors?.[i] ?? '#f4f2ee')
     ctx.fillText(text, x, ty)
+  }
+
+  const mv = markedIdx != null ? values[markedIdx] : null
+  if (markedIdx != null && mv != null && Number.isFinite(mv)) {
+    const { x, y } = project(g, stations[markedIdx].lon, stations[markedIdx].lat)
+    const text = format(mv)
+    ctx.font = '700 22px system-ui, sans-serif'
+    const w = ctx.measureText(text).width + 16
+    const h = 30
+    // Über den Punkt, damit er frei bleibt — nach unten gespiegelt, wenn oben
+    // kein Platz ist (Station am oberen Kartenrand).
+    const above = y - h - 11 >= g.top
+    const by = above ? y - h - 11 : y + 11
+    roundRectPath(ctx, x - w / 2, by, w, h, 5)
+    ctx.fillStyle = 'rgba(10,11,13,0.92)'
+    ctx.fill()
+    ctx.lineWidth = 2
+    ctx.strokeStyle = markColor
+    ctx.stroke()
+    ctx.fillStyle = markColor
+    ctx.fillText(text, x, by + h / 2 + 1)
   }
   ctx.restore()
 }
