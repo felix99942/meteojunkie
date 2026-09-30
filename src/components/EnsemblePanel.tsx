@@ -16,12 +16,14 @@ import 'uplot/dist/uPlot.min.css'
 import { useDeterministicSeries, useEnsembleSeries } from '../api/queries'
 import {
   ENSEMBLE_BUCKET_HOURS,
+  ensembleThresholds,
   getEnsembleModel,
   getEnsembleVariable,
+  type EnsembleThreshold,
 } from '../config/ensemble'
 import { formatRunLong, latestRun, RUN_TITLE } from '../config/runs'
 import { TIME_RANGE } from '../config/time'
-import { accumulateMembers, bucketMembers, plumeStats, readoutAt } from '../render/plume'
+import { accumulateMembers, bucketMembers, exceedance, plumeStats, readoutAt } from '../render/plume'
 import { barIndices, barStepHours, barWidth, drawQuantileBars } from '../render/quantileBars'
 import { cursorRangeEnd, useWorkbench, type PanelConfig } from '../state/workbench'
 import { QuickPoints } from './QuickPoints'
@@ -40,6 +42,15 @@ const MEDIAN_LINE = '#3987e5'
 const CONTROL_LINE = '#d55181'
 const HRES_LINE = '#d95926'
 const CURSOR_LINE = '#e8b23a'
+/**
+ * Wahrscheinlichkeit: eigenes Türkis — Gelb gehört dem Zeit-Cursor, Blau der
+ * Plume, Orange/Magenta den beiden Läufen. Die Schwellenlinie in der Plume
+ * trägt dieselbe Farbe, damit Linie und Leiste als EINE Aussage lesbar sind.
+ */
+const PROB_LINE = '#2dd4bf'
+const PROB_FILL = 'rgba(45,212,191,0.28)'
+/** Höhe der Wahrscheinlichkeitsleiste unter der Plume (CSS-Pixel). */
+const PROB_HEIGHT = 118
 
 /**
  * Quantil-Balken (Niederschlag) im selben Blau wie das Band — es ist
@@ -96,6 +107,31 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const hres = useDeterministicSeries(location, model.id, variable.id)
 
   /**
+   * SCHWELLE für die Wahrscheinlichkeitsleiste: Index einer Voreinstellung,
+   * `custom` oder `off`. VORGABE IST AUS — die Leiste kommt nur, wenn man
+   * nach einer Schwelle fragt. Lokal statt im Panel-Zustand: sie hängt an der
+   * GRÖSSE (0 °C sind bei 850 hPa etwas anderes als bei Böen) und geht beim
+   * Größenwechsel deshalb wieder aus.
+   */
+  const presets = ensembleThresholds(variable.id)
+  const [thrKey, setThrKey] = useState<string>('off')
+  const [customOp, setCustomOp] = useState<'>=' | '<'>('>=')
+  const [customValue, setCustomValue] = useState('')
+  useEffect(() => {
+    setThrKey('off')
+    setCustomValue('')
+  }, [variable.id])
+  const threshold: EnsembleThreshold | null = useMemo(() => {
+    if (thrKey === 'off') return null
+    if (thrKey === 'custom') {
+      const v = Number(customValue.replace(',', '.'))
+      return customValue.trim() !== '' && Number.isFinite(v) ? { op: customOp, value: v } : null
+    }
+    return presets[Number(thrKey)] ?? null
+  }, [thrKey, customOp, customValue, presets])
+  const thresholdRef = useRef<EnsembleThreshold | null>(threshold)
+
+  /**
    * Die beiden ANSICHTSSCHALTER stehen im Panelkopf neben SYNC (siehe
    * `PanelHeader`) und liegen deshalb im Panel-Zustand, nicht hier: was ein
    * Panel zeigt, stellt man dort ein, wie Modell und Parameter daneben.
@@ -111,6 +147,10 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const [zoomed, setZoomed] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
+  const stripElRef = useRef<HTMLDivElement>(null)
+  const stripRef = useRef<uPlot | null>(null)
+  /** Gemeinsamer Cursor von Plume und Leiste (uPlot.sync). */
+  const syncKey = useRef(`ens-${Math.random().toString(36).slice(2)}`).current
   const cursorRef = useRef(cursorTime)
 
   // Summengrößen (Niederschlag/Schnee): Stundenwerte als 51 Spaghetti sind
@@ -164,6 +204,15 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
     }
   }, [query.data, hres.data, variable.kind, bucketed])
 
+  /** Anteil der Member je Zeitschritt, der die Schwelle erfüllt (0…1). */
+  const prob = useMemo(
+    () => (prepared && threshold ? exceedance(prepared.members, threshold.op, threshold.value) : null),
+    [prepared, threshold],
+  )
+  const thrText = threshold
+    ? `${threshold.op === '>=' ? '≥' : '<'} ${String(threshold.value).replace('.', ',')} ${unitLabel}`
+    : ''
+
   // Ablesezeile am Zeit-Cursor.
   const readout = useMemo(() => {
     if (!prepared) return null
@@ -178,8 +227,15 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       r: readoutAt(prepared.stats, i),
       hres: prepared.deterministic?.[i] ?? null,
       control: prepared.members[0]?.[i] ?? null,
+      prob: prob?.[i] ?? null,
     }
-  }, [prepared, cursorTime, hoverIdx])
+  }, [prepared, cursorTime, hoverIdx, prob])
+
+  // Schwellenlinie in der Plume nur neu ZEICHNEN, nicht den Plot neu bauen.
+  useEffect(() => {
+    thresholdRef.current = threshold
+    plotRef.current?.redraw()
+  }, [threshold])
 
   // Cursorlinie nur neu ZEICHNEN, nicht den Plot neu bauen.
   useEffect(() => {
@@ -204,8 +260,26 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
           if (key !== 'x') return
           const sc = u.scales.x
           setZoomed((sc.min ?? fullMin) > fullMin + 1 || (sc.max ?? fullMax) < fullMax - 1)
+          // Die Leiste folgt dem Ausschnitt der Plume — dieselbe Zeitachse.
+          if (sc.min != null && sc.max != null) stripRef.current?.setScale('x', { min: sc.min, max: sc.max })
         },
         draw: (u) => {
+          const thr = thresholdRef.current
+          if (thr) {
+            const y = u.valToPos(thr.value, 'y', true)
+            if (Number.isFinite(y) && y >= u.bbox.top && y <= u.bbox.top + u.bbox.height) {
+              const c = u.ctx
+              c.save()
+              c.setLineDash([6, 4])
+              c.strokeStyle = PROB_LINE
+              c.lineWidth = 1.5 * (window.devicePixelRatio || 1)
+              c.beginPath()
+              c.moveTo(u.bbox.left, y)
+              c.lineTo(u.bbox.left + u.bbox.width, y)
+              c.stroke()
+              c.restore()
+            }
+          }
           const x = u.valToPos(cursorRef.current / 1000, 'x', true)
           if (!Number.isFinite(x)) return
           const ctx = u.ctx
@@ -310,7 +384,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       // uPlots eigenes Zieh-Auswählen ist AUS: gezoomt wird mit dem Mausrad,
       // gezogen wird verschoben (wie in der Österreich-Karte). Ein Rechteck
       // aufzuziehen trifft den gewünschten Ausschnitt nie beim ersten Versuch.
-      cursor: { y: false, drag: { x: false, y: false, setScale: false } },
+      cursor: { y: false, drag: { x: false, y: false, setScale: false }, sync: { key: syncKey } },
       plugins: [barsPlugin, cursorPlugin],
       hooks: {
         // Überfahrener Zeitschritt für die Ablesezeile; `null` beim Verlassen.
@@ -474,7 +548,71 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       plotRef.current = null
       setZoomed(false)
     }
-  }, [prepared, showMembers, barView, variable.zeroBased, setCursorTime])
+  }, [prepared, showMembers, barView, variable.zeroBased, setCursorTime, syncKey])
+
+  /**
+   * WAHRSCHEINLICHKEITSLEISTE — ein eigenes uPlot unter der Plume, nicht eine
+   * zweite y-Achse darin: 0–100 % neben °C oder mm in EINEM Feld liest man
+   * unweigerlich gegen die falsche Achse. Zeitachse, Ausschnitt und Cursor
+   * teilt sie mit der Plume (`syncKey`, Ausschnitt über den setScale-Hook
+   * oben), die linke Achse ist gleich breit, damit die Zeitpunkte senkrecht
+   * übereinanderstehen.
+   */
+  useEffect(() => {
+    const el = stripElRef.current
+    if (!el || !prepared || !prob || prepared.times.length === 0) return
+    const xs = prepared.times.map((t) => t / 1000)
+    const main = plotRef.current?.scales.x
+    const pct = prob.map((v) => (v == null ? null : v * 100))
+    const u = new uPlot(
+      {
+        width: Math.max(el.clientWidth, 100),
+        height: PROB_HEIGHT,
+        tzDate: (ts) => uPlot.tzDate(new Date(ts * 1000), 'Etc/UTC'),
+        legend: { show: false },
+        cursor: { y: false, drag: { x: false, y: false, setScale: false }, sync: { key: syncKey } },
+        hooks: { setCursor: [(p: uPlot) => setHoverIdx(p.cursor.idx ?? null)] },
+        scales: {
+          x: main?.min != null && main.max != null ? { min: main.min, max: main.max } : {},
+          y: { range: [0, 100] },
+        },
+        series: [
+          {},
+          { stroke: PROB_LINE, width: 1.5, fill: PROB_FILL, points: { show: false } },
+        ],
+        axes: [
+          {
+            stroke: INK_MUTED,
+            font: AXIS_FONT,
+            grid: { stroke: GRIDLINE, width: 1 },
+            ticks: { stroke: GRIDLINE, width: 1 },
+            space: 52,
+            size: 24,
+            values: (_u, ticks) => ticks.map((t) => fmtDay.format(new Date(t * 1000))),
+          },
+          {
+            stroke: INK_MUTED,
+            font: AXIS_FONT,
+            size: 46,
+            splits: () => [0, 50, 100],
+            values: (_u, ticks) => ticks.map((t) => `${t} %`),
+            grid: { stroke: GRIDLINE, width: 1 },
+            ticks: { stroke: GRIDLINE, width: 1 },
+          },
+        ],
+      },
+      [xs, pct] as uPlot.AlignedData,
+      el,
+    )
+    stripRef.current = u
+    const ro = new ResizeObserver(() => u.setSize({ width: el.clientWidth, height: PROB_HEIGHT }))
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      u.destroy()
+      stripRef.current = null
+    }
+  }, [prepared, prob, syncKey])
 
   /** Zoom aufheben — dasselbe wie Doppelklick im Plot. */
   const resetZoom = () => {
@@ -501,6 +639,35 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         {/* Welcher Lauf im Bild ist — bei einem 15-Tage-Plume ist das die
             Frage nach dem Alter der Aussage. Immer der neueste verfügbare;
             die Init-Zeit ist geschätzt (RUN_TITLE). */}
+        <span className="ens-thr" title="Wahrscheinlichkeit = Anteil der Member, die die Schwelle erfüllen. Unter der Plume als Leiste, in der Plume als gestrichelte Linie.">
+          <span className="label-muted">Wahrscheinlichkeit</span>
+          <select value={thrKey} onChange={(e) => setThrKey(e.target.value)}>
+            <option value="off">aus</option>
+            {presets.map((t, i) => (
+              <option key={i} value={String(i)}>
+                {t.op === '>=' ? '≥' : '<'} {String(t.value).replace('.', ',')} {unitLabel}
+                {t.meaning ? ` · ${t.meaning}` : ''}
+              </option>
+            ))}
+            <option value="custom">eigene Schwelle …</option>
+          </select>
+          {thrKey === 'custom' && (
+            <>
+              <select value={customOp} onChange={(e) => setCustomOp(e.target.value as '>=' | '<')}>
+                <option value=">=">≥</option>
+                <option value="<">&lt;</option>
+              </select>
+              <input
+                className="ens-thr-input"
+                inputMode="decimal"
+                placeholder="Wert"
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+              />
+              <span className="label-muted">{unitLabel}</span>
+            </>
+          )}
+        </span>
         <span className="label-muted" title={`${model.label} · ${RUN_TITLE}`}>
           Lauf {formatRunLong(latestRun(model, Date.now()), Date.now())}
         </span>
@@ -562,6 +729,21 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
         )}
       </div>
 
+      {threshold && prepared && (
+        <div className="ens-prob">
+          <div
+            className="ens-prob-cap"
+            title={`Anteil der ${model.members} Member (samt Kontrolllauf, ohne Hauptlauf), die die Schwelle erfüllen. Das ist die ROHE Ensemble-Wahrscheinlichkeit: nicht kalibriert. Ensembles sind am Boden meist zu eng gestreut, 0 % und 100 % sind deshalb selbstsicherer, als die Wirklichkeit es rechtfertigt. Die Auflösung ist 1/${model.members} ≈ ${Math.round(100 / model.members)} %.`}
+          >
+            <span style={{ color: PROB_LINE }}>
+              P({thrText}){threshold.meaning ? ` · ${threshold.meaning}` : ''}
+            </span>
+            <span className="label-muted"> · Anteil der Member, roh (nicht kalibriert)</span>
+          </div>
+          <div className="ens-prob-plot" ref={stripElRef} />
+        </div>
+      )}
+
       <div className="ens-foot">
         {readout?.r ? (
           <>
@@ -583,6 +765,11 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
             <span style={{ color: BAR_MEAN }}>
               Mittel <strong>{fmtVal(readout.r.mean)}</strong>
             </span>
+            {threshold && readout.prob != null && (
+              <span style={{ color: PROB_LINE }}>
+                P({thrText}) <strong>{Math.round(readout.prob * 100)} %</strong>
+              </span>
+            )}
             <span className="label-muted">
               P10–P90 {fmtVal(readout.r.p10)}…{fmtVal(readout.r.p90)} · Spanne{' '}
               {fmtVal(readout.r.min)}…{fmtVal(readout.r.max)} · Streuung{' '}

@@ -195,3 +195,35 @@ export function readoutAt(stats: PlumeStats, t: number): PlumeReadout | null {
     spread: p90 - p10,
   }
 }
+
+
+/**
+ * Wahrscheinlichkeit je Zeitschritt: Anteil der Member, die die Schwelle
+ * erfüllen (`>=` bzw. `<`), zwischen 0 und 1.
+ *
+ * Gezählt wird NUR über Member mit Wert — ein fehlender Member ist kein
+ * „nein". Fehlt aber mehr als die Hälfte (`minCount`), gibt es KEINE Zahl:
+ * aus vier Membern „75 %" zu machen, behauptet eine Auflösung, die nicht da
+ * ist (dieselbe Regel wie die Föhn-Wahrscheinlichkeit).
+ */
+export function exceedance(
+  members: (number | null)[][],
+  op: '>=' | '<',
+  value: number,
+  minCount = Math.ceil(members.length / 2),
+): (number | null)[] {
+  const nt = members.reduce((n, m) => Math.max(n, m.length), 0)
+  const out: (number | null)[] = new Array(nt).fill(null)
+  for (let t = 0; t < nt; t++) {
+    let n = 0
+    let hit = 0
+    for (const m of members) {
+      const v = m[t]
+      if (v == null || !Number.isFinite(v)) continue
+      n++
+      if (op === '>=' ? v >= value : v < value) hit++
+    }
+    if (n >= Math.max(1, minCount)) out[t] = hit / n
+  }
+  return out
+}

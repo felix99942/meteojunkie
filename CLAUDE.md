@@ -1098,6 +1098,35 @@ npm run preview   # gebautes dist/ servieren
   Maximum von 19,2).
   Bei Temperatur, Druck und Wind bleibt es bei der Plume; dort ist sie
   richtig, und der Umschalter erscheint gar nicht.
+  **WAHRSCHEINLICHKEITSLEISTE unter der Plume** (`exceedance` in
+  `render/plume.ts` mit Tests, Schwellen `ENSEMBLE_THRESHOLDS` in
+  `config/ensemble.ts`): Anteil der Member, die eine Schwelle erfüllen, über
+  die Zeit — „wie wahrscheinlich ist T850 < 0 °C", „Böen ≥ 89 km/h". Die
+  Schwelle steht zusätzlich als gestrichelte Linie IN der Plume, in derselben
+  Farbe (Türkis — Gelb gehört dem Zeit-Cursor), damit Linie und Leiste als
+  eine Aussage lesbar sind. **Ein eigenes uPlot, keine zweite y-Achse**: 0–100 %
+  neben °C im selben Feld liest man gegen die falsche Achse. Zeitachse,
+  Ausschnitt (setScale-Hook der Plume) und Cursor (`uPlot.sync`) sind geteilt,
+  die linke Achse gleich breit — die Termine stehen senkrecht übereinander.
+  **Vorgabe ist AUS** — die Leiste erscheint erst, wenn man eine Schwelle
+  wählt. **Voreinstellungen an etablierten Grenzen**, nicht geraten: Kenntage
+  bei T2m, Beaufort bei den Böen (8 = 62, 10 = 89, 12 = 118 km/h), gängige
+  CAPE-Stufen; dazu eine eigene Schwelle. **Beschriftet wird nur, was eine
+  DEFINITION ist** (Frost, Sommertag, Bft, Achtel) — keine Wetterdeutung: die
+  erste Fassung schrieb zu „T850 < 0 °C" „Schnee bis in tiefe Lagen möglich",
+  und das stimmt ohne Niederschlag schlicht nicht; ebenso ist CAPE ohne
+  Auslösung kein Gewitter. Die Schwelle beschreibt die Größe, nicht das Wetter. `>=` schliesst den Grenzwert ein, `<` aus — 0 °C
+  fällt eindeutig auf eine Seite. Bei Summengrößen gilt der Wert für die
+  gewählte ANSICHT (Summe bzw. 6-h-Menge), die Beschriftung sagt es mit der
+  Einheit dazu. Die Schwelle ist LOKAL im Panel und geht beim Größenwechsel
+  wieder aus (0 °C bei 850 hPa ist etwas anderes als bei Böen); sie steht
+  deshalb nicht in Presets.
+  **Gezählt wird nur über Member mit Wert, und unter der halben Memberzahl gibt
+  es KEINE Zahl** — dieselbe Regel wie bei der Föhn-Wahrscheinlichkeit. Der
+  Kontrolllauf zählt mit (er IST ein Member), der Hauptlauf nicht. Die Leiste
+  sagt ausdrücklich „roh (nicht kalibriert)": Ensembles sind am Boden meist zu
+  eng gestreut, 0 % und 100 % sind damit selbstsicherer als die Wirklichkeit,
+  und die Auflösung ist 1/Memberzahl (bei ICON-D2-EPS 5 %).
   **Die Ablesezeile unter dem Diagramm ist das ERGEBNIS des Bereichs** und
   seit 2026-09-30 entsprechend gesetzt: die Zahlen groß (19 px) und in der
   Farbe ihrer Kurve, die Bezeichner klein daneben, der einordnende Nachsatz

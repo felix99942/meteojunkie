@@ -3,6 +3,7 @@ import {
   accumulateMembers,
   accumulateSeries,
   bucketMembers,
+  exceedance,
   percentileOf,
   plumeStats,
   readoutAt,
@@ -179,5 +180,37 @@ describe('bucketMembers', () => {
       [6, 6],
       [18, 18],
     ])
+  })
+})
+
+describe('exceedance', () => {
+  const m = [
+    [0, 5, null],
+    [1, 6, null],
+    [2, 7, 9],
+    [3, 8, null],
+  ]
+
+  it('zählt den Anteil der Member über bzw. unter der Schwelle', () => {
+    expect(exceedance(m, '>=', 2)).toEqual([0.5, 1, null])
+    expect(exceedance(m, '<', 6)).toEqual([1, 0.25, null])
+  })
+
+  // Grenzwert fällt eindeutig auf EINE Seite: >= schliesst ihn ein, < aus.
+  it('behandelt den Grenzwert eindeutig', () => {
+    const one = [[0], [0]]
+    expect(exceedance(one, '>=', 0)).toEqual([1])
+    expect(exceedance(one, '<', 0)).toEqual([0])
+  })
+
+  // Aus einem von vier Membern keine Wahrscheinlichkeit machen.
+  it('gibt ohne genug Member keine Zahl', () => {
+    expect(exceedance(m, '>=', 0)[2]).toBeNull()
+    expect(exceedance(m, '>=', 0, 1)[2]).toBe(1)
+  })
+
+  it('zählt fehlende Member nicht als nein', () => {
+    const gaps = [[10], [null], [10], [10]]
+    expect(exceedance(gaps, '>=', 5)).toEqual([1])
   })
 })

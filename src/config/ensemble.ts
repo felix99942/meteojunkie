@@ -387,3 +387,95 @@ export function getEnsembleVariable(id: string): EnsembleVariableInfo {
  * gelten damit für alle punktbasierten Bereiche — deshalb jetzt in
  * `config/quickPoints.ts`, gerendert von `components/QuickPoints.tsx`.
  */
+
+
+// --- Schwellen für die Wahrscheinlichkeit ---------------------------------
+
+/**
+ * Eine Schwelle für die Wahrscheinlichkeitsleiste unter der Plume: Anteil der
+ * Member, die sie über- bzw. unterschreiten. `op` gilt wörtlich: `>=` heisst
+ * „mindestens", `<` „unter" — so fallen Grenzwerte wie 0 °C eindeutig auf
+ * eine Seite.
+ */
+export interface EnsembleThreshold {
+  op: '>=' | '<'
+  value: number
+  /**
+   * Nur eine DEFINITION, keine Wetterdeutung — und nur, wo es eine gibt
+   * (Kenntage, Beaufort, Achtel). „T850 < 0 °C" heisst für sich nicht
+   * „Schnee im Flachland": dafür braucht es Niederschlag, und die Schneefall-
+   * grenze hängt an mehr als einer Fläche. CAPE ist ebenso kein Gewitter ohne
+   * Auslösung. Die Schwelle beschreibt die Größe, nicht das Wetter.
+   */
+  meaning?: string
+}
+
+/**
+ * Voreinstellungen je Größe — an etablierten Grenzen, nicht erfunden:
+ * Kenntage (Frost/Sommer/Hitze), Beaufort bei den Böen (8 = 62, 10 = 89,
+ * 12 = 118 km/h), gängige CAPE-Stufen. Beschriftet wird nur, was eine
+ * Definition ist (siehe `meaning`). Die Leiste ist VORGABEMÄSSIG AUS; die
+ * Liste bietet nur Schwellen an.
+ *
+ * Bei Summengrößen gilt der Wert für die gerade gewählte ANSICHT: in der
+ * Summenansicht für die aufsummierte Menge, in der 6-h-Ansicht für die Menge
+ * je 6 Stunden. Die Beschriftung sagt das dazu.
+ */
+export const ENSEMBLE_THRESHOLDS: Record<string, EnsembleThreshold[]> = {
+  temperature_2m: [
+    { op: '<', value: 0, meaning: 'Frost' },
+    { op: '>=', value: 25, meaning: 'Sommertag' },
+    { op: '>=', value: 30, meaning: 'Hitzetag' },
+    { op: '<', value: -10 },
+  ],
+  temperature_850hPa: [
+    { op: '<', value: 0 },
+    { op: '<', value: -5 },
+    { op: '<', value: -10 },
+    { op: '>=', value: 10 },
+    { op: '>=', value: 16 },
+    { op: '>=', value: 20 },
+  ],
+  precipitation: [
+    { op: '>=', value: 1 },
+    { op: '>=', value: 5 },
+    { op: '>=', value: 10 },
+    { op: '>=', value: 25 },
+    { op: '>=', value: 50 },
+  ],
+  snowfall: [
+    { op: '>=', value: 1 },
+    { op: '>=', value: 10 },
+    { op: '>=', value: 30 },
+  ],
+  wind_speed_10m: [
+    { op: '>=', value: 39, meaning: 'Bft 6' },
+    { op: '>=', value: 62, meaning: 'Bft 8' },
+  ],
+  wind_gusts_10m: [
+    { op: '>=', value: 62, meaning: 'Bft 8' },
+    { op: '>=', value: 89, meaning: 'Bft 10' },
+    { op: '>=', value: 118, meaning: 'Bft 12' },
+  ],
+  cloud_cover: [
+    { op: '>=', value: 87.5, meaning: '≥ 7/8' },
+    { op: '<', value: 25, meaning: '≤ 2/8' },
+  ],
+  pressure_msl: [
+    { op: '<', value: 1000 },
+    { op: '>=', value: 1030 },
+  ],
+  cape: [
+    { op: '>=', value: 500 },
+    { op: '>=', value: 1000 },
+    { op: '>=', value: 2000 },
+  ],
+  geopotential_height_500hPa: [
+    { op: '<', value: 5520 },
+    { op: '>=', value: 5880 },
+  ],
+}
+
+export function ensembleThresholds(variable: string): EnsembleThreshold[] {
+  return ENSEMBLE_THRESHOLDS[variable] ?? []
+}
