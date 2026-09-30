@@ -101,56 +101,95 @@ import {
 export const EUMETSAT_WMS_BASE = 'https://view.eumetsat.int/geoserver/wms'
 
 /**
- * Die Fläche gibt HIER die Seite vor, nicht der Dienst — das ist der
- * Unterschied zum Radar. Ein Satellitenlayer meldet im Capabilities die ganze
- * sichtbare Halbkugel (gemessen: lon −81,3…81,3, lat −77,4…77,4); ein Bild
- * darüber wäre für Mitteleuropa nutzlos. Gewählt ist ein Fenster, das D-A-CH
- * mit Anlauf umfasst (Nordsee bis Po-Ebene, Rhône bis Weichsel), damit man die
- * Systeme HEREINZIEHEN sieht statt sie am Bildrand zu entdecken.
+ * GANZ EUROPA — und die Fläche gibt HIER die Seite vor, nicht der Dienst.
+ * Ein Satellitenlayer meldet im Capabilities die ganze sichtbare Halbkugel
+ * (gemessen: lon −81,3…81,3, lat −77,4…77,4); ein Bild darüber wäre zur
+ * Hälfte Weltraum.
+ *
+ * Die Zahlen sind das Kachelfenster der Zoomstufe 6, x 27…40 und y 13…26 —
+ * dieselben, aus denen `scripts/build-ground.mjs` den Untergrund schneidet,
+ * damit Bild und Untergrund im Komposit deckungsgleich liegen. Das ergibt
+ * Island und das Nordkap gerade noch innen, dazu Nordafrika, die Türkei und
+ * das europäische Russland; in Mercator ist der Kasten zufällig exakt
+ * QUADRATISCH (8.140 × 8.140 km).
+ *
+ * **Der Erdrand darf nicht hinein** — bei 60° O und 75° N steht er sichtbar
+ * als schwarzer Keil im Bild (nachgemessen 2026-09-29 an einem Kasten
+ * −30…60 / 25…75). Die Ecke (45° O, 72,4° N) liegt bei 77° Großkreisabstand
+ * vom Subsatellitenpunkt und damit innerhalb der Scheibe.
+ *
+ * **Das war bis 2026-09-30 ein enges Fenster über Mitteleuropa**
+ * (lon 0…22, lat 41…56) mit einer noch engeren Detailfläche für die beiden
+ * HRFI-Kanäle. Beides ist weg, und der Preis dafür gehört benannt: über
+ * Europa lässt sich das native Raster NICHT mehr halten. HRFI ist nativ
+ * 788 m; bei 4.070 m/px (s. u.) sind das Faktor 5. Beim Hineinzoomen auf die
+ * Alpen ist das Bild deshalb weicher als vorher — mehr Bildinhalt gibt es
+ * mit EINEM Bild über EINE feste Fläche nicht, und Kacheln je Zoomstufe sind
+ * derselbe Handel, der beim Radar schon abgelehnt wurde (ein Dutzend Abrufe
+ * je Zeitschritt, neue Abrufe bei jedem Verschieben).
  */
-export const SATELLITE_AREA: GeoBox = { west: 0, east: 22, south: 41, north: 56 }
+export const SATELLITE_AREA: GeoBox = {
+  west: -28.125,
+  east: 45,
+  south: 31.952162,
+  north: 72.395706,
+}
 
 /**
- * ENGERE Fläche für die beiden hochaufgelösten MTG-Kanäle (`vis06_hrfi`,
- * `ir105_hrfi`). Sie ist kein Geschmacksausschnitt, sondern die Rechnung aus
- * dem Kopf der Datei: 14° Länge sind 1.558.473 m in Mercator, bei 2000 px also
- * 779 m/px — praktisch genau das native Raster von HRFI (788 m). Auf der
- * Vollfläche bräuchte dasselbe Raster 3200 px und das Doppelte an Bytes.
+ * ENGERE Fläche für das GESCHÄRFTE Produkt (`hrv`).
  *
- * Der Preis ist der Rand: Krakau, Ostrau und Lille fallen heraus (3 von 134
- * Einträgen der Pseudo-Domain `imagery` in `config/cities.ts`, gemessen) — die
- * Stadtmarken stehen dort dann über dem bloßen Kartenhintergrund. BEIDE
- * Sprungziele der Werkzeugleiste (D-A-CH, Alpen) liegen vollständig innerhalb,
- * ein Test hält das fest: ein Sprungziel außerhalb des Bildes wäre der Fehler,
- * den man dieser Trennung sonst nicht ansieht.
+ * Sie ist kein Geschmacksausschnitt, sondern die Rechnung: 14° Länge sind
+ * 1.558.473 m in Mercator, bei 2000 px also **779 m/px** — praktisch genau
+ * das gemessene Raster des HRFI-Kanals (788 m), aus dem die Schärfe kommt.
+ * Über der Europafläche wären dieselben 779 m/px rund 10.400 px und mehrere
+ * MB je Zeitschritt; das Pan-Sharpening hätte dort auch nichts zu tun, weil
+ * die Farbe bei 4.070 m/px schon nahezu nativ ist.
+ *
+ * Dass es diese Fläche wieder gibt, ist also KEIN Rückschritt hinter die
+ * Europa-Umstellung: die fünfzehn übrigen Produkte bleiben europaweit, und
+ * dieses eine kann es gar nicht sein (Begründung bei `SharpenSpec`).
  */
 export const SATELLITE_DETAIL_AREA: GeoBox = { west: 4, east: 18, south: 44, north: 56 }
 
 /**
- * Mitte der VOLLfläche — Bezugspunkt für den Sonnenstand. Bewusst nicht je
- * Produkt: die Detailfläche hat denselben Mittelmeridian und liegt nur 1,5°
- * weiter nördlich, und die Frage ist ohnehin nur, ob über dem GEBIET Licht
- * ist. Ob ein sichtbarer Kanal
- * etwas zeigen kann, hängt am Licht über dem GEBIET; ein Punkt genügt dafür,
- * die Fläche ist rund 1.600 km breit und der Unterschied von Rand zu Rand
- * beträgt gut eine Stunde.
+ * Bezugspunkt für den Sonnenstand — die Frage ist, ob über dem GEBIET Licht
+ * ist, und dafür genügt ein Punkt.
+ *
+ * **Nicht mehr die Mitte der Fläche**, seit die Fläche ganz Europa umfasst:
+ * deren Mittelpunkt läge bei 8,4° O und 55° N, also in der Nordsee, und über
+ * 73° Länge liegen zwischen Island und dem Kaspischen Meer fast fünf Stunden
+ * Sonnenstand. Gewählt ist deshalb der Schwerpunkt dessen, was man hier
+ * ansieht — Mitteleuropa. Ein sichtbarer Kanal zeigt über Europa nie überall
+ * gleichzeitig etwas; der Hinweis „nur tagsüber" gilt für die Mitte.
  */
-export const SATELLITE_CENTER = {
-  lat: (SATELLITE_AREA.south + SATELLITE_AREA.north) / 2,
-  lon: (SATELLITE_AREA.west + SATELLITE_AREA.east) / 2,
-}
+export const SATELLITE_CENTER = { lat: 48.5, lon: 11 }
 
 /** Dieselbe Fläche in EPSG:3857 — so wird das Bild angefordert. */
 export const SATELLITE_MERC: MercBox = mercBox(SATELLITE_AREA)
 
 /**
- * VORGABE-Breite — sie gilt seit der Flächentrennung nur noch für die beiden
- * MSG-RGBs. Die sind nativ 3 km; 1100 px über die Vollfläche sind 2226 m/px in
- * Mercator und damit rund doppelt so fein wie die Quelle. Mehr Pixel bringen
- * DORT wirklich nichts — anders als bei den MTG-Produkten, die ihre Breite
- * selbst mitbringen (`imageWidth`).
+ * VORGABE-Breite: die der MSG-Produkte. 1800 px über die Europafläche sind
+ * **4.522 m/px** in Mercator — praktisch genau das native Raster der
+ * SEVIRI-Kanäle (3 km am Boden ≙ ~4.400 m in Mercator bei 47° N). Mehr Pixel
+ * brächten dort nichts als Bytes; gemessen 353 KB je Bild (Luftmassen-RGB),
+ * beim Wasserdampfkanal 136 KB.
+ *
+ * Die MTG-Produkte bringen ihre Breite selbst mit (`imageWidth`), weil sie
+ * feiner sind — und die beiden Ausnahmen darunter ebenfalls.
  */
-export const SATELLITE_IMAGE_WIDTH = 1100
+export const SATELLITE_IMAGE_WIDTH = 1800
+
+/**
+ * Breite der MTG-Produkte: **4.070 m/px**, gemessen 439–463 KB je Bild.
+ *
+ * Nicht mehr: 2432 px (3.347 m/px, 619 KB) wären das Raster des
+ * Untergrundbildes und damit die schönste Zahl — aber EUMETView beantwortet
+ * Anfragen dieser Größe spürbar unzuverlässiger (bei der Messung am
+ * 2026-09-29 kamen HTTP 500 und 504, die bei 2000 px nicht auftraten), und
+ * bei zwölf vorgeladenen Bildern sind 619 KB gegen 463 KB der Unterschied
+ * zwischen 7,4 und 5,6 MB beim Öffnen.
+ */
+export const SATELLITE_MTG_WIDTH = 2000
 
 export type SatelliteMission = 'MTG' | 'MSG'
 
@@ -168,6 +207,51 @@ export interface CloudMaskSpec {
   min: number
   max: number
   solarScaled?: true
+}
+
+/**
+ * PAN-SHARPENING: Farbe aus einem groben RGB, Struktur aus einem feinen
+ * Breitbandkanal. Das Verfahren, mit dem Wetterseiten wie sat24 ihr scharfes
+ * Farbbild erzeugen — es ist RECHNUNG, kein schärferer Download.
+ *
+ * **Warum es überhaupt nötig ist**: Natural Colour ist ein RGB aus drei
+ * SEVIRI-Kanälen (VIS0,8 · VIS0,6 · NIR1,6), und alle drei haben 3 km. Ein
+ * RGB kann nie feiner sein als sein gröbster Kanal — im Bildvergleich über
+ * den Alpen (133 m/px angefordert) zerfällt `rgb_naturalenhncd` sichtbar in
+ * 3-km-Klötze, während `vis06_hrfi` im selben Ausschnitt einzelne Grate und
+ * Täler auflöst.
+ *
+ * **Warum HRFI als Schärfungskanal und nicht `rgb_eview`**: gemessen
+ * (2026-09-30, dasselbe Fenster, beide Varianten gerechnet) bringt das
+ * bereits HRV-geschärfte MSG-Produkt mit ~1,5 km kaum etwas gegenüber der
+ * 3-km-Farbe; HRFI mit 0,8 km bringt Inntal, Seen und Wolkenkanten.
+ *
+ * **Der Preis ist ein zweiter Abruf je Bild** — und eine Zeitpaarung: die
+ * Farbe kommt von MSG im 15-Minuten-Takt, die Schärfe von MTG im
+ * 10-Minuten-Takt. Die Zeitachse folgt der FARBE, zum Pan-Kanal wird der
+ * nächstgelegene Termin genommen; der Versatz beträgt höchstens 5 Minuten,
+ * also rund 3 km Wolkenzug — in der Größenordnung der Farbauflösung selbst.
+ */
+export interface SharpenSpec {
+  /** Workspace des Schärfungskanals. */
+  workspace: string
+  /** Layername des Schärfungskanals, OHNE Workspace. */
+  name: string
+  /** Sein Takt — bestimmt, welcher Termin zur Farbe gepaart wird. */
+  stepMs: number
+  /**
+   * Breite, mit der die FARBE geholt wird. Bewusst klein: sie ist mit 3 km
+   * nativ, und feiner anzufordern kostet nur Bytes (dieselbe Regel, die der
+   * Raster-Test für alle Produkte durchsetzt). Hochskaliert wird sie beim
+   * Zusammensetzen — das Pan-Sharpening braucht sie ohnehin nur als Farbe.
+   */
+  colourWidth: number
+  /**
+   * Natives Raster der FARBE in Mercator-Metern. Daraus wird gerechnet, wie
+   * stark der Pan-Kanal weichgezeichnet werden muss, um die Tiefpasshälfte
+   * zu bilden — nicht geraten, sondern aus der Quelle.
+   */
+  colourMercM: number
 }
 
 export interface SatelliteProduct {
@@ -190,9 +274,10 @@ export interface SatelliteProduct {
    */
   imageWidth?: number
   /**
-   * Abweichende Fläche. Nur die beiden HRFI-Kanäle haben eine: auf der
-   * engeren Fläche sind sie mit 1400 bzw. 2000 px nativ, auf der Vollfläche
-   * bräuchten sie 2500 bzw. 3200 px für dasselbe Raster.
+   * Abweichende Fläche. Zurzeit hat KEIN Produkt eine — alle zeigen ganz
+   * Europa (`SATELLITE_AREA`). Das Feld bleibt, weil die Mechanik daran
+   * hängt (`productArea`, `productMerc`, `productImageSize`) und ein
+   * Produkt mit eigenem Ausschnitt jederzeit wieder möglich sein soll.
    */
   area?: GeoBox
   /**
@@ -207,8 +292,34 @@ export interface SatelliteProduct {
    * keiner. Gemessen: nachts 36 KB JPEG (fast nur Schwarz), tagsüber 372 KB.
    */
   dayOnly?: true
+  /**
+   * Gesetzt → das Bild dieses Produkts wird aus ZWEI Layern gerechnet: der
+   * eigene (`workspace`/`name`) liefert die Farbe, dieser die Struktur.
+   */
+  sharpen?: SharpenSpec
   /** Kurzbeschreibung für Tooltip und Quellenzeile. */
   note: string
+}
+
+/**
+ * Termin des Schärfungskanals zu einem Farbtermin: der NÄCHSTGELEGENE auf
+ * seinem eigenen Raster. Bei 15 Minuten Farbe und 10 Minuten Schärfe sind
+ * das höchstens 5 Minuten Versatz (:00→:00, :15→:20, :30→:30, :45→:40).
+ */
+export function sharpenPanTime(time: number, spec: SharpenSpec): number {
+  const lo = Math.floor(time / spec.stepMs) * spec.stepMs
+  const hi = lo + spec.stepMs
+  // BEI GLEICHSTAND DAS FRÜHERE BILD, und das ist kein Detail: am
+  // aktuellen Rand ist der spätere Termin oft noch gar nicht da (der Dienst
+  // hinkt einige Minuten nach), und ein fehlender Schärfungskanal wirft auf
+  // die grobe Farbe zurück. `Math.round` rundet bei .5 nach oben und würde
+  // genau dort danebengreifen: 15 → 20 statt 10, 45 → 50 statt 40.
+  return time - lo <= hi - time ? lo : hi
+}
+
+/** Layername des Schärfungskanals, mit Workspace. */
+export function sharpenLayer(spec: SharpenSpec): string {
+  return `${spec.workspace}:${spec.name}`
 }
 
 /** Breite, die DIESES Produkt anfordert. */
@@ -300,14 +411,23 @@ export function satelliteLayer(p: SatelliteProduct): string {
 }
 
 /**
- * FÜNF Produkte, und die Reihenfolge ist die Aussage: Geocolour ist die
- * Vorgabe, weil es die einzige Darstellung ist, die rund um die Uhr aussieht
- * wie das, was man erwartet — tagsüber nahezu True Colour, nachts auf
- * Infrarot umgeschaltet. Dann der hochaufgelöste sichtbare Kanal, der am Tag
- * das schärfste Bild liefert (und nachts schwarz ist), dann das reine IR
- * (dieselbe Größe ohne Interpretation), zuletzt die beiden klassischen
- * Analyse-RGBs von MSG, für die es auf MTG bisher kein Gegenstück am Dienst
- * gibt.
+ * Der Katalog. Geordnet nach MISSION und darin nach Nutzung, denn die
+ * Reihenfolge ist die Aussage: Geocolour ist die Vorgabe, weil es die
+ * einzige Darstellung ist, die rund um die Uhr aussieht wie das, was man
+ * erwartet — tagsüber nahezu True Colour, nachts auf Infrarot umgeschaltet.
+ * Dann die beiden hochaufgelösten Kanäle, dann die Deutungs-RGBs.
+ *
+ * **Alles hier ist live durchgemessen** (2026-09-29, je Produkt ein Bild um
+ * 12 UTC und eines um 20 UTC über die Standardfläche): ob es Tag und Nacht
+ * trägt, wie groß es ist und ob überhaupt Inhalt kommt. Die Tabelle steht in
+ * CLAUDE.md; hier steht je Produkt nur das Ergebnis.
+ *
+ * **Drei Produkte waren schon einmal draußen und sind auf Wunsch wieder da**
+ * (Echtfarben, Schnee, Wolkentyp). Die frühere Begründung — „zeigen tagsüber
+ * nichts, was Geocolour nicht auch zeigt" — stimmt für Echtfarben, aber nicht
+ * für Schnee und Wolkentyp: auf einem True-Colour-artigen Bild sind
+ * Schneedecke und Wolke beide weiß, und genau das trennen diese RGBs. Die
+ * Auswahl folgt jetzt der Breite des Dienstes statt dem Minimum.
  */
 export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
   {
@@ -321,7 +441,7 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // Bleibt auf der VOLLFLÄCHE — Geocolour ist das Produkt, mit dem man die
     // Lage im Grossen ansieht, und sein natives Raster (1577 m in Mercator)
     // ist dort bei 1600 px genau getroffen (1531 m/px). 302 KB je Bild.
-    imageWidth: 1600,
+    imageWidth: SATELLITE_MTG_WIDTH,
     note: 'MTG/FCI Geocolour: tagsüber nahezu echte Farben, nachts Infrarot — die einzige Darstellung, die über den ganzen Tag trägt. 10 Minuten.',
   },
   {
@@ -332,15 +452,15 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     mission: 'MTG',
     stepMs: 10 * 60_000,
     format: 'image/jpeg',
-    // NATIV: 2000 px über die Detailfläche sind 779 m/px in Mercator, das
-    // gemessene Raster des Kanals sind 788 m. 546 KB je Tagbild.
-    area: SATELLITE_DETAIL_AREA,
-    imageWidth: 2000,
+    // Über Europa NICHT MEHR NATIV: 4.070 m/px gegen ein gemessenes Raster
+    // von 788 m, also Faktor 5. Das ist der Preis der Europafläche und steht
+    // ausdrücklich bei `SATELLITE_AREA`. Gemessen 439 KB je Tagbild.
+    imageWidth: SATELLITE_MTG_WIDTH,
     // Gemessen bei 40° Sonnenhöhe: Boden 37–70, Wolke ab ~90, dicht über 130.
     // Geteilt durch sin(40°) = 0,64 ergibt das diese sonnenunabhängigen Werte.
     cloudMask: { min: 124, max: 218, solarScaled: true },
     dayOnly: true,
-    note: 'MTG/FCI HRFI VIS 0,6 µm: der schärfste Kanal des Dienstes (500 m am Subsatellitenpunkt, über Mitteleuropa ~1 km) — Nachfolger des MSG-HRV, das hier nicht veröffentlicht ist. Misst reflektiertes Sonnenlicht, ist nachts also schwarz. 10 Minuten.',
+    note: 'MTG/FCI HRFI VIS 0,6 µm: der schärfste Kanal des Dienstes (500 m am Subsatellitenpunkt, über Mitteleuropa ~1 km) — Nachfolger des MSG-HRV, das es hier ebenfalls gibt (Produkt „HRV-RGB Europa", gemessen gröber). Über der Europafläche wird er mit 4,1 km/px angefordert und ist damit nicht mehr pixelnativ. Misst reflektiertes Sonnenlicht, ist nachts also schwarz. 10 Minuten.',
   },
   {
     id: 'ir105',
@@ -350,15 +470,86 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     mission: 'MTG',
     stepMs: 10 * 60_000,
     format: 'image/jpeg',
-    // Ebenfalls HRFI, aber gröber als der sichtbare Kanal: gemessenes Raster
-    // 1113 m, 1400 px über die Detailfläche sind 1113 m/px — dasselbe Bild für
-    // 188 KB. Mit den 2000 px von vis06 wäre es nur teurer, nicht schärfer.
-    area: SATELLITE_DETAIL_AREA,
-    imageWidth: 1400,
+    // Gemessenes Raster 1.113 m; über Europa wird es mit 4.070 m/px
+    // angefordert, also Faktor 3,7 gröber. Gemessen 359 KB je Bild — dass
+    // dieser Kanal früher mit weniger Pixeln auskam als der sichtbare, spielt
+    // keine Rolle mehr: beide liegen jetzt weit unter ihrem Raster, und eine
+    // eigene Breite spart nur noch Bytes, keine Unschärfe.
+    imageWidth: SATELLITE_MTG_WIDTH,
     // Fest, denn Wärmestrahlung hängt nicht am Sonnenstand. Gemessen:
     // Boden 24–90, Wolke ab ~90, hohe Wolke über 140.
     cloudMask: { min: 78, max: 140 },
     note: 'MTG/FCI Infrarotkanal 10,5 µm: Strahlungstemperatur der Wolkenoberseite — je kälter (heller), desto höher die Wolke. 10 Minuten.',
+  },
+  {
+    id: 'fog',
+    label: 'Nebel / Tiefe Wolken',
+    workspace: 'mtg_fd',
+    name: 'rgb_fog',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    note: 'MTG Fog/Low-Cloud-RGB (Nacht-Mikrophysik): hebt Hochnebel und Stratus hervor — genau die Lücke des reinen Infrarots, in dem WARME tiefe Wolken kaum heller sind als der Boden. Trägt Tag und Nacht, im Winterhalbjahr das nützlichste Produkt der Liste. 10 Minuten.',
+  },
+  {
+    id: 'dust',
+    label: 'Staub-RGB',
+    workspace: 'mtg_fd',
+    name: 'rgb_dust',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    note: 'MTG Dust-RGB: Saharastaub (magenta) über den Alpen, dazu tiefe Wolken und Temperaturkontraste. Aus Infrarot-Differenzen gebildet, trägt also Tag und Nacht. 10 Minuten.',
+  },
+  {
+    id: 'cloudphase',
+    label: 'Wolkenphase',
+    workspace: 'mtg_fd',
+    name: 'rgb_cloudphase',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    dayOnly: true,
+    note: 'MTG Cloud-Phase-RGB: trennt EIS von Wasser in der Wolkenoberseite — bei Konvektion die Frage, ob ein Turm schon vereist ist, und für die Vereisungsgefahr in der Luftfahrt. Braucht Sonnenlicht, also nur tagsüber. 10 Minuten.',
+  },
+  {
+    id: 'cloudtype',
+    label: 'Wolkentyp',
+    workspace: 'mtg_fd',
+    name: 'rgb_cloudtype',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    dayOnly: true,
+    note: 'MTG Cloud-Type-RGB: Wolkenstockwerke und -arten in getrennten Farben, wo ein Echtfarbenbild nur Weiß zeigt. Nur tagsüber. 10 Minuten.',
+  },
+  {
+    id: 'snow',
+    label: 'Schnee',
+    workspace: 'mtg_fd',
+    name: 'rgb_snow',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    dayOnly: true,
+    note: 'MTG Snow-RGB: trennt SCHNEEDECKE (rot) von Wolke (weiß/hellblau) — auf einem Echtfarbenbild ist beides weiß, und im Winter ist das die Frage. Nur tagsüber. 10 Minuten.',
+  },
+  {
+    id: 'truecolour',
+    label: 'Echtfarben',
+    workspace: 'mtg_fd',
+    name: 'rgb_truecolour',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    dayOnly: true,
+    note: 'MTG True-Colour-RGB: die Erde, wie das Auge sie sähe. Tagsüber weitgehend dasselbe Bild wie Geocolour, das aber zusätzlich nachts trägt — dieses Produkt ist der unbearbeitete Blick. Nur tagsüber. 10 Minuten.',
   },
   {
     id: 'airmass',
@@ -379,6 +570,92 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     stepMs: 15 * 60_000,
     format: 'image/jpeg',
     note: 'MSG Convection-RGB: hebt junge, kräftige Gewitterzellen hervor (gelb = kleine Eisteilchen und hohe Kerne). 15 Minuten.',
+  },
+  {
+    id: 'wv062',
+    label: 'Wasserdampf 6,2 µm',
+    workspace: 'msg_fes',
+    name: 'wv062',
+    mission: 'MSG',
+    stepMs: 15 * 60_000,
+    format: 'image/jpeg',
+    // **KEINE `cloudMask`**, obwohl es ein Graustufenkanal ist — und das ist
+    // kein Versehen: 6,2 µm sieht die obere Troposphäre und erreicht den
+    // Boden gar nicht. Es gibt hier keinen „wolkenfreien Untergrund", den
+    // man darunter durchscheinen lassen könnte; das ganze Bild IST die
+    // Information (hell = feucht/hoch, dunkel = trockene absinkende Luft).
+    note: 'MSG Wasserdampfkanal 6,2 µm: die Feuchte der oberen Troposphäre — der klassische Kanal für die Höhenströmung. Dunkle Streifen sind trockene Absinkzonen und markieren Strahlstrom und Trogachsen, lange bevor sich am Boden etwas zeigt. Sieht die Erdoberfläche NICHT und trägt deshalb Tag und Nacht gleich. 15 Minuten.',
+  },
+  {
+    id: 'ash',
+    label: 'Vulkanasche-RGB',
+    workspace: 'msg_fes',
+    name: 'rgb_ash',
+    mission: 'MSG',
+    stepMs: 15 * 60_000,
+    format: 'image/jpeg',
+    note: 'MSG Ash-RGB: Vulkanasche und SO₂-Wolken. Für Mitteleuropa selten gebraucht, dann aber das einzige Produkt, das es kann (Eyjafjallajökull 2010). Aus Infrarot-Differenzen, also Tag und Nacht. 15 Minuten.',
+  },
+  {
+    id: 'naturalenh',
+    label: 'Natural Colour (verstärkt)',
+    workspace: 'msg_fes',
+    name: 'rgb_naturalenhncd',
+    mission: 'MSG',
+    stepMs: 15 * 60_000,
+    format: 'image/jpeg',
+    dayOnly: true,
+    note: 'MSG Natural-Colour-RGB (verstärkt): das am häufigsten benutzte Tages-RGB Europas — Schnee und Eiswolken cyan, Wasserwolken weiß, Vegetation grün. Dieselbe Trennung wie das MTG-Schnee-RGB, in der Darstellung, die man aus Lehrbüchern kennt. Nur tagsüber, 3 km — die Schärfung sitzt beim HRV-RGB, wo sie etwas bringt. 15 Minuten.',
+  },
+  {
+    id: 'hrv',
+    label: 'HRV-RGB geschärft (Mitteleuropa)',
+    workspace: 'msg_fes',
+    name: 'rgb_eview',
+    mission: 'MSG',
+    stepMs: 15 * 60_000,
+    format: 'image/jpeg',
+    // Die EINZIGE Fläche, die nicht ganz Europa ist — und sie kann es nicht
+    // sein (Begründung bei `SATELLITE_DETAIL_AREA` und `SharpenSpec`).
+    area: SATELLITE_DETAIL_AREA,
+    // 779 m/px über diese Fläche = das Raster des Schärfungskanals.
+    imageWidth: 2000,
+    dayOnly: true,
+    sharpen: {
+      workspace: 'mtg_fd',
+      name: 'vis06_hrfi',
+      stepMs: 10 * 60_000,
+      // 14° bei 1000 px sind 1.558 m/px — genau das gemessene Raster des
+      // HRV-RGB. Feiner anzufordern wäre reine Bytes (gemessen 120 KB).
+      colourWidth: 1000,
+      colourMercM: 1558,
+    },
+    // Der Eintrag korrigiert eine ALTE Fehlannahme: das MSG-HRV IST bei
+    // EUMETView veröffentlicht, nämlich hier. Es ist mit gemessenen 1.558 m
+    // der feinste FARB-Layer des Dienstes — gröber als der MTG-HRFI-Kanal
+    // (788 m), aber dreimal feiner als jedes 3-km-RGB. Genau deshalb ist es
+    // das Produkt, bei dem sich die Schärfung lohnt: Faktor 2 statt Faktor 5
+    // wie beim Natural Colour, dafür auf einem Bild, das schon Struktur hat.
+    note: 'MSG HRV-RGB („European View") in der Schärfe des HRFI-Kanals: die FARBE kommt vom HRV-RGB (1,6 km, der feinste Farb-Layer des Dienstes), die STRUKTUR vom MTG-Kanal VIS 0,6 µm (0,8 km) — dasselbe Pan-Sharpening, mit dem Wetterseiten ihr scharfes Farbbild erzeugen. Deshalb nur über Mitteleuropa: über ganz Europa wäre dieselbe Schärfe ein Bild von 10.000 px. Nur tagsüber; Farbe und Schärfe liegen bis zu 5 Minuten auseinander.',
+  },
+]
+
+/**
+ * Produkte nach Mission gruppiert — für die Auswahl. Bei fünfzehn Einträgen
+ * ist eine flache Liste eine Liste, die man jedes Mal neu liest; nach
+ * Satellit geordnet steht oben, was 10-minütig und aktuell ist, darunter das,
+ * was es nur von MSG gibt.
+ */
+export const SATELLITE_GROUPS: { mission: SatelliteMission; label: string; items: SatelliteProduct[] }[] = [
+  {
+    mission: 'MTG',
+    label: 'Meteosat Third Generation · FCI · 10 min',
+    items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'MTG'),
+  },
+  {
+    mission: 'MSG',
+    label: 'Meteosat Second Generation · SEVIRI · 15 min',
+    items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'MSG'),
   },
 ]
 
@@ -439,14 +716,14 @@ export function satelliteTimes(extent: TimeExtent, historyMs: number): number[] 
  */
 export function satelliteImageUrl(
   p: SatelliteProduct,
-  opts: { time: number; width: number; height: number },
+  opts: { time: number; width: number; height: number; layer?: string },
 ): string {
   const { minx, miny, maxx, maxy } = productMerc(p)
   const q = new URLSearchParams({
     service: 'WMS',
     version: '1.3.0',
     request: 'GetMap',
-    layers: satelliteLayer(p),
+    layers: opts.layer ?? satelliteLayer(p),
     styles: '',
     format: p.format,
     crs: 'EPSG:3857',

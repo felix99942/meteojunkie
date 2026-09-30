@@ -3,14 +3,9 @@
 // sieht wie eine Karte aus — nur liegt die Küste dann neben der Küstenlinie.
 
 import { describe, expect, it } from 'vitest'
-import {
-  GROUND_BOUNDS,
-  GROUND_COORDINATES,
-  GROUND_DETAIL_BOUNDS,
-  GROUND_TILES,
-} from './ground'
+import { GROUND_BOUNDS, GROUND_COORDINATES, GROUND_TILES } from './ground'
 import { RELIEF_BOUNDS } from './relief'
-import { SATELLITE_DETAIL_AREA } from './satellite'
+import { SATELLITE_AREA } from './satellite'
 
 const xToLon = (x: number, n: number) => (x / n) * 360 - 180
 const yToLat = (y: number, n: number) => {
@@ -30,10 +25,25 @@ describe('Untergrund', () => {
     expect(GROUND_BOUNDS.latMin).toBeCloseTo(yToLat(GROUND_TILES.y1, n), 6)
   })
 
-  // Beide Hintergründe spannen dasselbe Fenster auf — nur so lässt sich der
-  // eine gegen den anderen tauschen, ohne dass sich etwas verschiebt.
-  it('deckt sich mit dem Höhenrelief', () => {
-    expect(GROUND_BOUNDS).toEqual(RELIEF_BOUNDS)
+  /**
+   * NICHT mehr deckungsgleich mit dem Relief — und das ist der Test, der das
+   * festhält, statt die alte Gleichheit stillschweigend zu löschen.
+   *
+   * Sie bestand, solange beide KARTENHINTERGRÜNDE waren und gegeneinander
+   * austauschbar sein sollten. Der Untergrund ist seit 2026-09-30 kein
+   * Hintergrund mehr, sondern eine Zutat des Wolken-Komposits, und folgt
+   * deshalb der Satellitenfläche. Das Relief bleibt beim alten Fenster; es
+   * gehört zur Ortswahl der Soundings und hat mit dem Satelliten nichts zu
+   * tun.
+   */
+  it('folgt der Satellitenfläche, nicht mehr dem Relief', () => {
+    expect(GROUND_BOUNDS.lonMin).toBeCloseTo(SATELLITE_AREA.west, 6)
+    expect(GROUND_BOUNDS.lonMax).toBeCloseTo(SATELLITE_AREA.east, 6)
+    expect(GROUND_BOUNDS.latMin).toBeCloseTo(SATELLITE_AREA.south, 6)
+    expect(GROUND_BOUNDS.latMax).toBeCloseTo(SATELLITE_AREA.north, 6)
+    // Das Relief ist enger; wäre es plötzlich gleich, hätte jemand eines von
+    // beiden versehentlich mitgezogen.
+    expect(RELIEF_BOUNDS.lonMin).toBeGreaterThan(GROUND_BOUNDS.lonMin)
   })
 
   // Reihenfolge der Ecken für die image-source: NW, NE, SE, SW. Vertauscht
@@ -46,28 +56,26 @@ describe('Untergrund', () => {
     expect(sw).toEqual([GROUND_BOUNDS.lonMin, GROUND_BOUNDS.latMin])
   })
 
-  // Das zweite, schärfere Bild liegt UNTER den Wolken und muss deshalb GENAU
-  // die Fläche des Satellitenbildes haben — einen Grad daneben, und der Boden
-  // wäre gegen die Wolken verschoben, ohne dass es nach einem Fehler aussieht.
-  it('deckt sich mit der Detailfläche der HRFI-Kanäle', () => {
-    expect(GROUND_DETAIL_BOUNDS.lonMin).toBe(SATELLITE_DETAIL_AREA.west)
-    expect(GROUND_DETAIL_BOUNDS.lonMax).toBe(SATELLITE_DETAIL_AREA.east)
-    expect(GROUND_DETAIL_BOUNDS.latMin).toBe(SATELLITE_DETAIL_AREA.south)
-    expect(GROUND_DETAIL_BOUNDS.latMax).toBe(SATELLITE_DETAIL_AREA.north)
+  // Das Bild liegt UNTER den Wolken und muss deshalb GENAU die Fläche des
+  // Satellitenbildes haben — einen Grad daneben, und der Boden wäre gegen die
+  // Wolken verschoben, ohne dass es nach einem Fehler aussieht. Das prüft der
+  // Test darüber; hier bleibt, was sonst noch hineinpassen muss.
+  it('umfasst auch die Radarfläche', () => {
+    const [w, e, s2, n] = [1.5, 18.7, 45.7, 56.2]
+    expect(w).toBeGreaterThanOrEqual(GROUND_BOUNDS.lonMin)
+    expect(e).toBeLessThanOrEqual(GROUND_BOUNDS.lonMax)
+    expect(s2).toBeGreaterThanOrEqual(GROUND_BOUNDS.latMin)
+    expect(n).toBeLessThanOrEqual(GROUND_BOUNDS.latMax)
   })
 
-  // Der Ausschnitt muss die Flächen der Bildbereiche tragen — sonst endet der
-  // Untergrund mitten im Bild.
-  it('umfasst die Satelliten- und die Radarfläche', () => {
-    for (const [w, e, s, n] of [
-      [0, 22, 41, 56], // SATELLITE_AREA
-      [4, 18, 44, 56], // SATELLITE_DETAIL_AREA
-      [1.5, 18.7, 45.7, 56.2], // Radarfläche
-    ]) {
-      expect(w).toBeGreaterThanOrEqual(GROUND_BOUNDS.lonMin)
-      expect(e).toBeLessThanOrEqual(GROUND_BOUNDS.lonMax)
-      expect(s).toBeGreaterThanOrEqual(GROUND_BOUNDS.latMin)
-      expect(n).toBeLessThanOrEqual(GROUND_BOUNDS.latMax)
-    }
+  // In Mercator zufällig exakt quadratisch — eine Eigenschaft, an der man
+  // sofort sieht, ob jemand das Kachelfenster verschoben hat.
+  it('ist in Mercator quadratisch', () => {
+    const mx = (lon: number) => (lon * 20037508.342789244) / 180
+    const my = (lat: number) =>
+      Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * 6378137
+    const w = mx(GROUND_BOUNDS.lonMax) - mx(GROUND_BOUNDS.lonMin)
+    const h = my(GROUND_BOUNDS.latMax) - my(GROUND_BOUNDS.latMin)
+    expect(h / w).toBeCloseTo(1, 2)
   })
 })

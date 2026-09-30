@@ -30,26 +30,33 @@
 // nichts dekodiert und nichts neu kodiert (JPEG schreiben könnte dieses
 // Projekt ohne Fremdpaket auch gar nicht, siehe `lib/png.mjs`).
 //
-// ZWEI BILDER, und sie haben verschiedene Aufgaben:
+// EIN BILD, und das ist seit 2026-09-30 so — vorher waren es zwei.
 //
-//   `europe-ground.jpg`  NEBEN dem Satellitenbild, als Kartenhintergrund.
-//     Ausschnitt exakt das Fenster des Höhenreliefs (Kachelgrenzen der
-//     Zoomstufe 6, x 29…40, y 14…26 — die zweite Zahl ist wie dort die
-//     ÄUSSERE Kante, nicht die letzte Kachel), damit beide Hintergründe
-//     deckungsgleich und austauschbar sind. Gemessen: 1280 px → 213 KB
-//     (5381 m/px), 1536 → 296 KB, **2048 → 485 KB (3363 m/px ≈ 2,1 km/px am
-//     Boden)**, 2560 → 747 KB. Gewählt sind 2048 — die Fläche ist
-//     Hintergrund und grösstenteils verdeckt.
+//   `europe-ground.jpg`  UNTER den Wolken, IM Bild selbst (siehe
+//     `render/cloudComposite.ts`). Ausschnitt ist genau `SATELLITE_AREA`,
+//     also die Fläche, über die der Satellitenbereich seine Bilder anfordert:
+//     Kachelfenster der Zoomstufe 6, x 27…40 und y 13…26 (die zweite Zahl
+//     ist die ÄUSSERE Kante, nicht die letzte Kachel). Das ergibt lon
+//     −28,125…45 und lat 31,95…72,40 — Island und das Nordkap eingeschlossen
+//     — und ist in Mercator zufällig exakt QUADRATISCH (8.140 × 8.140 km).
+//     Breite **2432 px = 3.347 m/px**, gemessen 551 KB.
 //
-//   `dach-ground.jpg`    UNTER den Wolken, im Bild selbst (siehe
-//     `render/cloudComposite.ts`). Hier zählt Schärfe: der Untergrund steht
-//     neben gestochenen Wolkenkanten, und eine weiche Fläche daneben sieht
-//     falsch aus. Ausschnitt ist die Detailfläche der HRFI-Kanäle
-//     (`SATELLITE_DETAIL_AREA`), Breite **1600 px = 974 m/px** und 543 KB.
-//     Gegenprobe am fertigen Komposit: mit dem Europa-Bild (4,3-fach
-//     hochskaliert) verschwimmen die Alpentäler zu einer Fläche, mit 1600 px
-//     stehen Grate und Schneefelder unter den Wolken; 2000 px (803 KB)
-//     brachten im selben Ausschnitt nichts Sichtbares mehr.
+// WARUM NUR NOCH EINES: das zweite (`dach-ground.jpg`, 1600 px über die
+// frühere Detailfläche) gab es, weil das Komposit damals über einen kleinen
+// Ausschnitt lief und dort viel schärfer war als das Europa-Bild — 4,3-fach
+// hochskaliert verschwammen die Alpentäler zu einer Fläche. Seit die
+// Satellitenbilder über GANZ EUROPA angefordert werden, liegt das Komposit
+// bei ~3.400 m/px, also genau in der Auflösung dieses Bildes; ein schärferes
+// hätte nichts mehr, woran es sich zeigen könnte. Die frühere Rolle als
+// KARTENHINTERGRUND neben dem Satellitenbild ist ebenfalls weg — der Bereich
+// zeigt ausserhalb der Satellitenfläche bewusst keinen Untergrund mehr.
+//
+// NICHT MEHR AN DAS RELIEF GEKOPPELT: der Ausschnitt war früher exakt das
+// Fenster von `config/relief.ts`, damit beide Hintergründe austauschbar
+// sind. Das Argument ist entfallen, seit dieses Bild kein Hintergrund mehr
+// ist, sondern eine Zutat des Komposits — es folgt jetzt `SATELLITE_AREA`.
+// Frühere Messreihe zum alten, engeren Fenster: 1280 px → 213 KB, 1536 →
+// 296 KB, 2048 → 485 KB, 2560 → 747 KB.
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -57,24 +64,12 @@ import { dirname, join } from 'node:path'
 const WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi'
 const LAYER = 'BlueMarble_NextGeneration'
 
-// Kachelfenster der Zoomstufe 6 — dieselben Zahlen wie in `config/relief.ts`.
-const TILES = { zoom: 6, x0: 29, x1: 40, y0: 14, y1: 26 }
+// Kachelfenster der Zoomstufe 6 = `SATELLITE_AREA` (`ground.test.ts` hält
+// die beiden gegeneinander). In Mercator exakt quadratisch.
+const TILES = { zoom: 6, x0: 27, x1: 40, y0: 13, y1: 26 }
 
-/**
- * Die beiden Bilder. `bounds` in Grad; beim Europa-Bild werden sie aus dem
- * Kachelfenster gerechnet, damit sie nicht gegen das Relief driften.
- */
-const AREAS = [
-  { id: 'europe', tiles: TILES, width: 2048, out: 'europe-ground.jpg' },
-  {
-    id: 'detail',
-    // = SATELLITE_DETAIL_AREA in `config/satellite.ts`; `ground.test.ts`
-    // hält die beiden gegeneinander.
-    bounds: { lonMin: 4, lonMax: 18, latMin: 44, latMax: 56 },
-    width: 1600,
-    out: 'dach-ground.jpg',
-  },
-]
+/** Nur noch ein Bild; `bounds` werden aus dem Kachelfenster gerechnet. */
+const AREAS = [{ id: 'europe', tiles: TILES, width: 2432, out: 'europe-ground.jpg' }]
 
 const args = process.argv.slice(2)
 const argVal = (name, fallback) => {

@@ -1572,26 +1572,80 @@ npm run preview   # gebautes dist/ servieren
   kein Key, `<Fees>none</Fees>`/`<AccessConstraints>none</AccessConstraints>` —
   also dieselbe Mechanik wie beim Radar, direkt aus dem Browser, ohne Proxy
   und ohne Open-Meteo-Budget (plain `fetch`, nicht `apiGet`).
-  **Fünf Produkte, alle live geprüft (2026-09-19)**: Geocolour (MTG/FCI,
-  10 min, Voreinstellung) · **Sichtbar 0,6 µm hochaufgelöst** (MTG HRFI,
-  10 min) · Infrarot 10,5 µm (MTG, 10 min) · Luftmassen-RGB und
-  Konvektions-RGB (beide MSG/SEVIRI, 15 min — für die beiden gibt es am Dienst
-  kein MTG-Gegenstück). Archiv: MTG ab 23.09.2024, **MSG ab 01.09.2020**.
-  **Tagesprodukte nur dort, wo sie etwas können, was kein Tag-und-Nacht-Produkt
-  kann**: `rgb_truecolour`, `rgb_snow` und `rgb_cloudtype` sind draußen (sie
-  zeigen tagsüber nichts, was Geocolour nicht auch zeigt, und nachts ein
-  schwarzes bzw. leeres Bild — gemessen truecolour nachts 3,2 KB transparent,
-  tagsüber 1,16 MB). Geocolour schaltet selbst auf Infrarot um und sieht am Tag
-  wie True Colour aus.
-  **HOCHAUFGELÖST SICHTBAR IST `vis06_hrfi`, NICHT HRV**: MSGs HRV-Kanal (1 km)
-  ist bei EUMETView nicht veröffentlicht — von SEVIRI gibt es nur `vis006`, den
-  3-km-Standardkanal. Der Nachfolger ist da: MTG/FCI liefert VIS 0,6 µm als
+  **FÜNFZEHN Produkte, nach Mission gruppiert** (`SATELLITE_GROUPS`,
+  `<optgroup>` in der Auswahl — bei fünfzehn Einträgen ist eine flache Liste
+  eine Liste, die man jedes Mal neu liest). **Jedes einzeln durchgemessen
+  (2026-09-29)**: je ein Bild um 12 und um 20 UTC über die Standardfläche,
+  daraus Größe, Deckungsgrad, mittlere Helligkeit und Farbzahl — so
+  unterscheidet man „trägt nachts durch" von „liefert ein schwarzes Bild".
+  Archiv: MTG ab 23.09.2024 (einzelne RGBs später), **MSG ab 01.09.2020**.
+  MTG/FCI, 10 min: Geocolour (Voreinstellung) · **Sichtbar 0,6 µm
+  hochaufgelöst** · Infrarot 10,5 µm · **Nebel/Tiefe Wolken** · **Staub** ·
+  Wolkenphase · Wolkentyp · Schnee · Echtfarben.
+  MSG/SEVIRI, 15 min: Luftmassen · Konvektion · **Wasserdampf 6,2 µm** ·
+  Vulkanasche · Natural Colour verstärkt · **HRV-RGB geschärft**
+  (s. u., das einzige Produkt aus zwei Layern und mit eigener Fläche).
+  **Die drei wichtigsten Zugänge der Erweiterung**, weil sie Lücken schließen
+  statt Varianten zu häufen: **Wasserdampf 6,2 µm** ist der klassische Kanal
+  für die Höhenströmung (dunkle Streifen = trockene Absinkzonen, markieren
+  Strahlstrom und Trogachsen, lange bevor am Boden etwas zu sehen ist) und
+  fehlte ganz; **Nebel/Tiefe Wolken** behebt genau die dokumentierte Schwäche
+  des Infrarots, dass WARME tiefe Wolken kaum heller sind als der Boden — im
+  Winterhalbjahr das nützlichste Produkt der Liste; **Staub** zeigt
+  Saharastaub über den Alpen und trägt als IR-Differenz Tag und Nacht.
+  **Drei früher verworfene Produkte sind auf Wunsch wieder da**
+  (`rgb_truecolour`, `rgb_snow`, `rgb_cloudtype`). Die alte Begründung —
+  „zeigen tagsüber nichts, was Geocolour nicht auch zeigt" — hält für
+  Echtfarben, aber NICHT für Schnee und Wolkentyp: auf einem
+  True-Colour-artigen Bild sind Schneedecke und Wolke beide weiß, und genau
+  das trennen diese RGBs. Die Auswahl folgt jetzt der Breite des Dienstes
+  statt dem Minimum.
+  **Bewusst DRAUSSEN, mit Grund**: die QUANTITATIVEN Produkte (`cth`
+  Wolkenobergrenze, `clm` Wolkenmaske, `gii_kindex`/`gii_liftedindex`
+  Instabilitätsindizes — alle live vorhanden und gefüllt) brauchen eine
+  WERTElegende, und dieser Bereich hat bewusst keine: „ein Satellitenbild hat
+  keine ablesbaren Klassen, dort steht die Erklärung des Produkts". Sie sind
+  ein eigener Schritt, kein Registry-Eintrag. `rdt` (Rapidly Developing
+  Thunderstorms) ist ein Polygon-OVERLAY und gehört neben KONRAD in den
+  Radarbereich, nicht in eine Produktauswahl, die das Bild ersetzt — es deckt
+  dafür ganz Österreich ab. `msg_rss` (Rapid Scan, 5 min) führt nur
+  Tagesprodukte plus IR 3,9 µm bei 3 km; `msg_iodc` ist der Indische Ozean;
+  `eps`/`copernicus` sind Polarumläufer mit Streifen statt Flächen und einem
+  ganz anderen Zeitmodell. `frp` und `h40b` waren über Mitteleuropa leer bzw.
+  bei 6 % Deckung.
+  **EUMETView antwortet auf einzelne Zeitschritte sporadisch mit HTTP 502
+  oder 500** — reproduziert (2026-09-29): `rgb_fog` um 12:00 UTC an zwei
+  Tagen hintereinander, während 10:00, 14:00, 18:00 und 19:00 desselben Tages
+  einwandfrei kamen. Der Bereich merkt sich gescheiterte Zeiten deshalb in
+  einem `failedRef` (Schlüssel Produkt+Zeit, wie im Radarbereich): ohne das
+  bleibt der Zeit kein Bild zugeordnet, sie steht in jeder Runde erneut in
+  `missing`, und der Effekt läuft in einer Dauerschleife gegen einen fremden
+  Dienst. **Das war ein echter Fehler und ist mit der Erweiterung nur
+  sichtbarer geworden.**
+  Offen und nicht behoben: beim schnellen Durchschalten stehen
+  `ERR_FILE_NOT_FOUND`/`AJAXError` auf blob-URLs in der Konsole. Gegengeprüft,
+  dass das mit den ursprünglichen fünf Produkten genauso passiert — ein Rennen
+  zwischen `updateImage` und der Verdrängung, die Anzeige bleibt richtig.
+  **HOCHAUFGELÖST SICHTBAR IST `vis06_hrfi`** — MTG/FCI liefert VIS 0,6 µm als
   HRFI (High Resolution Fast Imagery), 500 m am Subsatellitenpunkt, über
   Mitteleuropa durch den schrägen Blick real ~1 km. Im direkten Vergleich mit
   Geocolour am selben Zeitpunkt sind Alpentäler, einzelne Cumuluszellen und
-  Cirrenstreifen sichtbar schärfer. `dayOnly: true` steuert den
+  Cirrenstreifen sichtbar schärfer. `dayOnly` steuert den
   Hinweis in der Legende — ein schwarzes Nachtbild sieht nach einem Fehler aus
-  und ist keiner; genau ein Produkt darf so aussehen (Test).
+  und ist keiner.
+  **KORREKTUR: „MSGs HRV ist bei EUMETView nicht veröffentlicht" war FALSCH**
+  (stand hier bis 2026-09-29). Es ist veröffentlicht, nur unter einem Namen,
+  den man nicht danach absucht: `msg_fes:rgb_eview`, „European HRV RGB" — ein
+  HRV-basiertes RGB mit Vegetationssignal, inzwischen als Produkt `hrv` in der
+  Registry. Die SCHLUSSFOLGERUNG von damals stimmt trotzdem: nachgemessen
+  (Autokorrelation des Spaltengradienten über den Alpen, Kontrollwerte
+  779/1558/1169 m gegen die früher dokumentierten 788/1577/1113 — die Methode
+  reproduziert sich) liegt `rgb_eview` bei **1.558 m** und damit gröber als
+  `vis06_hrfi` mit 788 m, dazu nur alle 15 Minuten. Für „das schärfste Bild"
+  bleibt der MTG-Kanal die Antwort. **Es ist aber das einzige MSG-Produkt mit
+  eigener Anforderungsbreite** (1600 statt 1100 px): die übrigen sind
+  3-km-Kanäle (~4.400 m), mit deren Vorgabe würde HRV gröber angefordert als
+  geliefert. Genau das hat der Raster-Test gefunden.
   **DAS ANGEFORDERTE RASTER MUSS ZUM NATIVEN RASTER DES PRODUKTS PASSEN, und
   lange tat es das nicht** — gemeldet als „MTG ist bei mir unscharf, auf
   sat24.com gestochen scharf", und der Befund gab dem recht. GEMESSEN
@@ -1610,7 +1664,106 @@ npm run preview   # gebautes dist/ servieren
   Vollfläche 1100 px 0,415. **Die frühere Notiz „mehr bringt nichts und kostet
   nur" stützte sich auf die DATEIGRÖSSEN und ist damit widerlegt** — nicht
   erneut von der Byte-Kurve auf den Bildinhalt schließen.
-  **ZWEI FLÄCHEN sind der Handel** (`SATELLITE_DETAIL_AREA`, lon 4–18 /
+  **SEIT 2026-09-30 GILT EINE FLÄCHE FÜR ALLES: GANZ EUROPA** (lon
+  −28,125…45, lat 31,95…72,40 — das Kachelfenster der Zoomstufe 6, x 27…40 und
+  y 13…26, in Mercator zufällig exakt QUADRATISCH mit 8.140 × 8.140 km).
+  Island und das Nordkap liegen gerade noch innen, dazu Nordafrika, die Türkei
+  und das europäische Russland. **Der Erdrand darf nicht hinein** — bei 60° O
+  und 75° N steht er als schwarzer Keil im Bild (nachgemessen an einem Kasten
+  −30…60 / 25…75); die Ecke (45° O, 72,4° N) liegt bei 77° Großkreisabstand
+  vom Subsatellitenpunkt und damit innerhalb der Scheibe.
+  **Der Preis ist das native Raster, und er ist unvermeidbar.** Angefordert
+  wird mit 2000 px (MTG, 4.070 m/px, gemessen 439–463 KB) bzw. 1800 px (MSG,
+  4.522 m/px, 136–353 KB). Für die MSG-Kanäle ist das praktisch genau nativ,
+  für die FCI-RGBs Faktor 2,6 und für HRFI **Faktor 5** — beim Hineinzoomen
+  auf die Alpen ist das Bild also weicher als mit der früheren Detailfläche.
+  Mehr Bildinhalt gibt es mit EINEM Bild über EINE feste Fläche nicht: HRFI
+  nativ über Europa wären ~8.000 px und mehrere MB je Zeitschritt, und Kacheln
+  je Zoomstufe sind derselbe Handel, der beim Radar schon abgelehnt wurde.
+  2432 px (3.347 m/px, 619 KB) wären das Raster des Untergrundbildes und die
+  schönere Zahl — aber EUMETView beantwortet Anfragen dieser Größe spürbar
+  unzuverlässiger (HTTP 500 und 504 bei der Messung, die bei 2000 px nicht
+  auftraten), und bei zwölf vorgeladenen Bildern sind das 7,4 statt 5,6 MB.
+  **Der Test hat sich damit UMGEDREHT**: „fordere jedes Produkt in seinem
+  nativen Raster an" ist nicht mehr haltbar; geprüft wird jetzt die Hälfte,
+  die weiter gilt und weiter Bytes spart — *niemals FEINER anfordern als die
+  Quelle liefert* — plus die Vergröberung je Mission als Zahl, damit ein
+  Eingriff auffällt.
+  **WARUM EIN FARB-RGB NICHT SCHÄRFER ZU HABEN IST — und wie es trotzdem
+  geht.** Natural Colour ist ein RGB aus drei SEVIRI-Kanälen (VIS0,8 · VIS0,6
+  · NIR1,6), und alle drei haben 3 km; ein RGB kann nie feiner sein als sein
+  gröbster Kanal. Im Bildvergleich über den Alpen (800 px auf 1,4° Länge,
+  also 133 m/px angefordert) zerfällt `rgb_naturalenhncd` sichtbar in
+  3-km-Klötze, während `vis06_hrfi` im selben Ausschnitt einzelne Grate und
+  Täler auflöst. **Wetterseiten wie sat24 laden also kein schärferes Farbbild
+  herunter — sie RECHNEN es**: Pan-Sharpening, Farbe aus dem groben RGB,
+  Helligkeitsstruktur aus dem hochauflösenden Breitbandkanal.
+  Das gibt es hier bei **`hrv`** (`render/panSharpen.ts`): Verhältnisverfahren
+  `Ergebnis = Farbe × Pan / Tiefpass(Pan)`. Bewusst NICHT der Austausch der
+  Intensität (IHS/Brovey in Reinform) — der verschiebt die Farben dort, wo
+  Pan und Farbe radiometrisch auseinanderlaufen, und bei einem RGB gegen
+  einen sichtbaren Pan-Kanal ist das die Regel. Der Tiefpass wird nicht
+  geschätzt, sondern GERECHNET (Pan auf das native Raster der Farbe herunter
+  und wieder hoch) — exakt, ohne Filterparameter und ohne `ctx.filter`, das
+  Safari erst seit 17 kennt. Ein Dämpfungsfaktor von 0,85 hält das Korn des
+  Pan-Kanals dort zurück, wo es keine Farbinformation gibt (über dunklem
+  Wasser würde aus Rauschen sonst sichtbare Struktur).
+  **GESCHÄRFT WIRD DAS HRV-RGB, NICHT NATURAL COLOUR** — auf Wunsch, nachdem
+  beides gebaut und verglichen war. Natural Colour geschärft war ein eigener
+  Eintrag und ist wieder draußen: das Verfahren funktionierte dort messbar
+  (Faktor 5, Inntal und Adriaküste kamen heraus), aber ein ZWEITER
+  Natural-Colour-Eintrag neben dem europaweiten war den Platz im Menü nicht
+  wert. Beim HRV-RGB ist der Gewinn kleiner (Faktor 2: 1.558 → 779 m), sitzt
+  dafür auf dem FEINSTEN Farb-Layer des Dienstes und damit auf einem Bild,
+  das schon Struktur hat — gemessen und im Vergleich beider Fassungen
+  bestätigt. Wer Natural Colour geschärft zurückwill, braucht einen
+  Registry-Eintrag mit `sharpen` und `colourMercM: 4400`.
+  **Der starke Gelbstich bleibt** — er gehört dem Produkt, nicht der
+  Schärfung (die rohe Fassung hat ihn genauso). Wer die neutrale Optik in
+  dieser Schärfe will, nimmt den Graustufenkanal `vis06`, der über die
+  Detailfläche dasselbe Raster hätte.
+  **Drei Preise, alle unvermeidbar.** (1) **Eigene, engere Fläche** — als
+  einziges Produkt. Über ganz Europa wären dieselben 779 m/px rund 10.400 px
+  und mehrere MB je Zeitschritt, und das Schärfen hätte dort ohnehin nichts
+  zu tun, weil die Farbe bei 4.070 m/px schon gröber angefordert würde als
+  sie ist. *Ganz Europa* und *höchstaufgelöst* gehen mit EINEM festen Bild
+  nicht zusammen; sat24 löst das mit Kacheln je Zoomstufe — derselbe Handel,
+  der hier zweimal abgelehnt wurde. (2) **Zwei Abrufe je Bild.** Die Farbe
+  wird dabei bei IHREM nativen Raster geholt (1000 px = 1.558 m/px, gemessen
+  120 KB) und beim Zusammensetzen hochgezogen; der Pan-Kanal kostet 332 KB.
+  (3) **Zeitpaarung**: Farbe MSG alle 15 Minuten, Schärfe MTG alle 10. Die
+  Zeitachse folgt der FARBE, zum Pan-Kanal wird der nächstgelegene Termin
+  genommen — höchstens 5 Minuten Versatz, rund 3 km Wolkenzug. **Bei
+  Gleichstand gewinnt der FRÜHERE Termin** (`sharpenPanTime`, eigener Test):
+  `Math.round` rundet bei .5 nach oben und griffe am aktuellen Rand
+  regelmäßig auf ein Bild, das es noch nicht gibt. Schlägt der Pan-Abruf
+  fehl, bleibt es bei der groben Farbe — sie IST die Messung, nur unschärfer.
+  **KEIN Untergrund mehr NEBEN dem Bild** (auf Wunsch): ausserhalb der
+  Satellitenfläche steht nichts als Hintergrund, Gradnetz und Grenzlinien.
+  Das Blue-Marble-Bild lag dort als Kartenhintergrund, weil das Bild damals
+  nur Mitteleuropa abdeckte und in einer leeren Fläche zu schweben schien;
+  über Europa ist der Rand schmal, und was ausserhalb liegt, ist schlicht
+  nicht gemessen. **Es reicht seither auch EIN Bodenbild statt zwei**: das
+  enge `dach-ground.jpg` (974 m/px) gab es nur, weil das Komposit über einem
+  kleinen Ausschnitt lief und das Europa-Bild dort 4,3-fach hochskaliert
+  matschig war — jetzt liegt das Komposit bei 4.070 m/px, und
+  `europe-ground.jpg` mit 3.347 m/px ist eher zu fein. Es deckt exakt
+  `SATELLITE_AREA` (Test), wiegt 538 KB, und im Bündel sind das 477 KB
+  WENIGER als vorher. Die Nennung der NASA-Quelle steht nur noch bei den
+  beiden Kanälen, die den Untergrund wirklich benutzen.
+  **Damit ist auch die Kopplung Untergrund ↔ Höhenrelief aufgelöst.** Sie
+  bestand, solange beide Kartenhintergründe waren und austauschbar sein
+  sollten; der Untergrund ist jetzt eine Zutat des Komposits und folgt der
+  Satellitenfläche, das Relief bleibt beim alten Fenster und gehört zur
+  Ortswahl der Soundings. Ein Test hält fest, dass die beiden
+  auseinanderlaufen — damit niemand die alte Gleichheit stillschweigend
+  wiederherstellt.
+  **Der Bezugspunkt für den Sonnenstand ist NICHT mehr die Flächenmitte**
+  (`SATELLITE_CENTER`): die läge bei 8,4° O / 55° N in der Nordsee, und über
+  73° Länge liegen zwischen Island und dem Kaspischen Meer fast fünf Stunden
+  Sonnenstand. Gesetzt ist Mitteleuropa (48,5° N / 11° O) — der Hinweis „nur
+  tagsüber" gilt für die Mitte, nicht für den Rand.
+  **Historisch — ZWEI FLÄCHEN waren der Handel** (`SATELLITE_DETAIL_AREA`, lon 4–18 /
   lat 44–56 neben der Vollfläche): die Vollfläche nativ hieße 3200 px und
   990 KB je Bild, beim Öffnen also 12 MB für `PREFETCH_RECENT` = 12. Die beiden
   HRFI-Kanäle bekommen deshalb die engere Fläche, auf der sie mit weniger

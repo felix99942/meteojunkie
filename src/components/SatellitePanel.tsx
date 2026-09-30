@@ -30,13 +30,12 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchSatelliteExtent, loadSatelliteImages } from '../api/eumetsat'
 import { CITIES } from '../config/cities'
-import { GROUND_COORDINATES, GROUND_URL } from '../config/ground'
 import {
   DEFAULT_SATELLITE_PRODUCT,
   MAX_CACHED,
   SATELLITE_AREA,
   SATELLITE_CENTER,
-  SATELLITE_PRODUCTS,
+  SATELLITE_GROUPS,
   getSatelliteProduct,
   productArea,
   productImageSize,
@@ -59,7 +58,6 @@ import { GroundAttribution } from './Attribution'
 
 const SAT_SOURCE_ID = 'satellite'
 const SAT_LAYER_ID = 'satellite'
-const GROUND_ID = 'ground'
 
 interface View {
   id: string
@@ -232,7 +230,24 @@ export function SatellitePanel() {
 
   // Produktwechsel verwirft alles: zwei Darstellungen dürfen nie in einer
   // Schleife stehen.
+  //
+  // **Erst die Ebene von der Karte nehmen, DANN die Blob-URLs freigeben.**
+  // In der anderen Reihenfolge zeigt die image-Source für einen Moment auf
+  // einen Blob, den es nicht mehr gibt.
+  //
+  // ACHTUNG, das behebt NICHT die `ERR_FILE_NOT_FOUND`/`AJAXError`-Meldungen
+  // auf blob-URLs, die beim schnellen Durchschalten in der Konsole stehen —
+  // gegengeprüft (2026-09-29): sie treten mit den ursprünglichen fünf
+  // Produkten genauso auf, die Ursache liegt woanders (vermutlich ein Rennen
+  // zwischen `updateImage` und der Verdrängung, MapLibre fordert das Bild
+  // asynchron nach). Die Anzeige bleibt dabei richtig. Diese Reihenfolge ist
+  // trotzdem die richtige und bleibt.
   useEffect(() => {
+    const map = mapRef.current
+    if (map) {
+      if (map.getLayer(SAT_LAYER_ID)) map.removeLayer(SAT_LAYER_ID)
+      if (map.getSource(SAT_SOURCE_ID)) map.removeSource(SAT_SOURCE_ID)
+    }
     dropImages()
   }, [product, dropImages])
   useEffect(() => dropImages, [dropImages])
@@ -256,10 +271,29 @@ export function SatellitePanel() {
 
   const imagesRef = useRef(images)
   imagesRef.current = images
+  /**
+   * GESCHEITERTE Zeitschritte, damit sie nicht endlos erneut angefragt
+   * werden — dasselbe Muster wie `failedRef` im Radarbereich, und hier aus
+   * demselben gemessenen Anlass: EUMETView beantwortet einzelne Zeitpunkte
+   * sporadisch mit **HTTP 502** (2026-09-29 reproduziert: `rgb_fog` um
+   * 12:00 UTC an zwei Tagen hintereinander, während 10:00, 14:00, 18:00 und
+   * 19:00 desselben Tages einwandfrei kamen). Ohne das Merken bleibt der Zeit
+   * kein Bild zugeordnet, `missing` enthält sie in jeder Runde erneut, und
+   * der Effekt läuft in einer Dauerschleife gegen einen fremden Dienst.
+   *
+   * Schlüssel ist Produkt UND Zeit: derselbe Zeitpunkt kann bei einem
+   * anderen Produkt sehr wohl da sein.
+   */
+  const failedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    failedRef.current = new Set()
+  }, [product])
   useEffect(() => {
     if (!extent || times.length === 0) return
     const wanted = wantedTimes(times, settledIdx < 0 ? -1 : Math.min(settledIdx, times.length - 1), playing)
-    const missing = wanted.filter((t) => imagesRef.current[t] === undefined)
+    const missing = wanted.filter(
+      (t) => imagesRef.current[t] === undefined && !failedRef.current.has(`${product.id}|${t}`),
+    )
     if (missing.length === 0) return
     const ac = new AbortController()
     // Größe UND Fläche kommen vom PRODUKT und gehören zusammen (Begründung
@@ -275,6 +309,7 @@ export function SatellitePanel() {
         setImages((prev) => ({ ...prev, [time]: url }))
       },
       onError: (time, err) => {
+        failedRef.current.add(`${product.id}|${time}`)
         console.error('[satellit]', new Date(time).toISOString(), err)
         setFailed((n) => n + 1)
       },
@@ -406,22 +441,14 @@ export function SatellitePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    // NATÜRLICHER UNTERGRUND statt der grauen Fläche: die Erde aus dem All,
-    // wolkenfrei (`config/ground.ts`, NASA Blue Marble, 485 KB, einmal
-    // vorgerendert). Er zeigt sich NUR neben dem Satellitenbild — das ist
-    // deckend —, und genau dort war vorher nichts als Hintergrundfarbe mit
-    // ein paar Linien darauf. Seit die HRFI-Kanäle ihre engere Fläche haben,
-    // ist dieser Rand breiter geworden, und ein Bild, das in einer leeren
-    // Fläche schwebt, sieht nach einem Ladefehler aus statt nach einem
-    // Ausschnitt. Ein echtes Satellitenbild darunter setzt das Bild fort,
-    // während ein Höhenrelief den Eindruck bräche.
-    // Liegt ÜBER dem Hintergrund und unter allem anderen: das Satellitenbild
-    // wird später vor `OVERLAY_INSERT_BEFORE` eingehängt und damit darüber.
-    map.addSource(GROUND_ID, { type: 'image', url: GROUND_URL, coordinates: GROUND_COORDINATES })
-    map.addLayer(
-      { id: GROUND_ID, type: 'raster', source: GROUND_ID, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
-      OVERLAY_INSERT_BEFORE,
-    )
+    // KEIN Untergrund neben dem Satellitenbild — auf Wunsch, seit 2026-09-30.
+    // Bis dahin lag hier das Blue-Marble-Bild als Kartenhintergrund, weil das
+    // Satellitenbild damals nur Mitteleuropa abdeckte und in einer leeren
+    // Fläche zu schweben schien. Seit es GANZ EUROPA zeigt, ist der Rand
+    // schmal, und ausserhalb der Satellitenfläche soll nichts stehen, was man
+    // für Bildinhalt halten könnte — dort ist schlicht nichts gemessen.
+    // Das Bild selbst gibt es weiter: als Untergrund UNTER den Wolken IM
+    // Komposit (`render/cloudComposite.ts`, `config/ground.ts`).
     ;(map.getSource('graticule') as maplibregl.GeoJSONSource).setData(
       buildGraticuleBox(
         {
@@ -586,10 +613,18 @@ export function SatellitePanel() {
           onChange={(e) => setProductId(e.target.value)}
           title={product.note}
         >
-          {SATELLITE_PRODUCTS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label} · {p.mission}
-            </option>
+          {/* Nach Satellit gruppiert: bei fünfzehn Einträgen ist eine flache
+              Liste eine Liste, die man jedes Mal neu liest. Die Mission steht
+              damit in der Gruppenüberschrift und nicht mehr an jedem Eintrag. */}
+          {SATELLITE_GROUPS.map((g) => (
+            <optgroup key={g.mission} label={g.label}>
+              {g.items.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                  {p.dayOnly ? ' (Tag)' : ''}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <button
@@ -730,7 +765,15 @@ export function SatellitePanel() {
         >
           EUMETSAT
         </a>{' '}
-        — {product.mission === 'MTG' ? 'Meteosat Third Generation (FCI)' : 'Meteosat Second Generation (SEVIRI)'} über{' '}
+        {/* Das geschärfte Produkt stammt aus ZWEI Satelliten — Farbe von
+            MSG, Struktur von MTG. Beide gehören EUMETSAT, die Lizenz ist
+            also so oder so erfüllt; genannt gehören sie trotzdem, sonst
+            steht unter einem Bild aus zwei Quellen nur eine. */}
+        — {product.sharpen
+          ? 'Meteosat Second Generation (SEVIRI, Farbe) und Third Generation (FCI, Schärfe)'
+          : product.mission === 'MTG'
+            ? 'Meteosat Third Generation (FCI)'
+            : 'Meteosat Second Generation (SEVIRI)'} über{' '}
         <a
           href="https://view.eumetsat.int/productviewer"
           target="_blank"
@@ -738,7 +781,13 @@ export function SatellitePanel() {
         >
           EUMETView
         </a>
-        . Kartenhintergrund: Natural Earth. <GroundAttribution />
+        . Kartenlinien: Natural Earth.{' '}
+        {/* Der Untergrund liegt seit 2026-09-30 nur noch UNTER den Wolken im
+            Komposit, also bei den beiden Graustufen-Kanälen — genannt wird er
+            deshalb auch nur dort. Attribution ist Lizenzbedingung, aber eine
+            Nennung für ein Bild, das gar nicht gezeigt wird, ist keine
+            Auskunft, sondern Rauschen. */}
+        {product.cloudMask && <GroundAttribution />}
       </span>
     </div>
   )

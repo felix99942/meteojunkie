@@ -10,6 +10,7 @@ import {
   SATELLITE_AREA,
   SATELLITE_DETAIL_AREA,
   SATELLITE_MERC,
+  SATELLITE_GROUPS,
   SATELLITE_PRODUCTS,
   getSatelliteProduct,
   magnificationZoom,
@@ -21,6 +22,8 @@ import {
   satelliteCapabilitiesUrl,
   satelliteImageUrl,
   satelliteLayer,
+  sharpenLayer,
+  sharpenPanTime,
   satelliteTimes,
 } from './satellite'
 import { toMercator } from './wmsTime'
@@ -32,10 +35,19 @@ describe('Fläche', () => {
   // projiziert — ein Rechenfehler verschöbe das Bild gegen die Grenzen, ohne
   // dass es nach einem Fehler aussähe. Werte gegen die Referenzrechnung.
   it('projiziert die Ecken nach EPSG:3857', () => {
-    expect(SATELLITE_MERC.minx).toBeCloseTo(0, 0)
-    expect(SATELLITE_MERC.miny).toBeCloseTo(5_012_342, -1)
-    expect(SATELLITE_MERC.maxx).toBeCloseTo(2_449_029, -1)
-    expect(SATELLITE_MERC.maxy).toBeCloseTo(7_558_416, -1)
+    expect(SATELLITE_MERC.minx).toBeCloseTo(-3_130_861, -1)
+    expect(SATELLITE_MERC.miny).toBeCloseTo(3_757_033, -1)
+    expect(SATELLITE_MERC.maxx).toBeCloseTo(5_009_377, -1)
+    expect(SATELLITE_MERC.maxy).toBeCloseTo(11_897_271, -1)
+  })
+
+  // In Mercator exakt quadratisch — das ist keine Zierde, sondern die
+  // Kontrolle, ob das Kachelfenster noch stimmt (Zoomstufe 6, x 27…40,
+  // y 13…26). Verschiebt jemand eine Kante, fällt es hier auf.
+  it('ist in Mercator quadratisch', () => {
+    const w = SATELLITE_MERC.maxx - SATELLITE_MERC.minx
+    const h = SATELLITE_MERC.maxy - SATELLITE_MERC.miny
+    expect(h / w).toBeCloseTo(1, 3)
   })
 
   it('Mercator ist nach Norden gedehnt — sonst stimmt das Seitenverhältnis nicht', () => {
@@ -98,42 +110,91 @@ describe('Registry', () => {
     geocolour: 1577,
     vis06: 788,
     ir105: 1113,
+    // Die übrigen FCI-RGBs liegen auf DEMSELBEN Raster wie Geocolour —
+    // nachgemessen 2026-09-29 mit derselben Methode (Autokorrelation des
+    // Spaltengradienten über den Alpen, Kontrollwerte 779/1558/1169 gegen die
+    // dokumentierten 788/1577/1113). Wo die Messung ein Vielfaches traf
+    // (Wolkenphase, Echtfarben: 3312 m = 2×1558) bzw. am 502 des Dienstes
+    // scheiterte (Nebel), gilt derselbe Wert: es ist dieselbe Produktfamilie.
+    fog: 1577,
+    dust: 1577,
+    cloudphase: 1577,
+    cloudtype: 1577,
+    snow: 1577,
+    truecolour: 1577,
     // MSG/SEVIRI, 3 km am Boden; über den Alpen keine Periodik unter 24 px
-    // messbar, die Zahl ist deshalb gerechnet statt abgelesen.
+    // messbar, die Zahl ist deshalb gerechnet statt abgelesen. Die Messung
+    // schlägt hier reproduzierbar fehl — auch beim Kontrollwert `airmass`,
+    // genau wie beim ersten Mal.
     airmass: 4400,
     convection: 4400,
+    wv062: 4400,
+    ash: 4400,
+    naturalenh: 4400,
+    hrv: 788,
+    // Beim GESCHÄRFTEN Produkt (`hrv`) zählt das Raster des
+    // SCHÄRFUNGSkanals — es bestimmt, wie fein das Ergebnis wird; die Farbe
+    // wird bewusst bei ihren eigenen 1.558 m geholt (eigener Test).
+
   }
 
-  it('fordert jedes Produkt in seinem nativen Raster an', () => {
+  /**
+   * **Diese Regel hat sich mit der Europafläche UMGEDREHT, und das ist der
+   * Punkt des Tests.**
+   *
+   * Früher galt: fordere jedes Produkt in SEINEM nativen Raster an — dafür
+   * gab es die engere Detailfläche. Über ganz Europa ist das unmöglich:
+   * HRFI nativ wären 8.000 px Bildbreite und mehrere MB je Zeitschritt. Was
+   * bleibt, ist die eine Hälfte der alten Regel, die weiter gilt und weiter
+   * Bytes spart: **niemals FEINER anfordern als die Quelle liefert.**
+   *
+   * Dazu die Vergröberung je Produkt als Zahl, damit ein Eingriff auffällt.
+   */
+  it('fordert nie feiner an als die Quelle liefert', () => {
     for (const p of SATELLITE_PRODUCTS) {
       const native = NATIVE_MERC_M[p.id]
-      expect(native).toBeDefined()
+      expect(native, p.id).toBeDefined()
       const merc = productMerc(p)
       const { width } = productImageSize(p)
       const mPerPx = (merc.maxx - merc.minx) / width
-      // kein Detailverlust …
-      expect(mPerPx).toBeLessThanOrEqual(native * 1.01)
-      // … und keine Bytes für nichts
-      expect(mPerPx).toBeGreaterThan(native / 2.1)
+      expect(mPerPx, p.id).toBeGreaterThanOrEqual(native * 0.95)
     }
   })
 
-  // Die engere Fläche haben genau die beiden HRFI-Kanäle: auf der Vollfläche
-  // bräuchten sie 2500 bzw. 3200 px für dasselbe Raster, also rund das
-  // Doppelte an Bytes je Bild.
-  it('gibt die Detailfläche genau den beiden HRFI-Kanälen', () => {
-    const detail = SATELLITE_PRODUCTS.filter((p) => productArea(p) === SATELLITE_DETAIL_AREA)
-    expect(detail.map((p) => p.id)).toEqual(['vis06', 'ir105'])
+  it('vergröbert je Mission um den erwarteten Faktor', () => {
+    const factor = (id: string) => {
+      const p = SATELLITE_PRODUCTS.find((x) => x.id === id)!
+      const merc = productMerc(p)
+      return (merc.maxx - merc.minx) / productImageSize(p).width / NATIVE_MERC_M[id]
+    }
+    // MSG-Kanäle sind mit 1800 px praktisch genau bedient …
+    expect(factor('airmass')).toBeCloseTo(1.03, 1)
+    expect(factor('wv062')).toBeCloseTo(1.03, 1)
+    // … die FCI-RGBs liegen Faktor 2,6 darüber …
+    expect(factor('geocolour')).toBeCloseTo(2.6, 1)
+    // … und der hochaufgelöste sichtbare Kanal Faktor 5. Das ist der Preis
+    // der Europafläche, ausdrücklich dokumentiert bei `SATELLITE_AREA`.
+    expect(factor('vis06')).toBeCloseTo(5.2, 1)
+  })
+
+  // Genau EIN Produkt hat eine eigene Fläche — das geschärfte, und es kann
+  // gar keine andere haben: dieselbe Schärfe über ganz Europa wäre ein Bild
+  // von rund 10.400 px (Begründung bei `SATELLITE_DETAIL_AREA`). Alle
+  // übrigen zeigen ganz Europa.
+  it('gibt nur dem geschärften Produkt eine eigene Fläche', () => {
+    const eigen = SATELLITE_PRODUCTS.filter((p) => p.area)
+    expect(eigen.map((p) => p.id)).toEqual(['hrv'])
+    expect(productArea(eigen[0])).toBe(SATELLITE_DETAIL_AREA)
     for (const p of SATELLITE_PRODUCTS) {
-      if (detail.includes(p)) continue
-      expect(productArea(p)).toBe(SATELLITE_AREA)
+      if (p.area) continue
+      expect(productArea(p), p.id).toBe(SATELLITE_AREA)
     }
   })
 
-  // Die Detailfläche darf NICHT enger sein als die Sprungziele der
-  // Werkzeugleiste (`FIXED_VIEWS` in `SatellitePanel`): ein Sprung auf einen
-  // Ausschnitt, der über den Bildrand hinausreicht, zeigt leere Ränder und
-  // sieht nach einem Ladefehler aus.
+  // Die Fläche darf NICHT enger sein als die Sprungziele der Werkzeugleiste
+  // (`FIXED_VIEWS` in `SatellitePanel`): ein Sprung auf einen Ausschnitt, der
+  // über den Bildrand hinausreicht, zeigt leere Ränder — und seit der
+  // Untergrund neben dem Bild weg ist, ist das schwarze Fläche.
   it('umfasst in JEDER Produktfläche die Sprungziele der Leiste', () => {
     const views: [[number, number], [number, number]][] = [
       [[5.4, 45.8], [17.4, 55.3]], // D-A-CH
@@ -168,12 +229,17 @@ describe('Registry', () => {
     }
   })
 
-  // Ankerwert, damit die Formel nicht unbemerkt driftet: der sichtbare Kanal
-  // ist mit 2000 px über 14° bei z ≈ 6,65 deckungsgleich, vor der
-  // Flächentrennung (1600 px über 22°) war es z ≈ 5,68.
-  it('hält den gemessenen Ankerwert des sichtbaren Kanals', () => {
-    expect(magnificationZoom(getSatelliteProduct('vis06'))).toBeCloseTo(6.65, 2)
-    expect(magnificationZoom(getSatelliteProduct('geocolour'))).toBeCloseTo(5.68, 2)
+  // Ankerwerte, damit die Formel nicht unbemerkt driftet. Über der
+  // Europafläche (73,125°) sind das MTG-Produkt mit 2000 px und das
+  // MSG-Produkt mit 1800 px bei diesen Stufen deckungsgleich. Zur
+  // Geschichte: mit der Detailfläche (2000 px über 14°) lag der sichtbare
+  // Kanal bei z ≈ 6,65, davor (1600 px über 22°) bei z ≈ 5,68 — die Zahl
+  // sinkt, weil dieselbe Pixelzahl jetzt eine fünfmal breitere Fläche trägt.
+  it('hält die Ankerwerte der beiden Missionsbreiten', () => {
+    const z = (id: string) => magnificationZoom(getSatelliteProduct(id))
+    expect(z('vis06')).toBeCloseTo(z('geocolour'), 10)
+    expect(z('geocolour')).toBeCloseTo(4.27, 2)
+    expect(z('airmass')).toBeCloseTo(4.11, 2)
   })
 
   // Umgeschaltet wird eine Stufe FRÜHER als 1:1 (Begründung dort): bilinear
@@ -188,8 +254,24 @@ describe('Registry', () => {
 
   // `dayOnly` steuert den Hinweis in der Legende. Ein schwarzes Nachtbild
   // sieht nach einem Fehler aus; genau ein Produkt darf so aussehen.
-  it('markiert genau den sichtbaren Kanal als Tagesprodukt', () => {
-    expect(SATELLITE_PRODUCTS.filter((p) => p.dayOnly).map((p) => p.id)).toEqual(['vis06'])
+  it('markiert die Tagesprodukte — und nur die', () => {
+    // Gemessen (2026-09-29, je ein Bild um 12 und um 20 UTC über die
+    // Standardfläche): diese sechs liefern nachts ein praktisch leeres Bild
+    // (4–9 KB, Helligkeit 0–2), die übrigen tragen durch.
+    expect(SATELLITE_PRODUCTS.filter((p) => p.dayOnly).map((p) => p.id)).toEqual([
+      'vis06',
+      'cloudphase',
+      'cloudtype',
+      'snow',
+      'truecolour',
+      'naturalenh',
+      'hrv',
+    ])
+    // Gegenprobe: die IR-basierten RGBs und der Wasserdampfkanal sind es
+    // NICHT — sie waren nachts genauso gefüllt wie tagsüber.
+    for (const id of ['geocolour', 'ir105', 'fog', 'dust', 'airmass', 'convection', 'wv062', 'ash']) {
+      expect(SATELLITE_PRODUCTS.find((p) => p.id === id)!.dayOnly, id).toBeUndefined()
+    }
   })
 
   // Die Takte sind gemessen (2026-09-19): MTG 10 min, MSG 15 min. Sie stehen
@@ -283,8 +365,11 @@ describe('URLs', () => {
       expect(bbox[2]).toBeCloseTo(merc.maxx, 0)
       expect(bbox[3]).toBeCloseTo(merc.maxy, 0)
     }
-    const vis = getSatelliteProduct('vis06')
-    expect(productMerc(vis).minx).toBeGreaterThan(SATELLITE_MERC.minx)
+    // Zurzeit teilen sich alle Produkte die Europafläche — der Test oben
+    // bleibt trotzdem der richtige: er prüft, dass die bbox aus
+    // `productMerc` kommt und nicht aus einer Konstanten. Genau daran hinge
+    // es, wenn wieder ein Produkt mit eigenem Ausschnitt dazukäme.
+    expect(productMerc(getSatelliteProduct('vis06'))).toEqual(SATELLITE_MERC)
   })
 
   it('setzt den Layernamen mit Workspace zusammen', () => {
@@ -339,5 +424,145 @@ describe('wantedTimes', () => {
 
   it('liefert für eine leere Reihe nichts', () => {
     expect(wantedTimes([], 0, false)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Der erweiterte Katalog (2026-09-29). Alles hier ist live gemessen; die
+// Tests halten fest, WAS gemessen wurde, damit eine spätere Änderung am
+// Dienst auffällt statt still durchzulaufen.
+// ---------------------------------------------------------------------------
+
+describe('Katalog', () => {
+  it('führt beide Missionen und gruppiert vollständig', () => {
+    const inGroups = SATELLITE_GROUPS.flatMap((g) => g.items)
+    // Keine Lücke und keine Dublette: jede Gruppe kommt aus derselben
+    // Registry, und zusammen ergeben sie genau sie.
+    expect(inGroups).toHaveLength(SATELLITE_PRODUCTS.length)
+    expect(new Set(inGroups.map((p) => p.id)).size).toBe(SATELLITE_PRODUCTS.length)
+    for (const g of SATELLITE_GROUPS) {
+      for (const p of g.items) expect(p.mission, p.id).toBe(g.mission)
+    }
+  })
+
+  // Die Vorgabe muss das Produkt bleiben, das rund um die Uhr trägt — sonst
+  // öffnet der Bereich nachts schwarz.
+  it('startet mit einem Produkt, das auch nachts trägt', () => {
+    expect(DEFAULT_SATELLITE_PRODUCT.id).toBe('geocolour')
+    expect(DEFAULT_SATELLITE_PRODUCT.dayOnly).toBeUndefined()
+  })
+
+  /**
+   * Der Wasserdampfkanal ist ein GRAUSTUFENkanal und bekommt trotzdem KEINE
+   * `cloudMask` — das ist kein Versehen: 6,2 µm sieht die obere Troposphäre
+   * und erreicht den Boden nicht. Es gibt dort keinen wolkenfreien
+   * Untergrund, den man darunter durchscheinen lassen könnte; die
+   * Zusammensetzung würde eine Bodenansicht vortäuschen, die der Kanal nie
+   * gemessen hat.
+   */
+  it('setzt die Wolken-über-Boden-Zusammensetzung nur bei den beiden HRFI-Kanälen', () => {
+    expect(SATELLITE_PRODUCTS.filter((p) => p.cloudMask).map((p) => p.id)).toEqual([
+      'vis06',
+      'ir105',
+    ])
+    expect(SATELLITE_PRODUCTS.find((p) => p.id === 'wv062')!.cloudMask).toBeUndefined()
+  })
+
+  it('kennt je Produkt den richtigen Takt der Mission', () => {
+    for (const p of SATELLITE_PRODUCTS) {
+      expect(p.stepMs, p.id).toBe(p.mission === 'MTG' ? 600_000 : 900_000)
+    }
+  })
+
+  // Alle Layer sind live geprüft; die Workspaces sind die beiden
+  // geostationären Vollscheiben-Dienste. `msg_iodc` (Indischer Ozean),
+  // `msg_rss` (Rapid Scan, nur Tagesprodukte) und die Polarumläufer
+  // (`eps`, `copernicus`) sind bewusst draußen — Begründung in CLAUDE.md.
+  it('holt nur von den beiden Vollscheiben-Diensten', () => {
+    for (const p of SATELLITE_PRODUCTS) {
+      expect(['mtg_fd', 'msg_fes'], p.id).toContain(p.workspace)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PAN-SHARPENING. Natural Colour ist ein RGB aus drei 3-km-Kanälen und kann
+// nicht feiner sein als sein gröbster; die Schärfe wird GERECHNET, aus einem
+// zweiten Layer. Alles hier gemessen 2026-09-30.
+// ---------------------------------------------------------------------------
+
+describe('Geschärftes Produkt', () => {
+  const p = SATELLITE_PRODUCTS.find((x) => x.id === 'hrv')!
+
+  it('nimmt die FARBE aus dem eigenen Layer und die STRUKTUR aus `sharpen`', () => {
+    expect(satelliteLayer(p)).toBe('msg_fes:rgb_eview')
+    expect(sharpenLayer(p.sharpen!)).toBe('mtg_fd:vis06_hrfi')
+    // Die Zeitachse folgt der Farbe, also dem MSG-Takt.
+    expect(p.stepMs).toBe(900_000)
+    expect(p.sharpen!.stepMs).toBe(600_000)
+  })
+
+  /**
+   * Die Zeitpaarung ist der Preis des Verfahrens: Farbe alle 15 Minuten,
+   * Schärfe alle 10. Gepaart wird auf den NÄCHSTGELEGENEN Termin, und der
+   * Versatz darf nie über die halbe Schrittweite des Pan-Kanals gehen.
+   */
+  it('paart den Schärfungskanal auf höchstens 5 Minuten genau', () => {
+    const base = Date.parse('2026-09-29T00:00:00Z')
+    for (let k = 0; k < 8; k++) {
+      const t = base + k * p.stepMs
+      const pan = sharpenPanTime(t, p.sharpen!)
+      expect(pan % p.sharpen!.stepMs).toBe(0)
+      expect(Math.abs(pan - t)).toBeLessThanOrEqual(p.sharpen!.stepMs / 2)
+    }
+    // Die vier Fälle ausgeschrieben. Bei :15 und :45 liegen zwei Termine
+    // GLEICH weit weg — genommen wird der FRÜHERE, weil der spätere am
+    // aktuellen Rand oft noch nicht da ist.
+    const at = (m: number) => Date.parse(`2026-09-29T12:${String(m).padStart(2, '0')}:00Z`)
+    expect(sharpenPanTime(at(0), p.sharpen!)).toBe(at(0))
+    expect(sharpenPanTime(at(15), p.sharpen!)).toBe(at(10))
+    expect(sharpenPanTime(at(30), p.sharpen!)).toBe(at(30))
+    expect(sharpenPanTime(at(45), p.sharpen!)).toBe(at(40))
+    // Kein Gleichstand: der wirklich nächste gewinnt, auch in die Zukunft.
+    expect(sharpenPanTime(at(19), p.sharpen!)).toBe(at(20))
+  })
+
+  /**
+   * Die FARBE wird bewusst klein geholt — sie ist mit 3 km nativ, und die
+   * Struktur kommt ohnehin aus dem Pan-Kanal. Ein Abruf in Zielgröße wäre
+   * das Fünffache an Bytes für null zusätzliche Information.
+   */
+  it('fordert die Farbe bei ihrem nativen Raster an, nicht in Zielgröße', () => {
+    const merc = productMerc(p)
+    const spanM = merc.maxx - merc.minx
+    const colourMPerPx = spanM / p.sharpen!.colourWidth
+    expect(colourMPerPx).toBeGreaterThanOrEqual(p.sharpen!.colourMercM * 0.95)
+    // … und deutlich gröber als das Zielraster, sonst hätte die Trennung
+    // keinen Zweck.
+    const targetMPerPx = spanM / productImageSize(p).width
+    // … und gröber als das Zielraster, sonst hätte die Trennung keinen
+    // Zweck. Beim HRV-RGB ist der Abstand Faktor 2 (1.558 gegen 779 m) —
+    // weniger als beim 3-km-Natural-Colour, dafür auf einem Bild, das schon
+    // Struktur hat.
+    expect(colourMPerPx / targetMPerPx).toBeCloseTo(2, 0)
+  })
+
+  // Das Zielraster IST das des Schärfungskanals — dafür gibt es die engere
+  // Fläche. 14° bei 2000 px sind 779 m/px, gemessenes HRFI-Raster 788 m.
+  it('trifft mit der Zielgröße das Raster des Schärfungskanals', () => {
+    const merc = productMerc(p)
+    const mPerPx = (merc.maxx - merc.minx) / productImageSize(p).width
+    expect(mPerPx).toBeCloseTo(779, -1)
+  })
+
+  it('ist ein Tagesprodukt — beide Zutaten sind es', () => {
+    expect(p.dayOnly).toBe(true)
+    expect(SATELLITE_PRODUCTS.find((x) => x.id === 'vis06')!.dayOnly).toBe(true)
+  })
+
+  // Es ist das einzige; ein zweites bräuchte wieder eine eigene Fläche und
+  // einen zweiten Abruf je Bild.
+  it('ist das einzige Produkt mit Schärfung', () => {
+    expect(SATELLITE_PRODUCTS.filter((x) => x.sharpen).map((x) => x.id)).toEqual(['hrv'])
   })
 })

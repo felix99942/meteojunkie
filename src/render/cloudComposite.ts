@@ -42,7 +42,7 @@
 
 import type { CloudMaskSpec, SatelliteProduct } from '../config/satellite'
 import { productArea, productMerc } from '../config/satellite'
-import { GROUND_DETAIL_BOUNDS, GROUND_DETAIL_URL } from '../config/ground'
+import { GROUND_BOUNDS, GROUND_URL } from '../config/ground'
 import { mercBox, type MercBox } from '../config/wmsTime'
 import { solarElevationDeg } from '../lib/solar'
 
@@ -133,7 +133,7 @@ let groundPromise: Promise<ImageBitmap> | null = null
 
 /** Das Untergrundbild, einmal je Sitzung geladen und dekodiert. */
 function loadGround(): Promise<ImageBitmap> {
-  groundPromise ??= fetch(GROUND_DETAIL_URL)
+  groundPromise ??= fetch(GROUND_URL)
     .then((r) => {
       if (!r.ok) throw new Error(`Untergrund: HTTP ${r.status}`)
       return r.blob()
@@ -204,10 +204,10 @@ export async function compositeClouds(
   // 1. Boden, auf das Raster des Satellitenbildes gezogen.
   const rect = groundSourceRect(
     mercBox({
-      west: GROUND_DETAIL_BOUNDS.lonMin,
-      east: GROUND_DETAIL_BOUNDS.lonMax,
-      south: GROUND_DETAIL_BOUNDS.latMin,
-      north: GROUND_DETAIL_BOUNDS.latMax,
+      west: GROUND_BOUNDS.lonMin,
+      east: GROUND_BOUNDS.lonMax,
+      south: GROUND_BOUNDS.latMin,
+      north: GROUND_BOUNDS.latMax,
     }),
     productMerc(product),
     ground.width,

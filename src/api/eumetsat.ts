@@ -20,12 +20,18 @@
 
 import {
   parseSatelliteCapabilities,
+  productImageSize,
+  productMerc,
   satelliteCapabilitiesUrl,
   satelliteImageUrl,
+  sharpenLayer,
+  sharpenPanTime,
   type SatelliteProduct,
+  type SharpenSpec,
 } from '../config/satellite'
 import type { TimeExtent } from '../config/wmsTime'
 import { compositeClouds } from '../render/cloudComposite'
+import { panSharpen } from '../render/panSharpen'
 
 /**
  * TTL-Cache der Zeitdimension: der Dienst schiebt alle 10 bzw. 15 Minuten
@@ -93,11 +99,13 @@ export async function loadSatelliteImages(
       const slot = next++
       if (slot >= order.length) return
       const time = order[slot]
-      const url = satelliteImageUrl(product, {
-        time,
-        width: opts.width,
-        height: opts.height,
-      })
+      // Beim GESCHÄRFTEN Produkt wird die Farbe klein geholt (sie ist mit
+      // 3 km nativ) und beim Zusammensetzen hochgezogen; die Zielgröße gibt
+      // der Schärfungskanal vor.
+      const colourSize = product.sharpen
+        ? colourRequestSize(product, product.sharpen)
+        : { width: opts.width, height: opts.height }
+      const url = satelliteImageUrl(product, { time, ...colourSize })
       try {
         const res = await fetch(url, { signal: opts.signal })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -108,6 +116,15 @@ export async function loadSatelliteImages(
           throw new Error(`Antwort ist ${raw.type || 'kein Bild'}`)
         }
         let blob = raw
+        if (product.sharpen) {
+          try {
+            blob = await sharpen(product, product.sharpen, time, raw, opts)
+          } catch (err) {
+            // Lieber die grobe Farbe als gar kein Bild: sie IST die Messung,
+            // nur unschärfer. Der Fehler steht in der Konsole.
+            console.error('[satellit] Schärfung', err)
+          }
+        }
         if (product.cloudMask) {
           try {
             blob = await compositeClouds(product, product.cloudMask, time, raw)
@@ -127,4 +144,53 @@ export async function loadSatelliteImages(
   }
 
   await Promise.all(Array.from({ length: concurrency }, worker))
+}
+
+/**
+ * Anforderungsgröße der FARBE beim geschärften Produkt: klein, weil sie mit
+ * 3 km nativ ist. Die Höhe folgt dem Seitenverhältnis der Fläche, sonst
+ * käme das Bild verzerrt und die Struktur läge quer zur Farbe.
+ */
+function colourRequestSize(
+  product: SatelliteProduct,
+  spec: SharpenSpec,
+): { width: number; height: number } {
+  const merc = productMerc(product)
+  const width = spec.colourWidth
+  return {
+    width,
+    height: Math.max(1, Math.round((width * (merc.maxy - merc.miny)) / (merc.maxx - merc.minx))),
+  }
+}
+
+/**
+ * Holt den Schärfungskanal zum nächstgelegenen Termin und setzt ihn mit der
+ * Farbe zusammen (`render/panSharpen.ts`).
+ *
+ * Der Pan-Kanal wird über DIESELBE Fläche und in der ZIELgröße des Produkts
+ * angefordert — beide Bilder müssen im selben Raster liegen, sonst läge die
+ * Struktur neben der Farbe.
+ */
+async function sharpen(
+  product: SatelliteProduct,
+  spec: SharpenSpec,
+  time: number,
+  colour: Blob,
+  opts: SatelliteLoadOptions,
+): Promise<Blob> {
+  const { width, height } = productImageSize(product)
+  const url = satelliteImageUrl(product, {
+    time: sharpenPanTime(time, spec),
+    width,
+    height,
+    layer: sharpenLayer(spec),
+  })
+  const res = await fetch(url, { signal: opts.signal })
+  if (!res.ok) throw new Error(`Schärfungskanal: HTTP ${res.status}`)
+  const pan = await res.blob()
+  if (!pan.type.startsWith('image/')) {
+    throw new Error(`Schärfungskanal antwortet mit ${pan.type || 'kein Bild'}`)
+  }
+  const merc = productMerc(product)
+  return await panSharpen(colour, pan, spec.colourMercM, (merc.maxx - merc.minx) / width)
 }

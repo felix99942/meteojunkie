@@ -1,4 +1,4 @@
-// Natürlicher Untergrund der Bildkarten: die Erde, wie sie aus dem All
+// Natürlicher Untergrund der Satellitenbilder: die Erde, wie sie aus dem All
 // aussieht — wolkenfrei und in echten Farben.
 //
 // Das Bild `src/mapdata/europe-ground.jpg` erzeugt `scripts/build-ground.mjs`
@@ -8,54 +8,40 @@
 // Requests, die uns nicht gehören (dieselbe Entscheidung wie beim Relief und
 // bei der Basemap).
 //
-// WARUM HIER EIN ECHTES SATELLITENBILD UND NICHT DAS HÖHENRELIEF: im
-// Satellitenbereich liegt daneben ein echtes Satellitenbild. Ein
-// Farbschema aus Höhenstufen bricht diesen Eindruck — Wald, Ackerland,
-// Küstenlinien und die schneebedeckten Alpen setzen das Bild dagegen
-// fort. Das Relief bleibt, wo es hingehört: in der Ortswahl-Karte der
-// Soundings, wo die OROGRAFIE die Frage ist (`config/relief.ts`).
+// WOZU: es liegt UNTER den Wolken IM Satellitenbild
+// (`render/cloudComposite.ts`). Die beiden Graustufen-Kanäle kommen vom
+// Dienst als DECKENDE Bilder; ihre Helligkeit wird zur Deckkraft, und
+// darunter steht dieses Bild. Ein Farbschema aus Höhenstufen bräche den
+// Eindruck — Wald, Ackerland, Küsten und die schneebedeckten Alpen setzen
+// ein Satellitenbild fort. Das Relief bleibt, wo die OROGRAFIE die Frage ist
+// (Soundings, `config/relief.ts`).
 //
-// AUSSCHNITT ist exakt das Fenster des Reliefs, damit beide Hintergründe
-// deckungsgleich und gegeneinander austauschbar sind (Test).
+// **NICHT MEHR als Kartenhintergrund neben dem Satellitenbild.** Das war bis
+// 2026-09-30 seine zweite Aufgabe; auf Wunsch zeigt der Bereich ausserhalb
+// der Satellitenfläche jetzt gar keinen Untergrund. Damit ist auch die
+// Kopplung an das Relieffenster entfallen — sie bestand nur, damit die
+// beiden Hintergründe austauschbar sind, und es gibt keinen zweiten
+// Hintergrund mehr. Der Ausschnitt folgt seither `SATELLITE_AREA`.
 //
-// AUFLÖSUNG: 2048 px über den Ausschnitt sind 3363 m/px in Mercator, am Boden
-// rund 2,1 km/px bei 51° N — gröber als die Quelle (500 m) und gröber als die
-// Karte im Detailzoom. Das ist Absicht: die Fläche ist HINTERGRUND und wird
-// grösstenteils vom Satellitenbild verdeckt. Gemessen kostet sie so 485 KB;
-// 2560 px wären 747 KB, 1536 px nur 296 KB (Zahlen im Skript).
+// **UND DESHALB REICHT EIN BILD.** Früher gab es ein zweites, engeres und
+// schärferes (`dach-ground.jpg`, 1600 px = 974 m/px), weil das Komposit über
+// einem kleinen Ausschnitt lief und das Europa-Bild dort 4,3-fach
+// hochskaliert matschig war. Seit die Satellitenbilder ganz Europa abdecken,
+// liegt das Komposit bei rund 4.100 m/px — dieses Bild mit 3.347 m/px ist
+// damit eher zu fein als zu grob, ein schärferes hätte nichts, woran es sich
+// zeigen könnte.
 //
-// ZWEI BILDER mit verschiedenen Aufgaben — das weite als Kartenhintergrund
-// NEBEN dem Satellitenbild, ein engeres und schärferes als Untergrund UNTER
-// den Wolken IM Bild. Warum nicht eines für beides: das weite ist über der
-// Detailfläche 4,3-fach hochskaliert und damit matschig, ein Bild in der
-// Schärfe des engen über ganz Europa wäre ein Vielfaches an Bytes.
+// AUFLÖSUNG: 2432 px über den Ausschnitt sind 3.347 m/px in Mercator, am
+// Boden rund 2,05 km/px bei 52° N. Gemessen 538 KB. Frühere Messreihe zum
+// alten, engeren Fenster: 1280 px → 213 KB, 1536 → 296 KB, 2048 → 485 KB,
+// 2560 → 747 KB.
 //
 // NUTZUNG: NASA-Bilder sind frei verwendbar, die Namensnennung ist erbeten
 // und steht in der Quellenzeile des Bereichs (`GroundAttribution`).
 
 import groundUrl from '../mapdata/europe-ground.jpg?url'
-import detailGroundUrl from '../mapdata/dach-ground.jpg?url'
 
 export const GROUND_URL = groundUrl
-
-/**
- * ZWEITES Bild, schärfer und enger: der Untergrund UNTER den Wolken
- * (`render/cloudComposite.ts`). Dort steht er neben gestochenen Wolkenkanten,
- * und eine weiche Fläche daneben sieht falsch aus — am fertigen Komposit
- * verglichen: mit dem Europa-Bild (4,3-fach hochskaliert) verschwimmen die
- * Alpentäler zu einer Fläche, mit diesem stehen Grate und Schneefelder unter
- * den Wolken. Deckt die Detailfläche der HRFI-Kanäle ab, 1600 px = 974 m/px
- * in Mercator, 530 KB; 2000 px (803 KB) brachten nichts Sichtbares mehr.
- */
-export const GROUND_DETAIL_URL = detailGroundUrl
-
-/** Fläche des Detailbildes — identisch mit `SATELLITE_DETAIL_AREA` (Test). */
-export const GROUND_DETAIL_BOUNDS = {
-  lonMin: 4,
-  lonMax: 18,
-  latMin: 44,
-  latMax: 56,
-} as const
 
 /**
  * Bildecken. Das Bild kommt in EPSG:3857 vom Dienst, und MapLibres
@@ -63,17 +49,18 @@ export const GROUND_DETAIL_BOUNDS = {
  * also schon das Zielraster, es braucht keine Vorverzerrung wie in
  * `render/fieldImage.ts` für lat/lon-Gitter.
  *
- * Die Werte sind die Kachelgrenzen der Zoomstufe 6, x 29…40 und y 14…26 —
- * dieselben wie beim Relief; `ground.test.ts` rechnet sie aus der
- * Kachelrechnung nach, damit sie nicht gegen das Skript driften.
+ * Die Werte sind die Kachelgrenzen der Zoomstufe 6, x 27…40 und y 13…26 —
+ * dieselben, die `SATELLITE_AREA` benutzt; `ground.test.ts` rechnet sie aus
+ * der Kachelrechnung nach, damit sie nicht gegen das Skript driften, und
+ * hält sie gegen die Satellitenfläche.
  */
-export const GROUND_TILES = { zoom: 6, x0: 29, x1: 40, y0: 14, y1: 26 } as const
+export const GROUND_TILES = { zoom: 6, x0: 27, x1: 40, y0: 13, y1: 26 } as const
 
 export const GROUND_BOUNDS = {
-  lonMin: -16.875,
+  lonMin: -28.125,
   lonMax: 45,
   latMin: 31.952162,
-  latMax: 70.612614,
+  latMax: 72.395706,
 } as const
 
 /** Bildecken im Format der MapLibre image-source (NW, NE, SE, SW). */
