@@ -302,7 +302,8 @@ export function Impressum() {
               >
                 Deutscher Wetterdienst, Open Data
               </a>{' '}
-              — MOSMIX-Punktvorhersagen, Stationskatalog, das Niederschlagsradar
+              — MOSMIX-Punktvorhersagen, Stationskatalog, die Klimadaten Deutschlands
+              (Climate Data Center: Tages- und Monatswerte, Klimanormale), das Niederschlagsradar
               (Radarkomposit RV über <code>maps.dwd.de</code>) und die Modellläufe ICON-D2 und
               ICON-EU für die Modellkarten (beim Bauen der Seite übernommen). Nutzung nach{' '}
               <a
@@ -439,7 +440,7 @@ export function Impressum() {
             ))}
           </ul>
           <p className="legal-note">
-            Die MOSMIX-Punktvorhersagen des Deutschen Wetterdienstes werden nicht im Browser
+            Die MOSMIX-Punktvorhersagen und die Klimadaten Deutschlands des Deutschen Wetterdienstes werden nicht im Browser
             geholt, sondern beim Bauen der Seite vorverarbeitet und wie eine eigene Datei
             ausgeliefert. Die Radarbilder dagegen holt der Browser direkt bei{' '}
             <code>maps.dwd.de</code> — sie sind minutenaktuell und lassen sich nicht

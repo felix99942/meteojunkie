@@ -910,6 +910,54 @@ npm run preview   # gebautes dist/ servieren
   wie Schneehöhe), kein Tagesmittel. `AtStationDetail` zeigt für abgeleitete
   Parameter keine Jahresreihe (die gäbe es nicht historisch) und keine
   Perioden-Historie, nur den Live-Wert mit Messzeitpunkt.
+- **Klimamonitor DEUTSCHLAND** (seit 2026-10-08, Phase 1) — derselbe Bereich
+  wie die Österreich-Klimakarte, Umschalter **Österreich | Deutschland** vorn
+  in der Leiste (`country` in `AtClimatePanel`). **Der DWD hat KEIN CORS**
+  (gemessen am Climate Data Center wie am Radar) → anders als bei GeoSphere
+  fragt der Browser nicht beim Anbieter, sondern liest im Deploy erzeugte
+  Dateien unter `public/de/` (`scripts/de-ingest-climate.mjs`, npm
+  `ingest:de:climate`, gitignored). Folgen, beide bewusst: der Stand ist so
+  alt wie der letzte Deploy (Tageswerte bis GESTERN, kein Live-Tag), und
+  Tageskarten gibt es nur im „recent"-Fenster des DWD (~anderthalb Jahre).
+  **Die Größen tragen die CODES der Österreich-Registry** (`tl_mittel`,
+  `tlmax`, `rr`, `tage_frost` …; Zuordnung DWD-Spalte → Code in
+  `MONTHLY_MAP`/`DAILY_MAP` des Ingests), und `fetchDePeriodValues`
+  (`api/deClimate.ts`) liefert dieselbe `PeriodValues`-Form samt
+  `PeriodCoverage` — Karte, Farbskalen, Abweichung, Rangliste und die
+  Teilzeitraum-Logik („läuft noch — bisher …") laufen dadurch ohne Sonderweg.
+  `deParamAvailable` ergänzt `isParamAvailable` um das, was der DWD führt.
+  Was es in Phase 1 NICHT gibt: Allzeit-Rekorde, Klimaarchiv-Fragen,
+  HISTALP, Perioden-Historie und Tagesreihe im Stationsdetail
+  (`DeStationDetail` zeigt Wert, Normal, Abweichung und Stammdaten).
+  **Gemessen (2026-10-08)**: 573 aktive Stationen mit Tageswerten, 1.241 mit
+  irgendeiner Reihe; Monatskarten ab 1881 (125 Stationen damals); Assets
+  50 MB. Historische Archive ~400 MB (Monat 35 MB, Tag 360 MB) liegen in
+  `.cache/de-climate/` bzw. im Actions-Cache (Schlüssel je Monat) und werden
+  nur ersetzt, wenn der DWD sie neu schreibt (Reihenende im Dateinamen); je
+  Deploy neu geholt wird nur das recent-Fenster (~25 MB, rund 1 min).
+  **KENNTAGE zählt der Ingest selbst** — der DWD-Monatsdatensatz führt sie
+  nicht —, und zwar nur aus VOLLSTÄNDIGEN Monaten der Quellgröße: ein Monat
+  mit Lücken ergäbe zu wenige Frosttage und sähe aus wie ein milder Winter.
+  Ein gerade abgeschlossener Monat, den `monthly/kl` noch nicht führt, wird
+  ebenso aus vollständigen Tageswerten gebildet; der laufende Monat steht als
+  Teilwert in `running.json`.
+  **Saison und Jahr nur aus ALLEN Monaten der Station** (`fetchDePeriodValues`):
+  gemessen hatten 2025 43 Stationen Lücken — Reit im Winkl nur Jänner bis
+  März, „Jahresmittel" 1,0 °C, 6,4 K unter dem Normal. Die Österreich-Karte
+  bildet Saison/Jahr dagegen weiter aus den vorhandenen Monaten der Station
+  (`fetchPeriodValues`) — dieselbe Falle, dort bisher nicht aufgefallen.
+  **Normale rechnet der DWD selbst** (`multi_annual/mean_91-20`, `mean_61-90`):
+  Temperaturmittel, Niederschlag, Sonne und vier Kenntage; für Max/Min und
+  Niederschlagstage gibt es KEINE, dort bleibt die Abweichung leer.
+  Stationsliste: SIEHT aus wie Festbreiten-Text, ist es aber nicht (die
+  Strichzeile ist breiter als die Werte) — geparst über ein Muster, das
+  Bundesland über die feste Liste der 16 Länder. **Beim Umschalten ist die
+  Stationsliste an ihr Land gebunden** (`stationsOf`): die Effekte liefen
+  sonst eine Runde mit der alten Liste, und Österreich fragte GeoSphere mit
+  DWD-Kennungen (HTTP 403). Karte `DE_VIEW` auf dem Europa-Bündel,
+  Beschriftung ausgedünnt (38 px). Offen (Phasen 2–4): Gebietsmittel je
+  Bundesland ab 1881 (`regional_averages_DE`), Rekorde aus den historischen
+  Tagesreihen, laufender Tag aus den 10-Minuten-Werten.
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind

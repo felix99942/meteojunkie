@@ -16,6 +16,7 @@
 // Einzelereignis hat kein Normal.
 
 import { useEffect, useMemo, useState } from 'react'
+import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import { activeStations, loadStations, type AtStation } from '../api/geosphere'
 import {
   fetchPeriodValues,
@@ -62,6 +63,24 @@ import type { HistoryScope } from './atHistory'
 import { AtAskBox } from './AtAskBox'
 import { AtRankList } from './AtRankList'
 import { AtStationDetail } from './AtStationDetail'
+import { DeStationDetail } from './DeStationDetail'
+import {
+  deParamAvailable,
+  fetchDePeriodValues,
+  loadDeMeta,
+  loadDeNormals,
+  loadDeStations,
+  type DeMeta,
+} from '../api/deClimate'
+import { DE_VIEW } from '../render/atmap'
+
+/**
+ * Welches Land die Klimakarte zeigt. Österreich fragt GeoSphere direkt im
+ * Browser (beliebige Zeiträume, laufender Tag live); Deutschland liest die im
+ * Deploy erzeugten DWD-Dateien (`api/deClimate.ts`) — der DWD hat kein CORS.
+ * Gemeinsam sind Registry, Karte, Farbskalen, Abweichung und Rangliste.
+ */
+type Country = 'at' | 'de'
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 
@@ -136,7 +155,17 @@ function latestPeriods() {
 }
 
 export function AtClimatePanel() {
+  const [country, setCountry] = useState<Country>('at')
+  const isDe = country === 'de'
+  const [deMeta, setDeMeta] = useState<DeMeta | null>(null)
   const [stations, setStations] = useState<AtStation[] | null>(null)
+  /**
+   * Zu welchem Land die geladene Stationsliste gehört. Beim Umschalten laufen
+   * die Effekte noch EINE Runde mit der alten Liste — ohne diese Bindung ging
+   * der Werteabruf für Österreich mit DWD-Kennungen an GeoSphere (HTTP 403,
+   * gesehen beim Zurückschalten).
+   */
+  const [stationsOf, setStationsOf] = useState<Country | null>(null)
   const [stationsError, setStationsError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [paramCode, setParamCode] = useState('tl_mittel')
@@ -194,7 +223,8 @@ export function AtClimatePanel() {
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
   // Normale je Klimaperiode — im Vergleichsmodus wird die Bezugsperiode geladen.
-  const [normals, setNormals] = useState<Partial<Record<NormalPeriodId, NormalsMap>>>({})
+  // Schlüssel `<land>:<periode>` — die Normale beider Länder liegen nebeneinander.
+  const [normals, setNormals] = useState<Record<string, NormalsMap>>({})
   /**
    * Quelle des PERIODENVERGLEICHS. Voreinstellung ist HISTALP: der Vergleich
    * zweier Klimaperioden ist eine Trendaussage, und dafür sind homogenisierte
@@ -207,6 +237,12 @@ export function AtClimatePanel() {
   const [histalp, setHistalp] = useState<HistalpNormals | null>(null)
 
   const spec = getAtParameter(paramCode)
+  /**
+   * Verfügbarkeit je Land: die Regeln der Größe gelten immer, für
+   * Deutschland zusätzlich, was der DWD-Datensatz führt (keine gefühlte
+   * Temperatur, keine Allzeit-Rekorde, Feuchte nur als Tageswert).
+   */
+  const avail = (p: typeof spec, per: Period) => isParamAvailable(p, per) && (!isDe || deParamAvailable(p, per))
   const recExtreme = recExtremeSel ?? defaultRecordExtreme(spec)
 
   const period = useMemo<Period>(() => {
@@ -249,7 +285,7 @@ export function AtClimatePanel() {
     mode === 'anom' &&
     periodKind !== 'day' &&
     periodKind !== 'record' &&
-    isParamAvailable(spec, period)
+    avail(spec, period)
   /** Perioden-Vergleich: Normale gegen Normale statt Wetter gegen Normal. */
   const climate = anomActive && period.kind === 'normal'
   /**
@@ -258,23 +294,48 @@ export function AtClimatePanel() {
    */
   const refPeriodId: NormalPeriodId =
     period.kind === 'normal' ? comparePeriod(period.periodId) : DEFAULT_NORMAL_PERIOD
-  const refNormals = normals[refPeriodId] ?? null
+  const normalsKey = `${country}:${refPeriodId}`
+  const refNormals = normals[normalsKey] ?? null
 
   useEffect(() => {
     let cancelled = false
-    loadStations()
-      .then((s) => !cancelled && setStations(s))
+    setStations(null)
+    setStationsError(null)
+    setSelected(null)
+    setMarked(null)
+    setValues(null)
+    ;(isDe ? loadDeStations() : loadStations())
+      .then((s) => {
+        if (cancelled) return
+        setStations(s)
+        setStationsOf(isDe ? 'de' : 'at')
+      })
       .catch((err) => !cancelled && setStationsError(err?.message ?? 'Fehler beim Laden'))
+    if (isDe)
+      loadDeMeta()
+        .then((m) => !cancelled && setDeMeta(m))
+        .catch((err) => !cancelled && setStationsError(err?.message ?? 'Fehler beim Laden'))
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isDe])
+
+  // Deutschland kennt Tageswerte nur im „recent"-Fenster des DWD und erst ab
+  // gestern — ein Tag außerhalb zeigte eine leere Karte ohne Grund.
+  useEffect(() => {
+    if (!isDe || !deMeta || periodKind !== 'day') return
+    if (day > deMeta.lastDay || day < deMeta.dailyFrom) setDay(deMeta.lastDay)
+  }, [isDe, deMeta, periodKind, day])
+  // Allzeit-Rekorde gibt es für Deutschland noch nicht
+  useEffect(() => {
+    if (isDe && periodKind === 'record') setPeriodKind('day')
+  }, [isDe, periodKind])
 
   // Normale der BEZUGSperiode nur laden, wenn der Abweichungsmodus sie braucht
   // (die angezeigte Periode holt fetchPeriodValues selbst).
   // HISTALP nur laden, wenn der Periodenvergleich sie überhaupt nutzen kann.
   const histalpWanted =
-    climateSource === 'histalp' && mode === 'anom' && histalpCovers(spec, period)
+    !isDe && climateSource === 'histalp' && mode === 'anom' && histalpCovers(spec, period)
   useEffect(() => {
     if (!histalpWanted || histalp) return
     let cancelled = false
@@ -286,32 +347,35 @@ export function AtClimatePanel() {
     }
   }, [histalpWanted, histalp])
 
+  // Für Deutschland auch beim offenen Stationsdetail: es nennt Normal und
+  // Abweichung auch im Absolutmodus.
+  const needNormals = mode === 'anom' || (isDe && selected != null)
   useEffect(() => {
-    if (mode !== 'anom' || normals[refPeriodId]) return
+    if (!needNormals || normals[normalsKey]) return
     let cancelled = false
-    loadNormals(refPeriodId)
-      .then((n) => !cancelled && setNormals((prev) => ({ ...prev, [refPeriodId]: n })))
+    ;(isDe ? loadDeNormals(refPeriodId) : loadNormals(refPeriodId))
+      .then((n) => !cancelled && setNormals((prev) => ({ ...prev, [normalsKey]: n })))
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [mode, normals, refPeriodId])
+  }, [needNormals, normals, normalsKey, isDe, refPeriodId])
 
   const shown = useMemo(
-    () => (stations ? (showAll ? stations : activeStations(stations)) : []),
-    [stations, showAll],
+    () => (stations && stationsOf === country ? (showAll ? stations : activeStations(stations)) : []),
+    [stations, stationsOf, country, showAll],
   )
   const idsKey = useMemo(() => shown.map((s) => s.id).join(','), [shown])
 
   // Wenn der Parameter im gewählten Zeitbezug nicht verfügbar ist (z.B. Schnee im
   // Monat), auf Temperatur zurückfallen — nie stumm leer zeigen.
   useEffect(() => {
-    if (!isParamAvailable(spec, period)) setParamCode('tl_mittel')
-  }, [spec, period])
+    if (!(isParamAvailable(spec, period) && (!isDe || deParamAvailable(spec, period)))) setParamCode('tl_mittel')
+  }, [spec, period, isDe])
 
   // Läuft der gewählte Tag gerade noch? Dann kommen die Werte aus dem
   // 10-Minuten-Datensatz und müssen periodisch nachgezogen werden.
-  const isToday = periodKind === 'day' && day >= todayUtc()
+  const isToday = !isDe && periodKind === 'day' && day >= todayUtc()
   // `force` nur beim Knopfdruck: der Timer darf den TTL-Cache nutzen.
   const [refresh, setRefresh] = useState({ n: 0, force: false })
   useEffect(() => {
@@ -322,7 +386,13 @@ export function AtClimatePanel() {
 
   // „Aktuell": auf den neuesten Stand springen — steht der schon, den laufenden
   // Tag stattdessen sofort neu holen (am Cache vorbei, sonst passiert 5 min nichts).
-  const latest = latestPeriods()
+  // Deutschland: der jüngste Tag ist der letzte im DWD-Tagesdatensatz (gestern)
+  const latestFor = () => {
+    const l = latestPeriods()
+    if (isDe && deMeta) l.day = deMeta.lastDay
+    return l
+  }
+  const latest = latestFor()
   const atLatest =
     periodKind === 'day'
       ? day >= latest.day
@@ -334,7 +404,7 @@ export function AtClimatePanel() {
             ? year === latest.year
             : true // Klimaperioden und Allzeit-Rekorde sind fest — nichts "Aktuelleres"
   const goLatest = () => {
-    const l = latestPeriods()
+    const l = latestFor()
     if (periodKind === 'normal' || periodKind === 'record') return
     if (periodKind === 'month') setMonthStr(l.monthStr)
     else if (periodKind === 'season') {
@@ -347,11 +417,11 @@ export function AtClimatePanel() {
 
   // Bulk-Abruf der Periodenwerte.
   useEffect(() => {
-    if (shown.length === 0 || !isParamAvailable(spec, period)) return
+    if (shown.length === 0 || !avail(spec, period)) return
     let cancelled = false
     setValuesLoading(true)
     setValuesError(null)
-    fetchPeriodValues(spec, period, shown, refresh.force)
+    ;(isDe ? fetchDePeriodValues(spec, period, shown) : fetchPeriodValues(spec, period, shown, refresh.force))
       .then((r) => {
         if (cancelled) return
         setValues(r.byStation)
@@ -374,7 +444,7 @@ export function AtClimatePanel() {
     }
     // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, period, idsKey, refresh])
+  }, [paramCode, period, idsKey, refresh, isDe])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
   // Der Zeitbezug bestimmt die Größenordnung und damit die Skala: eine
@@ -554,6 +624,10 @@ export function AtClimatePanel() {
         : `${covered}/${shown.length} Stationen`
 
   const refLabel = normalPeriod(refPeriodId).label
+  /** Frühestes wählbares Jahr: Österreich wie bisher, Deutschland ab der ersten Monatsdatei. */
+  const minYear = isDe ? (deMeta?.monthlyFrom ?? 1881) : 1991
+  const deDetailNormal =
+    isDe && selected && refNormals ? normalFor(refNormals, spec, period, selected.id, coverage) : null
 
   /**
    * Perioden-Historie fürs Stationsdetail: dieselbe Größe wie in der Karte über
@@ -599,11 +673,25 @@ export function AtClimatePanel() {
   return (
     <div className="atclima">
       <div className="atclima-bar">
-        <span className="atclima-title">Österreich-Klima</span>
+        {/* Das LAND steht vorn, weil es alles darunter bestimmt: Stationsnetz,
+            Quelle, Zeitfenster und welche Zeitbezüge es überhaupt gibt. */}
+        <div className="atclima-modes atclima-country" role="group" aria-label="Land">
+          <button type="button" className={!isDe ? 'is-active' : ''} onClick={() => setCountry('at')}>
+            Österreich
+          </button>
+          <button
+            type="button"
+            className={isDe ? 'is-active' : ''}
+            onClick={() => setCountry('de')}
+            title="Klimamonitor Deutschland aus den Stationsdaten des DWD (Climate Data Center). Stand: letzter Deploy, Tageswerte bis gestern."
+          >
+            Deutschland
+          </button>
+        </div>
         <label className="atclima-ctrl">
           <span className="label-muted">Parameter</span>
           <select value={paramCode} onChange={(e) => setParamCode(e.target.value)} title={spec.description}>
-            {AT_PARAMETERS.filter((p) => isParamAvailable(p, period)).map((p) => (
+            {AT_PARAMETERS.filter((p) => avail(p, period)).map((p) => (
               <option key={p.code} value={p.code}>
                 {paramOptionLabel(p)}
               </option>
@@ -618,11 +706,22 @@ export function AtClimatePanel() {
             <option value="season">Saison</option>
             <option value="year">Jahr</option>
             <option value="normal">Klimaperiode</option>
-            <option value="record">Allzeit (Rekorde)</option>
+            {!isDe && <option value="record">Allzeit (Rekorde)</option>}
           </select>
         </label>
         {periodKind === 'day' && (
-          <input type="date" value={day} max={isoDay(new Date())} onChange={(e) => setDay(e.target.value)} />
+          <input
+            type="date"
+            value={day}
+            min={isDe ? deMeta?.dailyFrom : undefined}
+            max={isDe ? deMeta?.lastDay : isoDay(new Date())}
+            onChange={(e) => setDay(e.target.value)}
+            title={
+              isDe
+                ? 'Tageswerte gibt es für Deutschland im laufenden Fenster des DWD (rund anderthalb Jahre), bis gestern'
+                : undefined
+            }
+          />
         )}
         {/* Monat als AUSWAHL statt als Zahl: `input type="month"` verlangt je
             nach Browser die Eingabe „2026-08" oder ein Spinner-Feld — der
@@ -644,7 +743,7 @@ export function AtClimatePanel() {
             <input
               type="number"
               value={monthYear}
-              min={1991}
+              min={minYear}
               max={new Date().getUTCFullYear()}
               onChange={(e) => {
                 // Halb getippte Jahreszahlen ("20") würden sonst als Jahr 20
@@ -673,7 +772,7 @@ export function AtClimatePanel() {
             <input
               type="number"
               value={seasonYear}
-              min={1991}
+              min={minYear}
               max={new Date().getUTCFullYear()}
               onChange={(e) => setSeasonYear(Number(e.target.value))}
               title={
@@ -689,7 +788,7 @@ export function AtClimatePanel() {
           <input
             type="number"
             value={year}
-            min={1991}
+            min={minYear}
             max={new Date().getUTCFullYear()}
             onChange={(e) => setYear(Number(e.target.value))}
             style={{ width: 70 }}
@@ -803,7 +902,7 @@ export function AtClimatePanel() {
           type="button"
           className={`atclima-now${atLatest ? ' is-active' : ''}`}
           onClick={goLatest}
-          disabled={atLatest && periodKind !== 'day'}
+          disabled={atLatest && (periodKind !== 'day' || isDe)}
           title={
             periodKind === 'day'
               ? 'Zum heutigen Tag springen; ist er schon gewählt, die 10-Minuten-Messwerte sofort neu holen'
@@ -814,7 +913,7 @@ export function AtClimatePanel() {
                   : 'Zum letzten abgeschlossenen Jahr springen'
           }
         >
-          {atLatest && periodKind === 'day' ? '↻ Aktuell' : 'Aktuell'}
+          {atLatest && periodKind === 'day' && !isDe ? '↻ Aktuell' : 'Aktuell'}
         </button>
         )}
         <div
@@ -849,7 +948,7 @@ export function AtClimatePanel() {
             im Abweichungsmodus der Klimaperiode. HISTALP ist die richtige
             Quelle für einen Trend, aber viel dünner — deshalb sichtbar
             umschaltbar statt fest verdrahtet. */}
-        {periodKind === 'normal' && mode === 'anom' && (
+        {!isDe && periodKind === 'normal' && mode === 'anom' && (
           <div
             className="atclima-modes"
             title={
@@ -891,7 +990,21 @@ export function AtClimatePanel() {
         >
           {status}
         </span>
-        {periodKind === 'normal' && (
+        {isDe && periodKind === 'normal' && (
+          <span
+            className="atclima-hint"
+            title={
+              'Klimanormale, vom DWD selbst berechnet und veröffentlicht (Climate Data Center, ' +
+              'multi_annual) — für Temperaturmittel, Niederschlag, Sonnenschein und vier Kenntage. ' +
+              'Für Maximum/Minimum und Niederschlagstage führt der DWD keine Normale, dort bleibt die ' +
+              'Karte leer. Die Stationsreihen sind NICHT homogenisiert: ein Vergleich zweier Perioden ' +
+              'enthält Standort- und Instrumentenwechsel.'
+            }
+          >
+            Normal (DWD){mode === 'anom' ? ' · ⚠ nicht homogenisiert' : ''}
+          </span>
+        )}
+        {!isDe && periodKind === 'normal' && (
           <span
             className="atclima-hint"
             title={
@@ -906,7 +1019,7 @@ export function AtClimatePanel() {
             Normal, ≥ 24 Jahre
           </span>
         )}
-        {periodKind === 'normal' && mode === 'anom' && (
+        {!isDe && periodKind === 'normal' && mode === 'anom' && (
           <span
             className="atclima-hint"
             title={
@@ -966,6 +1079,11 @@ export function AtClimatePanel() {
               colors={colors}
               values={displayValues}
               unit={unit}
+              view={isDe ? DE_VIEW : undefined}
+              basemapUrl={isDe ? europeBasemapUrl : undefined}
+              // Fast 600 Stationen auf der Fläche Deutschlands: ohne Ausdünnen
+              // überlagern sich die Zahlen zu einem Teppich
+              labelMinGap={isDe ? 38 : 0}
               onSelect={(i) => {
                 setSelected(shown[i])
                 setMarked(null)
@@ -988,7 +1106,7 @@ export function AtClimatePanel() {
                     Station zeigt je nach Quelle einen anderen Trend, und die
                     Karte hat je nachdem 34 oder 207 Punkte. */}
                 {anomActive && period.kind === 'normal' && (
-                  <> · {histalpActive ? 'HISTALP, homogenisiert' : 'Stationsdaten, nicht homogenisiert'}</>
+                  <> · {histalpActive ? 'HISTALP, homogenisiert' : isDe ? 'DWD-Stationsdaten, nicht homogenisiert' : 'Stationsdaten, nicht homogenisiert'}</>
                 )}
               </span>
               {running && (
@@ -1026,6 +1144,7 @@ export function AtClimatePanel() {
                 ein Feld, in dem nichts stehen bleibt, ein Etikettenschwindel. */}
             {!showRank && !showAsk && (
               <div className="atmap-tools">
+                {!isDe && (
                 <div
                   className="atmap-ask"
                   onClick={() => setShowAsk(true)}
@@ -1044,6 +1163,7 @@ export function AtClimatePanel() {
                     }}
                   />
                 </div>
+                )}
                 <button
                   type="button"
                   className="atmap-toolbtn"
@@ -1065,7 +1185,9 @@ export function AtClimatePanel() {
                     ? `${spec.description} Gereiht wird die Änderung gegenüber ${refLabel} — ${anom.caption}. Quelle: ` +
                       (histalpActive
                         ? 'HISTALP, homogenisierte Langzeitreihen (34–40 Stationen).'
-                        : 'klima-v2-Stationsdaten, nicht homogenisiert — der Trend ist eher zu klein.')
+                        : isDe
+                          ? 'DWD-Stationsdaten, nicht homogenisiert.'
+                          : 'klima-v2-Stationsdaten, nicht homogenisiert — der Trend ist eher zu klein.')
                     : anomActive
                     ? `${spec.description} Gereiht wird die Abweichung von „${shownQuantity}" gegenüber ${refLabel} — ${anom.caption}.`
                     : period.kind === 'normal'
@@ -1119,10 +1241,29 @@ export function AtClimatePanel() {
                 }}
               />
             )}
-            {selected && (
+            {selected && isDe && (
+              <DeStationDetail
+                station={selected}
+                spec={spec}
+                quantity={shownQuantity}
+                periodLabel={periodLabel}
+                value={values?.[selected.id] ?? null}
+                normal={deDetailNormal}
+                anomaly={
+                  deDetailNormal != null && values?.[selected.id] != null
+                    ? anomaly(values[selected.id]!, deDetailNormal, spec.anomalyKind)
+                    : null
+                }
+                anomalyUnit={spec.anomalyUnit}
+                signed={anom.signed}
+                refLabel={refLabel}
+                onClose={() => setSelected(null)}
+              />
+            )}
+            {selected && !isDe && (
               <AtStationDetail
                 station={selected}
-                paramCode={isParamAvailable(spec, period) ? paramCode : 'tl_mittel'}
+                paramCode={avail(spec, period) ? paramCode : 'tl_mittel'}
                 day={refDay}
                 history={historyProps}
                 onClose={() => setSelected(null)}
@@ -1138,6 +1279,22 @@ export function AtClimatePanel() {
           HISTALP ist ein EIGENER, homogenisierter Datensatz (histalp-v1-1y am
           selben Hub) — hier laufen die qualitätsgeprüften, aber NICHT
           homogenisierten Stationsdaten. */}
+      {isDe ? (
+      <span className="attribution atclima-attribution">
+        Datenquelle:{' '}
+        <a href="https://opendata.dwd.de/climate_environment/CDC/" target="_blank" rel="noreferrer">
+          Deutscher Wetterdienst, Climate Data Center
+        </a>{' '}
+        — Stationsdaten Deutschland: Tages- und Monatswerte („kl"), Klimanormale (multi_annual);
+        Kenntage aus den Tageswerten gezählt. Nutzung nach{' '}
+        <a href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html" target="_blank" rel="noreferrer">
+          GeoNutzV
+        </a>
+        . Beim Bauen der Seite übernommen
+        {deMeta ? ` (Stand ${new Date(deMeta.generated).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })})` : ''}
+        , nicht homogenisiert.
+      </span>
+      ) : (
       <span className="attribution atclima-attribution">
         Datenquelle:{' '}
         <a href="https://data.hub.geosphere.at/" target="_blank" rel="noreferrer">
@@ -1186,6 +1343,7 @@ export function AtClimatePanel() {
           Nicht HISTALP (nicht homogenisiert).
         </span>
       </span>
+      )}
     </div>
   )
 }

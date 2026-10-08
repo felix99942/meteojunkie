@@ -36,5 +36,10 @@ public/sondes/
 # (scripts/ecmwf-ingest.py, scripts/icon-ingest.py), zusammen ~350 MB
 public/nwp/
 
+# Klimamonitor Deutschland: im Deploy erzeugt (scripts/de-ingest-climate.mjs),
+# dazu der Cache der historischen DWD-Archive (~400 MB)
+public/de/
+.cache/
+
 # Python-Bytecode (scripts/ecmwf-ingest.py)
 __pycache__/

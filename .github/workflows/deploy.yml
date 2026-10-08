@@ -50,6 +50,28 @@ jobs:
         continue-on-error: true
         run: npm run ingest:mos:forecast
 
+      # Klimamonitor Deutschland: DWD Climate Data Center → public/de/. Kein
+      # CORS beim DWD, deshalb hier. Die HISTORISCHEN Archive (~400 MB, Monat
+      # und Tag) liegen im Actions-Cache und werden nur ersetzt, wenn der DWD
+      # sie neu schreibt (Dateiname mit Reihenende); neu geholt wird je Lauf
+      # nur das „recent"-Fenster (~25 MB). Schlüssel je Monat: einmal im Monat
+      # wird der Cache-Stand neu abgelegt.
+      - name: Monat für den Klimadaten-Cache
+        id: demonth
+        run: echo "m=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Klimadaten Deutschland aus dem Cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/de-climate
+          key: de-climate-v1-${{ steps.demonth.outputs.m }}
+          restore-keys: de-climate-v1-
+
+      - name: Klimadaten Deutschland erzeugen (DWD CDC)
+        continue-on-error: true
+        timeout-minutes: 20
+        run: npm run ingest:de:climate
+
       # Gemessene Radiosondenaufstiege (UWyo, ~20 Stationen × 3 Termine) →
       # public/sondes/. UWyo sendet keine CORS-Header, deshalb hier statt im
       # Browser. Ein Ausfall darf das Deployment ebenfalls nicht blockieren —

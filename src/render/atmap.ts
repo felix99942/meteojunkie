@@ -25,6 +25,9 @@ export interface MapStation {
 /** Kartenausschnitt (Österreich mit etwas Rand). */
 export const AT_VIEW = { latMin: 46.3, latMax: 49.1, lonMin: 9.4, lonMax: 17.2 }
 
+/** Kartenausschnitt Deutschland (Klimamonitor Deutschland). */
+export const DE_VIEW = { latMin: 47.1, latMax: 55.2, lonMin: 5.7, lonMax: 15.2 }
+
 /** Kartenausschnitt DACH (für den Vorhersage-Modus). */
 export const DACH_VIEW = { latMin: 45.6, latMax: 55.2, lonMin: 5.6, lonMax: 17.3 }
 
