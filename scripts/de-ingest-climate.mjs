@@ -295,6 +295,79 @@ async function ingestToday(ids) {
   return { day, asOf: asOf || null, codes }
 }
 
+// --- Gebietsmittel (regional_averages_DE) ---------------------------------
+
+/**
+ * Amtliche FLÄCHENmittel je Bundesland und für Deutschland, vom DWD aus dem
+ * 1-km-Raster gerechnet — die Zahl, die es für Österreich bewusst NICHT gibt
+ * (ein Mittel über ungleich verteilte Stationen wäre falsch). Temperatur und
+ * Niederschlag ab 1881, Sonne und Kenntage ab 1951; Kenntage nur jährlich.
+ *
+ * Berlin, Hamburg und Bremen führt der DWD nur zusammen mit dem Umland
+ * („Brandenburg/Berlin", „Niedersachsen/Hamburg/Bremen") — genau diese
+ * Kombinationen werden genommen, damit die Fläche Deutschlands lückenlos
+ * aufgeteilt ist. Die Einzelreihen Brandenburg und Niedersachsen sowie
+ * „Thüringen/Sachsen-Anhalt" bleiben draußen, sie überlappten.
+ */
+const REGIONS = [
+  'Schleswig-Holstein', 'Mecklenburg-Vorpommern', 'Niedersachsen/Hamburg/Bremen',
+  'Brandenburg/Berlin', 'Sachsen-Anhalt', 'Nordrhein-Westfalen', 'Hessen', 'Thueringen',
+  'Sachsen', 'Rheinland-Pfalz', 'Saarland', 'Baden-Wuerttemberg', 'Bayern', 'Deutschland',
+]
+
+async function ingestRegional() {
+  const B = `${CDC}/regional_averages_DE`
+  const SEASONS = ['winter', 'spring', 'summer', 'autumn'] // = DJF MAM JJA SON
+  // code → [Verzeichnis, Kürzel, nur jährlich?]
+  const VARS = {
+    tl_mittel: ['air_temperature_mean', 'tm', false],
+    rr: ['precipitation', 'rr', false],
+    so_h: ['sunshine_duration', 'sd', false],
+    tage_frost: ['frost_days', 'tnas', true],
+    tage_eis: ['ice_days', 'txcs', true],
+    tage_sommer: ['summer_days', 'txas', true],
+    tage_tropen: ['hot_days', 'txbs', true],
+  }
+  /** Tabelle → region → Jahr → Wert */
+  function table(raw) {
+    const lines = raw.split(/\r?\n/).filter((l) => /^\d{4};/.test(l) || l.startsWith('Jahr;'))
+    const head = lines[0].split(';').map((h) => h.trim())
+    const out = {}
+    for (const l of lines.slice(1)) {
+      const c = l.split(';').map((x) => x.trim())
+      const y = Number(c[0])
+      for (let i = 2; i < head.length; i++) {
+        if (!REGIONS.includes(head[i])) continue
+        const v = num(c[i])
+        if (v != null) (out[head[i]] ??= {})[y] = v
+      }
+    }
+    return out
+  }
+  const codes = {}
+  for (const [code, [dir, k, annualOnly]] of Object.entries(VARS)) {
+    const entry = { annual: table(await text(`${B}/annual/${dir}/regional_averages_${k}_year.txt`)) }
+    if (!annualOnly) {
+      entry.monthly = {}
+      for (let m = 1; m <= 12; m++) {
+        const t = table(await text(`${B}/monthly/${dir}/regional_averages_${k}_${pad2(m)}.txt`))
+        for (const [r, byYear] of Object.entries(t)) {
+          for (const [y, v] of Object.entries(byYear)) ((entry.monthly[r] ??= {})[y] ??= new Array(12).fill(null))[m - 1] = v
+        }
+      }
+      entry.seasonal = {}
+      for (let i = 0; i < 4; i++) {
+        const t = table(await text(`${B}/seasonal/${dir}/regional_averages_${k}_${SEASONS[i]}.txt`))
+        for (const [r, byYear] of Object.entries(t)) {
+          for (const [y, v] of Object.entries(byYear)) ((entry.seasonal[r] ??= {})[y] ??= new Array(4).fill(null))[i] = v
+        }
+      }
+    }
+    codes[code] = entry
+  }
+  return { regions: REGIONS, codes }
+}
+
 // --- Ablauf ---------------------------------------------------------------
 
 async function mainTodayOnly() {
@@ -541,6 +614,13 @@ async function main() {
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'de'))
   await writeFile(join(tmp, 'stations.json'), JSON.stringify({ stations }))
+
+  console.log('Gebietsmittel …')
+  try {
+    await writeFile(join(tmp, 'regional.json'), JSON.stringify(await ingestRegional()))
+  } catch (e) {
+    console.warn(`  Gebietsmittel fehlen: ${e.message}`)
+  }
 
   console.log('Heute (10-Minuten-Werte) …')
   let todayData = null

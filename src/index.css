@@ -2813,6 +2813,25 @@ button:focus-visible {
   color: var(--ink-secondary);
 }
 
+/* Gebietsmittel: Deutschland als Ganzes steht nicht in der Karte, sondern
+   hier — anklickbar (die Überschrift selbst ist klickdurchlässig). */
+.atmap-headline-de {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.atmap-headline-de:hover {
+  border-color: var(--accent);
+}
+
 /* „läuft noch" ist keine Randnotiz: ohne sie liest man einen halben Sommer
    als ganzen. Deshalb in Warnfarbe direkt unter der Überschrift. */
 .atmap-headline-running {

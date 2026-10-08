@@ -964,9 +964,27 @@ npm run preview   # gebautes dist/ servieren
   Stationsliste an ihr Land gebunden** (`stationsOf`): die Effekte liefen
   sonst eine Runde mit der alten Liste, und Österreich fragte GeoSphere mit
   DWD-Kennungen (HTTP 403). Karte `DE_VIEW` auf dem Europa-Bündel,
-  Beschriftung ausgedünnt (38 px). Offen (Phasen 2–4): Gebietsmittel je
-  Bundesland ab 1881 (`regional_averages_DE`), Rekorde aus den historischen
-  Tagesreihen, laufender Tag aus den 10-Minuten-Werten.
+  Beschriftung ausgedünnt (38 px). Offen (Phasen 3–4): Rekorde aus den
+  historischen Tagesreihen, Klimaarchiv-Fragen.
+  **GEBIETSMITTEL (Phase 2)** — zweiter Umschalter **Stationen | Gebietsmittel**
+  (`api/deRegional.ts`, `DeRegionDetail`): die amtlichen FLÄCHENmittel des DWD
+  je Bundesland und für Deutschland (`regional_averages_DE`, aus dem
+  1-km-Raster), also genau die Zahl, die es für Österreich bewusst NICHT gibt.
+  Temperatur und Niederschlag ab 1881, Sonne ab 1951, je Monat/Jahreszeit/
+  Jahr; Frost-, Eis-, Sommer- und Hitzetage nur JÄHRLICH ab 1951 (so führt
+  sie der DWD — `deRegionalAvailable`). Gegengeprüft: Deutschland 2024
+  10,89 °C (amtlich 10,9), Sommer 2003 19,67 °C. Berlin, Hamburg und Bremen
+  gibt es nur mit dem Umland — genommen werden genau diese Kombinationen,
+  damit die Fläche lückenlos aufgeteilt ist (13 Regionen). In der Karte steht
+  jedes Land als PSEUDO-STATION (fester Beschriftungspunkt, große Schrift
+  `labelPx`), Deutschland selbst in der Überschrift (anklickbar,
+  `byStation[DE_ID]`). Das NORMAL kommt aus derselben Reihe (≥ 24 der 30
+  Jahre) und hat die Form von `NormalsMap` — die Abweichungslogik läuft
+  unverändert. Das Detail zeigt die ganze Reihe mit dem gewählten Jahr
+  gelb markiert und seinen RANG („Platz 8 der wärmsten · 146 Jahre seit
+  1881"; Superlativ im Genitiv PLURAL, weil Monatsnamen und Jahr verschiedene
+  Genera haben). Kein Tag, kein Teilzeitraum: der DWD veröffentlicht nur
+  abgeschlossene Monate.
 - **MOS-Vorhersage** (DACH) — zweiter Modus des Österreich-Bereichs (`AtSection`
   schaltet Klima↔Vorhersage). Quelle: **DWD MOSMIX** (echtes MOS), 3060 Stationen
   im DACH-Raum (`public/mos/stations.json`, aus dem DWD-Katalog; Koordinaten sind
@@ -1012,6 +1030,14 @@ npm run preview   # gebautes dist/ servieren
   jedem Ladefehler entwertet den Hinweis. Der Fall kann auch auf der Seite
   auftreten — `deploy.yml` lässt den Ingest mit `continue-on-error` laufen,
   ein DWD-Ausfall darf das Deployment nicht blockieren.
+- **Die Label-Ausdünnung der Canvas-Karte hängt an der KARTE, nicht am
+  Bildschirm** (`drawStationLabels` in `render/atmap.ts`, Test in
+  `atmap.test.ts`): bei dichten Netzen (Deutschland, MOS) bekommt je
+  Rasterzelle nur die erste Station ihre Zahl. Lag das Raster in
+  Bildschirmkoordinaten, wanderten die Stationen beim Ziehen über die
+  Zellgrenzen, in jedem Frame gewann eine andere, und die Werte FLACKERTEN
+  (gemeldet). Die Zelle wird deshalb aus der Projektion OHNE Verschiebung
+  gerechnet; die Auswahl ändert sich nur beim Zoomen.
 - **Mit der Maus ablesen, mit dem Klick navigieren** — gilt in Punktprognosen
   (`Meteogram.tsx`) UND Ensemble (`EnsemblePanel.tsx`): ein `setCursor`-Hook
   führt `hoverIdx`, Legende bzw. Ablesezeile zeigen den ÜBERFAHRENEN

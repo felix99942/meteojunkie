@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   AT_VIEW,
   DACH_VIEW,
+  DE_VIEW,
+  drawStationLabels,
   makeMapGeometry,
   project,
   tileRect,
@@ -82,5 +84,38 @@ describe('tileZoom', () => {
   it('bleibt in 0…19', () => {
     expect(tileZoom(1e-6)).toBe(0)
     expect(tileZoom(1e9)).toBe(19)
+  })
+})
+
+describe('drawStationLabels — Ausdünnung beim Verschieben', () => {
+  /** Zeichenfläche, die nur mitschreibt, WELCHE Texte wo gesetzt werden. */
+  function recorder() {
+    const texts: string[] = []
+    const ctx = new Proxy(
+      { fillText: (t: string) => texts.push(t), measureText: () => ({ width: 10 }) },
+      { get: (o, k) => (k in o ? o[k as keyof typeof o] : () => {}), set: () => true },
+    )
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, texts }
+  }
+
+  it('dieselben Stationen bekommen ihr Label, egal wie weit verschoben wurde', () => {
+    // 400 Stationen dicht über Deutschland, jede mit eigenem Wert
+    const stations = Array.from({ length: 400 }, (_, i) => ({
+      id: i,
+      name: `S${i}`,
+      lat: 47.5 + ((i * 37) % 97) / 13,
+      lon: 6 + ((i * 53) % 89) / 10,
+    }))
+    const values = stations.map((_, i) => i)
+    const base = makeMapGeometry(0, 0, 900, 900, DE_VIEW)
+    const draw = (dx: number, dy: number) => {
+      const { ctx, texts } = recorder()
+      drawStationLabels(ctx, { ...base, left: base.left + dx, top: base.top + dy }, stations, values, String, { minGap: 38 })
+      return texts.sort().join(',')
+    }
+    const ref = draw(0, 0)
+    for (const [dx, dy] of [[1, 0], [13.7, 0], [0, 21.3], [-37.9, 5.5], [101.2, -63.4]]) {
+      expect(draw(dx, dy)).toBe(ref)
+    }
   })
 })

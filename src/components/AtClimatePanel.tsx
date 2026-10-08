@@ -73,6 +73,17 @@ import {
   type DeMeta,
 } from '../api/deClimate'
 import { DE_VIEW } from '../render/atmap'
+import {
+  DE_ID,
+  deRegionalAvailable,
+  fetchDeRegionalValues,
+  loadRegionalNormals,
+  REGION_STATIONS,
+} from '../api/deRegional'
+import { DeRegionDetail } from './DeRegionDetail'
+
+/** Pseudo-Station „Deutschland" fürs Detail des Gesamtmittels. */
+const DE_STATION: AtStation = { ...REGION_STATIONS[0], id: DE_ID, name: 'Deutschland', lat: 51.2, lon: 10.4 }
 
 /**
  * Welches Land die Klimakarte zeigt. Österreich fragt GeoSphere direkt im
@@ -158,6 +169,14 @@ export function AtClimatePanel() {
   const [country, setCountry] = useState<Country>('at')
   const isDe = country === 'de'
   const [deMeta, setDeMeta] = useState<DeMeta | null>(null)
+  /**
+   * Deutschland: Stationswerte oder amtliche GEBIETSMITTEL je Bundesland
+   * (`api/deRegional.ts`). Die Gebietsmittel sind die Zahl, die es für
+   * Österreich bewusst nicht gibt — ein Flächenmittel, vom DWD aus dem Raster
+   * gerechnet, nicht aus ungleich verteilten Stationen.
+   */
+  const [deMode, setDeMode] = useState<'stations' | 'regions'>('stations')
+  const isRegions = isDe && deMode === 'regions'
   const [stations, setStations] = useState<AtStation[] | null>(null)
   /**
    * Zu welchem Land die geladene Stationsliste gehört. Beim Umschalten laufen
@@ -242,7 +261,9 @@ export function AtClimatePanel() {
    * Deutschland zusätzlich, was der DWD-Datensatz führt (keine gefühlte
    * Temperatur, keine Allzeit-Rekorde, Feuchte nur als Tageswert).
    */
-  const avail = (p: typeof spec, per: Period) => isParamAvailable(p, per) && (!isDe || deParamAvailable(p, per))
+  const avail = (p: typeof spec, per: Period) =>
+    isParamAvailable(p, per) &&
+    (!isDe || (isRegions ? deRegionalAvailable(p, per) : deParamAvailable(p, per)))
   const recExtreme = recExtremeSel ?? defaultRecordExtreme(spec)
 
   const period = useMemo<Period>(() => {
@@ -294,7 +315,7 @@ export function AtClimatePanel() {
    */
   const refPeriodId: NormalPeriodId =
     period.kind === 'normal' ? comparePeriod(period.periodId) : DEFAULT_NORMAL_PERIOD
-  const normalsKey = `${country}:${refPeriodId}`
+  const normalsKey = `${country}${isRegions ? '-gebiet' : ''}:${refPeriodId}`
   const refNormals = normals[normalsKey] ?? null
 
   useEffect(() => {
@@ -350,29 +371,49 @@ export function AtClimatePanel() {
 
   // Für Deutschland auch beim offenen Stationsdetail: es nennt Normal und
   // Abweichung auch im Absolutmodus.
-  const needNormals = mode === 'anom' || (isDe && selected != null)
+  const needNormals = mode === 'anom' || (isDe && selected != null) || isRegions
   useEffect(() => {
     if (!needNormals || normals[normalsKey]) return
     let cancelled = false
-    ;(isDe ? loadDeNormals(refPeriodId) : loadNormals(refPeriodId))
+    ;(isRegions ? loadRegionalNormals(refPeriodId) : isDe ? loadDeNormals(refPeriodId) : loadNormals(refPeriodId))
       .then((n) => !cancelled && setNormals((prev) => ({ ...prev, [normalsKey]: n })))
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [needNormals, normals, normalsKey, isDe, refPeriodId])
+  }, [needNormals, normals, normalsKey, isDe, isRegions, refPeriodId])
 
   const shown = useMemo(
-    () => (stations && stationsOf === country ? (showAll ? stations : activeStations(stations)) : []),
-    [stations, stationsOf, country, showAll],
+    () =>
+      isRegions
+        ? REGION_STATIONS
+        : stations && stationsOf === country
+          ? showAll
+            ? stations
+            : activeStations(stations)
+          : [],
+    [stations, stationsOf, country, showAll, isRegions],
   )
   const idsKey = useMemo(() => shown.map((s) => s.id).join(','), [shown])
 
   // Wenn der Parameter im gewählten Zeitbezug nicht verfügbar ist (z.B. Schnee im
   // Monat), auf Temperatur zurückfallen — nie stumm leer zeigen.
   useEffect(() => {
-    if (!(isParamAvailable(spec, period) && (!isDe || deParamAvailable(spec, period)))) setParamCode('tl_mittel')
-  }, [spec, period, isDe])
+    const ok =
+      isParamAvailable(spec, period) &&
+      (!isDe || (isRegions ? deRegionalAvailable(spec, period) : deParamAvailable(spec, period)))
+    if (!ok) setParamCode('tl_mittel')
+  }, [spec, period, isDe, isRegions])
+
+  // Gebietsmittel gibt es nicht für den einzelnen Tag — beim Wechsel auf das
+  // letzte abgeschlossene Jahr, das ist die naheliegende erste Frage
+  useEffect(() => {
+    if (isRegions && periodKind === 'day') setPeriodKind('year')
+  }, [isRegions, periodKind])
+  useEffect(() => {
+    setSelected(null)
+    setMarked(null)
+  }, [isRegions])
 
   // Läuft der gewählte Tag gerade noch? Dann kommen die Werte aus dem
   // 10-Minuten-Datensatz und müssen periodisch nachgezogen werden.
@@ -422,7 +463,11 @@ export function AtClimatePanel() {
     let cancelled = false
     setValuesLoading(true)
     setValuesError(null)
-    ;(isDe ? fetchDePeriodValues(spec, period, shown) : fetchPeriodValues(spec, period, shown, refresh.force))
+    ;(isRegions
+      ? fetchDeRegionalValues(spec, period)
+      : isDe
+        ? fetchDePeriodValues(spec, period, shown)
+        : fetchPeriodValues(spec, period, shown, refresh.force))
       .then((r) => {
         if (cancelled) return
         setValues(r.byStation)
@@ -445,7 +490,7 @@ export function AtClimatePanel() {
     }
     // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, period, idsKey, refresh, isDe])
+  }, [paramCode, period, idsKey, refresh, isDe, isRegions])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
   // Der Zeitbezug bestimmt die Größenordnung und damit die Skala: eine
@@ -622,11 +667,20 @@ export function AtClimatePanel() {
       ? `⚠ ${valuesError}`
       : anomActive && !refNormals
         ? 'lädt Normale …'
-        : `${covered}/${shown.length} Stationen`
+        : `${covered}/${shown.length} ${isRegions ? 'Länder' : 'Stationen'}`
 
   const refLabel = normalPeriod(refPeriodId).label
   /** Frühestes wählbares Jahr: Österreich wie bisher, Deutschland ab der ersten Monatsdatei. */
   const minYear = isDe ? (deMeta?.monthlyFrom ?? 1881) : 1991
+  // Ausschnitt der Gebietsmittel-Reihe: Kalendermonat, Jahreszeit oder Jahr
+  const regionMonth =
+    period.kind === 'month' ? period.month : period.kind === 'normal' ? period.month : null
+  const regionSeason =
+    period.kind === 'season'
+      ? SEASONS.indexOf(period.season)
+      : period.kind === 'normal' && period.season
+        ? SEASONS.indexOf(period.season)
+        : null
   const deDetailNormal =
     isDe && selected && refNormals ? normalFor(refNormals, spec, period, selected.id, coverage) : null
 
@@ -689,6 +743,26 @@ export function AtClimatePanel() {
             Deutschland
           </button>
         </div>
+        {isDe && (
+          <div className="atclima-modes" role="group" aria-label="Darstellung Deutschland">
+            <button
+              type="button"
+              className={!isRegions ? 'is-active' : ''}
+              onClick={() => setDeMode('stations')}
+              title="Messwerte der einzelnen DWD-Stationen"
+            >
+              Stationen
+            </button>
+            <button
+              type="button"
+              className={isRegions ? 'is-active' : ''}
+              onClick={() => setDeMode('regions')}
+              title="Amtliche Flächenmittel des DWD je Bundesland und für Deutschland, Temperatur und Niederschlag seit 1881, Sonne und Kenntage seit 1951"
+            >
+              Gebietsmittel
+            </button>
+          </div>
+        )}
         <label className="atclima-ctrl">
           <span className="label-muted">Parameter</span>
           <select value={paramCode} onChange={(e) => setParamCode(e.target.value)} title={spec.description}>
@@ -702,7 +776,7 @@ export function AtClimatePanel() {
         <label className="atclima-ctrl">
           <span className="label-muted">Zeitbezug</span>
           <select value={periodKind} onChange={(e) => setPeriodKind(e.target.value as Period['kind'])}>
-            <option value="day">Tag</option>
+            {!isRegions && <option value="day">Tag</option>}
             <option value="month">Monat</option>
             <option value="season">Saison</option>
             <option value="year">Jahr</option>
@@ -1067,10 +1141,12 @@ export function AtClimatePanel() {
             ● {liveNote}
           </span>
         )}
+        {!isRegions && (
         <label className="atclima-toggle" title="Auch stillgelegte historische Stationen zeigen">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           Historische
         </label>
+        )}
       </div>
       <div className="atclima-body">
         {stationsError ? (
@@ -1088,7 +1164,9 @@ export function AtClimatePanel() {
               basemapUrl={isDe ? europeBasemapUrl : undefined}
               // Fast 600 Stationen auf der Fläche Deutschlands: ohne Ausdünnen
               // überlagern sich die Zahlen zu einem Teppich
-              labelMinGap={isDe ? 38 : 0}
+              labelMinGap={isDe && !isRegions ? 38 : 0}
+              // Dreizehn Länderwerte sind das Ergebnis, kein Netz — groß
+              labelPx={isRegions ? 24 : 16}
               onSelect={(i) => {
                 setSelected(shown[i])
                 setMarked(null)
@@ -1114,6 +1192,28 @@ export function AtClimatePanel() {
                   <> · {histalpActive ? 'HISTALP, homogenisiert' : isDe ? 'DWD-Stationsdaten, nicht homogenisiert' : 'Stationsdaten, nicht homogenisiert'}</>
                 )}
               </span>
+              {isRegions && values && (
+                <button
+                  type="button"
+                  className="atmap-headline-de"
+                  onClick={() => setSelected(DE_STATION)}
+                  title="Gebietsmittel Deutschland — Reihe seit Beginn und Rang öffnen"
+                >
+                  Deutschland{' '}
+                  <strong>
+                    {values[DE_ID] == null
+                      ? '—'
+                      : `${values[DE_ID]!.toLocaleString('de-DE', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} ${spec.unit}`}
+                  </strong>
+                  {anomActive && refNormals && values[DE_ID] != null && (() => {
+                    const n = normalFor(refNormals, spec, period, DE_ID)
+                    if (n == null) return null
+                    const a = anomaly(values[DE_ID]!, n, spec.anomalyKind)
+                    if (a == null) return null
+                    return ` (${anom.signed && a > 0 ? '+' : ''}${a.toLocaleString('de-DE', { maximumFractionDigits: spec.anomalyKind === 'percent' ? 0 : 1, minimumFractionDigits: spec.anomalyKind === 'percent' ? 0 : 1 })} ${spec.anomalyUnit})`
+                  })()}
+                </button>
+              )}
               {running && (
                 <span
                   className="atmap-headline-running"
@@ -1246,7 +1346,30 @@ export function AtClimatePanel() {
                 }}
               />
             )}
-            {selected && isDe && (
+            {selected && isRegions && (
+              <DeRegionDetail
+                id={selected.id}
+                name={selected.name}
+                spec={spec}
+                quantity={spec.label}
+                periodLabel={periodLabel}
+                scopeName={
+                  regionMonth != null
+                    ? MONTH_NAMES[regionMonth - 1]
+                    : regionSeason != null
+                      ? SEASON_LABEL[SEASONS[regionSeason]]
+                      : 'Jahr'
+                }
+                year={period.kind === 'month' || period.kind === 'season' || period.kind === 'year' ? period.year : null}
+                month={regionMonth}
+                season={regionSeason}
+                normal={refNormals ? normalFor(refNormals, spec, period, selected.id) : null}
+                showAnomaly={anomActive}
+                refLabel={refLabel}
+                onClose={() => setSelected(null)}
+              />
+            )}
+            {selected && isDe && !isRegions && (
               <DeStationDetail
                 station={selected}
                 spec={spec}
@@ -1290,7 +1413,8 @@ export function AtClimatePanel() {
         <a href="https://opendata.dwd.de/climate_environment/CDC/" target="_blank" rel="noreferrer">
           Deutscher Wetterdienst, Climate Data Center
         </a>{' '}
-        — Stationsdaten Deutschland: Tages- und Monatswerte („kl"), Klimanormale (multi_annual);
+        — Stationsdaten Deutschland: Tages- und Monatswerte („kl"), Klimanormale (multi_annual),
+        Gebietsmittel je Bundesland (regional_averages_DE);
         Kenntage aus den Tageswerten gezählt. Nutzung nach{' '}
         <a href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html" target="_blank" rel="noreferrer">
           GeoNutzV

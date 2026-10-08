@@ -89,6 +89,7 @@ export function AtClimateMap({
   view = AT_VIEW,
   basemapUrl = austriaBasemapUrl,
   labelMinGap = 0,
+  labelPx = 16,
   highlightIdx = null,
   markedIdx = null,
 }: {
@@ -106,6 +107,8 @@ export function AtClimateMap({
   basemapUrl?: string
   /** Label-Ausdünnung (px) für dichte Netze; 0 = alle Zahlen zeigen. */
   labelMinGap?: number
+  /** Schriftgröße der Werte (px); bei wenigen Punkten größer. */
+  labelPx?: number
   /**
    * Von außen hervorgehobene Station (z.B. Hover in der Rangliste). Der eigene
    * Maus-Hover hat Vorrang, und die Markierung setzt sich über die
@@ -194,7 +197,7 @@ export function AtClimateMap({
         if (basemap.borders) drawBorderLines(ctx, g, basemap.borders.features, COLORS.borders, 1.2)
       }
       // Punkte bei dichten Netzen (DACH) kleiner, damit die Karte nicht zuläuft.
-      const pointR = labelMinGap > 0 ? 3 : 5
+      const pointR = labelMinGap > 0 ? 3 : labelPx > 16 ? 7 : 5
       const hi = hoverIdxRef.current >= 0 ? hoverIdxRef.current : (highlightIdx ?? -1)
       const mk = markedIdx ?? -1
       drawStationPoints(ctx, g, stations, {
@@ -216,6 +219,7 @@ export function AtClimateMap({
           markedIdx: mk,
           markColor: COLORS.mark,
           minGap: labelMinGap,
+          fontPx: labelPx,
         })
       }
     }
@@ -225,7 +229,7 @@ export function AtClimateMap({
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover, view, labelMinGap, highlightIdx, markedIdx])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap, labelPx, highlightIdx, markedIdx])
 
   // Nachgeladene Kacheln: gebündelt im nächsten Frame neu zeichnen — beim
   // Öffnen kommen ein paar Dutzend fast gleichzeitig.

@@ -26,7 +26,9 @@ export interface MapStation {
 export const AT_VIEW = { latMin: 46.3, latMax: 49.1, lonMin: 9.4, lonMax: 17.2 }
 
 /** Kartenausschnitt Deutschland (Klimamonitor Deutschland). */
-export const DE_VIEW = { latMin: 47.1, latMax: 55.2, lonMin: 5.7, lonMax: 15.2 }
+// Oben mit Luft: dort liegt die Überschrift über der Karte, und Schleswig-
+// Holstein samt den Nordseeinseln verschwand darunter.
+export const DE_VIEW = { latMin: 47.1, latMax: 56.1, lonMin: 5.7, lonMax: 15.2 }
 
 /** Kartenausschnitt DACH (für den Vorhersage-Modus). */
 export const DACH_VIEW = { latMin: 45.6, latMax: 55.2, lonMin: 5.6, lonMax: 17.3 }
@@ -269,12 +271,14 @@ export function drawStationLabels(
     markColor?: string
     /** Mindestabstand (px) zwischen Labels; >0 dünnt bei dichten Netzen aus. 0 = alle. */
     minGap?: number
+    /** Schriftgröße der Werte (px) — größer, wenn es nur eine Handvoll gibt (Gebietsmittel). */
+    fontPx?: number
   } = {},
 ): void {
-  const { colors, highlightIdx, markedIdx, minGap = 0 } = opts
+  const { colors, highlightIdx, markedIdx, minGap = 0, fontPx = 16 } = opts
   const markColor = opts.markColor ?? '#ffd24a'
   ctx.save()
-  ctx.font = '700 16px system-ui, sans-serif'
+  ctx.font = `700 ${fontPx}px system-ui, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
@@ -288,15 +292,22 @@ export function drawStationLabels(
     if (i === markedIdx) continue
     const { x, y } = project(g, stations[i].lon, stations[i].lat)
     if (occupied && i !== highlightIdx) {
-      const cx = Math.floor(x / minGap)
-      const cy = Math.floor(y / minGap)
+      // Raster an der KARTE verankert, nicht am Bildschirm: sonst wanderten die Stationen
+      // beim Ziehen über die Zellgrenzen, in jedem Frame gewann eine andere
+      // ihre Zelle, und die Werte flackerten. So ändert sich die Auswahl nur
+      // beim Zoomen.
+      // Direkt aus der Projektion ohne Versatz gerechnet statt `x − g.left`:
+      // die Differenz zweier großer Gleitkommazahlen kann an einer Zellgrenze
+      // je nach Verschiebung auf die eine oder andere Seite runden.
+      const cx = Math.floor(((stations[i].lon - g.lonMin) * g.scale) / minGap)
+      const cy = Math.floor(((g.yMax - mercY(stations[i].lat)) * g.scale) / minGap)
       const key = `${cx},${cy}`
       if (occupied.has(key)) continue
       occupied.add(key)
     }
     const text = format(v)
     // Label über den Punkt setzen, damit der farbige Punkt sichtbar bleibt.
-    const ty = y - 13
+    const ty = y - (fontPx * 13) / 16
     // Kräftiger dunkler Halo, damit die farbige (auch mal dunkle) Schrift lesbar bleibt.
     ctx.lineWidth = 4
     ctx.strokeStyle = 'rgba(0,0,0,0.9)'
