@@ -33,6 +33,7 @@ import {
 } from '../config/satellite'
 import type { TimeExtent } from '../config/wmsTime'
 import { compositeClouds } from '../render/cloudComposite'
+import { storedFetch } from './imageStore'
 import { panSharpen } from '../render/panSharpen'
 
 /**
@@ -98,13 +99,29 @@ export async function loadSatelliteImage(
       : product.sharpen
         ? colourRequestSize(product, product.sharpen)
         : productImageSize(product)
-  const res = await fetch(satelliteImageUrl(product, { time, ...size }), { signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const raw = await res.blob()
+  const url = satelliteImageUrl(product, { time, ...size })
+  // GIBS verbietet das Zwischenspeichern — dort die eigene Ablage
+  // (`api/imageStore.ts`); EUMETView cacht der Browser selbst (7 Tage)
+  const raw =
+    product.source === 'gibs'
+      ? await storedFetch(
+          url,
+          (b) => b.type.startsWith('image/') && (!product.minBytes || b.size >= product.minBytes),
+          signal,
+        )
+      : await fetch(url, { signal }).then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.blob()
+        })
   // Eine ServiceException kommt als XML mit HTTP 200 — dieselbe Falle wie
   // beim DWD (SPEC §6), nur bei einem anderen Dienst.
   if (!raw.type.startsWith('image/')) {
     throw new Error(`Antwort ist ${raw.type || 'kein Bild'}`)
+  }
+  // Leeres Bild mit HTTP 200 (GIBS, siehe `SatelliteProduct.minBytes`) —
+  // als Fehler werfen, damit die Wiederholung es später erneut versucht
+  if (product.minBytes && raw.size < product.minBytes) {
+    throw new Error(`leeres Bild (${raw.size} B)`)
   }
   let blob = raw
   if (tier === 'hi' && product.sharpen) {

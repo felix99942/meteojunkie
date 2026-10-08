@@ -31,6 +31,12 @@ import {
   sharpenLayer,
   sharpenPanTime,
   satelliteTimes,
+  HIMAWARI_AREA,
+  isAsia,
+  productCenter,
+  SAT_CONCURRENCY,
+  slotLimit,
+  concurrencyFor,
 } from './satellite'
 import { toMercator } from './wmsTime'
 
@@ -113,6 +119,10 @@ describe('Registry', () => {
   // Bildinhalt weg — und höchstens doppelt so fein, sonst zahlt er Bytes für
   // Pixel, in denen nichts steht.
   const NATIVE_MERC_M: Record<string, number> = {
+    // Himawari über GIBS: das Raster der WMTS-Kachelstufe (6 bzw. 7)
+    him_ir: 2446,
+    him_airmass: 2446,
+    him_vis: 1223,
     geocolour: 1577,
     vis06: 788,
     ir105: 1113,
@@ -187,10 +197,11 @@ describe('Registry', () => {
   // gar keine andere haben: dieselbe Schärfe über ganz Europa wäre ein Bild
   // von rund 10.400 px (Begründung bei `SATELLITE_DETAIL_AREA`). Alle
   // übrigen zeigen ganz Europa.
-  it('gibt nur dem geschärften Produkt eine eigene Fläche', () => {
+  it('gibt nur dem geschärften Produkt und Himawari eine eigene Fläche', () => {
     const eigen = SATELLITE_PRODUCTS.filter((p) => p.area)
-    expect(eigen.map((p) => p.id)).toEqual(['hrv'])
+    expect(eigen.map((p) => p.id)).toEqual(['hrv', 'him_ir', 'him_vis', 'him_airmass'])
     expect(productArea(eigen[0])).toBe(SATELLITE_DETAIL_AREA)
+    for (const p of eigen.slice(1)) expect(productArea(p), p.id).toBe(HIMAWARI_AREA)
     for (const p of SATELLITE_PRODUCTS) {
       if (p.area) continue
       expect(productArea(p), p.id).toBe(SATELLITE_AREA)
@@ -206,7 +217,8 @@ describe('Registry', () => {
       [[5.4, 45.8], [17.4, 55.3]], // D-A-CH
       [[5.8, 44.8], [17.2, 49.3]], // Alpen
     ]
-    for (const p of SATELLITE_PRODUCTS) {
+    // Himawari hat eigene Sprungziele (Thailand) — geprüft im Block darunter
+    for (const p of SATELLITE_PRODUCTS.filter((x) => !isAsia(x))) {
       const a = productArea(p)
       for (const [[w, s2], [e, n]] of views) {
         expect(w).toBeGreaterThanOrEqual(a.west)
@@ -272,10 +284,11 @@ describe('Registry', () => {
       'truecolour',
       'naturalenh',
       'hrv',
+      'him_vis',
     ])
     // Gegenprobe: die IR-basierten RGBs und der Wasserdampfkanal sind es
     // NICHT — sie waren nachts genauso gefüllt wie tagsüber.
-    for (const id of ['geocolour', 'ir105', 'fog', 'dust', 'airmass', 'convection', 'wv062', 'ash']) {
+    for (const id of ['geocolour', 'ir105', 'fog', 'dust', 'airmass', 'convection', 'wv062', 'ash', 'him_ir', 'him_airmass']) {
       expect(SATELLITE_PRODUCTS.find((p) => p.id === id)!.dayOnly, id).toBeUndefined()
     }
   })
@@ -285,7 +298,7 @@ describe('Registry', () => {
   // ein Dienstausfall ein falsches Raster zur Folge.
   it('führt je Mission den gemessenen Takt', () => {
     for (const p of SATELLITE_PRODUCTS) {
-      expect(p.stepMs).toBe((p.mission === 'MTG' ? 10 : 15) * MIN)
+      expect(p.stepMs).toBe((p.mission === 'MSG' ? 15 : 10) * MIN)
     }
   })
 })
@@ -403,7 +416,8 @@ describe('loadPlan', () => {
     const hi = loadPlan(times, 40, false).filter((j) => j.tier === 'hi')
     expect(hi.length).toBeLessThanOrEqual(HI_MAX)
     const loopCount = times.filter((t) => t >= times[last] - LOOP_SPAN_MS).length
-    expect(hi.length).toBe(3 + loopCount)
+    // Zeiger + je zwei Nachbarn + Schleife
+    expect(hi.length).toBe(5 + loopCount)
   })
 
   // Der Fehler beim Aufbau der alten Politik: vor dem ersten Zeigerstand
@@ -421,11 +435,24 @@ describe('loadPlan', () => {
     expect(loopLo).toBeLessThan(farLo)
   })
 
-  it('holt die scharfe Schleife erst, wenn der Tag als Vorschau steht', () => {
-    const plan = loadPlan(times, 40, false)
-    const lastLo = plan.map((j) => j.tier).lastIndexOf('lo')
-    const loopHi = keys(plan).indexOf(`hi|${times[last]}`)
-    expect(loopHi).toBeGreaterThan(lastLo)
+  // Bis 2026-10-08 kam die scharfe Schleife erst nach den Vorschauen des
+  // ganzen Tages (~1 min) — sie ist aber das, was fast jeder ansieht.
+  it('holt die scharfe Schleife VOR dem Rest des Tages, aber nach ihrer Vorschau', () => {
+    const plan = keys(loadPlan(times, 40, false))
+    const loopHi = plan.indexOf(`hi|${times[last]}`)
+    expect(loopHi).toBeLessThan(plan.indexOf(`lo|${times[0]}`))
+    expect(loopHi).toBeGreaterThan(plan.indexOf(`lo|${times[last]}`))
+  })
+
+  it('holt die direkten Nachbarn scharf VOR der Vorschau der Schleife', () => {
+    const plan = keys(loadPlan(times, 40, false))
+    expect(plan.indexOf(`hi|${times[41]}`)).toBeLessThan(plan.indexOf(`lo|${times[last]}`))
+    expect(plan.indexOf(`hi|${times[39]}`)).toBeLessThan(plan.indexOf(`lo|${times[last]}`))
+  })
+
+  it('hält je zwei Nachbarn scharf bereit — die Pfeiltasten springen nie ins Unscharfe', () => {
+    const plan = keys(loadPlan(times, 40, false)).slice(0, 40)
+    for (const d of [-2, -1, 1, 2]) expect(plan, String(d)).toContain(`hi|${times[40 + d]}`)
   })
 
   // Beim Abspielen wechselt das Bild alle 320 ms — ein scharfes Bild für den
@@ -475,6 +502,21 @@ describe('hiEvictions', () => {
     const drop = hiEvictions(have, plan, times[40])
     expect(drop).toContain(times[60 + HI_MAX - 1])
     expect(drop).not.toContain(times[40])
+  })
+})
+
+describe('slotLimit', () => {
+  it('reserviert genau einen Platz für das scharfe Zeigerbild', () => {
+    expect(slotLimit(0, 'hi')).toBe(SAT_CONCURRENCY + 1)
+    expect(slotLimit(0, 'lo')).toBe(SAT_CONCURRENCY)
+    expect(slotLimit(1, 'hi')).toBe(SAT_CONCURRENCY)
+  })
+
+  it('gibt GIBS (HTTP/2, CDN) mehr parallele Abrufe als EUMETView (HTTP/1.1)', () => {
+    const him = SATELLITE_PRODUCTS.find((p) => p.id === 'him_ir')!
+    expect(concurrencyFor(him)).toBeGreaterThan(concurrencyFor(DEFAULT_SATELLITE_PRODUCT))
+    // EUMETView: zusammen mit dem reservierten Platz unter den 6 Verbindungen je Host
+    expect(slotLimit(0, 'hi', concurrencyFor(DEFAULT_SATELLITE_PRODUCT))).toBeLessThanOrEqual(6)
   })
 })
 
@@ -540,7 +582,7 @@ describe('Katalog', () => {
 
   it('kennt je Produkt den richtigen Takt der Mission', () => {
     for (const p of SATELLITE_PRODUCTS) {
-      expect(p.stepMs, p.id).toBe(p.mission === 'MTG' ? 600_000 : 900_000)
+      expect(p.stepMs, p.id).toBe(p.mission === 'MSG' ? 900_000 : 600_000)
     }
   })
 
@@ -548,9 +590,10 @@ describe('Katalog', () => {
   // geostationären Vollscheiben-Dienste. `msg_iodc` (Indischer Ozean),
   // `msg_rss` (Rapid Scan, nur Tagesprodukte) und die Polarumläufer
   // (`eps`, `copernicus`) sind bewusst draußen — Begründung in CLAUDE.md.
-  it('holt nur von den beiden Vollscheiben-Diensten', () => {
+  it('holt nur von den beiden Vollscheiben-Diensten — und Himawari von GIBS', () => {
     for (const p of SATELLITE_PRODUCTS) {
-      expect(['mtg_fd', 'msg_fes'], p.id).toContain(p.workspace)
+      if (p.mission === 'HIM') expect(p.source, p.id).toBe('gibs')
+      else expect(['mtg_fd', 'msg_fes'], p.id).toContain(p.workspace)
     }
   })
 })
@@ -634,5 +677,64 @@ describe('Geschärftes Produkt', () => {
   // einen zweiten Abruf je Bild.
   it('ist das einzige Produkt mit Schärfung', () => {
     expect(SATELLITE_PRODUCTS.filter((x) => x.sharpen).map((x) => x.id)).toEqual(['hrv'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// HIMAWARI über NASA GIBS (Thailand-Tropendienst), gemessen 2026-10-08.
+// ---------------------------------------------------------------------------
+
+describe('Himawari (GIBS)', () => {
+  const ir = SATELLITE_PRODUCTS.find((x) => x.id === 'him_ir')!
+  // Echte Antwort von DescribeDomains, gekürzt auf einen Tag
+  const DOMAINS =
+    "<Domains><DimensionDomain><ows:Identifier>time</ows:Identifier><Domain>2026-10-08T00:00:00Z/2026-10-08T02:30:00Z/PT10M,2026-10-08T02:50:00Z/2026-10-08T14:30:00Z/PT10M,2026-10-08T14:50:00Z/2026-10-08T15:30:00Z/PT10M</Domain><Size>3</Size></DimensionDomain></Domains>"
+
+  it('liest die Domäne als EIN Band, merkt sich die Lücken und lässt die zwei jüngsten Termine weg', () => {
+    const e = parseSatelliteCapabilities(DOMAINS, ir)!
+    expect(e.start).toBe(Date.parse('2026-10-08T00:00:00Z'))
+    // gemeldet bis 15:30 — die Bilder der jüngsten Termine sind bei GIBS
+    // noch leer, wenn sie schon in der Domäne stehen
+    expect(e.end).toBe(Date.parse('2026-10-08T15:10:00Z'))
+    expect(e.stepMs).toBe(10 * MIN)
+    expect(e.missing).toEqual([Date.parse('2026-10-08T02:40:00Z'), Date.parse('2026-10-08T14:40:00Z')])
+  })
+
+  it('die Ziehleiste lässt die gemeldeten Lücken aus', () => {
+    const e = parseSatelliteCapabilities(DOMAINS, ir)!
+    const times = satelliteTimes(e, 24 * 60 * MIN)
+    expect(times).not.toContain(Date.parse('2026-10-08T02:40:00Z'))
+    expect(times).not.toContain(Date.parse('2026-10-08T14:40:00Z'))
+    expect(times).toContain(Date.parse('2026-10-08T14:50:00Z'))
+    expect(times[times.length - 1]).toBe(e.end)
+  })
+
+  it('fragt GIBS nach Bild und Zeitschritten, den Layer ohne Workspace', () => {
+    const url = satelliteImageUrl(ir, { time: Date.parse('2026-10-08T05:00:00Z'), width: 100, height: 92 })
+    expect(url.startsWith('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi?')).toBe(true)
+    expect(url).toContain('layers=Himawari_AHI_Band13_Clean_Infrared&')
+    expect(url).toContain('time=2026-10-08T05%3A00%3A00Z')
+    const caps = satelliteCapabilitiesUrl(ir, Date.parse('2026-10-08T16:00:00Z'))
+    expect(caps).toBe(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/Himawari_AHI_Band13_Clean_Infrared/default/GoogleMapsCompatible_Level6/all/2026-10-07T00:00:00Z--2026-10-08T23:59:59Z.xml',
+    )
+  })
+
+  it('behandelt leere Antworten nur dort als Fehler, wo das Bild nie leer sein darf', () => {
+    // GIBS lieferte zeitweise schwarze JPEGs mit HTTP 200; der sichtbare Kanal
+    // ist nachts dagegen ZU RECHT schwarz und darf keine Schwelle haben
+    const mit = SATELLITE_PRODUCTS.filter((p) => p.minBytes).map((p) => p.id)
+    expect(mit).toEqual(['him_ir', 'him_airmass'])
+    for (const p of SATELLITE_PRODUCTS) if (p.minBytes) expect(p.dayOnly, p.id).toBeUndefined()
+  })
+
+  it('zeigt Thailand ganz und rechnet den Sonnenstand über Thailand', () => {
+    const a = productArea(ir)
+    expect(a.west).toBeLessThanOrEqual(96.3)
+    expect(a.east).toBeGreaterThanOrEqual(106.2)
+    expect(a.south).toBeLessThanOrEqual(5.2)
+    expect(a.north).toBeGreaterThanOrEqual(20.6)
+    expect(isAsia(ir)).toBe(true)
+    expect(productCenter(ir).lon).toBeGreaterThan(95)
   })
 })

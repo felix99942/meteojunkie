@@ -15,6 +15,7 @@
 import maplibregl from 'maplibre-gl'
 import labelsUrl from '../mapdata/world.labels.json?url'
 import { CITIES } from '../config/cities'
+import { THAI_PLACES } from '../config/thaiPlaces'
 
 /** 0 Stadt · 1 Hauptstadt · 2 Land · 3 Meer */
 export type LabelKind = 0 | 1 | 2 | 3
@@ -62,7 +63,8 @@ const EUROPE_MIN_ZOOM = [2, 3.5, 4.5]
 /**
  * Die kuratierten Orte aus `config/cities.ts`: Hauptstädte der Domain
  * `europe` und die Orte der Pseudo-Domain `imagery` mit der Zoomleiter der
- * Bildkarten. Doppelte Namen zählen einmal.
+ * Bildkarten, dazu die Urlaubsorte aus `config/thaiPlaces.ts`. Doppelte Namen
+ * zählen einmal.
  */
 export function curatedCities(): LabelCandidate[] {
   const seen = new Set<string>()
@@ -76,6 +78,13 @@ export function curatedCities(): LabelCandidate[] {
   }
   add('europe', EUROPE_MIN_ZOOM)
   add('imagery', IMAGERY_MIN_ZOOM)
+  // Thailand-Tropendienst: die Orte der Schnellwahl ab der Thailand-Ansicht
+  // (Zoom ~5), die Inseln eine Stufe später
+  for (const p of THAI_PLACES) {
+    if (seen.has(p.label)) continue
+    seen.add(p.label)
+    out.push({ name: p.label, lon: p.lon, lat: p.lat, minZoom: p.quick ? 4.5 : 5.5, kind: 0 })
+  }
   return out
 }
 

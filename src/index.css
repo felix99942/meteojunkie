@@ -590,10 +590,18 @@ button:focus-visible {
   margin-right: 2px;
 }
 
+/* Regionsauswahl vor den Knöpfen — gleiche Höhe und Schrift wie die Knöpfe */
+.quickpt-region {
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
 .quickpt {
   padding: 3px 10px;
   font-size: 13px;
   color: var(--ink-secondary);
+  /* „Chiang Mai", „Ko Samui": zweizeilig wird die Leiste doppelt so hoch */
+  white-space: nowrap;
 }
 
 .quickpt:hover {
@@ -4371,6 +4379,12 @@ button:focus-visible {
 .globe-readout strong {
   font-size: 19px;
   color: var(--ink);
+}
+
+/* Im Satellitenbereich unter den Sprungzielen (die stehen links oben) */
+.satellite-readout {
+  top: 38px;
+  left: 6px;
 }
 
 .globe-readout-pos {

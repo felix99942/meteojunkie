@@ -98,11 +98,27 @@ const WAVE_PERIOD: ColorScale = {
   belowMin: 'clamp',
   stops: bands(0, 2, lerpRamp(['#2b1a4f', '#3c3f9a', '#2f7fb8', '#35b0a0', '#9fd36a', '#f2d24b', '#f08a3a'], 11)),
 }
-/** Wassertemperatur in 1-K-Bändern von −2 bis 32 °C. */
+/**
+ * Wassertemperatur von −2 bis 32 °C, UNGLEICH gestuft: kalt in 2 K, mittel in
+ * 1 K, ab 26 °C in 0,5 K. Mit gleichmäßigen 1-K-Bändern lagen die ganzen
+ * Tropen in zwei, drei Rottönen — ob das Meer vor Phuket 28 oder 30 °C hat,
+ * war nicht ablesbar, und genau das fragt man beim Badeurlaub. Die Farbe
+ * folgt dem RANG der Stufe, nicht dem Wert: so bekommt der warme Bereich
+ * einen großen Teil der Rampe.
+ */
+const SEA_TEMP_STEPS = [
+  ...Array.from({ length: 9 }, (_, i) => -2 + 2 * i), // −2 … 14
+  ...Array.from({ length: 10 }, (_, i) => 16 + i), // 16 … 25
+  ...Array.from({ length: 13 }, (_, i) => 26 + 0.5 * i), // 26 … 32
+]
+const SEA_TEMP_COLORS = lerpRamp(
+  ['#3b2d7a', '#2f5fae', '#2d9cc0', '#3fbf9c', '#a6d65c', '#f2d24b', '#f39a35', '#e0532a', '#c22a4a', '#8e1a5e', '#5a1060'],
+  SEA_TEMP_STEPS.length,
+)
 const SEA_TEMP: ColorScale = {
   kind: 'stepped',
   belowMin: 'clamp',
-  stops: bands(-2, 1, lerpRamp(['#3b2d7a', '#2f5fae', '#2d9cc0', '#3fbf9c', '#a6d65c', '#f2d24b', '#f39a35', '#e0532a', '#a8203f'], 35)),
+  stops: SEA_TEMP_STEPS.map((value, i) => ({ value, color: SEA_TEMP_COLORS[i] })),
 }
 
 const GH500: ColorScale = {
@@ -213,7 +229,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
       'Temperatur der Meeresoberfläche (°C) — die Hauttemperatur des Modells über dem Meer, also die oberste Schicht, nicht die Temperatur in Badetiefe. Über Meereis kein Wert.',
     scale: SEA_TEMP,
     decimals: 1,
-    legendEvery: 4,
+    legendEvery: 3,
   },
 ]
 
@@ -328,7 +344,7 @@ export const CONTOURS: ContourDef[] = [
   },
 ]
 
-export type GlobeViewId = 'globe' | 'europe' | 'alps'
+export type GlobeViewId = 'globe' | 'europe' | 'alps' | 'thailand'
 
 export interface GlobeView {
   id: GlobeViewId
@@ -344,6 +360,10 @@ export const GLOBE_VIEWS: GlobeView[] = [
   { id: 'europe', label: 'Europa', projection: 'mercator', bounds: [[-25, 34], [42, 71]] },
   // Alpen: der Raum, in dem ICON-D2 seine 2,2 km ausspielt
   { id: 'alps', label: 'Alpen', projection: 'mercator', bounds: [[4.5, 44.3], [17.8, 49.8]] },
+  // Thailand (Tropendienst): Andamanensee UND Golf von Thailand — die beiden
+  // Küsten haben ihre Regenzeit zu verschiedenen Monsunphasen. Nur das IFS
+  // deckt es ab (ICON-EU/-D2 sind europäisch).
+  { id: 'thailand', label: 'Thailand', projection: 'mercator', bounds: [[96.3, 5.2], [106.2, 20.6]] },
 ]
 
 export function getGlobeVariable(id: string): GlobeVariable {

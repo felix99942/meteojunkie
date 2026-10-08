@@ -28,6 +28,13 @@ export interface TimeExtent {
   /** Letzter Zeitschritt der Dimension (beim Radar inkl. Vorhersageteil). */
   end: number
   stepMs: number
+  /**
+   * Zeitschritte IM Raster, die der Dienst ausdrücklich NICHT führt — nur bei
+   * Diensten, die ihre Lücken melden (NASA GIBS: Himawari lässt um 02:40 und
+   * 14:40 UTC je einen Termin aus). Ohne die Liste stünde dort ein Bild, das
+   * nie kommt.
+   */
+  missing?: number[]
 }
 
 /**
@@ -65,6 +72,35 @@ export function parseTimeExtent(raw: string): TimeExtent | null {
 }
 
 /**
+ * Zeitdomäne mit MEHREREN Intervallen (`A/B/PT10M,C/D/PT10M,…`), wie NASA
+ * GIBS sie in „DescribeDomains" meldet: dort steht jede Lücke als Bruch
+ * zwischen zwei Intervallen. Anders als `parseTimeExtent` gilt hier das GANZE
+ * Band — Anfang des ersten bis Ende des letzten Intervalls —, und was
+ * dazwischen im Raster fehlt, landet in `missing`.
+ */
+export function parseTimeDomain(raw: string): TimeExtent | null {
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  const spans: { from: number; to: number; step: number }[] = []
+  for (const part of parts) {
+    const [a, b, dur] = part.split('/')
+    const from = Date.parse(a)
+    const to = Date.parse(b)
+    const step = dur ? parseIsoDuration(dur) : null
+    if (!Number.isFinite(from) || !Number.isFinite(to) || !step || to < from) continue
+    spans.push({ from, to, step })
+  }
+  if (spans.length === 0) return null
+  spans.sort((x, y) => x.from - y.from)
+  const stepMs = spans[spans.length - 1].step
+  const missing: number[] = []
+  for (let i = 1; i < spans.length; i++) {
+    // Lücke zwischen dem Ende des einen und dem Anfang des nächsten Intervalls
+    for (let t = spans[i - 1].to + stepMs; t < spans[i].from; t += stepMs) missing.push(t)
+  }
+  return { start: spans[0].from, end: spans[spans.length - 1].to, stepMs, missing }
+}
+
+/**
  * Inhalt des `<Dimension name="time">`-Elements aus einem GetCapabilities.
  *
  * Bewusst über reguläre Ausdrücke statt `DOMParser`: die Antwort des
@@ -88,8 +124,9 @@ export function extractTimeDimension(xml: string): string | null {
 export function frameTimes(extent: TimeExtent, last: number, historyMs: number): number[] {
   const step = extent.stepMs
   const from = Math.max(extent.start, last - historyMs)
+  const skip = extent.missing && extent.missing.length > 0 ? new Set(extent.missing) : null
   const times: number[] = []
-  for (let t = from; t <= last + 1; t += step) times.push(t)
+  for (let t = from; t <= last + 1; t += step) if (!skip?.has(t)) times.push(t)
   return times
 }
 

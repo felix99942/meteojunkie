@@ -64,7 +64,7 @@ const PLAY_MS = 450
 /** Vorladen: so viele Schritte voraus (beim Abspielen und beim Ziehen). */
 const PREFETCH_AHEAD = 3
 /** Gradnetz je Ansicht: grob auf der Kugel, fein über den Alpen. */
-const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alps: 2 }
+const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alps: 2, thailand: 5 }
 
 /** Kantenlänge der Sternkachel in CSS-Pixeln (muss zur Parallaxe passen). */
 const STAR_TILE = 768
@@ -230,7 +230,9 @@ export function GlobePanel() {
       })
       .catch((err: unknown) => console.error('[basemap world]', err))
     const admin1 = map.getSource('admin1') as maplibregl.GeoJSONSource
-    if (view.id === 'globe') admin1.setData(EMPTY_FC)
+    // Bundesländer/Kantone gibt es nur für D-A-CH — auf der Kugel und über
+    // Thailand blieben sie unsichtbar bzw. außer Sicht
+    if (view.id !== 'europe' && view.id !== 'alps') admin1.setData(EMPTY_FC)
     else
       loadBasemap('dach')
         .then((bm) => !cancelled && mapRef.current === map && admin1.setData(bm.admin1 ?? EMPTY_FC))
@@ -550,7 +552,11 @@ export function GlobePanel() {
               type="button"
               className={v.id === viewId ? 'is-active' : ''}
               aria-pressed={v.id === viewId}
-              onClick={() => setViewId(v.id)}
+              onClick={() => {
+                setViewId(v.id)
+                // ICON-EU/-D2 sind europäisch — über Thailand bliebe die Karte leer
+                if (v.id === 'thailand' && modelId !== 'ecmwf-ifs') setModelId('ecmwf-ifs')
+              }}
             >
               {v.label}
             </button>

@@ -74,6 +74,12 @@ const THIRD_PARTY_HOSTS = [
     hrefLabel: 'Datenschutzerklärung von EUMETSAT',
   },
   {
+    host: 'gibs.earthdata.nasa.gov',
+    what: 'Satellitenbilder von Himawari-9 über Südostasien (im Bereich „Satellit", Gruppe Himawari)',
+    href: 'https://www.nasa.gov/privacy/',
+    hrefLabel: 'Datenschutzerklärung der NASA',
+  },
+  {
     host: 'basemaps.cartocdn.com',
     what:
       'Kartenkacheln des Hintergrunds der Österreich-Klimakarte und der MOS-Vorhersage ' +
@@ -264,6 +270,20 @@ export function Impressum() {
               Generation (SEVIRI) über <code>view.eumetsat.int</code> (EUMETView).
             </li>
             <li>
+              <a href="https://www.jma.go.jp/jma/indexe.html" target="_blank" rel="noreferrer">
+                Japan Meteorological Agency
+              </a>{' '}
+              — Satellitenbilder von Himawari-9 über Südostasien, bereitgestellt über{' '}
+              <a
+                href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api"
+                target="_blank"
+                rel="noreferrer"
+              >
+                NASA GIBS
+              </a>{' '}
+              (<code>gibs.earthdata.nasa.gov</code>).
+            </li>
+            <li>
               <a
                 href="https://www.dwd.de/DE/leistungen/opendata/opendata.html"
                 target="_blank"
@@ -409,7 +429,9 @@ export function Impressum() {
             offen ist. Für die Satellitenbilder gilt dasselbe: sie kommen direkt von{' '}
             <code>view.eumetsat.int</code>, und nur, solange der Bereich „Satellit" offen ist —
             oder solange im Bereich „Radar" das Blitz-Overlay des MTG Lightning Imager
-            eingeschaltet ist, das von derselben Adresse kommt. Die Kartenkacheln von{' '}
+            eingeschaltet ist, das von derselben Adresse kommt. Die Himawari-Bilder über
+            Südostasien kommen von <code>gibs.earthdata.nasa.gov</code>, nur wenn eines dieser
+            Produkte gewählt ist. Die Kartenkacheln von{' '}
             <code>basemaps.cartocdn.com</code> werden nur im Bereich „Klima + MOS" geladen, und
             nur für den gerade sichtbaren Ausschnitt.
           </p>

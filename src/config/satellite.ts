@@ -88,6 +88,7 @@
 import {
   extractTimeDimension,
   frameTimes,
+  parseTimeDomain,
   imageCoordinates,
   imageHeightFor,
   mercBox,
@@ -191,7 +192,43 @@ export const SATELLITE_IMAGE_WIDTH = 1800
  */
 export const SATELLITE_MTG_WIDTH = 2000
 
-export type SatelliteMission = 'MTG' | 'MSG'
+export type SatelliteMission = 'MTG' | 'MSG' | 'HIM'
+
+/**
+ * HIMAWARI-9 (JMA, 140,7° O) über **NASA GIBS** — für den Thailand-
+ * Tropendienst. Meteosat sieht Südostasien nicht bzw. nur sehr schräg (MSG
+ * IODC bei 45,5° O). GIBS ist ein WMS wie EUMETView: CORS `*`, kein Key,
+ * gemessen 2026-10-08. Zwei Unterschiede, beide mit eigenem Code:
+ *
+ * - Die ZEITSCHRITTE stehen NICHT im WMS-Capabilities (das führt gar keine
+ *   Zeitdimension) und das WMTS-Capabilities wiegt 5,8 MB. Gefragt wird
+ *   „DescribeDomains" des WMTS für die letzten zwei Tage — 610 Bytes.
+ * - Die Domäne meldet LÜCKEN: Himawari lässt um 02:40 und 14:40 UTC je einen
+ *   Termin aus (Wartungsfenster), die Antwort besteht deshalb aus mehreren
+ *   Intervallen. `parseTimeDomain` macht daraus ein Band mit `missing`, sonst
+ *   stünde dort ein Bild, das nie kommt.
+ *
+ * Verzug gemessen ~35–80 min (10-Minuten-Takt), dazu die zwei jüngsten
+ * Termine, die GIBS meldet, bevor ihr Bild fertig ist (`GIBS_TRIM_STEPS`). JPEG statt PNG: das
+ * Infrarotbild über Südostasien wiegt 420 KB statt 1,8 MB.
+ */
+export const GIBS_WMS_BASE = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi'
+const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0'
+/** So viele der jüngsten gemeldeten Termine bleiben weg (Begründung in `parseSatelliteCapabilities`). */
+export const GIBS_TRIM_STEPS = 2
+
+/**
+ * SÜDOSTASIEN: Bengalen bis Philippinen, Myanmar bis Sumatra — Thailand in
+ * der Mitte, dazu beide Meere, aus denen sein Wetter kommt (Monsun aus der
+ * Andamanensee, Taifunreste aus dem Südchinesischen Meer). Westrand 84° O,
+ * damit die Thailand-Ansicht auch auf breiten Schirmen nicht über den
+ * Bildrand hinausreicht (bei 88° O blieb links ein Streifen leer). Vom
+ * Subsatellitenpunkt bei 140,7° O liegt er 57° entfernt — schräg, aber
+ * innerhalb der Scheibe.
+ */
+export const HIMAWARI_AREA: GeoBox = { west: 84, east: 125, south: -5, north: 28 }
+/** Bezugspunkt für den Sonnenstand (Hinweis „nur tagsüber"): Zentralthailand. */
+export const HIMAWARI_CENTER = { lat: 13.75, lon: 100.5 }
 
 /**
  * Helligkeit → Deckkraft für die Graustufen-Kanäle: unterhalb von `min` ist
@@ -257,6 +294,8 @@ export interface SharpenSpec {
 export interface SatelliteProduct {
   id: string
   label: string
+  /** Bildquelle — Vorgabe EUMETView. 'gibs' = NASA GIBS (Himawari). */
+  source?: 'gibs'
   /** Workspace des GeoServers — zugleich der Satellit. */
   workspace: string
   /** Layername OHNE Workspace. */
@@ -274,10 +313,9 @@ export interface SatelliteProduct {
    */
   imageWidth?: number
   /**
-   * Abweichende Fläche. Zurzeit hat KEIN Produkt eine — alle zeigen ganz
-   * Europa (`SATELLITE_AREA`). Das Feld bleibt, weil die Mechanik daran
-   * hängt (`productArea`, `productMerc`, `productImageSize`) und ein
-   * Produkt mit eigenem Ausschnitt jederzeit wieder möglich sein soll.
+   * Abweichende Fläche: das geschärfte Produkt (`SATELLITE_DETAIL_AREA`)
+   * und Himawari (`HIMAWARI_AREA`, Südostasien); alle übrigen zeigen ganz
+   * Europa (`SATELLITE_AREA`).
    */
   area?: GeoBox
   /**
@@ -297,6 +335,22 @@ export interface SatelliteProduct {
    * eigene (`workspace`/`name`) liefert die Farbe, dieser die Struktur.
    */
   sharpen?: SharpenSpec
+  /**
+   * Antworten unter dieser Größe (Bytes) gelten als LEER und werden wie ein
+   * Fehler behandelt — damit greift die Wiederholung (`retryAt`). Nur für
+   * Himawari: GIBS lieferte am 2026-10-08 zeitweise ein schwarzes JPEG mit
+   * HTTP 200 (~17 KB statt ~320 KB), Minuten später für denselben Termin das
+   * volle Bild. Ein leeres Bild ist ein „image/jpeg" — ohne diese Schwelle
+   * stünde es für die ganze Sitzung als „geladen" in der Schleife. Nicht für
+   * den sichtbaren Kanal: der ist nachts zu Recht schwarz und klein.
+   */
+  minBytes?: number
+  /**
+   * Wert am Mauszeiger aus der GIBS-Farbtabelle (`config/gibsReadout.ts`):
+   * gelesen aus der verlustfreien WMTS-Kachel in GIBS' eigenem Raster, NICHT
+   * aus dem angezeigten JPEG (Begründung dort).
+   */
+  readout?: { label: string; unit: string; colormap: string; tileMatrix: string; zoom: number }
   /** Kurzbeschreibung für Tooltip und Quellenzeile. */
   note: string
 }
@@ -417,7 +471,17 @@ export function resamplingSwitchZoom(p: SatelliteProduct, pixelRatio = 1): numbe
 
 /** Layername mit Workspace, wie GetMap ihn erwartet. */
 export function satelliteLayer(p: SatelliteProduct): string {
-  return `${p.workspace}:${p.name}`
+  return p.source === 'gibs' ? p.name : `${p.workspace}:${p.name}`
+}
+
+/** Liegt das Produkt über Südostasien statt über Europa? */
+export function isAsia(p: SatelliteProduct): boolean {
+  return p.mission === 'HIM'
+}
+
+/** Bezugspunkt für den Sonnenstand dieses Produkts. */
+export function productCenter(p: SatelliteProduct): { lat: number; lon: number } {
+  return isAsia(p) ? HIMAWARI_CENTER : SATELLITE_CENTER
 }
 
 /**
@@ -648,6 +712,64 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // wie beim Natural Colour, dafür auf einem Bild, das schon Struktur hat.
     note: 'MSG HRV-RGB („European View") in der Schärfe des HRFI-Kanals: die FARBE kommt vom HRV-RGB (1,6 km, der feinste Farb-Layer des Dienstes), die STRUKTUR vom MTG-Kanal VIS 0,6 µm (0,8 km) — dasselbe Pan-Sharpening, mit dem Wetterseiten ihr scharfes Farbbild erzeugen. Deshalb nur über Mitteleuropa: über ganz Europa wäre dieselbe Schärfe ein Bild von 10.000 px. Nur tagsüber; Farbe und Schärfe liegen bis zu 5 Minuten auseinander.',
   },
+  // --- Himawari-9 (Südostasien, Thailand-Tropendienst) ----------------------
+  // Breiten passend zum Raster, in dem GIBS die Layer FÜHRT (WMTS-
+  // Kachelstufe, nachgesehen 2026-10-08): Infrarot und Luftmassen auf Stufe 6
+  // = 2.446 m/px, über die 41° breite Fläche also 1860 px; der sichtbare Kanal
+  // auf Stufe 7 = 1.223 m/px, angefordert mit 2660 px = 1.716 m/px (nativ
+  // wären 3.730 px und ~1,8 MB je Bild). Gemessen: ~400 / 300 / 850 KB je
+  // Bild als JPEG, 1–4 s Antwortzeit.
+  {
+    id: 'him_ir',
+    label: 'Infrarot 10,4 µm (Himawari)',
+    source: 'gibs',
+    workspace: '',
+    name: 'Himawari_AHI_Band13_Clean_Infrared',
+    mission: 'HIM',
+    stepMs: 600_000,
+    format: 'image/jpeg',
+    area: HIMAWARI_AREA,
+    imageWidth: 1860,
+    // gemessen: volle Bilder 120 KB (Vorschau) bis 330 KB, leere 5–19 KB
+    minBytes: 40_000,
+    readout: {
+      label: 'Wolkenobergrenze',
+      unit: '°C',
+      colormap: 'https://gibs.earthdata.nasa.gov/colormaps/v1.3/Clean_Longwave_Infrared_Window_Band.xml',
+      tileMatrix: 'GoogleMapsCompatible_Level6',
+      zoom: 6,
+    },
+    note: 'Himawari-9, Kanal 13 (10,4 µm, „clean" Infrarot): die Temperatur der Wolkenobergrenzen, Tag und Nacht. In NASAs Einfärbung sind die kältesten Gipfel — hochreichende Gewitter — grün, gelb bis rot; graue Flächen sind warm, also tiefe Wolken oder freier Boden. In den Tropen das Produkt, an dem man die Nachmittagsgewitter und ihre Zugbahn verfolgt.',
+  },
+  {
+    id: 'him_vis',
+    label: 'Sichtbar 0,64 µm (Himawari)',
+    source: 'gibs',
+    workspace: '',
+    name: 'Himawari_AHI_Band3_Red_Visible_1km',
+    mission: 'HIM',
+    stepMs: 600_000,
+    format: 'image/jpeg',
+    area: HIMAWARI_AREA,
+    imageWidth: 2660,
+    dayOnly: true,
+    note: 'Himawari-9, Kanal 3 (0,64 µm, rot) mit 1 km — der schärfste Kanal: einzelne Quellwolken, Gewittertürme mit Schattenwurf am Nachmittag, Seenebel. Nur tagsüber; Thailand liegt bei UTC+7, Tageslicht also etwa 23 bis 11 UTC.',
+  },
+  {
+    id: 'him_airmass',
+    label: 'Luftmassen (Himawari)',
+    source: 'gibs',
+    workspace: '',
+    name: 'Himawari_AHI_Air_Mass',
+    mission: 'HIM',
+    stepMs: 600_000,
+    format: 'image/jpeg',
+    area: HIMAWARI_AREA,
+    imageWidth: 1860,
+    // gemessen: volle Bilder 120 KB (Vorschau) bis 330 KB, leere 5–19 KB
+    minBytes: 40_000,
+    note: 'Himawari-9 Luftmassen-RGB (Wasserdampf- und Ozonkanäle): rotbraun = trockene, absinkende Luft aus der Höhe, grün = feuchtwarme Tropenluft, blau-violett = kalte Luft, weiß = hohe dicke Wolken. Zeigt die großen Strömungsmuster, etwa Monsunwechsel und Taifune.'
+  },
 ]
 
 /**
@@ -667,6 +789,11 @@ export const SATELLITE_GROUPS: { mission: SatelliteMission; label: string; items
     label: 'Meteosat Second Generation · SEVIRI · 15 min',
     items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'MSG'),
   },
+  {
+    mission: 'HIM',
+    label: 'Himawari-9 · AHI · 10 min · Südostasien',
+    items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'HIM'),
+  },
 ]
 
 export const DEFAULT_SATELLITE_PRODUCT = SATELLITE_PRODUCTS[0]
@@ -683,7 +810,12 @@ export function getSatelliteProduct(id: string): SatelliteProduct {
  * Dienst, derselbe Trick wie beim Radar. Nur dort steht, welche Zeitschritte
  * es gerade gibt.
  */
-export function satelliteCapabilitiesUrl(p: SatelliteProduct): string {
+export function satelliteCapabilitiesUrl(p: SatelliteProduct, now = Date.now()): string {
+  if (p.source === 'gibs') {
+    // DescribeDomains über die letzten zwei Tage (die Ziehleiste braucht 24 h)
+    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+    return `${GIBS_WMTS_BASE}/${p.name}/default/GoogleMapsCompatible_Level6/all/${day(now - 86_400_000)}T00:00:00Z--${day(now)}T23:59:59Z.xml`
+  }
   return (
     `https://view.eumetsat.int/geoserver/${p.workspace}/${p.name}/wms` +
     '?service=WMS&version=1.3.0&request=GetCapabilities'
@@ -698,6 +830,18 @@ export function parseSatelliteCapabilities(
   xml: string,
   p: SatelliteProduct,
 ): TimeExtent | null {
+  if (p.source === 'gibs') {
+    const m = /<Domain>([^<]*)<\/Domain>/.exec(xml)
+    const domain = m ? parseTimeDomain(m[1]) : null
+    if (!domain) return null
+    // GIBS meldet einen Termin, BEVOR sein Bild fertig ist: gemessen
+    // (2026-10-08) kam für den jeweils neuesten gemeldeten Termin rund eine
+    // halbe Stunde lang ein leeres JPEG (15:40 UTC war um 16:12 noch leer,
+    // 15:30 erst um 16:08 da). Die jüngsten Termine werden deshalb gar nicht
+    // erst angeboten; was danach noch leer kommt, fängt `minBytes` ab.
+    const end = domain.end - GIBS_TRIM_STEPS * domain.stepMs
+    return end > domain.start ? { ...domain, end } : null
+  }
   const dim = extractTimeDimension(xml)
   if (!dim) return null
   const extent = parseTimeExtent(dim)
@@ -742,6 +886,10 @@ export function satelliteImageUrl(
     height: String(opts.height),
     time: new Date(opts.time).toISOString().replace('.000', ''),
   })
+  if (p.source === 'gibs') {
+    // dieselbe GetMap-Anfrage, nur ein anderer Dienst (Layername ohne Workspace)
+    return `${GIBS_WMS_BASE}?${q.toString()}`
+  }
   return `${EUMETSAT_WMS_BASE}?${q.toString()}`
 }
 
@@ -784,10 +932,45 @@ export interface LoadJob {
 export const PREVIEW_WIDTH = 1000
 
 /**
- * Abrufe gleichzeitig. Mehr verträgt EUMETView nicht: bei 6 parallelen kam
- * gemessen schon einer mit HTTP 500 zurück.
+ * Abrufe gleichzeitig. Gemessen (2026-10-08, scharfe Geocolour-Bilder über
+ * Europa): 1 → 1,0 · 3 → 2,2 · 6 → 3,6 Bilder/s, alle mit HTTP 200; am
+ * 2026-09-30 kam bei 6 parallelen einer mit HTTP 500 zurück. 4 ist die
+ * vorsichtige Mitte, Fehlschläge fängt die Wiederholung (`retryAt`).
  */
-export const SAT_CONCURRENCY = 3
+export const SAT_CONCURRENCY = 4
+
+/**
+ * EIN Platz mehr, reserviert für das SCHARFE Bild unter dem Zeiger. Ohne ihn
+ * stand es zwar vorn im Plan, wartete aber, bis einer der belegten Plätze
+ * frei wurde — in der ersten Minute holen die alle Vorschauen des Tages.
+ * Beim Durchklicken war das die spürbare Verzögerung, nicht der Dienst
+ * (gemessen 0,8 s je scharfem Bild).
+ */
+export const PRIORITY_LANE = 1
+
+/**
+ * Höchstzahl gleichzeitiger Abrufe, bis zu der der Auftrag an Stelle `index`
+ * des Plans noch starten darf: der erste Auftrag, wenn er ein scharfes Bild
+ * ist, bekommt den reservierten Platz.
+ */
+export function slotLimit(index: number, tier: ImageTier, base = SAT_CONCURRENCY): number {
+  return index === 0 && tier === 'hi' ? base + PRIORITY_LANE : base
+}
+
+/**
+ * Parallele Abrufe für NASA GIBS (Himawari). GIBS spricht HTTP/2 hinter
+ * einem CDN und skaliert fast linear — gemessen (2026-10-08, 12 Vorschauen):
+ * 1 → 0,6 · 4 → 2,2 · 8 → 4,5 · 12 → 5,6 Bilder/s, keine Fehler. EUMETView
+ * dagegen spricht HTTP/1.1 (der Browser öffnet höchstens 6 Verbindungen je
+ * Host) und rendert jedes Bild bei Anfrage; dort bleibt es bei
+ * `SAT_CONCURRENCY`.
+ */
+export const GIBS_CONCURRENCY = 8
+
+/** Reguläre Plätze für dieses Produkt. */
+export function concurrencyFor(p: SatelliteProduct): number {
+  return p.source === 'gibs' ? GIBS_CONCURRENCY : SAT_CONCURRENCY
+}
 
 /** Die Schleife kreist über die letzten 3 Stunden (siehe `SatellitePanel`). */
 export const LOOP_SPAN_MS = 3 * 3_600_000
@@ -795,13 +978,19 @@ export const LOOP_SPAN_MS = 3 * 3_600_000
 /** Nachbarn des Zeigers, die beim Ziehen/Abspielen als Vorschau Vorrang haben. */
 export const LOOKAHEAD = 8
 export const LOOKBEHIND = 2
+/**
+ * SCHARFE Nachbarn des Zeigers: zwei in jede Richtung, damit beim
+ * Durchklicken mit den Pfeiltasten auch das ÜBERNÄCHSTE Bild schon scharf da
+ * ist (mit ±1 war jeder zweite Schritt erst unscharf).
+ */
+export const HI_NEIGHBOURS = 2
 
 /**
  * Obergrenze SCHARFER Bilder im Speicher. Vorschauen werden für den ganzen
  * Tag gehalten (≤ 145 × ~160 KB); die scharfen (~530 KB) nur, soweit sie der
  * Plan gerade will — Zeiger, Nachbarn, Schleife sind zusammen 21.
  */
-export const HI_MAX = 24
+export const HI_MAX = 28
 
 /**
  * Wartezeiten vor einem erneuten Versuch. EUMETView antwortet unter Last
@@ -825,10 +1014,14 @@ export function retryAt(failures: number, now: number): number {
  * 1. das SCHARFE Bild unter dem Zeiger (nicht beim Abspielen — dort wechselt
  *    es alle 320 ms, und die Vorschau trägt die Bewegung),
  * 2. VORSCHAUEN um den Zeiger (voraus weiter als zurück),
- * 3. VORSCHAUEN der Schleife, neueste zuerst — die sieht fast jeder,
- * 4. die SCHARFEN Nachbarn des Zeigers (Schritt vor/zurück ist sofort scharf),
- * 5. VORSCHAUEN für den Rest des Tages, dem Zeiger nächste zuerst,
- * 6. die Schleife SCHARF — erst wenn der Tag als Vorschau steht.
+ * 3. die SCHARFEN direkten Nachbarn (±1) — der nächste Pfeiltastendruck;
+ *    hinter den 18 Vorschauen der Schleife kamen sie gemessen erst nach 9 s,
+ * 4. VORSCHAUEN der Schleife, neueste zuerst — die sieht fast jeder, dann
+ *    die übernächsten Nachbarn (±2) scharf,
+ * 5. die Schleife SCHARF — die sieht fast jeder, und sie ist mit 18 Bildern
+ *    in rund 5 s da (bis 2026-10-08 kam sie erst nach den Vorschauen des
+ *    ganzen Tages, also nach rund einer Minute),
+ * 6. VORSCHAUEN für den Rest des Tages, dem Zeiger nächste zuerst.
  *
  * `idx < 0` heisst: der Zeiger hat sich noch nicht gesetzt (erster Aufbau).
  * Dann gilt der NEUESTE Stand als Zeiger — ein Fenster um Index 0 wäre der
@@ -853,18 +1046,24 @@ export function loadPlan(times: number[], idx: number, playing: boolean): LoadJo
   add(i, 'lo')
   for (let d = 1; d <= LOOKAHEAD; d++) add(i + d, 'lo')
   for (let d = 1; d <= LOOKBEHIND; d++) add(i - d, 'lo')
-  for (let k = n - 1; k >= loopStart; k--) add(k, 'lo')
   if (!playing) {
     add(i + 1, 'hi')
     add(i - 1, 'hi')
   }
+  for (let k = n - 1; k >= loopStart; k--) add(k, 'lo')
+  if (!playing) {
+    for (let d = 2; d <= HI_NEIGHBOURS; d++) {
+      add(i + d, 'hi')
+      add(i - d, 'hi')
+    }
+  }
+  for (let k = n - 1; k >= loopStart; k--) add(k, 'hi')
   // Rest des Tages vom Zeiger aus nach aussen; bei gleichem Abstand zuerst
   // das NEUERE Bild.
   for (let d = 1; d < n; d++) {
     add(i + d, 'lo')
     add(i - d, 'lo')
   }
-  for (let k = n - 1; k >= loopStart; k--) add(k, 'hi')
   return out
 }
 

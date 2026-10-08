@@ -277,3 +277,18 @@ describe('Meeresgrößen', () => {
     expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10' || v.id === 'wavedir')).toBe(false)
   })
 })
+
+describe('Wassertemperatur-Skala', () => {
+  it('stuft im warmen Bereich fein: ab 26 °C in 0,5 K, darunter gröber', () => {
+    const v = GLOBE_VARIABLES.find((x) => x.id === 'sst')!.scale.stops.map((s) => s.value)
+    const step = (t: number) => v[v.indexOf(t) + 1] - t
+    expect(step(26)).toBeCloseTo(0.5)
+    expect(step(31)).toBeCloseTo(0.5)
+    expect(step(20)).toBe(1)
+    expect(step(4)).toBe(2)
+    expect(v[0]).toBe(-2)
+    expect(v[v.length - 1]).toBe(32)
+    // zwischen 26 und 32 °C liegen mindestens zehn unterscheidbare Stufen
+    expect(v.filter((x) => x >= 26 && x <= 32).length).toBeGreaterThanOrEqual(10)
+  })
+})

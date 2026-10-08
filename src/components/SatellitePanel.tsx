@@ -29,19 +29,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchSatelliteExtent, loadSatelliteImage } from '../api/eumetsat'
+import { gibsReadout, type Readout } from '../api/gibsReadout'
 import { CITIES } from '../config/cities'
 import {
   DEFAULT_SATELLITE_PRODUCT,
   HI_MAX,
   LOOP_SPAN_MS,
-  SAT_CONCURRENCY,
-  SATELLITE_AREA,
-  SATELLITE_CENTER,
+  concurrencyFor,
+  slotLimit,
   SATELLITE_GROUPS,
   getSatelliteProduct,
   hiEvictions,
+  isAsia,
   loadPlan,
   productArea,
+  productCenter,
   resamplingSwitchZoom,
   retryAt,
   satelliteImageCoordinates,
@@ -50,6 +52,7 @@ import {
   type SatelliteProduct,
 } from '../config/satellite'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
+import { globalKeyAllowed } from '../lib/globalKeys'
 import { hasDaylight, solarElevationDeg } from '../lib/solar'
 import {
   BASE_STYLE,
@@ -58,6 +61,7 @@ import {
   loadBasemap,
   OVERLAY_INSERT_BEFORE,
 } from '../render/basemap'
+import { addWorldLabels } from '../render/worldLabels'
 import { GroundAttribution } from './Attribution'
 
 const SAT_SOURCE_ID = 'satellite'
@@ -81,10 +85,13 @@ const FIXED_VIEWS: View[] = [
   { id: 'alpen', label: 'Alpen', bounds: [[5.8, 44.8], [17.2, 49.3]] },
 ]
 
+/** Himawari (Südostasien): Thailand statt D-A-CH/Alpen. */
+const ASIA_VIEWS: View[] = [{ id: 'thailand', label: 'Thailand', bounds: [[96.3, 5.2], [106.2, 20.6]] }]
+
 function viewsFor(product: SatelliteProduct): View[] {
   const area = productArea(product)
   return [
-    ...FIXED_VIEWS,
+    ...(isAsia(product) ? ASIA_VIEWS : FIXED_VIEWS),
     {
       id: 'gesamt',
       label: 'ganzer Ausschnitt',
@@ -118,7 +125,7 @@ const END_DWELL_MS = 1400
 /** Wartezeit, wenn das nächste Bild noch nicht geladen ist. */
 const WAIT_MS = 250
 /** Ruhe am Zeiger, bevor nachgeladen wird (siehe `settledIdx`). */
-const SETTLE_MS = 220
+const SETTLE_MS = 120
 /** Takt, in dem die Zeitdimension nachgefragt wird (Quelle: 10 bzw. 15 min). */
 const POLL_MS = 60_000
 
@@ -158,6 +165,8 @@ export function SatellitePanel() {
   const [productId, setProductId] = useState(DEFAULT_SATELLITE_PRODUCT.id)
   const product = getSatelliteProduct(productId)
   const views = useMemo(() => viewsFor(product), [product])
+  /** Himawari zeigt Südostasien — Karte, Ortsnamen und Bezugspunkt wechseln mit. */
+  const asia = isAsia(product)
 
   const [extent, setExtent] = useState<TimeExtent | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -319,8 +328,16 @@ export function SatellitePanel() {
     }
     const now = Date.now()
     let nextRetry = Infinity
-    for (const job of planRef.current) {
-      if (inFlightRef.current.size >= SAT_CONCURRENCY) break
+    const jobs = planRef.current
+    const base = concurrencyFor(productRef.current)
+    for (let j = 0; j < jobs.length; j++) {
+      const job = jobs[j]
+      // Der erste Auftrag darf als scharfes Zeigerbild den reservierten Platz
+      // nehmen; alle übrigen warten auf einen regulären
+      if (inFlightRef.current.size >= slotLimit(j, job.tier, base)) {
+        if (j === 0) continue
+        break
+      }
       const key = `${job.tier}|${job.time}`
       if (haveRef.current.has(key) || inFlightRef.current.has(key)) continue
       const fail = failsRef.current.get(key)
@@ -418,6 +435,24 @@ export function SatellitePanel() {
     if (current) wantTimeRef.current = current
   }, [current])
 
+  // ←/→ ein Bild, mit Shift sechs (bei 10-Minuten-Takt eine Stunde) — ohne
+  // den Schieber erst anklicken zu müssen. Die Regel, wann die Tasten der
+  // Zeit gehören, ist dieselbe wie in den übrigen Bereichen
+  // (`globalKeyAllowed`): ist der Schieber selbst fokussiert, bewegt ihn der
+  // Browser nativ, und ein Eingabefeld oder eine Auswahlliste behält ihre Tasten.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      if (!globalKeyAllowed(e) || times.length === 0) return
+      e.preventDefault()
+      const d = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 6 : 1)
+      setPlaying(false)
+      setIdx((i) => Math.max(0, Math.min(times.length - 1, i + d)))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [times.length])
+
   const loadedLo = times.filter((t) => images[t]?.lo || images[t]?.hi).length
   const loadedHi = times.filter((t) => images[t]?.hi).length
 
@@ -429,14 +464,13 @@ export function SatellitePanel() {
    * in Ordnung ist. Jetzt sagt der Bereich es und bietet den Sprung zum
    * letzten Tageslicht an.
    */
-  const daylight = useMemo(
-    () => times.map((t) => hasDaylight(t, SATELLITE_CENTER.lat, SATELLITE_CENTER.lon)),
-    [times],
-  )
+  // Bezugspunkt je Produkt: Mitteleuropa bzw. Zentralthailand
+  const sun = productCenter(product)
+  const daylight = useMemo(() => times.map((t) => hasDaylight(t, sun.lat, sun.lon)), [times, sun])
   const darkNow = product.dayOnly && current != null && daylight[Math.min(idx, times.length - 1)] === false
   const lastDaylightIdx = useMemo(() => daylight.lastIndexOf(true), [daylight])
   /** Wie tief die Sonne gerade steht — die Zahl macht aus „schwarz" eine Aussage. */
-  const solarDepth = current == null ? 0 : solarElevationDeg(current, SATELLITE_CENTER.lat, SATELLITE_CENTER.lon)
+  const solarDepth = current == null ? 0 : solarElevationDeg(current, sun.lat, sun.lon)
 
   // --- Schleife -------------------------------------------------------------
   useEffect(() => {
@@ -497,18 +531,26 @@ export function SatellitePanel() {
     // für Bildinhalt halten könnte — dort ist schlicht nichts gemessen.
     // Das Bild selbst gibt es weiter: als Untergrund UNTER den Wolken IM
     // Komposit (`render/cloudComposite.ts`, `config/ground.ts`).
+    const area = productArea(product)
     ;(map.getSource('graticule') as maplibregl.GeoJSONSource).setData(
-      buildGraticuleBox(
-        {
-          latMin: SATELLITE_AREA.south,
-          latMax: SATELLITE_AREA.north,
-          lonMin: SATELLITE_AREA.west,
-          lonMax: SATELLITE_AREA.east,
-        },
-        5,
-      ),
+      buildGraticuleBox({ latMin: area.south, latMax: area.north, lonMin: area.west, lonMax: area.east }, 5),
     )
     let cancelled = false
+    // Südostasien liegt nicht im Europa-Bündel — dort das Welt-Bündel
+    // (Küsten und Staatsgrenzen 1:50m), ohne Bundesländer
+    if (asia) {
+      loadBasemap('world')
+        .then((bm) => {
+          if (cancelled || mapRef.current !== map) return
+          ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast ?? EMPTY_FC)
+          ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders ?? EMPTY_FC)
+          ;(map.getSource('admin1') as maplibregl.GeoJSONSource).setData(EMPTY_FC)
+        })
+        .catch((err: unknown) => console.error('[basemap world]', err))
+      return () => {
+        cancelled = true
+      }
+    }
     loadBasemap('europe')
       .then((bm) => {
         if (cancelled || mapRef.current !== map) return
@@ -525,7 +567,7 @@ export function SatellitePanel() {
     return () => {
       cancelled = true
     }
-  }, [mapReady])
+  }, [mapReady, asia, product])
 
   // Städte als DOM-Marker — dieselbe Pseudo-Domain `'imagery'` wie beim Radar
   // (`config/cities.ts`): die Flächen überschneiden sich weitgehend, und ein
@@ -535,6 +577,10 @@ export function SatellitePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+    // Südostasien: die weltweite Beschriftung der Modellkarten (Natural Earth
+    // plus die Thai-Urlaubsorte), ausgedünnt nach Platz — die Bildkarten-Liste
+    // ist europäisch
+    if (asia) return addWorldLabels(map, '.radar-legend, .maplibregl-ctrl-top-right')
     const cities = CITIES.filter((c) => c.domains.includes('imagery'))
     const markers = cities.map((c) => {
       const el = document.createElement('div')
@@ -569,7 +615,7 @@ export function SatellitePanel() {
       map.off('zoom', thin)
       markers.forEach((m) => m.remove())
     }
-  }, [mapReady])
+  }, [mapReady, asia])
 
   // Satellitenbild einhängen bzw. austauschen
   useEffect(() => {
@@ -634,9 +680,56 @@ export function SatellitePanel() {
     setPending(null)
   }, [pending])
 
+  // --- Wert am Zeiger (nur Produkte mit `readout`: Himawari-Infrarot) ------
+  const [pointer, setPointer] = useState<{ lat: number; lon: number } | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const move = (e: maplibregl.MapMouseEvent) => setPointer({ lat: e.lngLat.lat, lon: e.lngLat.lng })
+    const leave = () => setPointer(null)
+    map.on('mousemove', move)
+    map.getCanvas().addEventListener('mouseleave', leave)
+    return () => {
+      map.off('mousemove', move)
+      map.getCanvas().removeEventListener('mouseleave', leave)
+    }
+  }, [mapReady])
+  /**
+   * Ergebnis MIT seinem Schlüssel (Produkt, Termin, Ort): beim Weiterziehen
+   * der Zeit oder der Maus stünde sonst bis zum Eintreffen des neuen Werts
+   * der alte da — eine Zahl, die zu etwas anderem gehört.
+   */
+  const [readout, setReadout] = useState<{ key: string; r: Readout } | null>(null)
+  const readoutKey =
+    product.readout && pointer && current != null
+      ? `${product.id}|${current}|${pointer.lat.toFixed(3)}|${pointer.lon.toFixed(3)}`
+      : ''
+  useEffect(() => {
+    if (!readoutKey || !pointer || current == null) return
+    let cancelled = false
+    gibsReadout(product, current, pointer.lat, pointer.lon)
+      .then((r) => !cancelled && setReadout({ key: readoutKey, r }))
+      .catch(() => !cancelled && setReadout({ key: readoutKey, r: { kind: 'nodata' } }))
+    return () => {
+      cancelled = true
+    }
+  }, [readoutKey, product, current, pointer])
+  const shownReadout = readout?.key === readoutKey ? readout.r : null
+
   const jumpToView = useCallback((bounds: [[number, number], [number, number]]) => {
     mapRef.current?.fitBounds(bounds, { padding: 8, duration: 400 })
   }, [])
+
+  // Wechsel zwischen Europa (Meteosat) und Südostasien (Himawari): die Karte
+  // springt auf das erste Sprungziel der neuen Region — sonst stünde man nach
+  // dem Wechsel auf Himawari über Deutschland vor einer leeren Fläche
+  const regionRef = useRef(asia)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || regionRef.current === asia) return
+    regionRef.current = asia
+    map.fitBounds(views[0].bounds, { padding: 8, duration: 0 })
+  }, [asia, mapReady, views])
 
   const stepMin = extent ? Math.round(extent.stepMs / 60_000) : 0
   /**
@@ -786,9 +879,46 @@ export function SatellitePanel() {
             </button>
           ))}
         </div>
+        {product.readout && (
+          <div
+            className="globe-readout satellite-readout"
+            aria-live="polite"
+            title="Aus NASAs Farbtabelle zurückgerechnet, gelesen aus der verlustfreien GIBS-Kachel (nicht aus dem angezeigten Bild). Wo sich am Wolkenrand Farben nicht benachbarter Stufen mischen, gibt es keine Zahl."
+          >
+            {!pointer ? (
+              <span className="globe-readout-pos">Zeiger auf das Bild: {product.readout.label} ablesen</span>
+            ) : (
+              <>
+                <span>
+                  {product.readout.label}{' '}
+                  {shownReadout == null ? (
+                    <strong>…</strong>
+                  ) : shownReadout.kind === 'value' ? (
+                    <strong>
+                      {Math.round(shownReadout.value).toLocaleString('de-DE').replace('-', '−')} {product.readout.unit}
+                    </strong>
+                  ) : shownReadout.kind === 'ambiguous' ? (
+                    <strong>—</strong>
+                  ) : (
+                    <strong>kein Wert</strong>
+                  )}
+                </span>
+                <span className="globe-readout-pos">
+                  {shownReadout?.kind === 'ambiguous'
+                    ? 'Wolkenrand: Farbe nicht eindeutig'
+                    : `${Math.abs(pointer.lat).toFixed(2)}° ${pointer.lat >= 0 ? 'N' : 'S'} ${pointer.lon.toFixed(2)}° O`}
+                  {/* Der Kanal misst die Temperatur der obersten Fläche, die er
+                      sieht — ohne Wolke ist das Boden oder Meer. Über 0 °C
+                      ist es keine hohe Wolke mehr. */}
+                  {shownReadout?.kind === 'value' && shownReadout.value > 0 && ' · warm: Boden, Meer oder tiefe Wolke'}
+                </span>
+              </>
+            )}
+          </div>
+        )}
         <div className="radar-legend satellite-legend">
           <span className="radar-legend-cap">
-            {product.mission}
+            {product.mission === 'HIM' ? 'Himawari-9' : product.mission}
             {product.dayOnly && <span className="satellite-dayonly"> · nur tagsüber</span>}
           </span>
           <span className="satellite-note">{product.note}</span>
@@ -804,40 +934,54 @@ export function SatellitePanel() {
         </div>
       </div>
 
+      {asia ? (
+        <span className="attribution radar-attribution">
+          Datenquelle: Himawari-9 (AHI) der{' '}
+          <a href="https://www.jma.go.jp/jma/indexe.html" target="_blank" rel="noreferrer">
+            Japan Meteorological Agency
+          </a>
+          , bereitgestellt über{' '}
+          <a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api" target="_blank" rel="noreferrer">
+            NASA GIBS
+          </a>{' '}
+          (Global Imagery Browse Services, Teil von NASAs ESDIS). Kartenlinien und Namen: Natural Earth.
+        </span>
+      ) : (
       <span className="attribution radar-attribution">
-        Datenquelle:{' '}
-        <a
-          href="https://www.eumetsat.int/"
-          target="_blank"
-          rel="noreferrer"
-          title={product.note}
-        >
-          EUMETSAT
-        </a>{' '}
-        {/* Das geschärfte Produkt stammt aus ZWEI Satelliten — Farbe von
-            MSG, Struktur von MTG. Beide gehören EUMETSAT, die Lizenz ist
-            also so oder so erfüllt; genannt gehören sie trotzdem, sonst
-            steht unter einem Bild aus zwei Quellen nur eine. */}
-        — {product.sharpen
-          ? 'Meteosat Second Generation (SEVIRI, Farbe) und Third Generation (FCI, Schärfe)'
-          : product.mission === 'MTG'
-            ? 'Meteosat Third Generation (FCI)'
-            : 'Meteosat Second Generation (SEVIRI)'} über{' '}
-        <a
-          href="https://view.eumetsat.int/productviewer"
-          target="_blank"
-          rel="noreferrer"
-        >
-          EUMETView
-        </a>
-        . Kartenlinien: Natural Earth.{' '}
-        {/* Der Untergrund liegt seit 2026-09-30 nur noch UNTER den Wolken im
-            Komposit, also bei den beiden Graustufen-Kanälen — genannt wird er
-            deshalb auch nur dort. Attribution ist Lizenzbedingung, aber eine
-            Nennung für ein Bild, das gar nicht gezeigt wird, ist keine
-            Auskunft, sondern Rauschen. */}
-        {product.cloudMask && <GroundAttribution />}
-      </span>
+          Datenquelle:{' '}
+          <a
+            href="https://www.eumetsat.int/"
+            target="_blank"
+            rel="noreferrer"
+            title={product.note}
+          >
+            EUMETSAT
+          </a>{' '}
+          {/* Das geschärfte Produkt stammt aus ZWEI Satelliten — Farbe von
+              MSG, Struktur von MTG. Beide gehören EUMETSAT, die Lizenz ist
+              also so oder so erfüllt; genannt gehören sie trotzdem, sonst
+              steht unter einem Bild aus zwei Quellen nur eine. */}
+          — {product.sharpen
+            ? 'Meteosat Second Generation (SEVIRI, Farbe) und Third Generation (FCI, Schärfe)'
+            : product.mission === 'MTG'
+              ? 'Meteosat Third Generation (FCI)'
+              : 'Meteosat Second Generation (SEVIRI)'} über{' '}
+          <a
+            href="https://view.eumetsat.int/productviewer"
+            target="_blank"
+            rel="noreferrer"
+          >
+            EUMETView
+          </a>
+          . Kartenlinien: Natural Earth.{' '}
+          {/* Der Untergrund liegt seit 2026-09-30 nur noch UNTER den Wolken im
+              Komposit, also bei den beiden Graustufen-Kanälen — genannt wird er
+              deshalb auch nur dort. Attribution ist Lizenzbedingung, aber eine
+              Nennung für ein Bild, das gar nicht gezeigt wird, ist keine
+              Auskunft, sondern Rauschen. */}
+          {product.cloudMask && <GroundAttribution />}
+        </span>
+      )}
     </div>
   )
 }

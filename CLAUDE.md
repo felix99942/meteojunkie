@@ -2567,6 +2567,37 @@ npm run preview   # gebautes dist/ servieren
   2 min; ~1 Bild/s bei `SAT_CONCURRENCY` = 3. Schneller geht es mit dieser
   Quelle nicht — bei 6 parallelen Abrufen kam schon einer mit HTTP 500 zurück,
   und auch mit 3 ist es jeder zehnte (daher die Wiederholung, s. o.).
+  **SCHNELLER SCHARF (2026-10-08)** — gemessen lag die Wartezeit nicht am
+  Dienst (EUMETView 0,5 s Vorschau, 0,8 s scharf; parallel 1/3/6 → 1,0/2,2/
+  3,6 Bilder/s), sondern an der SCHLANGE: das scharfe Zeigerbild stand zwar
+  vorn im Plan, wartete aber auf einen der drei Plätze, die in der ersten
+  Minute Vorschauen holen; die scharfe Schleife kam erst nach ALLEN ~145
+  Vorschauen des Tages. Jetzt: ein reservierter Platz für das scharfe
+  Zeigerbild (`PRIORITY_LANE`/`slotLimit`), 4 statt 3 reguläre Plätze, die
+  direkten Nachbarn ±1 scharf vor der Vorschau der Schleife, ±2 danach
+  (`HI_NEIGHBOURS`, Pfeiltasten springen nie ins Unscharfe), die Schleife
+  scharf VOR den Vorschauen des übrigen Tages, Ruhezeit am Zeiger 120 statt
+  220 ms. Vergleich unter gleichen Bedingungen (kalter Cache, Geocolour):
+  alt nach 40 s 2 scharfe Bilder, neu 20 (Schleife komplett nach 29 s, drei
+  scharf nach 9,5 s). `HI_MAX` 24 → 28, weil Zeiger, vier Nachbarn und
+  Schleife zusammen 24 sind.
+  **CACHING — wo die Grenzen liegen, gemessen statt vermutet**: EUMETView
+  schickt `max-age=604800`, der HTTP-Cache des Browsers liefert beim zweiten
+  Besuch 18 von 20 scharfen Bildern und 85 von 119 Vorschauen von der Platte
+  — eine eigene IndexedDB-Ablage brächte dort nichts. Was beim ERSTEN Besuch
+  bremst, ist der Dienst: er rendert jedes Bild bei Anfrage und spricht nur
+  HTTP/1.1 (höchstens 6 Verbindungen je Host im Browser, daher 4 + 1). Kein
+  WebP (GeoServer antwortet mit XML). **NASA GIBS dagegen verbietet das
+  Zwischenspeichern** (`Cache-Control: no-store`) — Himawari lud bei jedem
+  Besuch alles neu. Deshalb eine eigene Ablage nur für GIBS
+  (`api/imageStore.ts`, Cache Storage API, nur gültige, nicht leere Bilder,
+  Aufräumen > 48 h einmal je Sitzung) und, weil GIBS HTTP/2 hinter einem CDN
+  spricht und fast linear skaliert (1/4/8/12 parallel → 0,6/2,2/4,5/5,6
+  Bilder/s), 8 Plätze statt 4 (`GIBS_CONCURRENCY`/`concurrencyFor`). Gemessen
+  Himawari: 20 Vorschauen kalt 13,6 → 7,1 s, beim zweiten Besuch 1,3 s, der
+  ganze Tag 1,6 s. **Schneller beim ersten Besuch von EUMETView geht es nur
+  serverseitig** — ein Zwischenserver, der jeden neuen Termin einmal holt und
+  für alle ausliefert (Cloudflare-Plan).
   **Die Verdrängung trifft nur SCHARFE Bilder und nie eines, das der Plan
   gerade will** — sonst Laden und Wegwerfen im Kreis; das war früher zweimal
   ein Fehler (Verdrängung im State-Updater, den React im Entwicklungsmodus
@@ -2620,6 +2651,69 @@ npm run preview   # gebautes dist/ servieren
   die Städte über dieselbe Pseudo-Domain `'imagery'` in `config/cities.ts`
   (ein paar Einträge — Mailand, Venedig, Turin — liegen außerhalb der
   Radarfläche und tragen nur hier).
+- **Thailand-Tropendienst** (seit 2026-10-08, Quellen gemessen in den
+  Projektnotizen): kein eigener Bereich, sondern Südostasien in DREI
+  vorhandenen. (1) **Satellit: Himawari-9 über NASA GIBS** (Gruppe
+  „Himawari-9", `source: 'gibs'`, `HIMAWARI_AREA` 84–125° O / −5–28° N):
+  Infrarot 10,4 µm, Sichtbar 0,64 µm (1 km, nur tagsüber) und Luftmassen-RGB.
+  WMS wie EUMETView, CORS `*`, kein Key. **Die Zeitschritte kommen aus
+  WMTS-„DescribeDomains"** (610 Bytes) — das WMS-Capabilities führt keine
+  Zeitdimension, das WMTS-Capabilities wiegt 5,8 MB. Die Domäne meldet
+  LÜCKEN (Himawari lässt 02:40 und 14:40 UTC aus); `parseTimeDomain` macht
+  daraus ein Band mit `TimeExtent.missing`, und `frameTimes` lässt sie aus.
+  **Zwei GIBS-Fallen, beide gemessen**: der jeweils neueste gemeldete Termin
+  liefert rund eine halbe Stunde lang ein SCHWARZES JPEG mit HTTP 200
+  (~17 KB statt ~320 KB) — die zwei jüngsten Termine werden deshalb gar nicht
+  angeboten (`GIBS_TRIM_STEPS`), und was danach noch leer kommt, gilt über
+  `SatelliteProduct.minBytes` als Fehler und läuft in die Wiederholung (nicht
+  beim sichtbaren Kanal, der nachts zu Recht schwarz ist). Anforderungsbreite
+  nach der WMTS-Kachelstufe des Layers (IR/Luftmassen Stufe 6 = 2.446 m/px →
+  1860 px, sichtbar Stufe 7 = 1.223 m/px, mit 2660 px bewusst gröber), JPEG
+  (PNG war 4× größer). Region wechselt mit dem Produkt (`isAsia`): Sprungziel
+  „Thailand", Sonnenstand über Zentralthailand (`productCenter`), Welt-Bündel
+  statt Europa-Bündel, Beschriftung über `addWorldLabels`, Quellenzeile
+  JMA/NASA GIBS; `gibs.earthdata.nasa.gov` steht im Impressum.
+  (2) **Modellkarten: Ansicht „Thailand"** — die IFS-Felder (0,25°, inkl.
+  Wellen, Wassertemperatur, Partikel) sind ohnehin global; wer die Ansicht mit
+  ICON wählt, wird auf IFS umgestellt (ICON ist europäisch). Die Urlaubsorte
+  und Inseln, die Natural Earth nicht führt, kommen aus `config/thaiPlaces.ts`
+  (geokodiert — „Khao Lak" und „Ko Tao" hatten gleichnamige Zweittreffer
+  200 km daneben). (3) **Schnellwahl mit Regionen** (`QUICK_REGIONS`,
+  Auswahl Österreich · Thailand vor den Knöpfen, `regionFor`): die Region
+  folgt dem gewählten Ort; acht Thai-Orte an beiden Küsten plus Bangkok und
+  Chiang Mai. Punktdaten laufen über Open-Meteo wie überall.
+  **WOLKENOBERGRENZEN-TEMPERATUR AM ZEIGER** (Himawari-Infrarot,
+  `SatelliteProduct.readout`, Kern `config/gibsReadout.ts` mit Tests, Laden
+  `api/gibsReadout.ts`): GIBS liefert nur Farben, NASA veröffentlicht aber die
+  Farbtabelle (`colormaps/v1.3/Clean_Longwave_Infrared_Window_Band.xml`, 237
+  Einträge −92 … +57 °C, CORS offen). Drei Fallen, alle gemessen: (1) **aus
+  dem angezeigten JPEG geht es nicht** — an Gipfeln unter −30 °C p90-Fehler
+  84 K; gelesen wird die verlustfreie WMTS-Kachel (Stufe 6, ~50 KB, je Termin
+  und Kachel einmal, LRU 24). (2) **Auch die Kachel ist umgerechnet**: nur 49 %
+  der farbigen Pixel treffen einen Eintrag exakt — projiziert wird deshalb auf
+  den FARBVERLAUF (Strecken zwischen Nachbareinträgen), 89 % liegen innerhalb
+  10 RGB-Einheiten; weiter weg (Mischung am Wolkenrand) gibt es KEINE Zahl.
+  (3) **Grau bedeutet ZWEIMAL etwas**: warme Graurampe +13 … +57 °C UND ein
+  kaltes Grauband −80 … −70 °C; die erste Fassung zeigte über dem
+  wolkenfreien Golf von Bengalen −75 °C. Mehrdeutige Farben entscheiden die
+  eindeutigen Nachbarn im Umkreis von 10 px (`valueAtPixel`), ohne solche
+  gilt die warme Deutung. Über 0 °C sagt die Anzeige „Boden, Meer oder tiefe
+  Wolke" — der Kanal sieht die oberste Fläche, nicht zwingend eine Wolke.
+  **Pfeiltasten im Satellitenbereich** (←/→, Shift sechs Bilder), dieselbe
+  Regel `globalKeyAllowed` wie überall; Lücken im Zeitraster werden dabei
+  übersprungen. **Wassertemperatur-Skala ungleich gestuft** (`SEA_TEMP`):
+  kalt 2 K, mittel 1 K, ab 26 °C 0,5 K — mit gleichmäßigen Bändern lagen die
+  Tropen in zwei, drei Rottönen.
+  **IFS mit 9 km — gemessen, noch NICHT gebaut**: gibt es NICHT bei ECMWF Open
+  Data (nur `ifs/0p25`), nur im Open-Meteo-Bucket (`s3://openmeteo`,
+  `data_run/ecmwf_ifs/<lauf>/<größe>.om`, ~580 MB je Größe und Lauf, Gitter
+  O1280, Chunks (1, 7, 145)). **Ausschnitt lesen ist latenzgebunden, nicht
+  datengebunden**: für 16 von 256 Zeilen des Thailand-Kastens flossen 795 KB
+  in 131 s — die Bibliothek `omfiles` macht tausende kleine Abrufe
+  nacheinander, auch asynchron mit 64 parallel blieb es bei 181 s je Größe.
+  Am Stück lädt der Bucket von hier 6 MB/s (580 MB ≈ 95 s); gangbar ist also
+  nur der GANZDATEI-Download im Deploy (Actions in den USA, nahe am Bucket),
+  danach lokal ausschneiden und auf ein reguläres Gitter umrechnen.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der
   Bereich angefangen; `GlobePanel.tsx`, Registry/Kerne `config/globe.ts` mit
   Tests, Kacheln `render/globeTiles.ts` + `render/globeProtocol.ts`, Laden
