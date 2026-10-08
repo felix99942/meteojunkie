@@ -140,6 +140,40 @@ interface RunningFile {
 
 const loadYear = (y: number) => load<YearFile>(`monthly/${y}.json`, true)
 
+// --- Monatsreihe einer Station (Perioden-Historie) -----------------------
+
+/**
+ * Monatswerte einer Station zwischen `start` und `end` (beide YYYY-MM-01) in
+ * der Form, die `fetchStationSeries` für Österreich liefert — damit
+ * `AtPeriodHistory` beide Länder gleich zeichnet. Quelle ist die vorab
+ * erzeugte Reihe `de/series/<id>.json` (ein Abruf je Station, gecacht).
+ */
+export async function loadDeSeries(
+  code: string,
+  start: string,
+  end: string,
+  id: number,
+): Promise<{ timestamps: string[]; values: (number | null)[] }> {
+  const f = await load<{ from: number; codes: Record<string, (number | null)[]> }>(`series/${id}.json`, true)
+  const timestamps: string[] = []
+  const values: (number | null)[] = []
+  const arr = f?.codes[code]
+  let y = Number(start.slice(0, 4))
+  let m = Number(start.slice(5, 7))
+  const ey = Number(end.slice(0, 4))
+  const em = Number(end.slice(5, 7))
+  while (y < ey || (y === ey && m <= em)) {
+    timestamps.push(`${y}-${String(m).padStart(2, '0')}-01T00:00`)
+    const i = f ? (y - f.from) * 12 + (m - 1) : -1
+    values.push(arr && i >= 0 && i < arr.length ? arr[i] : null)
+    if (++m > 12) {
+      m = 1
+      y++
+    }
+  }
+  return { timestamps, values }
+}
+
 // --- Zeitraumwerte --------------------------------------------------------
 
 export async function fetchDePeriodValues(

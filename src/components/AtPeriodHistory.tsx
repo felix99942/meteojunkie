@@ -14,6 +14,7 @@ import { DATASET_MONTHLY, fetchStationSeries, type AtStation } from '../api/geos
 import { clean, recentPeriodTtl, seasonYearLabel } from '../api/atValues'
 import { anomaly, anomalyBarColors, anomalyDisplay, type AtParameterSpec } from '../config/atParameters'
 import { buildHistory, historyStart, historyStats, scopeLabel, type HistoryScope } from './atHistory'
+import { loadDeSeries } from '../api/deClimate'
 
 const INK_MUTED = '#898781'
 const GRIDLINE = '#2c2c2a'
@@ -43,7 +44,13 @@ export function AtPeriodHistory({
   showAnomaly,
   refLabel,
   monthNames,
+  country = 'at',
 }: {
+  /**
+   * Woher die Monatsreihe kommt: Österreich je Klick bei GeoSphere,
+   * Deutschland aus der beim Bauen erzeugten Reihe (`loadDeSeries`).
+   */
+  country?: 'at' | 'de'
   station: AtStation
   spec: AtParameterSpec
   scope: HistoryScope
@@ -70,17 +77,24 @@ export function AtPeriodHistory({
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchStationSeries(code, start, end, [station.id], DATASET_MONTHLY, recentPeriodTtl(end))
+    const load =
+      country === 'de'
+        ? loadDeSeries(code, start, end, station.id)
+        : fetchStationSeries(code, start, end, [station.id], DATASET_MONTHLY, recentPeriodTtl(end)).then((s) => ({
+            timestamps: s.timestamps,
+            values: s.byStation[station.id] ?? [],
+          }))
+    load
       .then((s) => {
         if (cancelled) return
-        setRaw({ timestamps: s.timestamps, values: s.byStation[station.id] ?? [] })
+        setRaw(s)
       })
       .catch((err) => !cancelled && setError(err?.message ?? 'Reihe nicht ladbar'))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [code, start, end, station.id])
+  }, [code, start, end, station.id, country])
 
   // Werte der Perioden — bei Saison/Jahr mit annualAgg, wie in der Karte.
   const points = useMemo(() => {

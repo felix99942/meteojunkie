@@ -1,8 +1,9 @@
 # Baut die Web-Version (Karte deaktiviert) und deployt sie auf GitHub Pages.
 # Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
-# Läuft bei jedem Push auf main/master UND alle 3 h (Cron) — der Cron-Lauf
-# frischt die MOS-Vorhersage auf (DWD MOSMIX rechnet ~4×/Tag), die
-# Radiosonden und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
+# Läuft bei jedem Push auf main/master UND stündlich (Cron) — der Cron-Lauf
+# frischt den heutigen Tag des Klimamonitors Deutschland auf (10-Minuten-Werte
+# des DWD), die MOS-Vorhersage (DWD MOSMIX rechnet ~4×/Tag), die Radiosonden
+# und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
 # Die Daten werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
 name: Deploy web version to GitHub Pages
 
@@ -10,12 +11,14 @@ on:
   push:
     branches: [main, master]
   schedule:
-    # Alle 3 h, versetzt auf xx:30 nach 01/04/07/… UTC: ein ICON-D2-Lauf
-    # (alle 3 h) ist ~1 h 20 min nach Init komplett (gemessen 2026-10-05) —
-    # so ist jeder Lauf zehn Minuten danach online. Bei xx:15 zur vollen
-    # Dreierstunde käme jeder D2-Lauf erst beim übernächsten Cron mit und wäre
-    # bis zu 6 h alt. MOSMIX ist im 3-h-Takt ohnehin unkritisch.
-    - cron: '30 1-22/3 * * *'
+    # STÜNDLICH zur halben Stunde (seit 2026-10-08, vorher alle 3 h): der
+    # heutige Tag des Klimamonitors Deutschland ist sonst bis zu gut 3 h alt —
+    # der DWD hat kein CORS, frischer als der letzte Deploy geht es nicht. Die
+    # halbe Stunde bleibt wegen ICON-D2 (alle 3 h, ~1 h 20 min nach Init
+    # komplett): um 01:30, 04:30 … ist jeder Lauf zehn Minuten danach online.
+    # Die Modellfelder kommen dazwischen aus dem Actions-Cache (ein Lauf wird
+    # nur einmal geholt), teuer ist ein stündlicher Lauf damit nicht.
+    - cron: '30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -134,20 +137,71 @@ jobs:
           path: public/nwp/ecmwf-ifs
           key: nwp-ecmwf-ifs-v4-${{ steps.ecmwf.outputs.run }}
 
-      # ICON OHNE Cache: ein Lauf kostet 17 s (D2) bzw. 38 s (EU) bei
-      # 22–26 MB/s vom DWD (gemessen), und D2 hat bei jedem Cron einen neuen
-      # Lauf — ein Cache spräche fast nie an.
-      - name: ICON-D2-Felder erzeugen (DWD Open Data)
+      # ICON JE LAUF im Cache, seit der Cron stündlich läuft: D2 rechnet alle
+      # 3 h, EU alle 6 h — ohne Cache holte jeder Lauf dieselben ~190 MB neu
+      # beim DWD. Muster wie bei ECMWF: Kennung bestimmen, wiederherstellen,
+      # nur bei Fehltreffer erzeugen, nur bei Erfolg ablegen.
+      - name: ICON-Läufe bestimmen
+        id: icon
         if: steps.nwp-deps.outcome == 'success'
         continue-on-error: true
+        run: |
+          echo "d2=$(python3 scripts/icon-ingest.py icon-d2 --latest)" >> "$GITHUB_OUTPUT"
+          echo "eu=$(python3 scripts/icon-ingest.py icon-eu --latest)" >> "$GITHUB_OUTPUT"
+
+      - name: ICON-D2-Felder aus dem Cache
+        id: icon-d2-cache
+        if: steps.icon.outputs.d2 != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/nwp/icon-d2
+          key: nwp-icon-d2-v1-${{ steps.icon.outputs.d2 }}
+          # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
+          # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
+          restore-keys: nwp-icon-d2-v1-
+
+      - name: ICON-D2-Felder erzeugen (DWD Open Data)
+        id: icon-d2-ingest
+        if: steps.icon.outputs.d2 != '' && steps.icon-d2-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         timeout-minutes: 10
-        run: python3 -u scripts/icon-ingest.py icon-d2
+        # Ausdrücklich DIESER Lauf — erschiene zwischendurch ein neuerer, landete er sonst
+        # unter dem Schlüssel des alten im Cache
+        run: python3 -u scripts/icon-ingest.py icon-d2 --run ${{ steps.icon.outputs.d2 }}
+
+      - name: ICON-D2-Felder im Cache ablegen
+        if: steps.icon-d2-ingest.outcome == 'success' && steps.icon.outputs.d2 != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/nwp/icon-d2
+          key: nwp-icon-d2-v1-${{ steps.icon.outputs.d2 }}
+
+      - name: ICON-EU-Felder aus dem Cache
+        id: icon-eu-cache
+        if: steps.icon.outputs.eu != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/nwp/icon-eu
+          key: nwp-icon-eu-v1-${{ steps.icon.outputs.eu }}
+          # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
+          # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
+          restore-keys: nwp-icon-eu-v1-
 
       - name: ICON-EU-Felder erzeugen (DWD Open Data)
-        if: steps.nwp-deps.outcome == 'success'
+        id: icon-eu-ingest
+        if: steps.icon.outputs.eu != '' && steps.icon-eu-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         timeout-minutes: 10
-        run: python3 -u scripts/icon-ingest.py icon-eu
+        # Ausdrücklich DIESER Lauf — erschiene zwischendurch ein neuerer, landete er sonst
+        # unter dem Schlüssel des alten im Cache
+        run: python3 -u scripts/icon-ingest.py icon-eu --run ${{ steps.icon.outputs.eu }}
+
+      - name: ICON-EU-Felder im Cache ablegen
+        if: steps.icon-eu-ingest.outcome == 'success' && steps.icon.outputs.eu != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/nwp/icon-eu
+          key: nwp-icon-eu-v1-${{ steps.icon.outputs.eu }}
 
       # base-Pfad ableiten:
       #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)

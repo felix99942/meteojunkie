@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deParamAvailable, fetchDePeriodValues } from './deClimate'
+import { deParamAvailable, fetchDePeriodValues, loadDeSeries } from './deClimate'
 import { getAtParameter } from '../config/atParameters'
 import type { AtStation } from './geosphere'
 
@@ -84,5 +84,15 @@ describe('fetchDePeriodValues', () => {
     mockAssets({})
     const r = await fetchDePeriodValues(getAtParameter('tl_mittel'), { kind: 'day', day: '1999-01-01' }, [st(1)])
     expect(r.byStation[1]).toBeNull()
+  })
+})
+
+describe('loadDeSeries', () => {
+  it('liefert den Ausschnitt Monat für Monat, außerhalb der Reihe null', async () => {
+    // Reihe ab 2020: Januar 2020 = 1, Februar 2020 = 2 …
+    mockAssets({ 'series/7.json': { from: 2020, codes: { rr: Array.from({ length: 24 }, (_, i) => i + 1) } } })
+    const s = await loadDeSeries('rr', '2019-11-01', '2020-02-01', 7)
+    expect(s.timestamps).toEqual(['2019-11-01T00:00', '2019-12-01T00:00', '2020-01-01T00:00', '2020-02-01T00:00'])
+    expect(s.values).toEqual([null, null, 1, 2])
   })
 })

@@ -1394,6 +1394,7 @@ export function AtClimatePanel() {
                 anomalyUnit={spec.anomalyUnit}
                 signed={anom.signed}
                 refLabel={refLabel}
+                history={historyProps}
                 onClose={() => setSelected(null)}
               />
             )}

@@ -20,6 +20,8 @@ import {
   type Period,
 } from '../api/atValues'
 import type { AtParameterSpec } from '../config/atParameters'
+import { AtPeriodHistory } from './AtPeriodHistory'
+import type { HistoryScope } from './atHistory'
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
@@ -65,8 +67,18 @@ export function DeStationDetail({
   anomalyUnit,
   signed,
   refLabel,
+  history,
   onClose,
 }: {
+  /** Perioden-Historie wie im Österreich-Detail; fehlt im Tag-Zeitbezug und bei Allzeit. */
+  history?: {
+    scope: HistoryScope
+    firstYear: number
+    lastYear: number
+    normal: number | null
+    showAnomaly: boolean
+    refLabel: string
+  }
   station: AtStation
   spec: AtParameterSpec
   period: Period
@@ -132,6 +144,20 @@ export function DeStationDetail({
           Abweichung <strong>{anomText}</strong>
         </span>
       </div>
+      {history && (
+        <AtPeriodHistory
+          country="de"
+          station={station}
+          spec={spec}
+          scope={history.scope}
+          firstYear={history.firstYear}
+          lastYear={history.lastYear}
+          normal={history.normal}
+          showAnomaly={history.showAnomaly}
+          refLabel={history.refLabel}
+          monthNames={MONTHS}
+        />
+      )}
       <div className="atdetail-note">
         DWD-Station {station.id} · Messreihe {fmtDate(station.validFrom)} bis{' '}
         {station.isActive ? 'heute' : fmtDate(station.validTo)} · {station.lat.toFixed(3)}° N,{' '}

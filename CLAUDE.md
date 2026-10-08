@@ -924,7 +924,8 @@ npm run preview   # gebautes dist/ servieren
   Live-Tag Österreichs; Tagesgrenze 00 UTC, Max/Min aus den 10-Minuten-
   EXTREMEN (TX_10/TN_10), nicht aus den Terminwerten. Er ist die Vorgabe
   beim Umschalten. `--today-only` erneuert nur diesen Teil — gedacht für
-  einen häufigeren Lauf; im Deploy-Cron (3 h) ist er so alt wie der Deploy.
+  einen häufigeren Lauf; im Deploy ist er so alt wie der letzte Lauf — der
+  Cron läuft deshalb seit 2026-10-09 STÜNDLICH (vorher alle 3 h).
   **Nach einem lokalen Ingest den Dev-Server neu starten** (siehe
   Modellkarten: neue Dateien in `public/` kennt Vite sonst nicht und liefert
   die Startseite — hier war `today.json` deshalb zuerst „leer").
@@ -999,6 +1000,18 @@ npm run preview   # gebautes dist/ servieren
   Tagesreihe bei GeoSphere. Bekannte Grenze: „Frankfurt" fasst Frankfurt/Main
   und Frankfurt/Oder zu EINEM Ort zusammen (gleicher Namensanfang) — die
   Antwort sagt „in Frankfurt" und nennt beide in der Spanne.
+  **EXAKTER REKORDTAG beim Bauen statt zur Laufzeit**: der Ingest merkt sich
+  je Station und Monat den Tag des höchsten Maximums und tiefsten Minimums
+  (`monthExt`) und hängt ihn an die Rekorde von `tlmax`/`tlmin` — nur wenn der
+  Tageswert den Rekord GENAU trifft (±0,05), sonst bleibt es beim Monat.
+  Gemessen 41.024 von 41.025 aufgelöst. Österreich holt denselben Tag erst
+  beim Fragen bei GeoSphere (`resolveExtremeDay`); für den DWD gibt es
+  dorthin keinen Abruf. Gegenprobe: 41,2 °C Tönisvorst am 25.07.2019.
+  **PERIODEN-HISTORIE im Stationsdetail** wie bei Österreich: der Ingest
+  schreibt je Station die ganze Monatsreihe (`de/series/<id>.json`, ab dem
+  ersten Jahr, je Größe ein flaches Array, 1.184 Dateien, 36 MB),
+  `loadDeSeries` gibt sie in der Form von `fetchStationSeries` zurück, und
+  `AtPeriodHistory` nimmt ein Land (`country`) — dieselbe Zeichnung für beide.
   **GEBIETSMITTEL (Phase 2)** — zweiter Umschalter **Stationen | Gebietsmittel**
   (`api/deRegional.ts`, `DeRegionDetail`): die amtlichen FLÄCHENmittel des DWD
   je Bundesland und für Deutschland (`regional_averages_DE`, aus dem
@@ -1026,7 +1039,7 @@ npm run preview   # gebautes dist/ servieren
   mos-ingest-forecast.mjs`, KMZ→KML-Parser `scripts/lib/mosmix.mjs`, kein externes
   Paket) zu kompakten Pro-Parameter-JSONs (`public/mos/forecast/*.json`, **gitignored**,
   im Build erzeugt) verarbeitet; der Browser lädt sie same-origin (`api/mosApi.ts`).
-  `deploy.yml` läuft dafür zusätzlich alle 3 h (Cron). T2m/Niederschlag/Sonne/
+  `deploy.yml` läuft dafür zusätzlich per Cron (seit 2026-10-09 stündlich). T2m/Niederschlag/Sonne/
   Bewölkung/Wind/**Gefühlte Temperatur** stündlich (+72 h, Zeitschieber),
   Tmin/Tmax täglich. Gefühlte Temperatur wird BEIM INGEST berechnet (dieselbe
   AU-BOM-Formel wie bei den Klimastationen, dupliziert in reinem JS im Skript
@@ -2909,10 +2922,13 @@ npm run preview   # gebautes dist/ servieren
   **Im Deploy**: ECMWF über den Actions-Cache JE LAUF (`--latest` liefert die
   Kennung, `cache/restore`, Ingest nur ohne Treffer mit `--run`, `cache/save`
   NUR bei Erfolg — der kombinierte Schritt speicherte auch halbfertige
-  Stände). ICON ohne Cache (D2 hat bei jedem Cron einen neuen Lauf). Der Cron
-  steht deshalb auf `30 1-22/3`: jeder D2-Lauf ist zehn Minuten nach
-  Fertigstellung online, bei xx:15 zur vollen Dreierstunde wäre er bis zu 6 h
-  alt gewesen. `continue-on-error` überall.
+  Stände). ICON seit dem STÜNDLICHEN Cron (2026-10-09) ebenfalls je Lauf im
+  Cache: `--latest` → restore (mit `restore-keys` auf den vorigen Stand) →
+  Ingest mit ausdrücklichem `--run` (sonst landete ein zwischendurch
+  erschienener Lauf unter dem alten Schlüssel) → save nur bei Erfolg; ohne
+  Cache holte jeder Lauf dieselben ~190 MB neu. Der Cron steht auf
+  `30 * * * *`: die halbe Stunde, damit jeder D2-Lauf (fertig ~HH+1:20) zehn
+  Minuten danach online ist. `continue-on-error` überall.
   **Wertebilder statt Farbbilder**: je Pixel ein 16-Bit-Code in R (hoch) und
   G (tief), `wert = lo + (code − 1) · step`, 0 = kein Wert; `lo`/`step` je
   Größe für ALLE Modelle gleich (`nwp_common.VARIABLES`), damit die

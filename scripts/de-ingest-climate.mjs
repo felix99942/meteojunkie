@@ -478,6 +478,14 @@ async function main() {
 
   // Tagesrekorde: id → code → Block (abs/mon/sea), nur die eine Richtung
   const dayRec = new Map()
+  /**
+   * Je Station und Monat der TAG des höchsten Maximums und des tiefsten
+   * Minimums — damit die Monatsrekorde von `tlmax`/`tlmin` ihr exaktes Datum
+   * bekommen. Der Monatswert dieser Größen IST ein Tagesextrem; Österreich
+   * löst den Tag zur Laufzeit bei GeoSphere auf (`resolveExtremeDay`), für
+   * den DWD gibt es dorthin keinen Abruf, also hier beim Bauen.
+   */
+  const monthExt = new Map() // id → Map('YYYY-MM' → { xv, xd, nv, nd })
   let dropped = 0
   /**
    * PLAUSIBILITÄT wie im Österreich-Ingest: ein Tag mit Minimum ÜBER dem
@@ -533,6 +541,27 @@ async function main() {
       const y = Number(ym.slice(0, 4))
       const m = Number(ym.slice(4, 6))
       const n = daysIn(y, m)
+      // Extremtage des Monats (erstes Auftreten bei Gleichstand)
+      {
+        const ext = { xv: null, xd: null, nv: null, nd: null }
+        const tx = mo.tlmax ?? []
+        const tn = mo.tlmin ?? []
+        for (let i = 0; i < n; i++) {
+          if (tx[i] != null && (ext.xv == null || tx[i] > ext.xv)) {
+            ext.xv = tx[i]
+            ext.xd = `${y}-${pad2(m)}-${pad2(i + 1)}`
+          }
+          if (tn[i] != null && (ext.nv == null || tn[i] < ext.nv)) {
+            ext.nv = tn[i]
+            ext.nd = `${y}-${pad2(m)}-${pad2(i + 1)}`
+          }
+        }
+        if (ext.xd || ext.nd) {
+          let st = monthExt.get(id)
+          if (!st) monthExt.set(id, (st = new Map()))
+          st.set(`${y}-${pad2(m)}`, ext)
+        }
+      }
       const full = (code) => {
         const a = mo[code]
         if (!a) return null
@@ -667,6 +696,8 @@ async function main() {
   const nameById = new Map([...stationMap.values()].map((x) => [x.id, x.name]))
   const national = {}
   let recFiles = 0
+  let resolvedAll = 0
+  let resolvedMiss = 0
   const lift = (target, src, who) => {
     if (src.max && (!target.max || src.max.v > target.max.v)) target.max = { ...src.max, ...who }
     if (src.min && (!target.min || src.min.v < target.min.v)) target.min = { ...src.min, ...who }
@@ -709,6 +740,38 @@ async function main() {
       const ann = emptyMM()
       for (const [y, vals] of annB) if (vals.length === 12) bump(ann, reduce(vals, how), { y })
       const entry = { abs, mon, sea, ann }
+      // Exakter Tag für die Richtung, in der der Monatswert ein Tagesextrem
+      // ist (höchstes Maximum, tiefstes Minimum). Nur wenn der Tageswert den
+      // Rekord GENAU trifft — weicht er ab (andere Datenfassung), bleibt es
+      // beim Monat, statt einen falschen Tag zu nennen.
+      if (code === 'tlmax' || code === 'tlmin') {
+        const dir = code === 'tlmax' ? 'max' : 'min'
+        const ext = monthExt.get(id)
+        const dayOf = (months, v) => {
+          for (const ym of months) {
+            const e = ext?.get(ym)
+            const ev = dir === 'max' ? e?.xv : e?.nv
+            if (ev != null && Math.abs(ev - v) <= 0.05) return dir === 'max' ? e.xd : e.nd
+          }
+          return null
+        }
+        const setDay = (t, months) => {
+          if (!t[dir]) return
+          const d = dayOf(months, t[dir].v)
+          if (d) t[dir] = { ...t[dir], d }
+          else resolvedMiss++
+          resolvedAll++
+        }
+        setDay(abs, [abs[dir]?.d])
+        for (let m = 1; m <= 12; m++) setDay(mon[m - 1], mon[m - 1][dir] ? [`${mon[m - 1][dir].y}-${pad2(m)}`] : [])
+        for (const [i, sid] of SEASON_IDS.entries()) {
+          const y = sea[sid][dir]?.y
+          if (y == null) continue
+          const months = [[3, 4, 5], [6, 7, 8], [9, 10, 11]][i - 1]
+          setDay(sea[sid], sid === 'DJF' ? [`${y - 1}-12`, `${y}-01`, `${y}-02`] : months.map((mm) => `${y}-${pad2(mm)}`))
+        }
+        if (ann[dir]) setDay(ann, Array.from({ length: 12 }, (_, i) => `${ann[dir].y}-${pad2(i + 1)}`))
+      }
       const dayBlock = dayRec.get(id)?.[code]
       if (dayBlock && (dayBlock.abs.max || dayBlock.abs.min)) entry.day = { ...dayBlock, ann: dayBlock.abs }
       perCode[code] = entry
@@ -736,6 +799,38 @@ async function main() {
   )
   const idx = await buildRecordIndexes(join(tmp, 'records'), { source: OBS, since: FIRST_YEAR })
   console.log(`  ${recFiles} Stationsdateien, Index: ${idx.join(', ')}; ${dropped} Tage mit Minimum über Maximum verworfen`)
+  console.log(`  Rekordtag gefunden für ${resolvedAll - resolvedMiss} von ${resolvedAll} Temperatur-Rekorden (Rest: nur Monat bekannt)`)
+
+  // 5c) Monatsreihe je Station — für die Perioden-Historie im Stationsdetail
+  //     (dieselbe Darstellung wie bei Österreich, wo sie GeoSphere je Klick
+  //     liefert). Kompakt: ab dem ersten Jahr, je Größe ein flaches Array mit
+  //     12 Werten pro Jahr, Lücken als null.
+  await mkdir(join(tmp, 'series'), { recursive: true })
+  let seriesBytes = 0
+  for (const [id, st] of monthly) {
+    const years = [...st.keys()].sort((a, b) => a - b)
+    const from = years[0]
+    const to = years[years.length - 1]
+    const codes = {}
+    for (const code of MONTHLY_CODES) {
+      const arr = new Array((to - from + 1) * 12).fill(null)
+      let any = false
+      for (const [y, c] of st) {
+        const a = c[code]
+        if (!a) continue
+        for (let m = 0; m < 12; m++) {
+          if (a[m] == null) continue
+          arr[(y - from) * 12 + m] = a[m]
+          any = true
+        }
+      }
+      if (any) codes[code] = arr
+    }
+    const json = JSON.stringify({ from, codes })
+    seriesBytes += json.length
+    await writeFile(join(tmp, 'series', `${id}.json`), json)
+  }
+  console.log(`  Reihen je Station: ${monthly.size} Dateien, ${(seriesBytes / 1048576).toFixed(1)} MB`)
 
   // 6) Stationen: nur die mit Werten; aktiv = im laufenden Tagesdatensatz
   const withData = new Set([...monthly.keys(), ...runningIds])
