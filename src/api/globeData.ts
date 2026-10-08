@@ -8,7 +8,7 @@
 // ARBEITSSPEICHER: ein dekodiertes Feld sind 1,8–2 MB Codes, ein Lauf über
 // alle Größen wären Hunderte MB. Deshalb ein kleiner LRU über die Felder.
 
-import { decodeCodes, decodeRgb3, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import { decodeCodes, decodeRgb3, decodeUv8, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
 
 const BASE = `${import.meta.env.BASE_URL}nwp/`
 
@@ -74,6 +74,9 @@ export function loadGlobeField(model: GlobeModelId, runId: string, varId: GlobeV
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const { data, w, h } = await decodeImage(await r.blob())
     if (w !== meta.grid.ni || h !== meta.grid.nj) throw new Error(`Raster ${w}×${h} statt ${meta.grid.ni}×${meta.grid.nj}`)
+    if (vm.encoding === 'uv8') {
+      return { grid: meta.grid, lo: vm.lo, step: vm.step, codes: new Uint16Array(0), uv: decodeUv8(data, w * h) }
+    }
     if (vm.encoding === 'rgb3') {
       return { grid: meta.grid, lo: vm.lo, step: vm.step, codes: new Uint16Array(0), rgb: decodeRgb3(data, w * h) }
     }

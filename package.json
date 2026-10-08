@@ -24,6 +24,7 @@
     "ingest:icon-eu": "python3 scripts/icon-ingest.py icon-eu",
     "build:relief": "node scripts/build-relief.mjs",
     "build:ground": "node scripts/build-ground.mjs",
+    "build:labels": "node scripts/build-labels.mjs",
     "ingest:at:recidx": "node scripts/at-build-record-index.mjs"
   },
   "dependencies": {

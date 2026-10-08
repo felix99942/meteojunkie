@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   decodeCodes,
+  decodeUv8,
   GLOBE_VARIABLES,
   getGlobeModel,
   globeFreshness,
@@ -8,6 +9,7 @@ import {
   intervalHours,
   nearestStepIndex,
   sampleField,
+  sampleWind,
   tilePixelLat,
   tilePixelLon,
   type GlobeField,
@@ -230,5 +232,28 @@ describe('Registry', () => {
     const stops = GLOBE_VARIABLES.find((v) => v.id === 't2m')!.scale.stops
     expect(stops[0].value).toBe(-54)
     expect(stops[stops.length - 1].value).toBe(50)
+  })
+})
+
+describe('Windkomponenten (uv8)', () => {
+  const grid: GlobeGrid = { ni: 2, nj: 2, lon0: 0, lat0: 0, dlon: 1, dlat: 1, global: false }
+  // Zelle → [u, v] in m/s als Code (code − 128) · 0,5
+  const code = (u: number, v: number) => [u / 0.5 + 128, v / 0.5 + 128]
+  const rgba = (cells: number[][]) => cells.flatMap(([u, v]) => [u, v, 0, 255])
+  it('dekodiert R = u, G = v', () => {
+    expect([...decodeUv8(rgba([code(5, -3)]), 1)]).toEqual(code(5, -3))
+  })
+  it('interpoliert bilinear und rechnet in m/s um', () => {
+    const uv = decodeUv8(rgba([code(0, 0), code(10, 0), code(0, 4), code(10, 4)]), 4)
+    const f: GlobeField = { grid, lo: -63.5, step: 0.5, codes: new Uint16Array(0), uv }
+    const w = sampleWind(f, 0.5, 0.5)!
+    expect(w[0]).toBeCloseTo(5)
+    expect(w[1]).toBeCloseTo(2)
+  })
+  it('kein Wert, sobald ein Nachbar fehlt oder der Punkt außerhalb liegt', () => {
+    const uv = decodeUv8(rgba([code(0, 0), [0, 0], code(0, 4), code(10, 4)]), 4)
+    const f: GlobeField = { grid, lo: -63.5, step: 0.5, codes: new Uint16Array(0), uv }
+    expect(sampleWind(f, 0.5, 0.5)).toBeNull()
+    expect(sampleWind(f, 5, 5)).toBeNull()
   })
 })

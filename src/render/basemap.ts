@@ -46,9 +46,16 @@ export const BASE_STYLE: StyleSpecification = {
     borders: { type: 'geojson', data: EMPTY_FC },
     admin1: { type: 'geojson', data: EMPTY_FC },
     graticule: { type: 'geojson', data: EMPTY_FC },
+    land: { type: 'geojson', data: EMPTY_FC },
   },
   layers: [
     { id: 'background', type: 'background', paint: { 'background-color': '#131418' } },
+    // Landfläche: nur der Globus füllt sie (Welt-Bündel), die übrigen Karten
+    // lassen die Quelle leer. Liegt UNTER dem Feld — sichtbar ist sie nur, wo
+    // das Feld durchsichtig ist (kein Niederschlag, klarer Himmel, außerhalb
+    // der Regionalmodelle). Bewusst knapp über dem Meer: Land und Wasser
+    // sollen unterscheidbar sein, ohne mit den Farbskalen zu konkurrieren.
+    { id: 'land', type: 'fill', source: 'land', paint: { 'fill-color': '#22252b', 'fill-antialias': false } },
     {
       id: 'graticule',
       type: 'line',
@@ -117,6 +124,8 @@ export interface BasemapData {
   borders?: FeatureCollection
   /** Bundesland-/Regionsgrenzen — nur in der Österreich- und der Radar-Fläche. */
   admin1?: FeatureCollection
+  /** Landflächen (Polygone) — nur im Welt-Bündel. */
+  land?: FeatureCollection
 }
 
 const BASEMAP_URLS: Record<string, string> = {

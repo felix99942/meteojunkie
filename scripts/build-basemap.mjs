@@ -11,6 +11,11 @@ const SOURCES = {
   // Bundesland-/Regionsgrenzen: 1:10m für ausreichende Detailtreue — nur für
   // die Österreich-Domain und den Radarbereich (über ganz Europa wäre es Rauschen)
   admin1: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces_lines.geojson',
+  // Landflächen (Polygone) für den Globus: Land hebt sich vom Meer ab. Sichtbar
+  // nur, wo das Feld durchsichtig ist (kein Niederschlag, klarer Himmel,
+  // außerhalb der Regionalmodelle). 1:50m wie die Küstenlinie, damit die
+  // Flächenkante exakt unter der Linie liegt.
+  land: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson',
 }
 
 const DOMAINS = {
@@ -23,7 +28,7 @@ const DOMAINS = {
   // Globus: die ganze Erde, Küsten und Staatsgrenzen in 1:50m. Gerundet auf
   // 0,01° (~1 km) statt 0,001° — 1:50m ist ohnehin nicht genauer, und mit
   // drei Nachkommastellen wäre das Bündel fast doppelt so groß.
-  world: { latMin: -90, lonMin: -180, latMax: 90, lonMax: 180, margin: 0, layers: ['coast', 'borders'], decimals: 2 },
+  world: { latMin: -90, lonMin: -180, latMax: 90, lonMax: 180, margin: 0, layers: ['coast', 'borders', 'land'], decimals: 2 },
 }
 
 /**
@@ -71,6 +76,38 @@ function clipLines(geojson, bbox, keepFeature = () => true) {
   }
 }
 
+/**
+ * Polygone nur runden, nicht zuschneiden — es gibt sie nur im Welt-Bündel.
+ * Aufeinanderfolgende gleiche Punkte (nach dem Runden) fallen weg; Ringe, die
+ * dabei unter vier Punkte schrumpfen (winzige Inseln), entfallen ganz.
+ */
+function roundPolygons(geojson, decimals) {
+  const f = 10 ** decimals
+  const round = (v) => Math.round(v * f) / f
+  const ring = (r) => {
+    const out = []
+    for (const [lon, lat] of r) {
+      const p = [round(lon), round(lat)]
+      const last = out[out.length - 1]
+      if (!last || last[0] !== p[0] || last[1] !== p[1]) out.push(p)
+    }
+    return out.length >= 4 ? out : null
+  }
+  const features = []
+  for (const feat of geojson.features) {
+    const g = feat.geometry
+    if (!g) continue
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []
+    for (const poly of polys) {
+      const outer = ring(poly[0])
+      if (!outer) continue
+      const holes = poly.slice(1).map(ring).filter(Boolean)
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [outer, ...holes] } })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}
+
 const needed = new Set(
   Object.entries(DOMAINS)
     .filter(([id]) => process.argv.length <= 2 || process.argv.slice(2).includes(id))
@@ -103,7 +140,7 @@ for (const [id, bbox] of Object.entries(DOMAINS)) {
       layer === 'admin1' && ADMIN1_COUNTRIES.size > 0
         ? (f) => ADMIN1_COUNTRIES.has(f.properties?.ADM0_A3)
         : undefined
-    out[layer] = clipLines(raw[layer], clip, keep)
+    out[layer] = layer === 'land' ? roundPolygons(raw[layer], bbox.decimals ?? 3) : clipLines(raw[layer], clip, keep)
   }
   const path = `${outDir}${id}.basemap.json`
   const json = JSON.stringify(out)

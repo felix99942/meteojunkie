@@ -114,6 +114,12 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals * 1000.0  # m → mm, doppelt genau (wird differenziert)
+        elif name == 'tcc':
+            # ECMWF Open Data führt die Bedeckung als ANTEIL 0–1, nicht in %
+            # (gemessen 2026-10-08: min 0, max 1, Mittel 0,66). Ohne den Faktor
+            # rundete die 5-%-Kodierung alles auf 0 — die IFS-Bewölkung stand
+            # überall auf wolkenlos.
+            out[name] = (vals * 100.0).astype(np.float32)
         else:
             out[name] = vals.astype(np.float32)
         if name == 'gust':

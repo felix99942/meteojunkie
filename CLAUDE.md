@@ -2650,7 +2650,12 @@ npm run preview   # gebautes dist/ servieren
   `.index` (JSON-Zeilen mit `_offset`/`_length`) — je Feld nur sein
   Byte-Bereich (0,5–0,9 MB). 00/12 UTC bis +360 h (3 h bis 144, dann 6 h),
   06/18 UTC nur +90 h und NICHT genommen. Verzug ~7,5 h. Raster 1440×721,
-  Nord → Süd. **Die Böe wechselt den Namen** (`10fg` bis +90 und ab +150,
+  Nord → Süd. **Die Bewölkung `tcc` kommt als ANTEIL 0–1, nicht in %** (gemessen
+  2026-10-08, Mittel 0,66) — die 5-%-Kodierung rundete sie bis dahin überall
+  auf 0, die IFS-Bewölkung zeigte die ganze Erde wolkenlos, ohne dass etwas
+  fehlte; der Ingest-Bericht stand bei „0,0 MB" (ein konstantes Bild ist
+  winzig). Jetzt ×100 in `ecmwf-ingest.py`. ICON liefert % und ist nicht
+  betroffen. **Die Böe wechselt den Namen** (`10fg` bis +90 und ab +150,
   `10fg3` von +93 bis +144, `PARAM_ALIASES`). **Das Netz TRÖPFELT**: derselbe
   Byte-Bereich kam mit 7,8 MB/s und mit 90 KB/s; ein Socket-Timeout greift
   nicht, deshalb `DEADLINE_S` = 8 s Gesamtfrist mit Neuversuch (halbierte die
@@ -2760,10 +2765,67 @@ npm run preview   # gebautes dist/ servieren
   Kastenfilter Kästchen — alles im Browser gesehen.
   Bewölkung in 5-%-Stufen gespeichert: in 1-%-Schritten verrauscht, die
   Schichten kosteten 639 KB je Bild (jetzt ~400–520 KB).
-  **STÄDTE UND BUNDESLÄNDER** in Europa und Alpen (`render/cityMarkers.ts`):
-  die Hauptstädte der Domain `europe` plus die ~130 Orte der Pseudo-Domain
-  `imagery` mit der Zoomleiter der Bildkarten; Bundesländer/Kantone aus dem
-  `dach`-Bündel. Auf der Kugel keins von beidem.
+  **WINDPARTIKEL** (`render/windParticles.ts` mit Tests, Schalter
+  „Windpartikel", eingeschaltet beim Wechsel auf Wind oder Böen): die Strömung
+  des 10-m-Winds als bewegte Spuren über JEDER Größe, wie bei Windy. Daten
+  sind das neue Feld **`uv10`** (`encoding: 'uv8'`, R = u, G = v, je
+  (code − 128) · 0,5 m/s, 0 = kein Wert, ±63,5 m/s geklemmt; `sampleWind` in
+  `config/globe.ts`) — vorher speicherten die Ingests nur den Betrag,
+  Richtung gab es nicht. Gemessen ICON-D2 ~260 KB je Bild, 13 MB je Lauf.
+  `already_done` im Ingest prüft seither auch, ob jede Pflichtgröße in der
+  Meta steht, sonst würde ein schon abgelegter Lauf ohne `uv10` nie
+  nachgeholt; der ECMWF-Cache-Schlüssel ist dafür auf `v3` gesprungen.
+  **Verfahren im BILDSCHIRMRAUM (nullschool-Art), kein WebGL-Layer**: nach
+  jeder Kamerabewegung einmal ein Geschwindigkeitsraster über die Sicht (je
+  8 px: `unproject`, Wind, Projektionsableitung über zwei Nachbarpunkte →
+  Pixel je Frame), danach laufen die Partikel nur noch im Bild. Damit ist die
+  Projektion gleich — auf der Kugel krümmen sich die Bahnen richtig, ohne dass
+  die Animation Globus und Mercator selbst können muss. Neben der Kugel
+  erkennt man ungültige Punkte an der Rückprojektion. Gemessen (Headless,
+  Software-Rendering): Raster 187×96 in 13–22 ms, Animation 61 fps. Während
+  der Bewegung ruht sie (das Raster gilt für einen Kamerastand). **Das Tempo
+  ist ZOOMUNABHÄNGIG** (1,4 px/Frame bei 10 m/s): maßstäblich sind Richtung
+  und Verhältnis der Tempi, nicht die absolute Geschwindigkeit — sonst stünden
+  die Partikel auf dem Globus still und rasten über den Alpen. Den Betrag
+  zeigt die Größe „Wind 10 m". Weiße Spuren, Deckkraft und Breite nach fünf
+  Tempostufen; das Canvas liegt direkt über der Kartenzeichenfläche, unter
+  Städten und Bedienelementen.
+  **BESCHRIFTUNG UND LANDFLÄCHEN in ALLEN Ansichten, auch auf der Kugel**
+  (`render/worldLabels.ts` mit Tests, Daten `src/mapdata/world.labels.json`
+  aus `scripts/build-labels.mjs`, npm `build:labels`): ~6.900 Städte,
+  242 Länder und 79 Meere aus Natural Earth, mit DEUTSCHEN Namen
+  (`NAME_DE`), dazu die kuratierten Orte aus `config/cities.ts` (Alpenorte,
+  Regionalzentren — gleicher Name < 30 km zählt einmal, mit dem früheren
+  Zoom). **Länder- und Meeresnamen kommen SPÄTER als bei Natural Earth**
+  (`displayMinZoom`: Länder +1,5 Stufen und nicht vor Zoom 3, Meere +1) und
+  sind blass, Flächennamen halten zusätzlich Abstand vom Kugelrand
+  (`FACING_MIN`) — auf Wunsch: mit Natural-Earth-Stufen war die ganze Kugel
+  voller Ländernamen, die über den Rand ins All ragten. Auf der Kugel stehen
+  jetzt Grenzen und große Städte, die Länder erst beim Hineinzoomen.
+  Länder in gesperrten Versalien, Meere kursiv bläulich, Hauptstädte
+  mit eckigem Punkt — Atlas-Konvention, damit Flächennamen nicht wie Orte
+  aussehen. **Ausgedünnt nach PLATZ, nicht nur nach Zoom**: nach jeder
+  Bewegung (`moveend`) wird neu entschieden — Rangfolge = ab welchem Zoom
+  (Natural Earth `MIN_ZOOM`, eine Stufe abgezogen: NE rechnet in
+  256-px-Kacheln, MapLibre in 512), bei Gleichstand Land vor Meer vor
+  Hauptstadt vor Stadt; gesetzt wird nur, was ganz im Bild liegt, auf der
+  zugewandten Kugelseite steht, auf dem Globus mit ALLEN VIER ECKEN auf der
+  Kugel liegt (Rückprojektion, sonst ragten Namen ins All) und nichts schon
+  Gesetztes überdeckt, höchstens
+  220 Marker (MapLibre verschiebt jeden Marker bei jedem Frame). Bedienelemente
+  über der Karte (Pfeile, Legende, Werteanzeige, Zoomknöpfe) zählen als
+  belegt. Zwei Fallen, beide gesehen: die Bildkarten-Zoomleiter begann bei 0 —
+  Köln (Priorität 1) stand auf dem Globus ab Zoom 0 und verdrängte
+  „Deutschland" und Berlin, deshalb beginnt sie hier bei 4 (Test); und die
+  Amundsen-Scott-Station (−90°) erschien in Mercator am OBEREN Bildrand,
+  deshalb nur |Breite| ≤ 85°. **Landflächen** (Natural Earth 1:50m, im
+  Welt-Bündel, Layer `land` in `BASE_STYLE`, für die übrigen Karten leer)
+  liegen UNTER dem Feld und sind nur sichtbar, wo es durchsichtig ist (kein
+  Niederschlag, klarer Himmel, außerhalb der Regionalmodelle) — dort war
+  vorher Land nicht von Meer zu unterscheiden. Preis: das Welt-Bündel wächst
+  von ~350 auf ~620 KB gzip, die Beschriftung kostet ~90 KB gzip; beides nur
+  im Modellkarten-Bereich geladen. Bundesländer/Kantone weiter aus dem
+  `dach`-Bündel, nur in den flachen Ansichten.
   **DURCHBLÄTTERN — gemessen, wohin die Zeit geht** (2026-10-05, Headless mit
   Software-Rendering, also eher zu langsam): je Zeitschritt beim IFS-Globus
   mit Isobaren ~690 ms für 17 Isolinien-Kacheln, ~315 ms für das Erzeugen der

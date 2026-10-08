@@ -19,7 +19,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
 import { CLOUD_LAYER_RAMPS, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
 import { globeIsoUrl, registerGlobeProtocol } from '../render/globeProtocol'
-import { addCityMarkers } from '../render/cityMarkers'
+import { addWorldLabels } from '../render/worldLabels'
+import { WindParticles } from '../render/windParticles'
 import { starTileDataUrl } from '../render/starfield'
 import { loadGlobeField, loadGlobeMeta, setGlobeMeta } from '../api/globeData'
 import {
@@ -37,6 +38,7 @@ import {
   runMs,
   sampleField,
   sampleRgb3,
+  sampleWind,
   validMs,
   type ContourId,
   type GlobeField,
@@ -108,6 +110,8 @@ export function GlobePanel() {
   const [readout, setReadout] = useState<{ lat: number; lon: number } | null>(null)
   /** Isolinien als eigene Ebenen über JEDER Größe — Isobaren sind die Vorgabe. */
   const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false })
+  /** Windpartikel (Strömung als Bewegung) — eingeschaltet, sobald eine Windgröße gewählt wird. */
+  const [particles, setParticles] = useState(false)
 
   const model = getGlobeModel(modelId)
   const view = GLOBE_VIEWS.find((v) => v.id === viewId) ?? GLOBE_VIEWS[0]
@@ -146,6 +150,12 @@ export function GlobePanel() {
   // Wechsel eingeschaltet, abschalten bleibt danach möglich
   useEffect(() => {
     if (varId === 'msl' || varId === 'gh500') setContours((c) => (c[varId] ? c : { ...c, [varId]: true }))
+  }, [varId])
+
+  // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
+  // eingeschaltet, abschalten bleibt danach möglich
+  useEffect(() => {
+    if (varId === 'wind10' || varId === 'gust') setParticles(true)
   }, [varId])
 
   // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück
@@ -197,7 +207,7 @@ export function GlobePanel() {
     else map.jumpTo({ center: [11, 38], zoom: 2 })
   }, [mapReady, view])
 
-  // Hintergrund: Weltküsten und Staatsgrenzen; Bundesländer/Kantone nur in
+  // Hintergrund: Landflächen, Weltküsten und Staatsgrenzen; Bundesländer/Kantone nur in
   // den flachen Ansichten (auf der Kugel wären sie bei Zoom 2 nur ein Fleck)
   useEffect(() => {
     const map = mapRef.current
@@ -211,6 +221,7 @@ export function GlobePanel() {
         if (cancelled || mapRef.current !== map) return
         ;(map.getSource('coast') as maplibregl.GeoJSONSource).setData(bm.coast ?? EMPTY_FC)
         ;(map.getSource('borders') as maplibregl.GeoJSONSource).setData(bm.borders ?? EMPTY_FC)
+        ;(map.getSource('land') as maplibregl.GeoJSONSource).setData(bm.land ?? EMPTY_FC)
       })
       .catch((err: unknown) => console.error('[basemap world]', err))
     const admin1 = map.getSource('admin1') as maplibregl.GeoJSONSource
@@ -245,13 +256,13 @@ export function GlobePanel() {
     }
   }, [mapReady, view.id])
 
-  // Städte nur in den flachen Ansichten — auf der Kugel bei Zoom 2 wären es
-  // Flecken ohne Ortsbezug
+  // Beschriftung (Städte, Länder, Meere) in allen Ansichten — ausgedünnt nach
+  // Zoom und Platz, auf der Kugel nur die zugewandte Seite
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || view.id === 'globe') return
-    return addCityMarkers(map)
-  }, [mapReady, view.id])
+    if (!map || !mapReady) return
+    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-readout, .maplibregl-ctrl-top-right')
+  }, [mapReady])
 
   // NEUESTER STAND GEWINNT: solange die Kacheln eines Schritts noch laden,
   // wird der nächste nur VORGEMERKT; ist die Karte fertig („idle"), springt sie
@@ -363,6 +374,37 @@ export function GlobePanel() {
     isoModelRef.current = modelId
   }, [mapReady, meta, modelId, model.maxzoom, contours, step, run, queueTiles])
 
+  // Windpartikel: eine Animation über der Karte, gespeist aus den
+  // Windkomponenten (`uv10`) zur selben Gültigkeitszeit wie das Feld
+  const particlesRef = useRef<WindParticles | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const wp = new WindParticles(map)
+    particlesRef.current = wp
+    return () => {
+      wp.destroy()
+      particlesRef.current = null
+    }
+  }, [mapReady])
+  const uvMeta = meta?.variables.uv10
+  const uvStep = meta && uvMeta && step != null ? uvMeta.steps[nearestStepIndex(uvMeta.steps, run, validMs(meta, step))] : undefined
+  useEffect(() => {
+    const wp = particlesRef.current
+    if (!wp) return
+    if (!particles || !meta || uvStep == null) {
+      wp.setSampler(null)
+      return
+    }
+    let cancelled = false
+    loadGlobeField(modelId, meta.runId, 'uv10', uvStep)
+      .then((f) => !cancelled && wp.setSampler((lat, lon) => sampleWind(f, lat, lon)))
+      .catch(() => !cancelled && wp.setSampler(null))
+    return () => {
+      cancelled = true
+    }
+  }, [mapReady, particles, meta, modelId, uvStep])
+
   // Aktuelles Feld für die Werteanzeige + Vorladen der nächsten Schritte
   useEffect(() => {
     if (!meta || step == null) return
@@ -380,6 +422,7 @@ export function GlobePanel() {
     // wenn ihre Kacheln gefragt werden
     const ahead = [1, 2, 3, -1].slice(0, PREFETCH_AHEAD + 1)
     const vars: GlobeVarId[] = [varId, ...CONTOURS.filter((c) => contours[c.id] && meta.variables[c.id]).map((c) => c.id)]
+    if (particles && meta.variables.uv10) vars.push('uv10')
     for (const v of vars) {
       const vsteps = meta.variables[v]?.steps ?? []
       const base = nearestStepIndex(vsteps, run, validMs(meta, step))
@@ -391,7 +434,7 @@ export function GlobePanel() {
     return () => {
       cancelled = true
     }
-  }, [meta, modelId, varId, step, idx, steps, contours, run])
+  }, [meta, modelId, varId, step, idx, steps, contours, particles, run])
 
   // Abspielen: weiter, sobald das AKTUELLE Feld da ist — so überholt die
   // Schleife nie die Daten, und bei langsamem Netz wird sie langsamer statt leer.
@@ -546,6 +589,22 @@ export function GlobePanel() {
               {c.label}
             </label>
           ))}
+          <label
+            className="radar-opt"
+            title={
+              meta && !meta.variables.uv10
+                ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
+                : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist für jede Zoomstufe gleich gewählt — den Betrag zeigt die Größe „Wind 10 m".'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={particles}
+              disabled={!meta?.variables.uv10}
+              onChange={(e) => setParticles(e.target.checked)}
+            />{' '}
+            Windpartikel
+          </label>
         </span>
         <button
           type="button"
@@ -722,7 +781,7 @@ export function GlobePanel() {
             )
           </>
         )}
-        , beim Bauen der Seite übernommen · Küsten und Grenzen: Natural Earth. Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
+        , beim Bauen der Seite übernommen · Küsten, Grenzen und Namen: Natural Earth. Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
       </span>
     </div>
   )

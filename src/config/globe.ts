@@ -18,7 +18,12 @@
 
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
-export type GlobeVarId = 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'tcc' | 'clouds'
+/**
+ * `uv10` ist keine wählbare Größe, sondern die Datenquelle der
+ * Windpartikel (Windkomponenten, `encoding: 'uv8'`) — sie steht deshalb nicht
+ * in `GLOBE_VARIABLES`.
+ */
+export type GlobeVarId = 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'tcc' | 'clouds' | 'uv10'
 
 export interface GlobeVariable {
   id: GlobeVarId
@@ -315,8 +320,11 @@ export interface GlobeVarMeta {
    * IFS bis +90 h der letzten Stunde, dann 3 bzw. 6 h.
    */
   intervals?: number[]
-  /** 'rgb3' = Wolkenschichten, drei Kanäle in % statt eines Codes */
-  encoding?: 'rgb3'
+  /**
+   * 'rgb3' = Wolkenschichten, drei Kanäle in % statt eines Codes;
+   * 'uv8' = Windkomponenten, R = u, G = v, je (code − 128) · 0,5 m/s, 0 = kein Wert
+   */
+  encoding?: 'rgb3' | 'uv8'
 }
 
 /** Intervall (h) des Werts zum Schritt, oder undefined für Termingrößen. */
@@ -344,6 +352,49 @@ export interface GlobeField {
   codes: Uint16Array
   /** Nur Wolkenschichten: je Zelle [mittel, hoch, tief] in %, 255 = kein Wert. */
   rgb?: Uint8Array
+  /** Nur Windkomponenten: je Zelle [u, v] als Code, (code − 128) · 0,5 m/s, 0 = kein Wert. */
+  uv?: Uint8Array
+}
+
+/** RGBA-Pixel eines Windbilds → je Zelle [u, v] als 8-Bit-Code (R = u, G = v). */
+export function decodeUv8(rgba: ArrayLike<number>, count: number): Uint8Array {
+  const out = new Uint8Array(count * 2)
+  for (let i = 0; i < count; i++) {
+    out[2 * i] = rgba[4 * i]
+    out[2 * i + 1] = rgba[4 * i + 1]
+  }
+  return out
+}
+
+/**
+ * Wind (u nach Osten, v nach Norden, m/s) an (lat, lon), bilinear, oder null
+ * außerhalb des Gitters bzw. sobald ein Nachbar keinen Wert hat — dieselbe
+ * Regel wie `sampleField`.
+ */
+export function sampleWind(f: GlobeField, lat: number, lon: number): [number, number] | null {
+  const uv = f.uv
+  if (!uv) return null
+  const { ni, nj } = f.grid
+  const gx = gridX(f.grid, lon)
+  const gy = gridY(f.grid, lat)
+  if (gx == null || gy == null) return null
+  const ix0 = Math.min(f.grid.global ? ni - 1 : ni - 2, Math.floor(gx))
+  const ix1 = ix0 + 1 === ni ? 0 : ix0 + 1
+  const iy0 = Math.min(nj - 2, Math.floor(gy))
+  const fx = gx - ix0
+  const fy = gy - iy0
+  const i00 = 2 * (iy0 * ni + ix0)
+  const i01 = 2 * (iy0 * ni + ix1)
+  const i10 = 2 * ((iy0 + 1) * ni + ix0)
+  const i11 = 2 * ((iy0 + 1) * ni + ix1)
+  if (uv[i00] === 0 || uv[i01] === 0 || uv[i10] === 0 || uv[i11] === 0) return null
+  const w00 = (1 - fx) * (1 - fy)
+  const w01 = fx * (1 - fy)
+  const w10 = (1 - fx) * fy
+  const w11 = fx * fy
+  const u = uv[i00] * w00 + uv[i01] * w01 + uv[i10] * w10 + uv[i11] * w11
+  const v = uv[i00 + 1] * w00 + uv[i01 + 1] * w01 + uv[i10 + 1] * w10 + uv[i11 + 1] * w11
+  return [(u - 128) * 0.5, (v - 128) * 0.5]
 }
 
 /** RGBA-Pixel eines Schichtenbilds → je Zelle drei Bedeckungen (R mittel, G hoch, B tief). */

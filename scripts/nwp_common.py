@@ -26,6 +26,12 @@ Ausnahme `clouds` (`encoding: 'rgb3'`): drei Schichten in EINEM Bild, je
 Kanal die Bedeckung in % (0–100) — R = mittel, G = hoch, B = tief, 255 = kein
 Wert. So liegt die Farbmischung der Anzeige (hoch grün, mittel rot, tief
 blau) schon in den Kanälen.
+Ausnahme `uv10` (`encoding: 'uv8'`): die WINDKOMPONENTEN für die
+Partikel-Animation, R = u (nach Osten), G = v (nach Norden), je 8 Bit:
+wert = (code − 128) · 0,5 m/s, 0 = kein Wert, Bereich ±63,5 m/s (darüber
+geklemmt — die Animation zeigt Richtung und Tempo, die Zahl steht im Feld
+`wind10`). 8 statt 16 Bit, weil 0,5 m/s für eine Strömungsbewegung reichen
+und das Bild so klein bleibt.
 """
 
 from __future__ import annotations
@@ -62,13 +68,14 @@ VARIABLES = {
     # ist das Feld verrauscht — gemessen ICON-D2 Schichten 639 KB je Bild
     'tcc': {'lo': 0.0, 'step': 5.0, 'unit': '%'},
     'clouds': {'lo': 0.0, 'step': 5.0, 'unit': '%', 'encoding': 'rgb3'},
+    'uv10': {'lo': -63.5, 'step': 0.5, 'unit': 'm/s', 'encoding': 'uv8'},
 }
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
 NEEDS = {
     't2m': ('t2m',), 't850': ('t850',), 'msl': ('msl',), 'precip': ('tp',),
     'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',), 'tcc': ('tcc',),
-    'clouds': ('clch', 'clcm', 'clcl'),
+    'clouds': ('clch', 'clcm', 'clcl'), 'uv10': ('u10', 'v10'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
 OPTIONAL = {'gust', 'precip', 'clouds'}
@@ -184,6 +191,8 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
     if var == 'clouds':
         import numpy as np
         return np.stack([f['clcm'], f['clch'], f['clcl']], axis=-1)
+    if var == 'uv10':
+        return np.stack([f['u10'], f['v10']], axis=-1)
     raise KeyError(var)
 
 
@@ -196,6 +205,21 @@ def encode_rgb3(values) -> bytes:
     v = np.where(np.isfinite(values), v, 255).astype(np.uint8)
     buf = io.BytesIO()
     Image.fromarray(v, 'RGB').save(buf, 'WEBP', lossless=True, method=4)
+    return buf.getvalue()
+
+
+def encode_uv8(values) -> bytes:
+    """Windkomponenten (NJ×NI×2, m/s) → RGB-WebP, R = u, G = v, je (code − 128) · 0,5, 0 = kein Wert."""
+    import numpy as np
+    from PIL import Image
+
+    code = np.clip(np.round(values / 0.5) + 128, 1, 255)
+    ok = np.isfinite(values).all(axis=-1, keepdims=True)
+    code = np.where(ok, code, 0).astype(np.uint8)
+    rgb = np.zeros(values.shape[:-1] + (3,), np.uint8)
+    rgb[..., :2] = code
+    buf = io.BytesIO()
+    Image.fromarray(rgb, 'RGB').save(buf, 'WEBP', lossless=True, method=4)
     return buf.getvalue()
 
 
@@ -223,7 +247,11 @@ def already_done(model: str, rid: str, step_count: int) -> bool:
     if not meta.exists():
         return False
     old = json.loads(meta.read_text())
-    return old.get('runId') == rid and old.get('stepCount') == step_count and (OUT_ROOT / model / rid).is_dir()
+    # Eine neu hinzugekommene Größe (z. B. `uv10`) fehlt einem schon
+    # abgelegten Lauf — dann muss er neu erzeugt werden, sonst bliebe sie bis
+    # zum nächsten Lauf weg
+    complete = all(v in old.get('variables', {}) for v in VARIABLES if v not in OPTIONAL)
+    return complete and old.get('runId') == rid and old.get('stepCount') == step_count and (OUT_ROOT / model / rid).is_dir()
 
 
 def ingest(
@@ -255,7 +283,12 @@ def ingest(
 
     def write(var: str, step: int, values) -> None:
         spec = VARIABLES[var]
-        data = encode_rgb3(values) if spec.get('encoding') == 'rgb3' else encode(values, spec['lo'], spec['step'])
+        enc = spec.get('encoding')
+        data = (
+            encode_rgb3(values) if enc == 'rgb3'
+            else encode_uv8(values) if enc == 'uv8'
+            else encode(values, spec['lo'], spec['step'])
+        )
         path = tmp / var / f'{step:03d}.webp'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

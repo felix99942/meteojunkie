@@ -1694,6 +1694,55 @@ button:focus-visible {
     0 0 5px rgba(0, 0, 0, 0.9);
 }
 
+/* MODELLKARTEN: Hauptstädte etwas kräftiger, dazu Länder- und Meeresnamen
+   (`render/worldLabels.ts`). Länder in gesperrten Versalien, Meere kursiv und
+   bläulich — dieselbe Unterscheidung wie im Atlas, damit man sie nicht für
+   Ortsnamen hält. Beide ohne Punkt: sie benennen eine Fläche, keinen Ort. */
+.radar-container .city-capital .city-dot {
+  border-radius: 1px;
+  background: #ffffff;
+}
+
+.radar-container .city-capital .city-label {
+  font-weight: 700;
+}
+
+.world-label {
+  pointer-events: none;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 3px #000,
+    0 -1px 3px #000,
+    1px 0 3px #000,
+    -1px 0 3px #000;
+}
+
+.world-country {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  /* blass: Ländernamen ordnen, sie sollen nicht mit Städten und Feld
+     konkurrieren */
+  color: rgba(214, 219, 227, 0.5);
+}
+
+.world-sea {
+  font-size: 11px;
+  font-style: italic;
+  letter-spacing: 0.05em;
+  color: rgba(143, 180, 216, 0.7);
+}
+
+/* Windpartikel (`render/windParticles.ts`): eigenes Canvas direkt über der
+   Kartenzeichenfläche, unter Städten und Bedienelementen. */
+.wind-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 /* --- Zeit-Scrubber --------------------------------------------------------- */
 
 /* Der Scrubber ist das meistbenutzte Bedienelement — bewusst großzügiger als
