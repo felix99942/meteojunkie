@@ -787,17 +787,27 @@ export type StationRecords = Record<string, ParamRecords>
  */
 export type NationalRecords = Record<string, ParamRecords>
 
-const stationRecordsCache = new Map<number, Promise<StationRecords | null>>()
-let nationalPromise: Promise<NationalRecords> | null = null
+/**
+ * Land der Rekord-Assets: `at` = public/at/records (GeoSphere-Ingest), `de` =
+ * public/de/records (DWD-Ingest, `scripts/de-ingest-climate.mjs`). Beide in
+ * DERSELBEN Form — deshalb ein Parameter statt zweier Ladewege.
+ */
+export type RecordCountry = 'at' | 'de'
+
+const stationRecordsCache = new Map<string, Promise<StationRecords | null>>()
+const nationalPromises = new Map<RecordCountry, Promise<NationalRecords>>()
 
 /** Rekorde EINER Station laden (klein, je Station gecacht). null wenn keine. */
-export function loadStationRecords(id: number): Promise<StationRecords | null> {
-  let p = stationRecordsCache.get(id)
+export function loadStationRecords(id: number, country: RecordCountry = 'at'): Promise<StationRecords | null> {
+  const key = `${country}:${id}`
+  let p = stationRecordsCache.get(key)
   if (!p) {
-    p = fetch(`${import.meta.env.BASE_URL}at/records/${id}.json`)
-      .then((r) => (r.ok ? (r.json() as Promise<StationRecords>) : null))
+    p = fetch(`${import.meta.env.BASE_URL}${country}/records/${id}.json`)
+      .then((r) =>
+        r.ok && (r.headers.get('content-type') ?? '').includes('json') ? (r.json() as Promise<StationRecords>) : null,
+      )
       .catch(() => null)
-    stationRecordsCache.set(id, p)
+    stationRecordsCache.set(key, p)
   }
   return p
 }
@@ -869,20 +879,21 @@ export interface RecordIndex extends RecordIndexBlock {
 
 const recordIndexPromises = new Map<string, Promise<RecordIndex>>()
 
-/** Rekord-Index EINES Parameters laden (je Code einmal, prozessweit geteilt). */
-export function loadRecordIndex(code: string): Promise<RecordIndex> {
-  let p = recordIndexPromises.get(code)
+/** Rekord-Index EINES Parameters laden (je Code und Land einmal, prozessweit geteilt). */
+export function loadRecordIndex(code: string, country: RecordCountry = 'at'): Promise<RecordIndex> {
+  const key = `${country}:${code}`
+  let p = recordIndexPromises.get(key)
   if (!p) {
-    p = fetch(`${import.meta.env.BASE_URL}at/records/_map-${code}.json`)
+    p = fetch(`${import.meta.env.BASE_URL}${country}/records/_map-${code}.json`)
       .then((r) => {
         if (!r.ok) throw new Error(`Rekorde für ${code} nicht ladbar: HTTP ${r.status}`)
         return r.json() as Promise<RecordIndex>
       })
       .catch((err) => {
-        recordIndexPromises.delete(code)
+        recordIndexPromises.delete(key)
         throw err
       })
-    recordIndexPromises.set(code, p)
+    recordIndexPromises.set(key, p)
   }
   return p
 }
@@ -927,21 +938,23 @@ export function recordLevel(
   return idx.abs[period.extreme]
 }
 
-/** Österreichweite absolute Rekorde laden (einmal). */
-export function loadNationalRecords(): Promise<NationalRecords> {
-  if (!nationalPromise) {
-    nationalPromise = fetch(`${import.meta.env.BASE_URL}at/records/_national.json`)
+/** Landesweite Rekorde laden (je Land einmal). */
+export function loadNationalRecords(country: RecordCountry = 'at'): Promise<NationalRecords> {
+  let p = nationalPromises.get(country)
+  if (!p) {
+    p = fetch(`${import.meta.env.BASE_URL}${country}/records/_national.json`)
       .then((r) => {
         if (!r.ok) throw new Error(`Rekorde nicht ladbar: HTTP ${r.status}`)
         return r.json()
       })
       .then((d: { national: NationalRecords }) => d.national)
       .catch((err) => {
-        nationalPromise = null
+        nationalPromises.delete(country)
         throw err
       })
+    nationalPromises.set(country, p)
   }
-  return nationalPromise
+  return p
 }
 
 /**

@@ -34,7 +34,7 @@ function mockAssets(files: Record<string, unknown>) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('deParamAvailable', () => {
-  it('Kenntage nur ab Monat, Feuchte nur am Tag, keine gefühlte Temperatur und keine Rekorde', () => {
+  it('Kenntage nur ab Monat, Feuchte nur am Tag, keine gefühlte Temperatur, Rekorde nur mit Monatswert', () => {
     const day = { kind: 'day', day: '2026-10-01' } as const
     const month = { kind: 'month', year: 2026, month: 9 } as const
     expect(deParamAvailable(getAtParameter('tage_frost'), day)).toBe(false)
@@ -42,9 +42,11 @@ describe('deParamAvailable', () => {
     expect(deParamAvailable(getAtParameter('rfb_mittel'), day)).toBe(true)
     expect(deParamAvailable(getAtParameter('rfb_mittel'), month)).toBe(false)
     expect(deParamAvailable(getAtParameter('gefuehlt'), day)).toBe(false)
-    expect(
-      deParamAvailable(getAtParameter('tl_mittel'), { kind: 'record', extreme: 'max', month: null }),
-    ).toBe(false)
+    const rec = { kind: 'record', extreme: 'max', month: null } as const
+    expect(deParamAvailable(getAtParameter('tl_mittel'), rec)).toBe(true)
+    expect(deParamAvailable(getAtParameter('tage_frost'), rec)).toBe(true)
+    // Feuchte führt der DWD nicht als Monatswert — also auch keine Rekorde
+    expect(deParamAvailable(getAtParameter('rfb_mittel'), rec)).toBe(false)
   })
 })
 

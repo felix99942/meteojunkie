@@ -44,6 +44,7 @@ import {
   type StationRecords,
 } from '../api/atValues'
 import { AT_NORMAL_PERIODS, type NormalPeriodId } from '../config/atNormals'
+import { fetchDePeriodValues, loadDeNormals } from '../api/deClimate'
 import { AT_PARAMETERS, getAtParameter } from '../config/atParameters'
 import {
   answerFromNormals,
@@ -53,6 +54,8 @@ import {
   askValuePeriod,
   mergeRecords,
   parseQuestion,
+  ASK_AT,
+  ASK_DE,
   type AskArea,
   type AskQuery,
   type AskScope,
@@ -82,10 +85,11 @@ const NORMAL_PERIOD: NormalPeriodId = '1991-2020'
  * ist abgeschlossen und soll auch dann vollständig dastehen, wenn ein
  * Bundesland gerade keine Station mit Wert hat.
  */
-const STATES = [
-  'Burgenland', 'Kärnten', 'Niederösterreich', 'Oberösterreich', 'Salzburg',
-  'Steiermark', 'Tirol', 'Vorarlberg', 'Wien',
-]
+const STATES = {
+  at: ['Burgenland', 'Kärnten', 'Niederösterreich', 'Oberösterreich', 'Salzburg',
+    'Steiermark', 'Tirol', 'Vorarlberg', 'Wien'],
+  de: [...new Set(Object.values(ASK_DE.states))].sort((a, b) => a.localeCompare(b, 'de')),
+}
 
 /**
  * Beispielfragen, nach EBENEN geordnet — die Liste ist auch eine Landkarte
@@ -124,6 +128,19 @@ const EXAMPLES = [
   'niederschlag im sommer 2024 in vorarlberg',
 ]
 
+/** Dieselben Ebenen für Deutschland — Orte, die mehrere Stationen tragen (Berlin, München). */
+const EXAMPLES_DE = [
+  'höchste je gemessene temperatur in deutschland',
+  'höchste temperatur in berlin',
+  'kälteste nacht in münchen',
+  'wärmste nacht in hamburg',
+  'höchster tagesniederschlag in sachsen',
+  'nassestes jahr in bayern',
+  'meiste hitzetage deutschlandweit',
+  'wie warm ist es im juli in frankfurt normalerweise',
+  'anzahl der frosttage in münchen im januar 2024',
+]
+
 /**
  * Zeitraum als ein Auswahlwert: `-` = bester Einzelmonat, `y` = Jahreswert,
  * `m6` = Juni, `sJJA` = Sommer. Die ersten beiden auseinanderzuhalten ist der
@@ -146,11 +163,18 @@ const defaultValueYear = () => new Date().getUTCFullYear() - 1
 
 export function AtAskBox({
   stations,
+  country = 'at',
   initial,
   onShow,
   onClose,
 }: {
   stations: AtStation[]
+  /**
+   * Land des Archivs: bestimmt Bundesländer und Landeswörter des Parsers
+   * (`AskCountry`), die Rekord-Assets (`at/` bzw. `de/records`) und woher
+   * Normale und Zeitraumwerte kommen (GeoSphere bzw. die DWD-Dateien).
+   */
+  country?: 'at' | 'de'
   /**
    * Was schon im Einstiegsfeld der Karte stand, als das Fenster aufging. Das
    * Feld dort ist ein echtes Suchfeld: wer lostippt, soll seine Zeichen
@@ -170,6 +194,15 @@ export function AtAskBox({
   onClose: () => void
 }) {
   const [question, setQuestion] = useState(initial ?? '')
+  const loc = country === 'de' ? ASK_DE : ASK_AT
+  /**
+   * Sprache des Landes in ANGEZEIGTEN Texten. Der Parser und die Antworttexte
+   * schreiben österreichisch („Jänner"); für Deutschland wird das hier beim
+   * Anzeigen gewechselt, statt jede Formatierungsfunktion um ein Land zu
+   * erweitern — die Funktionen ohne Frage-Objekt (Datumsformate) kennten es
+   * gar nicht. Einziger Unterschied ist der Januar.
+   */
+  const L = (t: string) => (country === 'de' ? t.replace(/Jänner/g, 'Januar') : t)
   // Was der Erkenner verstanden hat — und was der Nutzer davon überstimmt hat.
   // Die Overrides werden bei JEDER neuen Frage verworfen, sonst hinge eine
   // alte Korrektur still an der nächsten Frage.
@@ -191,12 +224,12 @@ export function AtAskBox({
   }, [])
 
   const parsed = useMemo(
-    () => (question.trim() ? parseQuestion(question, stations) : null),
-    [question, stations],
+    () => (question.trim() ? parseQuestion(question, stations, loc) : null),
+    [question, stations, loc],
   )
   const query: AskQuery | null = parsed && { ...parsed, ...override }
 
-  const area: AskArea = query?.area ?? 'austria'
+  const area: AskArea = query?.area ?? 'country'
   const nameById = (id: number) => stations.find((s) => s.id === id)?.name ?? String(id)
   const stationId = query?.station?.id ?? null
   useEffect(() => {
@@ -205,11 +238,11 @@ export function AtAskBox({
       return
     }
     let cancelled = false
-    loadStationRecords(stationId).then((r) => !cancelled && setRecords(r))
+    loadStationRecords(stationId, country).then((r) => !cancelled && setRecords(r))
     return () => {
       cancelled = true
     }
-  }, [stationId])
+  }, [stationId, country])
 
   const station = stations.find((s) => s.id === stationId) ?? null
   const spec = query ? getAtParameter(query.param) : null
@@ -267,7 +300,7 @@ export function AtAskBox({
         ? (query.place?.label ?? '')
         : query.area === 'state'
           ? (query.state ?? '')
-          : 'Österreich'
+          : loc.name
   /**
    * Der Höhenfilter gehört in den Antworttext. „Meiste Eistage in
    * Österreich: 112 Tage" wäre sonst schlicht falsch — es sind 292 am
@@ -299,7 +332,7 @@ export function AtAskBox({
     }
     let cancelled = false
     const ids = setKey.split(',').map(Number)
-    Promise.all(ids.map((id) => loadStationRecords(id).then((rec) => ({ id, rec })))).then((all) => {
+    Promise.all(ids.map((id) => loadStationRecords(id, country).then((rec) => ({ id, rec })))).then((all) => {
       if (cancelled) return
       // Nach Code umsortieren: `mergeRecords` arbeitet je Parameter, die
       // Assets liegen je Station vor.
@@ -323,24 +356,26 @@ export function AtAskBox({
   // Die nationalen Rekorde sind EINE kleine Datei für alle Parameter und
   // Ebenen — sobald eine Landesfrage im Raum steht, einmal laden.
   useEffect(() => {
-    if (area !== 'austria' || national) return
+    if (area !== 'country' || national) return
     let cancelled = false
-    loadNationalRecords()
+    loadNationalRecords(country)
       .then((n) => !cancelled && setNational(n))
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [area, national])
+  }, [area, national, country])
 
   useEffect(() => {
     if (query?.scope !== 'normal' || normals) return
     let cancelled = false
-    loadNormals(NORMAL_PERIOD).then((n) => !cancelled && setNormals(n))
+    ;(country === 'de' ? loadDeNormals(NORMAL_PERIOD) : loadNormals(NORMAL_PERIOD)).then(
+      (n) => !cancelled && setNormals(n),
+    )
     return () => {
       cancelled = true
     }
-  }, [query?.scope, normals])
+  }, [query?.scope, normals, country])
 
   /**
    * WERTfrage: der gemessene Wert eines benannten Zeitraums („Frosttage im
@@ -366,7 +401,7 @@ export function AtAskBox({
     if (!valueKey || !valuePeriod || !spec) return
     let cancelled = false
     setValueBusy(true)
-    fetchPeriodValues(spec, valuePeriod, stations)
+    ;(country === 'de' ? fetchDePeriodValues(spec, valuePeriod, stations) : fetchPeriodValues(spec, valuePeriod, stations))
       .then((v) => !cancelled && setPeriodVals(v))
       .catch(() => {})
       .finally(() => !cancelled && setValueBusy(false))
@@ -417,7 +452,7 @@ export function AtAskBox({
     query != null &&
     assetCode != null &&
     query.scope === 'record' &&
-    query.area === 'austria' &&
+    query.area === 'country' &&
     query.terrain !== 'all'
   /** `'none'` = gerechnet, aber kein Ergebnis (Asset ohne Tagesblock). */
   const [pick, setPick] = useState<{ id: number; rec: StationRecords } | 'none' | null>(null)
@@ -429,7 +464,7 @@ export function AtAskBox({
     if (!pickKey || !assetCode || !query) return
     let alive = true
     const want = query.extreme
-    void loadRecordIndex(assetCode)
+    void loadRecordIndex(assetCode, country)
       .then(async (idx) => {
         const at = {
           extreme: want,
@@ -450,7 +485,7 @@ export function AtAskBox({
           if (!best || (want === 'max' ? v > best.v : v < best.v)) best = { id: idx.ids[i], v }
         }
         if (!best) return 'none' as const
-        const rec = await loadStationRecords(best.id)
+        const rec = await loadStationRecords(best.id, country)
         return rec ? { id: best.id, rec } : ('none' as const)
       })
       .then((r) => {
@@ -473,7 +508,7 @@ export function AtAskBox({
       ? null
       : query.scope === 'value'
         ? answerFromPeriod(query, periodVals?.byStation ?? null, areaIds, stationName, areaLabel)
-        : query.area === 'austria'
+        : query.area === 'country'
           ? query.scope === 'normal'
             ? answerFromNormalsRange(
                 query,
@@ -522,7 +557,7 @@ export function AtAskBox({
   const hasParam = query && assetCode
     ? query.scope === 'value'
       ? valueKey != null
-      : query.area === 'austria'
+      : query.area === 'country'
         ? query.scope === 'normal'
           ? normals != null
           : national?.[assetCode] != null
@@ -537,7 +572,7 @@ export function AtAskBox({
   /** Die Frage ist beantwortbar, sobald ein Gebiet feststeht. */
   const areaResolved =
     query != null &&
-    (query.area === 'austria' ||
+    (query.area === 'country' ||
       query.area === 'place' ||
       (query.area === 'state' && areaIds.length > 0) ||
       stationId != null)
@@ -575,6 +610,10 @@ export function AtAskBox({
     // dann ist nichts nachzuladen. Das gilt für genau die Fälle, die vorher
     // gar nicht beantwortbar waren (wärmste Nacht, kältester Tag).
     if (answer.day) return null
+    // Den exakten Tag holt `resolveExtremeDay` bei GeoSphere — für die
+    // DWD-Stationen gibt es dorthin keinen Abruf (kein CORS); die Antwort
+    // nennt dann Monat und Jahr
+    if (country !== 'at') return null
     const id = answer.whereId ?? showStation?.id
     if (id == null) return null
     const range = askDayRange(query, answer)
@@ -645,7 +684,7 @@ export function AtAskBox({
         className="atask-input"
         type="text"
         value={question}
-        placeholder="z. B. höchste temperatur im juli in salzburg"
+        placeholder={country === 'de' ? 'z. B. höchste temperatur im juli in münchen' : 'z. B. höchste temperatur im juli in salzburg'}
         onChange={(e) => {
           setQuestion(e.target.value)
           setOverride({})
@@ -654,7 +693,7 @@ export function AtAskBox({
 
       {!question.trim() && (
         <div className="atask-examples">
-          {EXAMPLES.map((ex) => (
+          {(country === 'de' ? EXAMPLES_DE : EXAMPLES).map((ex) => (
             <button key={ex} type="button" onClick={() => { setQuestion(ex); setOverride({}) }}>
               {ex}
             </button>
@@ -680,7 +719,7 @@ export function AtAskBox({
                   else set({ area: v as AskArea })
                 }}
               >
-                <option value="austria">Österreich (alle Stationen)</option>
+                <option value="country">{loc.name} (alle Stationen)</option>
                 {/* Der Ort steht nur da, wenn sein Name mehr als eine Station
                     trägt — sonst wäre er dasselbe wie „einzelne Station". */}
                 {query.place && (
@@ -696,7 +735,7 @@ export function AtAskBox({
                     und der Sprung aufs Land soll ein Klick sein statt einer
                     neu formulierten Frage. */}
                 <optgroup label="Bundesland">
-                  {STATES.map((st) => (
+                  {STATES[country].map((st) => (
                     <option key={st} value={`state:${st}`}>
                       {st}
                     </option>
@@ -781,7 +820,7 @@ export function AtAskBox({
                   </>
                 )}
                 <optgroup label="Monat">
-                  {MONTH_NAMES.map((n, i) => (
+                  {MONTH_NAMES.map(L).map((n, i) => (
                     <option key={n} value={`m${i + 1}`}>
                       {n}
                     </option>
@@ -881,11 +920,11 @@ export function AtAskBox({
                   {answer.value.toFixed(1).replace('.', ',')} <span>{answer.unit}</span>
                 </div>
                 <div className="atask-what">
-                  {answer.what}
+                  {L(answer.what)}
                   {(exactWhen ?? answer.when) && (
                     <>
                       {' · '}
-                      <strong>{exactWhen ?? answer.when}</strong>
+                      <strong>{L(exactWhen ?? answer.when ?? '')}</strong>
                       {/* Derselbe Wert an mehreren Tagen: dann ist das
                           gezeigte Datum das ERSTE Auftreten, und das gehört
                           dazugesagt statt es als einzigen Tag auszugeben. */}
@@ -905,7 +944,7 @@ export function AtAskBox({
                       Stationsfrage stand sie schon in der Frage. */}
                   {answer.where ?? station?.name}
                 </div>
-                {answer.note && <div className="atask-note label-muted">{answer.note}</div>}
+                {answer.note && <div className="atask-note label-muted">{L(answer.note)}</div>}
               </>
             )}
             {/* GEGENRICHTUNG einer Extremgröße: das Archiv hätte hier eine

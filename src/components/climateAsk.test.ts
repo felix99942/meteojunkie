@@ -31,6 +31,7 @@ import {
   measureStem,
   matchesTerrain,
   MOUNTAIN_M,
+  ASK_DE,
 } from './climateAsk'
 
 const st = (
@@ -295,14 +296,14 @@ describe('answerFromNormals', () => {
 
 describe('Gebietserkennung', () => {
   it('„in österreich" macht aus der Frage eine Landesfrage', () => {
-    expect(ask('höchste je gemessene temperatur in österreich').area).toBe('austria')
-    expect(ask('meiste hitzetage österreichweit').area).toBe('austria')
+    expect(ask('höchste je gemessene temperatur in österreich').area).toBe('country')
+    expect(ask('meiste hitzetage österreichweit').area).toBe('country')
   })
 
   it('ohne erkannten Ort ist die Frage eine Landesfrage', () => {
     // „höchste je gemessene temperatur" ohne Ortsangabe ist eine Frage ans
     // Land — vorher blieb sie schlicht unbeantwortet.
-    expect(ask('höchste je gemessene temperatur').area).toBe('austria')
+    expect(ask('höchste je gemessene temperatur').area).toBe('country')
   })
 
   it('ein blosser Ortsname fragt den ORT, nicht eine seiner Stationen', () => {
@@ -324,7 +325,7 @@ describe('Gebietserkennung', () => {
 
   it('Österreich schlägt einen zufälligen Stationstreffer', () => {
     // Sonst gewönne irgendein Namensfragment das Gebiet zurück.
-    expect(ask('wärmster juli in österreich').area).toBe('austria')
+    expect(ask('wärmster juli in österreich').area).toBe('country')
   })
 })
 
@@ -1124,7 +1125,7 @@ describe('Bundesland als Gebiet', () => {
   })
 
   it('„in österreich" schlägt das Bundesland', () => {
-    expect(ask('meiste frosttage in tirol oder österreich').area).toBe('austria')
+    expect(ask('meiste frosttage in tirol oder österreich').area).toBe('country')
   })
 })
 
@@ -1395,7 +1396,7 @@ describe('Höhenfilter', () => {
       'meiste eistage ohne bergstationen', 'meiste eistage ohne gipfel']) {
       const r = ask(q)
       expect(r.terrain, q).toBe('low')
-      expect(r.area, q).toBe('austria')
+      expect(r.area, q).toBe('country')
       expect(r.station, q).toBeNull()
     }
   })
@@ -1404,7 +1405,7 @@ describe('Höhenfilter', () => {
     for (const q of ['meiste eistage nur berge', 'meiste eistage nur bergstationen']) {
       const r = ask(q)
       expect(r.terrain, q).toBe('high')
-      expect(r.area, q).toBe('austria')
+      expect(r.area, q).toBe('country')
     }
   })
 
@@ -1427,7 +1428,7 @@ describe('Höhenfilter', () => {
   it('nimmt „in den bergen" als Filter, nicht als Station', () => {
     const r = ask('meiste eistage in den bergen')
     expect(r.terrain).toBe('high')
-    expect(r.area).toBe('austria')
+    expect(r.area).toBe('country')
   })
 
   it('verträgt Filter und Gebiet in einer Frage', () => {
@@ -1435,5 +1436,49 @@ describe('Höhenfilter', () => {
     expect(r.area).toBe('state')
     expect(r.state).toBe('Tirol')
     expect(r.terrain).toBe('low')
+  })
+})
+
+describe('Klimaarchiv Deutschland (ASK_DE)', () => {
+  // Echte DWD-Namen: Berlin trägt mehrere Stationen (Ort), Sachsen und
+  // Sachsen-Anhalt sind zwei Länder mit gemeinsamem Wortanfang.
+  const DE: AtStation[] = [
+    st(433, 'Berlin-Tempelhof', true, '1878-01-01', 'Berlin'),
+    st(403, 'Berlin-Dahlem (FU)', true, '1950-01-01', 'Berlin'),
+    st(3379, 'München-Stadt', true, '1954-06-01', 'Bayern'),
+    st(1048, 'Dresden-Klotzsche', true, '1934-01-01', 'Sachsen'),
+    st(3126, 'Magdeburg', true, '1881-01-01', 'Sachsen-Anhalt'),
+    st(5906, 'Mannheim', true, '1936-01-01', 'Baden-Württemberg'),
+  ]
+  const ask = (q: string) => parseQuestion(q, DE, ASK_DE)
+
+  it('„in Deutschland" und Fragen ohne Ort sind Landesfragen — mit dem Landesnamen im Text', () => {
+    expect(ask('höchste je gemessene temperatur in deutschland').area).toBe('country')
+    expect(ask('meiste hitzetage deutschlandweit').area).toBe('country')
+    expect(ask('höchste je gemessene temperatur').countryName).toBe('Deutschland')
+  })
+
+  it('Sachsen-Anhalt ist nicht Sachsen — das zusammengezogene Paar gewinnt', () => {
+    expect(matchState(normalize('nassester sommer in sachsen-anhalt').split(' '), ASK_DE)).toBe('Sachsen-Anhalt')
+    expect(matchState(normalize('nassester sommer in sachsen').split(' '), ASK_DE)).toBe('Sachsen')
+    expect(matchState(normalize('hitzetage in baden-württemberg').split(' '), ASK_DE)).toBe('Baden-Württemberg')
+    expect(matchState(['nrw'], ASK_DE)).toBe('Nordrhein-Westfalen')
+  })
+
+  it('der Ort heißt wie die Stadt, nicht wie die erste Station (DWD-Namen mit Bindestrich)', () => {
+    const q = ask('höchste temperatur in berlin')
+    expect(q.area).toBe('place')
+    expect(q.place?.label).toBe('Berlin')
+    expect(q.place?.ids.sort()).toEqual([403, 433])
+  })
+
+  it('ein Land mit Artikel: im Saarland', () => {
+    expect(areaIn('Saarland')).toBe('im Saarland')
+    expect(areaFor('Saarland')).toBe('für das Saarland')
+  })
+
+  it('österreichische Länder gibt es im deutschen Archiv nicht', () => {
+    expect(matchState(['steiermark'], ASK_DE)).toBeNull()
+    expect(ask('hitzetage in bayern').state).toBe('Bayern')
   })
 })

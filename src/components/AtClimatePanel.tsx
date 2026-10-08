@@ -348,10 +348,10 @@ export function AtClimatePanel() {
     const newest = deMeta.today ?? deMeta.lastDay
     if (day > newest || day < deMeta.dailyFrom) setDay(newest)
   }, [isDe, deMeta, periodKind, day])
-  // Allzeit-Rekorde gibt es für Deutschland noch nicht
+  // Allzeit-Rekorde gibt es für die Gebietsmittel nicht (die zeigen ihren Rang im Detail)
   useEffect(() => {
-    if (isDe && periodKind === 'record') setPeriodKind('day')
-  }, [isDe, periodKind])
+    if (isRegions && periodKind === 'record') setPeriodKind('year')
+  }, [isRegions, periodKind])
 
   // Normale der BEZUGSperiode nur laden, wenn der Abweichungsmodus sie braucht
   // (die angezeigte Periode holt fetchPeriodValues selbst).
@@ -781,7 +781,7 @@ export function AtClimatePanel() {
             <option value="season">Saison</option>
             <option value="year">Jahr</option>
             <option value="normal">Klimaperiode</option>
-            {!isDe && <option value="record">Allzeit (Rekorde)</option>}
+            {!isRegions && <option value="record">Allzeit (Rekorde)</option>}
           </select>
         </label>
         {periodKind === 'day' && (
@@ -1118,7 +1118,9 @@ export function AtClimatePanel() {
           <span
             className="atclima-hint"
             title={
-              'Stationsrekorde aus dem Monatsdatensatz klima-v2-1m ab 1900, vorberechnet — kein Abruf. ' +
+              (isDe
+                ? 'Stationsrekorde aus den Monatswerten des DWD ab 1881, die Tagesrekorde (wärmste Nacht, kältester Tag, nassester Tag) aus den Tageswerten — vorberechnet beim Bauen der Seite. '
+                : 'Stationsrekorde aus dem Monatsdatensatz klima-v2-1m ab 1900, vorberechnet — kein Abruf. ') +
               'ACHTUNG beim Vergleich zweier Stationen: ein Rekord hängt an der LÄNGE der Messreihe. ' +
               'Eine Station, die seit 1990 misst, kann den Rekord einer seit 1900 messenden Nachbarstation ' +
               'nicht erreichen, ohne dass es dort je heißer gewesen sein müsste. Die Karte zeigt deshalb ' +
@@ -1249,7 +1251,7 @@ export function AtClimatePanel() {
                 ein Feld, in dem nichts stehen bleibt, ein Etikettenschwindel. */}
             {!showRank && !showAsk && (
               <div className="atmap-tools">
-                {!isDe && (
+                {!isRegions && (
                 <div
                   className="atmap-ask"
                   onClick={() => setShowAsk(true)}
@@ -1259,7 +1261,11 @@ export function AtClimatePanel() {
                   <input
                     type="text"
                     value=""
-                    placeholder="Frage ans Klimaarchiv — z. B. wärmster Sommer in Graz"
+                    placeholder={
+                      isDe
+                        ? 'Frage ans Klimaarchiv — z. B. wärmster Sommer in Köln'
+                        : 'Frage ans Klimaarchiv — z. B. wärmster Sommer in Graz'
+                    }
                     aria-label="Frage ans Klimaarchiv"
                     onFocus={() => setShowAsk(true)}
                     onChange={(e) => {
@@ -1318,7 +1324,9 @@ export function AtClimatePanel() {
             )}
             {showAsk && stations && (
               <AtAskBox
+                key={country}
                 stations={stations}
+                country={country}
                 initial={askSeed}
                 onClose={() => {
                   setShowAsk(false)
@@ -1373,6 +1381,7 @@ export function AtClimatePanel() {
               <DeStationDetail
                 station={selected}
                 spec={spec}
+                period={period}
                 quantity={shownQuantity}
                 periodLabel={periodLabel}
                 value={values?.[selected.id] ?? null}

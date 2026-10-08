@@ -9,6 +9,9 @@
 
 import type { AtStation } from './geosphere'
 import {
+  hasRecords,
+  loadRecordIndex,
+  recordLevel,
   seasonMonths,
   type NormalsMap,
   type Period,
@@ -58,8 +61,6 @@ const MONTHLY_CODES = new Set([
   'tage_rr_1',
 ])
 
-/** Zeitbezüge, die es für Deutschland gibt — Allzeit-Rekorde fehlen noch. */
-export const DE_PERIOD_KINDS: Period['kind'][] = ['day', 'month', 'season', 'year', 'normal']
 
 /**
  * Ob der DWD-Datensatz die Größe im Zeitbezug führt. Ergänzt
@@ -68,7 +69,10 @@ export const DE_PERIOD_KINDS: Period['kind'][] = ['day', 'month', 'season', 'yea
  * nicht.
  */
 export function deParamAvailable(spec: AtParameterSpec, period: Period): boolean {
-  if (spec.derived || period.kind === 'record') return false
+  if (spec.derived) return false
+  // Allzeit: Rekorde aus den Monatswerten (`de/records`), wie bei Österreich —
+  // nur für Größen, die der DWD als Monatswert führt
+  if (period.kind === 'record') return hasRecords(spec) && MONTHLY_CODES.has(spec.monthlyCode!)
   if (period.kind === 'day') return !spec.countRule && !spec.monthlyOnly && DAILY_CODES.has(spec.code)
   return spec.monthlyCode != null && MONTHLY_CODES.has(spec.monthlyCode)
 }
@@ -150,7 +154,14 @@ export async function fetchDePeriodValues(
     return { byStation, unit: spec.unit, source }
   }
 
-  if (period.kind === 'record') return empty('record')
+  if (period.kind === 'record') {
+    if (!spec.monthlyCode) return empty('record')
+    const idx = await loadRecordIndex(spec.monthlyCode, 'de')
+    const level = recordLevel(idx, period)
+    for (let i = 0; i < idx.ids.length; i++) byStation[idx.ids[i]] = level.v[i] ?? null
+    for (const id of ids) if (!(id in byStation)) byStation[id] = null
+    return { byStation, unit: spec.unit, source: 'record' }
+  }
 
   if (period.kind === 'normal') {
     const code = spec.monthlyCode

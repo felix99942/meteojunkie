@@ -40,6 +40,7 @@ import { mkdir, readdir, readFile, rm, writeFile, rename } from 'node:fs/promise
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { unzipEntries } from './lib/zip.mjs'
+import { buildRecordIndexes } from './at-build-record-index.mjs'
 
 const CDC = 'https://opendata.dwd.de/climate_environment/CDC'
 const OBS = `${CDC}/observations_germany/climate`
@@ -231,6 +232,35 @@ const COUNTS = {
 }
 
 const MONTHLY_CODES = [...Object.keys(MONTHLY_MAP), ...Object.keys(COUNTS)]
+
+/**
+ * Wie mehrere Monatswerte zu EINEM Saison- oder Jahreswert werden — dieselbe
+ * Regel wie `annualAgg` der Registry und `CODES` im Österreich-Rekord-Ingest.
+ */
+const SEASON_AGG = {
+  tl_mittel: 'mean', tlmax_mittel: 'mean', tlmin_mittel: 'mean',
+  tlmax: 'max', tlmin: 'min', rr: 'sum', so_h: 'sum',
+  tage_sommer: 'sum', tage_tropen: 'sum', tage_frost: 'sum', tage_eis: 'sum', tage_rr_1: 'sum',
+}
+/** Rekorde für die Größen, die auch Österreich führt (`RECORD_CODES`) — dazu die mittleren Tagesextreme. */
+const RECORD_CODES = Object.keys(SEASON_AGG)
+
+/**
+ * TAGESblock der Rekorde: die Gegenrichtung der Extremgrößen und der nasseste
+ * Tag — dieselbe Auswahl wie `DAY_CODES` im Österreich-Ingest, mit exaktem
+ * Datum. Der Monatswert von `tlmax` ist das HÖCHSTE Tagesmaximum; „kältester
+ * Tag" braucht das TIEFSTE, und das steht nur in der Tagesreihe.
+ */
+const DAY_RECORDS = [
+  ['tlmin', 'max'], // wärmste Nacht
+  ['tlmax', 'min'], // kältester Tag
+  ['rr', 'max'], // nassester Tag
+]
+const SEASON_OF = { 12: ['DJF', 1], 1: ['DJF', 0], 2: ['DJF', 0], 3: ['MAM', 0], 4: ['MAM', 0], 5: ['MAM', 0], 6: ['JJA', 0], 7: ['JJA', 0], 8: ['JJA', 0], 9: ['SON', 0], 10: ['SON', 0], 11: ['SON', 0] }
+const SEASON_IDS = ['DJF', 'MAM', 'JJA', 'SON']
+const r2 = (v) => Math.round(v * 100) / 100
+const emptyMM = () => ({ max: null, min: null })
+const emptyBlock = () => ({ abs: emptyMM(), mon: Array.from({ length: 12 }, emptyMM), sea: Object.fromEntries(SEASON_IDS.map((x) => [x, emptyMM()])) })
 
 function reduce(vals, how) {
   if (vals.length === 0) return null
@@ -446,11 +476,41 @@ async function main() {
   let lastDay = ''
   let firstRecentDay = '9999'
 
+  // Tagesrekorde: id → code → Block (abs/mon/sea), nur die eine Richtung
+  const dayRec = new Map()
+  let dropped = 0
+  /**
+   * PLAUSIBILITÄT wie im Österreich-Ingest: ein Tag mit Minimum ÜBER dem
+   * Maximum ist in sich widersprüchlich und darf in keinen Temperaturrekord.
+   */
+  function noteDay(id, row) {
+    const tx = num(row.TXK)
+    const tn = num(row.TNK)
+    const bad = tx != null && tn != null && tn > tx
+    if (bad) dropped++
+    const d = row.MESS_DATUM
+    const iso = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
+    const m = Number(d.slice(4, 6))
+    for (const [code, dir] of DAY_RECORDS) {
+      const v = code === 'tlmin' ? tn : code === 'tlmax' ? tx : num(row.RSK)
+      if (v == null || (bad && code !== 'rr')) continue
+      let st = dayRec.get(id)
+      if (!st) dayRec.set(id, (st = {}))
+      const b = (st[code] ??= emptyBlock())
+      const cand = { v: r2(v), d: iso }
+      // Strikt besser: bei Gleichstand gilt das ERSTE Auftreten (die Reihe läuft vorwärts)
+      for (const t of [b.abs, b.mon[m - 1], b.sea[SEASON_OF[m][0]]]) {
+        if (!t[dir] || (dir === 'max' ? cand.v > t[dir].v : cand.v < t[dir].v)) t[dir] = cand
+      }
+    }
+  }
+
   /** Tagesreihe einer Station → Monatswerte (Kenntage, fehlende Monate). */
   function digestDaily(id, rows, isRecent) {
     // byMonth[YYYYMM][code] = Werte je Tag
     const byMonth = new Map()
     for (const row of rows) {
+      noteDay(id, row)
       const d = row.MESS_DATUM
       const ym = d.slice(0, 6)
       let mo = byMonth.get(ym)
@@ -599,6 +659,83 @@ async function main() {
     await writeFile(join(tmp, `normals-${periodId}.json`), JSON.stringify({ period: periodId, normals }))
     console.log(`  Normale ${periodId}: ${Object.keys(normals).length} Stationen`)
   }
+
+  // 5b) Rekorde — dieselbe Form wie die Österreich-Assets (`at/records`), damit
+  //     Allzeit-Karte, Stationsdetail und Klimaarchiv sie ohne Sonderweg lesen
+  console.log('Rekorde …')
+  await mkdir(join(tmp, 'records'), { recursive: true })
+  const nameById = new Map([...stationMap.values()].map((x) => [x.id, x.name]))
+  const national = {}
+  let recFiles = 0
+  const lift = (target, src, who) => {
+    if (src.max && (!target.max || src.max.v > target.max.v)) target.max = { ...src.max, ...who }
+    if (src.min && (!target.min || src.min.v < target.min.v)) target.min = { ...src.min, ...who }
+  }
+  const bump = (rec, v, tag) => {
+    if (!rec.max || v > rec.max.v) rec.max = { v: r2(v), ...tag }
+    if (!rec.min || v < rec.min.v) rec.min = { v: r2(v), ...tag }
+  }
+  for (const id of new Set([...monthly.keys(), ...dayRec.keys()])) {
+    const perCode = {}
+    const who = { s: id, n: nameById.get(id) ?? String(id) }
+    const st = monthly.get(id)
+    for (const code of RECORD_CODES) {
+      const how = SEASON_AGG[code]
+      const abs = emptyMM()
+      const mon = Array.from({ length: 12 }, emptyMM)
+      const seaB = new Map()
+      const annB = new Map()
+      for (const [y, codes] of st ?? []) {
+        const arr = codes[code]
+        if (!arr) continue
+        for (let m = 1; m <= 12; m++) {
+          const v = arr[m - 1]
+          if (v == null) continue
+          bump(abs, v, { d: `${y}-${pad2(m)}` })
+          bump(mon[m - 1], v, { y })
+          const [sid, off] = SEASON_OF[m]
+          const k = `${sid}|${y + off}`
+          ;(seaB.get(k) ?? seaB.set(k, []).get(k)).push(v)
+          ;(annB.get(y) ?? annB.set(y, []).get(y)).push(v)
+        }
+      }
+      if (!abs.max) continue
+      const sea = Object.fromEntries(SEASON_IDS.map((x) => [x, emptyMM()]))
+      for (const [k, vals] of seaB) {
+        if (vals.length !== 3) continue // nur vollständige Jahreszeiten
+        const [sid, y] = k.split('|')
+        bump(sea[sid], reduce(vals, how), { y: Number(y) })
+      }
+      const ann = emptyMM()
+      for (const [y, vals] of annB) if (vals.length === 12) bump(ann, reduce(vals, how), { y })
+      const entry = { abs, mon, sea, ann }
+      const dayBlock = dayRec.get(id)?.[code]
+      if (dayBlock && (dayBlock.abs.max || dayBlock.abs.min)) entry.day = { ...dayBlock, ann: dayBlock.abs }
+      perCode[code] = entry
+      const nat = (national[code] ??= { abs: emptyMM(), ann: emptyMM(), ...emptyBlock() })
+      lift(nat.abs, abs, who)
+      lift(nat.ann, ann, who)
+      for (let m = 0; m < 12; m++) lift(nat.mon[m], mon[m], who)
+      for (const sid of SEASON_IDS) lift(nat.sea[sid], sea[sid], who)
+      if (entry.day) {
+        const nd = (nat.day ??= { ann: emptyMM(), ...emptyBlock() })
+        lift(nd.abs, entry.day.abs, who)
+        lift(nd.ann, entry.day.abs, who)
+        for (let m = 0; m < 12; m++) lift(nd.mon[m], entry.day.mon[m], who)
+        for (const sid of SEASON_IDS) lift(nd.sea[sid], entry.day.sea[sid], who)
+      }
+    }
+    if (Object.keys(perCode).length) {
+      await writeFile(join(tmp, 'records', `${id}.json`), JSON.stringify(perCode))
+      recFiles++
+    }
+  }
+  await writeFile(
+    join(tmp, 'records', '_national.json'),
+    JSON.stringify({ meta: { source: OBS, since: FIRST_YEAR }, national }),
+  )
+  const idx = await buildRecordIndexes(join(tmp, 'records'), { source: OBS, since: FIRST_YEAR })
+  console.log(`  ${recFiles} Stationsdateien, Index: ${idx.join(', ')}; ${dropped} Tage mit Minimum über Maximum verworfen`)
 
   // 6) Stationen: nur die mit Werten; aktiv = im laufenden Tagesdatensatz
   const withData = new Set([...monthly.keys(), ...runningIds])

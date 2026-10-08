@@ -964,8 +964,39 @@ npm run preview   # gebautes dist/ servieren
   Stationsliste an ihr Land gebunden** (`stationsOf`): die Effekte liefen
   sonst eine Runde mit der alten Liste, und Österreich fragte GeoSphere mit
   DWD-Kennungen (HTTP 403). Karte `DE_VIEW` auf dem Europa-Bündel,
-  Beschriftung ausgedünnt (38 px). Offen (Phasen 3–4): Rekorde aus den
-  historischen Tagesreihen, Klimaarchiv-Fragen.
+  Beschriftung ausgedünnt (38 px).
+  **REKORDE UND KLIMAARCHIV (Phase 3)** — der Ingest schreibt
+  `public/de/records/` in DERSELBEN Form wie `public/at/records/`
+  (Stationsdateien, `_national.json`, Karten-Index über die gemeinsame
+  `buildRecordIndexes` aus `scripts/at-build-record-index.mjs`). Die Lader
+  `loadStationRecords`/`loadRecordIndex`/`loadNationalRecords` nehmen dafür
+  ein Land (`RecordCountry`, Vorgabe `at`); Allzeit-Karte, Rekordtabelle im
+  `DeStationDetail` und Klimaarchiv lesen beide Länder über denselben Weg.
+  Monatsebenen aus den Monatswerten ab 1881, der TAGESblock (wärmste Nacht,
+  kältester Tag, nassester Tag, exaktes Datum) aus den historischen + recent
+  Tagesreihen, mit derselben Plausibilitätsregel wie Österreich (Minimum über
+  Maximum → verworfen; gemessen 3 Tage). Gegengeprüft: Deutschland-
+  Jahresrekord 41,2 °C Tönisvorst 2019, nassester Tag 312 mm Zinnwald-
+  Georgenfeld 12.08.2002 — beides die amtlichen Werte.
+  **Das Klimaarchiv ist länderfähig über `AskCountry`** (`ASK_AT`/`ASK_DE` in
+  `climateAsk.ts`): Landeswörter, Bundesländer samt exakten Kürzeln (`nrw`)
+  und der Name im Antworttext — alles andere ist dieselbe Sprache. Der
+  Gebietsschlüssel heißt seither `'country'` statt `'austria'`.
+  `matchState` prüft ZUSAMMENGEZOGENE Nachbartokens jetzt ZUERST:
+  „Sachsen-Anhalt" sind die Tokens „sachsen anhalt", und einzeln geprüft
+  gewann „Sachsen" — ein anderes Land (für Österreich ändert das nichts, alle
+  Tests liefen unverändert). `resolvePlace` trennt den Ortsnamen an
+  denselben Grenzen wie `normalize` (Bindestrich, Schrägstrich, Klammer),
+  sonst hieß der Ort „Berlin-Dahlem" statt „Berlin". Die Monatsnamen der
+  Antworttexte sind österreichisch; `AtAskBox` wechselt für Deutschland beim
+  ANZEIGEN „Jänner" → „Januar" (`L`), weil die Datumsformate kein Land
+  kennen. `nightNote` nennt für Deutschland die DWD-Tagesgrenze (seit 2001
+  00–24 UTC, davor 21:30–21:30 MEZ, aus den Parameter-Metadaten) — die
+  Nacht vor dem Tag liegt in beiden Konventionen im Fenster. Den exakten
+  Rekordtag (`resolveExtremeDay`) gibt es für Deutschland nicht: er holt die
+  Tagesreihe bei GeoSphere. Bekannte Grenze: „Frankfurt" fasst Frankfurt/Main
+  und Frankfurt/Oder zu EINEM Ort zusammen (gleicher Namensanfang) — die
+  Antwort sagt „in Frankfurt" und nennt beide in der Spanne.
   **GEBIETSMITTEL (Phase 2)** — zweiter Umschalter **Stationen | Gebietsmittel**
   (`api/deRegional.ts`, `DeRegionDetail`): die amtlichen FLÄCHENmittel des DWD
   je Bundesland und für Deutschland (`regional_averages_DE`, aus dem

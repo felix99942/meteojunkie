@@ -273,9 +273,14 @@ export function formatNightSpan(day: string): string {
  * genannte Wert, und der Wert gehört gar nicht in die Nacht. Deshalb steht
  * dort ein Vorbehalt, bei der wärmsten Nacht nicht.
  */
-export function nightNote(extreme: 'max' | 'min'): string {
+export function nightNote(extreme: 'max' | 'min', country: 'at' | 'de' = 'at'): string {
+  // Der DWD bildet die Tagesextreme seit 2001 über 00–24 UTC, davor über
+  // 21:30–21:30 MEZ vom Vortag (Parameter-Metadaten der Stationen) — die
+  // Nacht vor dem Tag liegt in BEIDEN Fenstern, nur die Grenzen heißen anders.
   const base =
-    'Tiefstwert des Klimatags (19–19 MEZ) — die Nacht davor liegt in diesem Fenster. '
+    country === 'de'
+      ? 'Tiefstwert des Tages (seit 2001 00–24 UTC, davor 21:30–21:30 MEZ) — die Nacht davor liegt in diesem Fenster. '
+      : 'Tiefstwert des Klimatags (19–19 MEZ) — die Nacht davor liegt in diesem Fenster. '
   return extreme === 'max'
     ? base +
         'Fiel das Minimum ausnahmsweise am Tag, war die Nacht noch wärmer: der Wert ist dann ' +
@@ -296,6 +301,8 @@ export function nightNote(extreme: 'max' | 'min'): string {
 const STATE_ARTICLE: Record<string, { in: string; fuer: string }> = {
   Steiermark: { in: 'in der Steiermark', fuer: 'für die Steiermark' },
   Burgenland: { in: 'im Burgenland', fuer: 'für das Burgenland' },
+  // Deutschland: nur das Saarland trägt einen Artikel
+  Saarland: { in: 'im Saarland', fuer: 'für das Saarland' },
 }
 
 /** „in der Steiermark" · „in Tirol" · „in Wien Hohe Warte". */
@@ -455,18 +462,79 @@ const STATE_MARKERS = ['bundesland', 'bundeslandes', 'bundeslander', 'land', 'la
   'ganz', 'ganzen', 'gesamt', 'gesamten']
 
 /**
+ * Das LAND, auf das sich das Klimaarchiv bezieht. Länderspezifisch sind nur
+ * drei Dinge: die Wörter für „das ganze Land", die Bundesländer (Namen wie
+ * `AtStation.state` sie führt, dazu exakte Kürzel) und der Name im
+ * Antworttext. Alles andere — Größen, Zeiträume, Superlative, Orte aus den
+ * Stationsnamen — ist für Österreich und Deutschland dieselbe Sprache.
+ */
+export interface AskCountry {
+  id: 'at' | 'de'
+  /** Im Antworttext: „in Österreich", „in Deutschland". */
+  name: string
+  words: string[]
+  states: Record<string, string>
+  abbrev: Record<string, string>
+}
+
+export const ASK_AT: AskCountry = {
+  id: 'at',
+  name: 'Österreich',
+  words: AUSTRIA_WORDS,
+  states: STATE_NAMES,
+  abbrev: STATE_ABBREV,
+}
+
+/**
+ * Deutschland. Schlüssel normalisiert UND zusammengezogen: „Baden-
+ * Württemberg" wird zu zwei Tokens, `matchState` prüft das Paar als
+ * „badenwurttemberg". „bundesweit" gehört in beiden Ländern dazu.
+ */
+export const ASK_DE: AskCountry = {
+  id: 'de',
+  name: 'Deutschland',
+  words: ['deutschland', 'deutschlands', 'deutschlandweit', 'deutschlandweite', 'bundesweit',
+    'landesweit', 'gesamtdeutschland', 'gesamtdeutsch', 'germany'],
+  states: {
+    badenwurttemberg: 'Baden-Württemberg',
+    badenwuerttemberg: 'Baden-Württemberg',
+    bayern: 'Bayern',
+    berlin: 'Berlin',
+    brandenburg: 'Brandenburg',
+    bremen: 'Bremen',
+    hamburg: 'Hamburg',
+    hessen: 'Hessen',
+    mecklenburgvorpommern: 'Mecklenburg-Vorpommern',
+    niedersachsen: 'Niedersachsen',
+    nordrheinwestfalen: 'Nordrhein-Westfalen',
+    rheinlandpfalz: 'Rheinland-Pfalz',
+    saarland: 'Saarland',
+    sachsen: 'Sachsen',
+    sachsenanhalt: 'Sachsen-Anhalt',
+    schleswigholstein: 'Schleswig-Holstein',
+    thuringen: 'Thüringen',
+    thueringen: 'Thüringen',
+  },
+  abbrev: { nrw: 'Nordrhein-Westfalen', bawu: 'Baden-Württemberg', meckpomm: 'Mecklenburg-Vorpommern' },
+}
+
+/**
  * Bundesland aus der Frage, oder null. Prüft auch ZUSAMMENGEZOGENE
  * Nachbartokens: „nieder österreich" getrennt geschrieben ist dieselbe Frage
  * wie „niederösterreich", und die Normalisierung macht daraus zwei Wörter.
+ *
+ * Die zusammengezogenen Paare kommen ZUERST: „Sachsen-Anhalt" sind die Tokens
+ * „sachsen" und „anhalt", und einzeln geprüft gewönne „Sachsen" — ein anderes
+ * Land. Dasselbe bei „Baden-Württemberg" gegen „Baden" in Stationsnamen.
  */
-export function matchState(tokens: string[]): string | null {
+export function matchState(tokens: string[], country: AskCountry = ASK_AT): string | null {
   for (const t of tokens) {
-    if (STATE_ABBREV[t]) return STATE_ABBREV[t]
+    if (country.abbrev[t]) return country.abbrev[t]
   }
   const joined = tokens.map((t, i) => (i + 1 < tokens.length ? t + tokens[i + 1] : null))
-  for (const t of [...tokens, ...joined]) {
+  for (const t of [...joined, ...tokens]) {
     if (t == null || t.length < 4) continue
-    const hit = lookupWord(t, STATE_NAMES)
+    const hit = lookupWord(t, country.states)
     if (hit) return hit
   }
   return null
@@ -631,7 +699,11 @@ export function resolvePlace(
   stations: AtStation[],
 ): AskPlace | null {
   const tokens = normalize(question).split(' ').filter(Boolean)
-  const rawParts = best.name.split(/\s+/)
+  // An DENSELBEN Grenzen trennen, an denen `normalize` Wörter bildet — die
+  // DWD-Namen verbinden mit Bindestrich und Schrägstrich („Berlin-Dahlem
+  // (FU)", „Frankfurt/Main"), und nur an Leerzeichen getrennt hieß der Ort
+  // „Berlin-Dahlem" statt „Berlin".
+  const rawParts = best.name.split(/[\s\-/(),]+/).filter(Boolean)
   const parts = normalize(best.name).split(' ')
   const inQuestion = (p: string) =>
     tokens.some((t) => (t.length <= 3 || p.length <= 3 ? t === p : similarity(t, p) >= 0.85))
@@ -670,7 +742,7 @@ export type AskScope = 'record' | 'normal' | 'value'
  * bestimmte der zwölf Wiener Stationen — und je nach Station lägen zwischen
  * den Antworten fast 5 K (Kahlenberg 37,4 °C ↔ Stammersdorf 41,0 °C).
  */
-export type AskArea = 'station' | 'place' | 'state' | 'austria'
+export type AskArea = 'station' | 'place' | 'state' | 'country'
 
 /**
  * HÖHENFILTER über die Stationsmenge — „mit", „nur Bergstationen", „ohne
@@ -824,6 +896,8 @@ export interface AskQuery {
    * Stadt, aber das Land ist damit einen Klick entfernt statt eine neue Frage.
    */
   state: string | null
+  /** Name des Landes im Antworttext; fehlt → Österreich. */
+  countryName?: string
   station: StationMatch | null
   /** Weitere plausible Stationen — „Salzburg" heißen acht. */
   alternatives: StationMatch[]
@@ -871,7 +945,7 @@ export interface AskQuery {
 }
 
 /** Frage in eine Abfrage übersetzen. Nie `null`: unklare Teile bekommen Vorgaben. */
-export function parseQuestion(question: string, stations: AtStation[]): AskQuery {
+export function parseQuestion(question: string, stations: AtStation[], country: AskCountry = ASK_AT): AskQuery {
   const tokens = normalize(question).split(' ').filter(Boolean)
   // Für Monat/Jahreszeit/Parameter ohne Funktionswörter arbeiten; Superlative
   // und Zeit-Marker prüfen weiter auf der vollen Liste (dort stehen sie).
@@ -982,7 +1056,7 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
   // Frage ebenfalls eine Landesfrage.
   const best = matches[0] ?? null
   const place = best ? resolvePlace(asked, best, stations) : null
-  const state = matchState(content)
+  const state = matchState(content, country)
   /**
    * Meint die Frage das BUNDESLAND oder den gleichnamigen Ort?
    *
@@ -1012,12 +1086,12 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
     state != null &&
     (hasAny(tokens, STATE_MARKERS) || (!stateIsPlaceName && !namedBeyondState))
   const area: AskArea =
-    hasAny(content, AUSTRIA_WORDS)
-      ? 'austria'
+    hasAny(content, country.words)
+      ? 'country'
       : stateArea
         ? 'state'
         : matches.length === 0
-          ? 'austria'
+          ? 'country'
           : place
             ? 'place'
             : 'station'
@@ -1095,6 +1169,9 @@ export function parseQuestion(question: string, stations: AtStation[]): AskQuery
     extreme,
     scope,
     year,
+    // Nur außerhalb Österreichs gesetzt — bestehende Vergleiche auf das
+    // Query-Objekt bleiben so unverändert
+    ...(country.id !== 'at' ? { countryName: country.name } : {}),
   }
 }
 
@@ -1370,8 +1447,8 @@ export function answerFromRecords(
     ...(e.s != null ? { whereId: e.s } : {}),
     what: areaLabel
       ? `${gesucht} ${areaIn(areaLabel)} – ${period}`
-      : q.area === 'austria'
-        ? `${gesucht} in Österreich – ${period}`
+      : q.area === 'country'
+        ? `${gesucht} ${areaIn(q.countryName ?? 'Österreich')} – ${period}`
         : q.area === 'place' && q.place
           ? `${gesucht} in ${q.place.label} – ${period}`
           : q.area === 'state' && q.state
@@ -1380,7 +1457,9 @@ export function answerFromRecords(
     year: Number.isFinite(year) ? year : undefined,
     // Nachtfrage: WELCHES Zeitfenster geantwortet wird, gehört dazu — und der
     // Vorbehalt gilt nur für die kälteste Nacht (siehe `nightNote`).
-    ...(q.nightly && q.param === 'tlmin' ? { note: nightNote(q.extreme) } : {}),
+    ...(q.nightly && q.param === 'tlmin'
+      ? { note: nightNote(q.extreme, q.countryName === 'Deutschland' ? 'de' : 'at') }
+      : {}),
     // Beim ABSOLUTEN Rekord steckt im Datum auch der Monat — den will die
     // Karte kennen, sonst zeigt sie das richtige Jahr im falschen Monat.
     ...(q.month == null && q.season == null && e.d
@@ -1476,7 +1555,7 @@ export function answerFromNormalsRange(
   const period =
     q.month != null ? MONTH_NAMES[q.month - 1] : q.season != null ? SEASON_NAMES[q.season] : 'Jahr'
   const fmt = (v: number) => v.toFixed(1).replace('.', ',')
-  const where = areaLabel ?? (onlyIds && q.place ? q.place.label : 'Österreich')
+  const where = areaLabel ?? (onlyIds && q.place ? q.place.label : (q.countryName ?? 'Österreich'))
   return {
     value: pick.v,
     unit: spec.unit,
