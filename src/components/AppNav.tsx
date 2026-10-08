@@ -8,8 +8,10 @@
 // ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu liest:
 //
 //   mint   VORHERSAGE und Klima am Punkt bzw. an der Station — Meteogramm,
-//          Klima + MOS, Ensemble, Soundings, Föhn. Alles Zahlenwerke aus
-//          Modell- oder Messreihen.
+//          Klima + MOS, Ensemble, Soundings, Föhn, dazu die Modellkarten.
+//          Alles Zahlenwerke aus Modell- oder Messreihen (die Modellkarten
+//          zeigen zwar Karten, aber MODELLausgabe mit ablesbaren Werten, keine
+//          fertigen Karten eines fremden Dienstes).
 //   ocker  BILDKARTEN — Radar und Satellit. Andere Herkunft (fertige Karten
 //          fremder Dienste), andere Bedienung (Zeitschleife statt Zeitraster),
 //          kein Open-Meteo-Budget.
@@ -56,6 +58,13 @@ const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
     id: 'foehn',
     label: 'Föhn',
     title: 'Föhn-Diagnose: Druckdifferenz über die Alpen, Kammwind und Lee-Station — Modelle und Ensemble',
+    group: 'forecast',
+  },
+  {
+    id: 'globe',
+    label: 'Modellkarten',
+    title:
+      'ECMWF IFS, ICON-EU und ICON-D2 als Globus oder Karte (Europa, Alpen) — Temperatur, Druck, Niederschlag, Wind, Bewölkung, 500 hPa',
     group: 'forecast',
   },
   {

@@ -6,13 +6,22 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { seriesKey } from '../lib/dataKey'
-import { useProfiles } from '../api/queries'
+import { useProfiles, useSonde, useSondeIndex } from '../api/queries'
+import {
+  distanceKm,
+  formatLaunch,
+  formatTerm,
+  nearestSonde,
+  SONDE_AUTO_KM,
+  sondeColumn,
+  thinColumn,
+} from '../api/sondes'
 import type { Profile } from '../api/openmeteo'
 import { SERIES_COLORS } from '../config/colors'
 import { getModel } from '../config/models'
 import { formatRun, latestRun, RUN_TITLE } from '../config/runs'
 import { supportsPressureLevels } from '../config/levels'
-import { formatCursorTime, PROFILE_FORECAST_DAYS, timeToIndex } from '../config/time'
+import { formatCursorTime, PROFILE_FORECAST_DAYS, TIME_RANGE, timeToIndex } from '../config/time'
 import {
   columnFromProfile,
   computeSounding,
@@ -73,6 +82,23 @@ const THETAE_W = 76
  * lang, die Fiedern der Nachbarn greifen ineinander.
  */
 const BARB_LEN = 22
+
+/**
+ * Ausdünnung der Messung für θe-Spalte und Windfiedern (hPa). Die Modelle
+ * liefern ohnehin nur 13–19 Level; eine Sonde mit Punkten alle 2 hPa wäre
+ * dort ein Klumpen. Rund 25 Schichten über die Troposphäre — genug, um
+ * eine Inversion oder einen Scherungsknick zu zeigen.
+ */
+const OBS_DISPLAY_STEP_HPA = 25
+
+/**
+ * Farbe der MESSUNG. Weiss, weil sie keine Modellfarbe sein darf (die Slots
+ * gehören den Modellen) und weil sie die Bezugskurve ist, gegen die man die
+ * Modelle liest — sie soll obenauf am hellsten sein. Gegen den ebenfalls
+ * hellen ML-Parzellenweg trennt sie Strichart und Breite: der ist dünn und
+ * gepunktet, die Messung kräftig, durchgezogen und dunkel unterlegt.
+ */
+const OBS_COLOR = '#f4f4f4'
 
 const dash = (v: string | number | null | undefined): string =>
   v == null ? '–' : typeof v === 'number' ? String(v) : v
@@ -186,7 +212,21 @@ function surfaceAt(p: Profile, ti: number): SurfacePoint | null {
 export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   const location = useWorkbench((s) => s.lockedLocation)
   const cursorTime = useWorkbench((s) => s.cursorTime)
-  const results = useProfiles(location, panel.models)
+  /**
+   * QUELLE des Diagramms — Vorhersage, Messung oder beides. Bewusst drei
+   * getrennte Ansichten statt einer Messkurve, die nur dazukommt: ein Skew-T
+   * liest man über die Flächen (CAPE, CIN, DCAPE), und die gehören immer zu
+   * GENAU EINEM Profil. Im Vergleich bleiben sie beim Modell; in der
+   * Messansicht gehören Paket, Flächen, Windfiedern und Hodograf dem Aufstieg.
+   */
+  const source = useWorkbench((s) => s.soundingSource)
+  const setSource = useWorkbench((s) => s.setSoundingSource)
+  const wantModels = source !== 'obs'
+  const wantObs = source !== 'model'
+  // Im Messmodus werden die Modelle gar nicht erst geholt — das ist Budget
+  // (rund 10 gewichtete Calls je Modell), nicht nur Anzeige.
+  const models = useMemo(() => (wantModels ? panel.models : []), [wantModels, panel.models])
+  const results = useProfiles(location, models)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -229,13 +269,61 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   const [showCin, setShowCin] = useState(true)
 
   const panelTime = panel.sync ? cursorTime : panel.localTime
+  const setCursorTime = useWorkbench((s) => s.setCursorTime)
+
+  // ── GEMESSENER AUFSTIEG ─────────────────────────────────────────────────
+  // Automatisch die nächste Station, wenn sie nahe genug liegt
+  // (SONDE_AUTO_KM); eine Wahl von Hand gilt nur für DIESEN Ort — beim
+  // nächsten Ortswechsel greift wieder die Automatik, sonst stünde nach
+  // einem Sprung nach Wien weiter der Aufstieg von Payerne im Diagramm.
+  const sondeIndex = useSondeIndex()
+  const locKey = location ? `${location.lat},${location.lon}` : ''
+  const [obsPick, setObsPick] = useState<{ loc: string; id: string } | null>(null)
+  const [obsTermPick, setObsTermPick] = useState<string | null>(null)
+  const sondeStations = sondeIndex.data?.stations ?? []
+  const nearest = location ? nearestSonde(sondeStations, location) : null
+  // In der reinen Messansicht IMMER die nächste Station — dort gibt es kein
+  // Modellprofil, das man mit einem entfernten Aufstieg verwechseln könnte.
+  // Im Vergleich nur in der Nähe (SONDE_AUTO_KM).
+  const obsStationId =
+    obsPick?.loc === locKey
+      ? obsPick.id
+      : nearest && (source === 'obs' || nearest.km <= SONDE_AUTO_KM)
+        ? nearest.station.id
+        : 'none'
+  const obsStation = sondeStations.find((s) => s.id === obsStationId) ?? null
+  const obsEntry =
+    obsStation?.soundings.find((e) => e.term === obsTermPick) ?? obsStation?.soundings[0] ?? null
+  const obsKm = obsStation && location ? distanceKm(location, obsStation) : null
+  const sonde = useSonde(wantObs && obsEntry ? obsEntry.file : null)
+  const obsColumn = useMemo(
+    () => (wantObs && sonde.data && sonde.data.term === obsEntry?.term ? sondeColumn(sonde.data) : null),
+    [wantObs, sonde.data, obsEntry?.term],
+  )
+  const obsSounding = useMemo(() => (obsColumn ? computeSounding(obsColumn) : null), [obsColumn])
+  const obsColumnRef = useRef(obsColumn)
+  obsColumnRef.current = obsColumn
+  const obsSoundingRef = useRef(obsSounding)
+  obsSoundingRef.current = obsSounding
+  const obsTermMs = obsEntry ? Date.parse(obsEntry.term) : null
+  // Nach Stationen sortiert nach Entfernung — die Liste ist eine Ortswahl.
+  const stationOptions = useMemo(
+    () =>
+      location
+        ? [...sondeStations]
+            .map((s) => ({ s, km: distanceKm(location, s) }))
+            .sort((a, b) => a.km - b.km)
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sondeIndex.data, locKey],
+  )
   // Über die IDENTITÄT der Serien, nicht über „geladen ja/nein": ein Wechsel
   // zwischen zwei bereits geladenen Punkten ließ den Schlüssel sonst
   // unverändert, und das Skew-T zeigte weiter das alte Profil — an einem
   // Sounding die denkbar unauffälligste Art, falsch zu sein
   // (Messung in `lib/dataKey.ts`).
   const loadedKey = seriesKey(results.map((r) => r.data))
-  const modelsKey = panel.models.join()
+  const modelsKey = models.join()
 
   /**
    * Geländehöhe, mit der die Modelle hier rechnen — die wichtigste Angabe zum
@@ -266,7 +354,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   // sollen nicht aus zwei verschiedenen Datenständen kommen.
   const columns = useMemo(
     () =>
-      panel.models.map((_id, i) => {
+      models.map((_id, i) => {
         const p = results[i]?.data
         if (!p) return null
         const ti = Math.min(timeToIndex(panelTime), p.times.length - 1)
@@ -302,10 +390,16 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
    * bodennahen Teil: die Scherung der untersten Kilometer ist sein Zweck.
    */
   const hodoData = useMemo<HodoPoint[] | null>(() => {
-    let idx = panel.models.findIndex((id, k) => id === 'ecmwf_ifs025' && columns[k])
-    if (idx < 0) idx = columns.findIndex((c) => c != null)
-    if (idx < 0) return null
-    const col = columns[idx] as SoundingColumn
+    let col: SoundingColumn
+    if (source === 'obs') {
+      if (!obsColumn) return null
+      col = obsColumn
+    } else {
+      let idx = models.findIndex((id, k) => id === 'ecmwf_ifs025' && columns[k])
+      if (idx < 0) idx = columns.findIndex((c) => c != null)
+      if (idx < 0) return null
+      col = columns[idx] as SoundingColumn
+    }
     const pts: HodoPoint[] = []
     let surfaceZ: number | null = null
     for (let l = 0; l < col.p.length; l++) {
@@ -317,7 +411,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
       pts.push({ zAgl: z - surfaceZ, u: u * MS_TO_KT, v: v * MS_TO_KT })
     }
     return pts.length >= 2 ? pts : null
-  }, [columns, panel.models])
+  }, [columns, models, source, obsColumn])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -346,10 +440,23 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
 
       const sounds = soundingsRef.current
       const cols = columnsRef.current
-      let barb: { col: SoundingColumn; color: string } | null = null
+      let barb: { col: SoundingColumn; color: string; gap?: number } | null = null
       let refParcelDrawn = false
 
-      panel.models.forEach((id, i) => {
+      const obs = obsColumnRef.current
+      const obsS = obsSoundingRef.current
+      // In der Messansicht gehören Paket und Flächen dem AUFSTIEG.
+      if (source === 'obs' && obs && obsS) {
+        drawParcel(ctx, g, obsS.ml, { path: showParcel, cape: showCape, cin: showCin })
+        if (showDowndraft && obsS.downdraft) drawDowndraft(ctx, g, obsS.downdraft)
+        refParcelDrawn = true
+        if (showWetBulb) {
+          strokeColumnLine(ctx, g, obs, wetBulbColumn(obs), WETBULB_LINE, [2, 3], 1.5)
+        }
+        barb = { col: thinColumn(obs, OBS_DISPLAY_STEP_HPA), color: OBS_COLOR, gap: 14 }
+      }
+
+      models.forEach((id, i) => {
         const col = cols[i]
         if (!col) return
         const color = SERIES_COLORS[panel.modelSlots[id] ?? 0]
@@ -379,30 +486,52 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         if (!barb) barb = { col, color }
       })
 
+      // Messung ZULETZT und damit obenauf, dunkel unterlegt: sie ist die
+      // Bezugskurve, und dicht über einer Modellkurve soll sie nicht in
+      // deren Farbe verschwinden.
+      if (obs) {
+        // Td DURCHGEZOGEN, nicht gestrichelt wie bei den Modellen: eine
+        // hochaufgelöste Sonde liefert alle 2 hPa einen Punkt, und an scharf
+        // begrenzten Trockenschichten springt der Taupunkt um 15 K auf
+        // wenigen Metern (echt, gemessen). Die Strichelung zerhackte das zu
+        // einem Rauschen. Welche Kurve Td ist, sagt die Lage — sie liegt
+        // immer links von T.
+        strokeColumnLine(ctx, g, obs, obs.T, 'rgba(0,0,0,0.7)', [], 5)
+        strokeColumnLine(ctx, g, obs, obs.Td, 'rgba(0,0,0,0.7)', [], 4)
+        strokeColumnLine(ctx, g, obs, obs.T, OBS_COLOR, [], 2.5)
+        strokeColumnLine(ctx, g, obs, obs.Td, OBS_COLOR, [], 1.5)
+      }
+
       if (showThetaE) {
         // Kurven für ALLE Modelle (der Vergleich ist der Sinn dieses
         // Bereichs), Schichtungsbänder nur vom ERSTEN — übereinandergelegte
         // Bänder ergäben eine Farbe, die keiner Schicht mehr entspricht.
         const curves: { profile: ThetaEProfile; color: string }[] = []
-        panel.models.forEach((id, i) => {
+        models.forEach((id, i) => {
           const col = cols[i]
           if (!col) return
           const profile = thetaEProfile(col)
           if (profile) curves.push({ profile, color: SERIES_COLORS[panel.modelSlots[id] ?? 0] })
         })
+        // Die Messung als Kurve dazu, aber NICHT als Bänder: die Schichtung
+        // bleibt die des ersten Modells — sonst wechselte die Bedeutung der
+        // Farbfläche mit dem An- und Abschalten der Messung.
+        const obsProfile = obs ? thetaEProfile(thinColumn(obs, OBS_DISPLAY_STEP_HPA)) : null
+        const bands = curves[0]?.profile.layers ?? obsProfile?.layers ?? null
+        if (obsProfile) curves.push({ profile: obsProfile, color: OBS_COLOR })
         drawThetaEColumn(
           ctx,
           g,
           g.left + g.width + 8,
           THETAE_W - 12,
           curves,
-          curves[0]?.profile.layers ?? null,
+          bands,
           DEFAULT_SKEWT_THEME,
         )
       }
 
       if (barb) {
-        const { col, color } = barb as { col: SoundingColumn; color: string }
+        const { col, color, gap } = barb as { col: SoundingColumn; color: string; gap?: number }
         const bx = g.left + g.width + (showThetaE ? THETAE_W : 0) + 20
         // So viele Level wie ohne Überlappung passen (adaptiv statt fester
         // Liste). Die Obergrenze setzt die API, nicht diese Schleife — siehe
@@ -411,7 +540,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
         let lastBarbY = Infinity
         for (let i = 0; i < col.p.length; i++) {
           const y = yFromP(g, col.p[i])
-          if (Math.abs(y - lastBarbY) < BARB_MIN_GAP) continue
+          if (Math.abs(y - lastBarbY) < (gap ?? BARB_MIN_GAP)) continue
           const u = col.u[i]
           const v = col.v[i]
           if (u == null || v == null) continue
@@ -440,6 +569,8 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     showParcel,
     showCape,
     showCin,
+    obsColumn,
+    source,
   ])
 
   // Hodograf in sein Overlay zeichnen (nur wenn geöffnet)
@@ -472,14 +603,6 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
   if (!location) {
     return <div className="panel-placeholder">Kein Standort gewählt — oben Ort suchen oder Karte klicken</div>
   }
-  if (panel.models.length === 0) {
-    return <div className="panel-placeholder">Keine Modelle gewählt</div>
-  }
-  if (!panel.models.some((id) => supportsPressureLevels(id))) {
-    return (
-      <div className="panel-placeholder">Keines der gewählten Modelle liefert Drucklevel-Daten</div>
-    )
-  }
   // Profile werden nur für PROFILE_FORECAST_DAYS geholt, das Zeitraster reicht
   // aber über 16 Tage. Ohne diese Meldung würde das Panel stillschweigend das
   // LETZTE verfügbare Profil zeichnen und so eine falsche Zeit behaupten.
@@ -487,30 +610,98 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     (end, r) => (r.data?.times.length ? Math.max(end, r.data.times[r.data.times.length - 1]) : end),
     0,
   )
-  if (profileEnd > 0 && panelTime > profileEnd) {
-    return (
-      <div className="panel-placeholder">
-        Vertikalprofile enden bei +{PROFILE_FORECAST_DAYS * 24} h — Zeit-Cursor liegt dahinter
-      </div>
-    )
-  }
+  const hasSondes = sondeStations.length > 0
+  /**
+   * Warum gerade NICHTS gezeichnet werden kann — als Meldung IM Panel statt
+   * als frühes `return`: der Quellen-Umschalter muss stehen bleiben, sonst
+   * käme man aus einer leeren Ansicht nicht mehr heraus.
+   */
+  const blocker: string | null = wantModels
+    ? panel.models.length === 0
+      ? 'Keine Modelle gewählt'
+      : !panel.models.some((id) => supportsPressureLevels(id))
+        ? 'Keines der gewählten Modelle liefert Drucklevel-Daten'
+        : profileEnd > 0 && panelTime > profileEnd
+          ? `Vertikalprofile enden bei +${PROFILE_FORECAST_DAYS * 24} h — Zeit-Cursor liegt dahinter`
+          : null
+    : sondeIndex.isPending
+      ? null
+      : !hasSondes
+        ? 'Keine Messungen vorhanden — lokal erst nach „npm run ingest:sondes".'
+        : !obsStation
+          ? 'Keine Station gewählt'
+          : null
+
+  const sourceSwitch = (
+    <div className="skewt-source" role="radiogroup" aria-label="Quelle des Profils">
+      {(
+        [
+          {
+            id: 'model',
+            label: 'Vorhersage',
+            sub: 'Modelle',
+            title: 'Nur die Modellprofile zum Zeit-Cursor — wie die Atmosphäre werden SOLL.',
+          },
+          {
+            id: 'obs',
+            label: 'Messung',
+            sub: 'Radiosonde',
+            title:
+              'Nur der gemessene Radiosondenaufstieg — wie die Atmosphäre WAR. ML-Paket, CAPE/CIN, DCAPE, Windfiedern und Hodograf gehören dann dem Aufstieg. Kostet kein Modellbudget.',
+          },
+          {
+            id: 'both',
+            label: 'Vergleich',
+            sub: 'Modell + Messung',
+            title:
+              'Messung als weisse Kurve über den Modellen. Paket und Flächen bleiben beim ersten Modell; für einen fairen Vergleich den Zeit-Cursor auf den Termin des Aufstiegs setzen.',
+          },
+        ] as const
+      ).map((o) => {
+        const disabled = o.id !== 'model' && !hasSondes
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={source === o.id}
+            className={`skewt-source-btn is-${o.id}`}
+            disabled={disabled}
+            onClick={() => setSource(o.id)}
+            title={disabled ? 'Keine Messungen vorhanden (Ingest fehlt)' : o.title}
+          >
+            <span className="skewt-source-label">{o.label}</span>
+            <span className="skewt-source-sub">{o.sub}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
 
   return (
-    <div className={showThetaE ? 'skewt has-thetae' : 'skewt'}>
+    <div className={`skewt is-${source}${showThetaE ? ' has-thetae' : ''}`}>
       <div ref={containerRef} className="skewt-canvas">
         <canvas ref={canvasRef} />
       </div>
-      <span className="skewt-time">
-        {formatCursorTime(panelTime)}
-        {elevationText && (
-          <span
-            className="skewt-elev"
-            title="Geländehöhe, mit der das Modell an diesem Punkt rechnet — nicht die reale Höhe. Das Profil beginnt hier."
-          >
-            Modell {elevationText}
+      {blocker && <div className="panel-placeholder skewt-blocker">{blocker}</div>}
+      <div className="skewt-topleft">
+        {sourceSwitch}
+        {/* WAS GEZEIGT WIRD, in der Farbe seiner Quelle: Vorhersage nennt
+            Modellzeit und Modellhöhe, Messung Station, Termin und Start. */}
+        {wantModels && (
+          <span className="skewt-time skewt-time-model">
+            <span className="skewt-time-tag">Vorhersage</span>
+            {formatCursorTime(panelTime)}
+            {elevationText && (
+              <span
+                className="skewt-elev"
+                title="Geländehöhe, mit der das Modell an diesem Punkt rechnet — nicht die reale Höhe. Das Profil beginnt hier."
+              >
+                Modell {elevationText}
+              </span>
+            )}
           </span>
         )}
-      </span>
       {/* BILDLEGENDE ALS SCHALTBRETT, links oben unter der Zeit.
           Sie sagt, was welche Farbe bedeutet — und schaltet dieselbe Schicht
           gleich ein und aus: wer eine Fläche loswerden will, sucht sie dort,
@@ -518,7 +709,78 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
           Bewusst AUSSERHALB der Kennzahlentabelle: die kann man zuklappen, die
           Legende muss stehen bleiben. T und Td haben kein Häkchen — ohne sie
           gäbe es kein Diagramm. */}
-      <div className="skewt-topleft">
+        {wantObs && hasSondes && (
+          <div className="skewt-time skewt-time-obs">
+            <span className="skewt-time-tag">Messung</span>
+            <select
+              value={obsStationId}
+              onChange={(e) => {
+                setObsPick({ loc: locKey, id: e.target.value })
+                setObsTermPick(null)
+              }}
+              title={
+                source === 'obs'
+                  ? 'Radiosondenstation — vorgewählt ist die nächste zum gewählten Punkt.'
+                  : `Radiosondenstation. Automatisch gewählt wird die nächste, wenn sie höchstens ${SONDE_AUTO_KM} km entfernt ist — weiter weg misst die Sonde eine andere Luftsäule, und der Unterschied sähe wie ein Modellfehler aus.`
+              }
+            >
+              <option value="none">— keine Station —</option>
+              {stationOptions.map(({ s, km }) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({Math.round(km)} km)
+                </option>
+              ))}
+            </select>
+            {obsStation && (
+              <select
+                value={obsEntry?.term ?? ''}
+                onChange={(e) => setObsTermPick(e.target.value)}
+                title="Termin des Aufstiegs (Nenntermin). Gestartet wird bis zu zwei Stunden davor bzw. danach — die echte Startzeit steht daneben."
+              >
+                {obsStation.soundings.map((e) => (
+                  <option key={e.term} value={e.term}>
+                    {formatTerm(e.term)}
+                  </option>
+                ))}
+              </select>
+            )}
+            {obsStation == null && nearest && (
+              <span className="skewt-obs-note">
+                nächste Station {nearest.station.name}, {Math.round(nearest.km)} km
+              </span>
+            )}
+            {obsEntry && obsStation && (
+              <span className="skewt-obs-note">
+                Start {formatLaunch(obsEntry.launch)} · {obsStation.elev} m
+                {obsKm != null && obsKm >= 1 ? ` · ${Math.round(obsKm)} km vom Punkt` : ''}
+                {obsEntry.top > 150 ? ` · endet bei ${Math.round(obsEntry.top)} hPa` : ''}
+                {sonde.isPending ? ' · lädt …' : sonde.isError ? ' · ✕ nicht ladbar' : ''}
+              </span>
+            )}
+            {/* Modell und Messung zu VERSCHIEDENEN Zeiten zu vergleichen ist
+                der naheliegende Fehlgriff: der Zeit-Cursor steht beim Öffnen
+                auf „jetzt", der Aufstieg ist Stunden alt. */}
+            {source === 'both' && obsTermMs != null && obsTermMs !== panelTime && (
+              obsTermMs >= TIME_RANGE.start && panel.sync ? (
+                <button
+                  type="button"
+                  className="skewt-obs-sync"
+                  onClick={() => setCursorTime(obsTermMs)}
+                  title="Zeit-Cursor auf den Termin des Aufstiegs setzen — erst dann vergleichen Modell und Messung dieselbe Luftsäule zur selben Zeit."
+                >
+                  ⚠ Zeiten verschieden — Modell auf Termin setzen
+                </button>
+              ) : (
+                <span
+                  className="skewt-obs-note skewt-obs-warn"
+                  title="Das Zeitraster der Modelle beginnt heute 00 UTC; ältere Termine sind nur als Messung zu sehen."
+                >
+                  ⚠ Modell zeigt eine andere Zeit
+                </span>
+              )
+            )}
+          </div>
+        )}
         <div className="skewt-legend">
           <span className="skewt-legend-static">
             <i className="sl-line" /> T
@@ -662,7 +924,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
             <thead>
               <tr>
                 <th />
-                {panel.models.map((id) => (
+                {models.map((id) => (
                   <th key={id}>
                     <span
                       className="legend-chip"
@@ -676,13 +938,22 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
                     </span>
                   </th>
                 ))}
+                {obsColumn && obsStation && obsEntry && (
+                  <th className="skewt-obs-col">
+                    <span className="legend-chip" style={{ background: OBS_COLOR }} />
+                    Messung {obsStation.name}{' '}
+                    <span className="legend-run" title={`Start ${formatLaunch(obsEntry.launch)}`}>
+                      {formatTerm(obsEntry.term)}
+                    </span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {TABLE_ROWS.map((row) => (
                 <tr key={row.label}>
                   <th>{row.label}</th>
-                  {panel.models.map((id, i) => {
+                  {models.map((id, i) => {
                     const s = soundings[i]
                     const r = results[i]
                     return (
@@ -699,6 +970,7 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
                       </td>
                     )
                   })}
+                  {obsColumn && <td className="skewt-obs-col">{obsSounding ? row.get(obsSounding) : '–'}</td>}
                 </tr>
               ))}
             </tbody>

@@ -42,6 +42,9 @@ import type { AccumView } from '../config/variables'
 import { clampToRange, floorToStep, STEP_MS, TIME_RANGE } from '../config/time'
 import { activePanelSection, isPanelSection, useAppView, type PanelSection } from './appView'
 
+/** Quelle des Skew-T: Vorhersage, Messung oder beide übereinander. */
+export type SoundingSource = 'model' | 'obs' | 'both'
+
 export interface LatLon {
   lat: number
   lon: number
@@ -188,6 +191,14 @@ interface WorkbenchStore {
   layouts: Record<PanelSection, PanelLayout>
   /** Siehe setProfileMapWidth. */
   profileMapWidth: number | null
+  /**
+   * Was das Skew-T zeigt: Modellvorhersage, gemessenen Aufstieg oder beides.
+   * Im Store und nicht im Panel, weil die Ortswahl-Karte daran hängt (im
+   * Messmodus gilt keine Modellabdeckung) und weil die Wahl einen
+   * Bereichswechsel überleben soll.
+   */
+  soundingSource: SoundingSource
+  setSoundingSource: (src: SoundingSource) => void
 
   // gemeinsamer Zustand für sync-aktive Panels
   sharedModels: string[]
@@ -388,6 +399,7 @@ export const useWorkbench = create<WorkbenchStore>((set) => ({
 
   layouts: { ...DEFAULT_LAYOUT },
   profileMapWidth: null,
+  soundingSource: 'model',
 
   sharedModels: [...DEFAULT_MODELS],
   sharedModelSlots: defaultSlots(DEFAULT_MODELS),
@@ -421,6 +433,8 @@ export const useWorkbench = create<WorkbenchStore>((set) => ({
 
   // Layout gilt je Bereich: vier Ensembles kosten etwas ganz anderes als vier
   // Meteogramme, eine gemeinsame Zahl wäre für beide falsch.
+  setSoundingSource: (soundingSource) => set({ soundingSource }),
+
   setProfileMapWidth: (fn) =>
     set((s) => {
       const next = Math.round(fn(s.profileMapWidth))

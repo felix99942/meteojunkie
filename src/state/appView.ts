@@ -59,6 +59,15 @@ export type AppView =
    */
   | 'satellite'
   /**
+   * Modellkarten (Tab „Modellkarten", Id historisch `globe`): ECMWF IFS,
+   * ICON-EU und ICON-D2 als Globus oder flache Karte. Eigenes Gerüst wie Radar
+   * und Satellit (Zeitschieber, MapLibre), aber Modellausgabe statt fremder
+   * Karten — die Felder kommen direkt von ECMWF und vom DWD, verarbeitet im
+   * Deploy, weil Gitter über Open-Meteo das Budget um Größenordnungen sprengen
+   * (siehe `config/globe.ts`).
+   */
+  | 'globe'
+  /**
    * Impressum/Offenlegung. Kein Werkzeug-Bereich — steht nicht in der
    * Tab-Reihe, sondern hinter dem kleinen Link am rechten Rand der Navigation
    * (siehe AppNav). Als AppView geführt, weil die Anbieterkennzeichnung

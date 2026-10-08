@@ -9,7 +9,7 @@ import { ClassicMeteogram } from './components/ClassicMeteogram'
 import { VerifyPanel } from './components/VerifyPanel'
 import { FoehnPanel } from './components/FoehnPanel'
 import { Impressum } from './components/Impressum'
-import { OpenMeteoAttribution, ReliefAttribution } from './components/Attribution'
+import { OpenMeteoAttribution, ReliefAttribution, SondeAttribution } from './components/Attribution'
 import { POINT_FORECASTS_ENABLED } from './config/features'
 import { isPanelSection, useAppView } from './state/appView'
 
@@ -19,6 +19,7 @@ const RadarPanel = lazy(() => import('./components/RadarPanel').then((m) => ({ d
 const SatellitePanel = lazy(() =>
   import('./components/SatellitePanel').then((m) => ({ default: m.SatellitePanel })),
 )
+const GlobePanel = lazy(() => import('./components/GlobePanel').then((m) => ({ default: m.GlobePanel })))
 
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
@@ -51,6 +52,7 @@ export default function App() {
             {/* Das Relief gehört nur zum Soundings-Bereich — in den übrigen
                 Panel-Bereichen gibt es keine Ortswahl-Karte. */}
             {view === 'profile' && <ReliefAttribution />}
+            {view === 'profile' && <SondeAttribution />}
           </div>
         </>
       ) : view === 'classic' ? (
@@ -66,6 +68,10 @@ export default function App() {
       ) : view === 'satellite' ? (
         <Suspense fallback={<div className="panel-placeholder">Lade Satellit…</div>}>
           <SatellitePanel />
+        </Suspense>
+      ) : view === 'globe' ? (
+        <Suspense fallback={<div className="panel-placeholder">Lade Modellkarten…</div>}>
+          <GlobePanel />
         </Suspense>
       ) : view === 'impressum' ? (
         <Impressum />

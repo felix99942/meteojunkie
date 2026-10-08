@@ -39,6 +39,7 @@ import {
   loadBasemap,
   OVERLAY_INSERT_BEFORE,
 } from '../render/basemap'
+import type { SondeStation } from '../api/sondes'
 import { useWorkbench } from '../state/workbench'
 
 const RELIEF_SOURCE = 'relief'
@@ -94,8 +95,22 @@ export function LocationMap({
   models,
   width,
   className,
+  sondes,
+  gated = true,
 }: {
   models: string[]
+  /**
+   * false = keine Modellabdeckung prüfen (reine Messansicht der Soundings):
+   * es wird kein Modell geholt, also gibt es auch keine Fläche, ausserhalb
+   * derer ein Punkt sinnlos wäre.
+   */
+  gated?: boolean
+  /**
+   * Radiosondenstationen mit aktuellem Aufstieg. Ein Klick darauf setzt den
+   * Ort EXAKT auf den Startplatz — dann ist die Messung im Skew-T ohne
+   * Entfernung dabei, und Modell und Sonde beschreiben dieselbe Säule.
+   */
+  sondes?: SondeStation[]
   /** Vom ziehbaren Trenner gesetzt (px). null = Fallback über CSS. */
   width?: number | null
   className?: string
@@ -111,7 +126,7 @@ export function LocationMap({
 
   const modelsKey = models.join(',')
   const box = useMemo(() => coverageIntersection(models), [modelsKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const empty = models.length === 0 || isEmptyCoverage(box)
+  const empty = gated && (models.length === 0 || isEmptyCoverage(box))
 
   // Der Klick-Handler hängt an der Abdeckung, die Karte selbst nicht — sonst
   // würde die Karte bei jedem Modellwechsel neu aufgebaut und spränge auf den
@@ -197,39 +212,71 @@ export function LocationMap({
     const map = mapRef.current
     if (!map || !mapReady) return
     const src = map.getSource(MASK_SOURCE) as maplibregl.GeoJSONSource | undefined
-    src?.setData(buildMask(models.length === 0 ? { latMin: 0, latMax: 0, lonMin: 0, lonMax: 0 } : box))
-  }, [mapReady, box, models.length])
+    src?.setData(
+      !gated
+        ? EMPTY_FC
+        : buildMask(models.length === 0 ? { latMin: 0, latMax: 0, lonMin: 0, lonMax: 0 } : box),
+    )
+  }, [mapReady, box, models.length, gated])
 
-  // Klick setzt den Ort — aber nur innerhalb der Abdeckung
+  // Ort setzen — aber nur innerhalb der Abdeckung. Gemeinsam für den Klick
+  // in die Karte und den auf eine Sondenstation.
+  const pickRef = useRef<(lat: number, lng: number, label?: string) => void>(() => {})
+  pickRef.current = (lat, lng, label) => {
+    const gate = gateRef.current
+    if (gate.empty) {
+      setRejected('Die gewählten Modelle haben keine gemeinsame Fläche.')
+      return
+    }
+    const missing = gate.models.filter((id) => !isInCoverage(getModel(id), lat, lng))
+    if (missing.length) {
+      setRejected(`Ausserhalb der Abdeckung von ${missing.map((id) => getModel(id).label).join(', ')}.`)
+      return
+    }
+    setRejected(null)
+    setLockedLocation({
+      lat: Math.round(lat * 10000) / 10000,
+      lon: Math.round(lng * 10000) / 10000,
+      label: label ?? `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`,
+    })
+  }
+
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
     const onClick = (e: maplibregl.MapMouseEvent) => {
-      const { lat, lng } = e.lngLat
-      const gate = gateRef.current
-      if (gate.empty) {
-        setRejected('Die gewählten Modelle haben keine gemeinsame Fläche.')
-        return
-      }
-      const missing = gate.models.filter((id) => !isInCoverage(getModel(id), lat, lng))
-      if (missing.length) {
-        setRejected(
-          `Ausserhalb der Abdeckung von ${missing.map((id) => getModel(id).label).join(', ')}.`,
-        )
-        return
-      }
-      setRejected(null)
-      setLockedLocation({
-        lat: Math.round(lat * 10000) / 10000,
-        lon: Math.round(lng * 10000) / 10000,
-        label: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`,
-      })
+      pickRef.current(e.lngLat.lat, e.lngLat.lng)
     }
     map.on('click', onClick)
     return () => {
       map.off('click', onClick)
     }
-  }, [mapReady, setLockedLocation])
+  }, [mapReady])
+
+  // Sondenstationen als DOM-Marker (über den Städten, unter dem Ortspin).
+  const sondesKey = sondes?.map((s) => s.id).join() ?? ''
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !sondes?.length) return
+    const markers = sondes.map((st) => {
+      const el = document.createElement('button')
+      el.type = 'button'
+      el.className = 'sonde-marker'
+      const latest = st.soundings[0]
+      el.title = `Radiosonde ${st.name} (${st.id}, ${st.elev} m) — Klick setzt den Punkt auf den Startplatz${
+        latest ? `. Neuester Aufstieg: ${latest.term.slice(8, 10)}.${latest.term.slice(5, 7)}. ${latest.term.slice(11, 13)} UTC` : ''
+      }`
+      el.addEventListener('click', (ev) => {
+        // Sonst feuert zusätzlich der Kartenklick und setzt den Ort auf die
+        // Mausposition statt auf den Startplatz.
+        ev.stopPropagation()
+        pickRef.current(st.lat, st.lon, st.name)
+      })
+      return new maplibregl.Marker({ element: el }).setLngLat([st.lon, st.lat]).addTo(map)
+    })
+    return () => markers.forEach((m) => m.remove())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, sondesKey])
 
   // Marker am gewählten Ort
   useEffect(() => {
@@ -313,7 +360,11 @@ export function LocationMap({
           ) : empty ? (
             <span className="locmap-warn">Kein drucklevelfähiges Modell gewählt.</span>
           ) : (
-            <>Klick wählt den Punkt{box ? ' — ausserhalb der Modellabdeckung abgeblendet' : ''}</>
+            !gated ? (
+              <>Klick auf ein Dreieck wählt die Radiosonde — oder irgendwo: die nächste Station</>
+            ) : (
+              <>Klick wählt den Punkt{box ? ' — ausserhalb der Modellabdeckung abgeblendet' : ''}</>
+            )
           )}
         </div>
       </div>

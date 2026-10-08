@@ -17,7 +17,7 @@
 // Schieberegler (`input[type=range]`) rückt von sich aus um seinen `step`
 // weiter — in allen drei Fällen ist die native Wirkung die richtige.
 //
-// **Ein BUTTON gehört ausdrücklich NICHT dazu**, und das war der Fehler:
+// **Ein BUTTON gehört ausdrücklich NICHT dazu** (ebenso wenig ein Häkchen), und das war der Fehler:
 // die Liste hat ihn ausgenommen, obwohl Pfeiltasten auf einem Knopf gar
 // nichts tun. Wer im Soundings-Bereich eine Stadt aus der Schnellwahl
 // anklickt, lässt den Fokus auf diesem Knopf stehen — und danach war die
@@ -30,5 +30,11 @@ export function globalKeyAllowed(e: KeyboardEvent): boolean {
   if (!el) return true
   if (el.isContentEditable) return false
   const tag = el.tagName
+  // Ein HÄKCHEN reagiert so wenig auf Pfeiltasten wie ein Knopf — und blieb
+  // nach dem Anklicken fokussiert: in den Modellkarten war die Zeitsteuerung
+  // tot, nachdem man die Isobaren an- oder abgewählt hatte (gemessen, kein
+  // einziger Schritt bei zehn Tastendrücken). Optionsfelder (radio) bleiben
+  // ausgenommen, dort wechseln die Pfeile die Auswahl.
+  if (tag === 'INPUT' && (el as HTMLInputElement).type === 'checkbox') return true
   return tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA'
 }

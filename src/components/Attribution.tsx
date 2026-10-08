@@ -73,6 +73,24 @@ export function GroundAttribution({ className = '' }: { className?: string }) {
   )
 }
 
+/**
+ * Gemessene Radiosondenaufstiege im Soundings-Bereich. Geholt im Deploy
+ * (`scripts/sonde-ingest.mjs`), der Browser kontaktiert UWyo also NICHT —
+ * genannt wird die Quelle trotzdem: die Messungen stammen von den nationalen
+ * Wetterdiensten, UWyo stellt sie nur abrufbar zusammen.
+ */
+export function SondeAttribution({ className = '' }: { className?: string }) {
+  return (
+    <span className={`attribution ${className}`.trim()}>
+      Radiosonden:{' '}
+      <a href="https://weather.uwyo.edu/upperair/sounding.shtml" target="_blank" rel="noreferrer">
+        University of Wyoming
+      </a>{' '}
+      (Messungen der nationalen Wetterdienste über das WMO-GTS), alle 3 h übernommen.
+    </span>
+  )
+}
+
 export function ReliefAttribution({ className = '' }: { className?: string }) {
   return (
     <span className={`attribution ${className}`.trim()}>

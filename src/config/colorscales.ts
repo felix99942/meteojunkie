@@ -32,7 +32,7 @@ export interface ColorScale {
 }
 
 /** Gleichmäßige Bänder ab `start` mit Schrittweite `step`, eine Farbe je Band. */
-function bands(start: number, step: number, colors: string[]): ColorStop[] {
+export function bands(start: number, step: number, colors: string[]): ColorStop[] {
   return colors.map((color, i) => ({ value: start + i * step, color }))
 }
 
@@ -45,7 +45,7 @@ function hexToRgb(h: string): [number, number, number] {
 function toHex(n: number): string {
   return Math.round(n).toString(16).padStart(2, '0')
 }
-function lerpRamp(anchors: string[], count: number): string[] {
+export function lerpRamp(anchors: string[], count: number): string[] {
   const rgb = anchors.map(hexToRgb)
   const seg = anchors.length - 1
   return Array.from({ length: count }, (_, i) => {
@@ -69,7 +69,7 @@ function seq(from: number, to: number, step: number): number[] {
 // bis 42: Violett → Blau → Cyan → Grün → Gelb → Orange → Rot → Magenta.
 // lerpRamp verdichtet sie auf 2-°C-Bänder — maximiert die Unterscheidbarkeit
 // benachbarter Stufen (anders als eine einfarbige Orange-Rampe).
-const TEMP_ANCHORS = [
+export const TEMP_ANCHORS = [
   '#6a3d9a', // -30
   '#5a5fd0', // -22
   '#3288e0', // -14

@@ -1,15 +1,21 @@
 # Baut die Web-Version (Karte deaktiviert) und deployt sie auf GitHub Pages.
 # Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
 # Läuft bei jedem Push auf main/master UND alle 3 h (Cron) — der Cron-Lauf
-# frischt die MOS-Vorhersage auf (DWD MOSMIX rechnet ~4×/Tag). Die Forecast-
-# JSONs werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
+# frischt die MOS-Vorhersage auf (DWD MOSMIX rechnet ~4×/Tag), die
+# Radiosonden und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
+# Die Daten werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
 name: Deploy web version to GitHub Pages
 
 on:
   push:
     branches: [main, master]
   schedule:
-    - cron: '15 */3 * * *' # alle 3 Stunden — MOS-Vorhersage aktualisieren
+    # Alle 3 h, versetzt auf xx:30 nach 01/04/07/… UTC: ein ICON-D2-Lauf
+    # (alle 3 h) ist ~1 h 20 min nach Init komplett (gemessen 2026-10-05) —
+    # so ist jeder Lauf zehn Minuten danach online. Bei xx:15 zur vollen
+    # Dreierstunde käme jeder D2-Lauf erst beim übernächsten Cron mit und wäre
+    # bis zu 6 h alt. MOSMIX ist im 3-h-Takt ohnehin unkritisch.
+    - cron: '30 1-22/3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -43,6 +49,83 @@ jobs:
       - name: MOS-Vorhersage erzeugen
         continue-on-error: true
         run: npm run ingest:mos:forecast
+
+      # Gemessene Radiosondenaufstiege (UWyo, ~20 Stationen × 3 Termine) →
+      # public/sondes/. UWyo sendet keine CORS-Header, deshalb hier statt im
+      # Browser. Ein Ausfall darf das Deployment ebenfalls nicht blockieren —
+      # dann zeigt das Skew-T schlicht keine Messung.
+      - name: Radiosonden übernehmen
+        continue-on-error: true
+        timeout-minutes: 10
+        run: npm run ingest:sondes
+
+      # Modellkarten: ECMWF IFS 0,25° und DWD ICON-EU/ICON-D2 → public/nwp/,
+      # Wertebilder je neuestem Lauf (zusammen ~350 MB). Python, weil das GRIB2
+      # CCSDS-komprimiert ist und eccodes es dekodiert (das pip-Paket bringt
+      # die Bibliothek mit).
+      # Ein Ausfall darf das Deployment nicht blockieren — dann meldet die
+      # Karte „nicht verfügbar", alles andere deployt normal.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements-nwp.txt
+
+      - name: Python-Pakete für die Modellkarten
+        id: nwp-deps
+        continue-on-error: true
+        run: pip install -q -r scripts/requirements-nwp.txt
+
+      # ECMWF über den Actions-Cache JE LAUF: der Lauf wechselt nur zweimal am
+      # Tag, der Cron läuft alle 3 h, und ein Lauf kostet ~7,5 min (das Netz
+      # von ECMWF ist der Engpass, nicht die Rechnung). Erst die Kennung des
+      # neuesten vollständigen Laufs holen (ein Abruf), dann den Cache mit
+      # genau diesem Schlüssel. Wiederherstellen und Speichern GETRENNT: der
+      # kombinierte Cache-Schritt speicherte am Jobende auch einen
+      # halbfertigen Stand, wenn der Ingest scheitert — der Schlüssel wäre dann
+      # für diesen Lauf belegt. Gespeichert wird nur bei Erfolg.
+      - name: ECMWF-Lauf bestimmen
+        id: ecmwf
+        if: steps.nwp-deps.outcome == 'success'
+        continue-on-error: true
+        run: echo "run=$(python3 scripts/ecmwf-ingest.py --latest)" >> "$GITHUB_OUTPUT"
+
+      - name: ECMWF-Felder aus dem Cache
+        id: ecmwf-cache
+        if: steps.ecmwf.outputs.run != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/nwp/ecmwf-ifs
+          key: nwp-ecmwf-ifs-v2-${{ steps.ecmwf.outputs.run }}
+
+      - name: ECMWF-Felder erzeugen (Open Data)
+        id: ecmwf-ingest
+        if: steps.ecmwf.outputs.run != '' && steps.ecmwf-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 25
+        run: python3 -u scripts/ecmwf-ingest.py --run ${{ steps.ecmwf.outputs.run }}
+
+      - name: ECMWF-Felder im Cache ablegen
+        if: steps.ecmwf-ingest.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: public/nwp/ecmwf-ifs
+          key: nwp-ecmwf-ifs-v2-${{ steps.ecmwf.outputs.run }}
+
+      # ICON OHNE Cache: ein Lauf kostet 17 s (D2) bzw. 38 s (EU) bei
+      # 22–26 MB/s vom DWD (gemessen), und D2 hat bei jedem Cron einen neuen
+      # Lauf — ein Cache spräche fast nie an.
+      - name: ICON-D2-Felder erzeugen (DWD Open Data)
+        if: steps.nwp-deps.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 -u scripts/icon-ingest.py icon-d2
+
+      - name: ICON-EU-Felder erzeugen (DWD Open Data)
+        if: steps.nwp-deps.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 -u scripts/icon-ingest.py icon-eu
 
       # base-Pfad ableiten:
       #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)

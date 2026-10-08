@@ -271,8 +271,9 @@ export function Impressum() {
               >
                 Deutscher Wetterdienst, Open Data
               </a>{' '}
-              — MOSMIX-Punktvorhersagen, Stationskatalog und das Niederschlagsradar
-              (Radarkomposit RV über <code>maps.dwd.de</code>). Nutzung nach{' '}
+              — MOSMIX-Punktvorhersagen, Stationskatalog, das Niederschlagsradar
+              (Radarkomposit RV über <code>maps.dwd.de</code>) und die Modellläufe ICON-D2 und
+              ICON-EU für die Modellkarten (beim Bauen der Seite übernommen). Nutzung nach{' '}
               <a
                 href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
                 target="_blank"
@@ -281,6 +282,24 @@ export function Impressum() {
                 GeoNutzV
               </a>
               .
+            </li>
+            <li>
+              <a href="https://weather.uwyo.edu/upperair/sounding.shtml" target="_blank" rel="noreferrer">
+                University of Wyoming, Department of Atmospheric Science
+              </a>{' '}
+              — gemessene Radiosondenaufstiege (Soundings). Übernommen beim Bauen der Seite; Ihr
+              Browser kontaktiert diesen Dienst nicht.
+            </li>
+            <li>
+              <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noreferrer">
+                ECMWF Open Data
+              </a>{' '}
+              — Modellläufe des IFS (0,25°) für die Modellkarten. Lizenz{' '}
+              <a href="https://creativecommons.org/licenses/by/4.0/deed.de" target="_blank" rel="noreferrer">
+                CC BY 4.0
+              </a>
+              . Übernommen und zu Bildern verarbeitet beim Bauen der Seite; Ihr Browser kontaktiert
+              ECMWF nicht.
             </li>
             <li>
               <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">

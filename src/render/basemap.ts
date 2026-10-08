@@ -16,6 +16,7 @@ import type { StyleSpecification } from 'maplibre-gl'
 import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
 import dachBasemapUrl from '../mapdata/dach.basemap.json?url'
+import worldBasemapUrl from '../mapdata/world.basemap.json?url'
 
 export const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
@@ -126,6 +127,9 @@ const BASEMAP_URLS: Record<string, string> = {
   // beiden Bündel ergänzen sich, deshalb trägt dieses die anderen Ebenen
   // nicht doppelt. `BasemapData.coast`/`borders` sind dafür optional.
   dach: dachBasemapUrl,
+  // Ganze Erde für den Globus (1:50m, auf 0,01° gerundet, ~350 KB gzip) —
+  // als eigenes Bündel, damit die übrigen Karten es nicht mitladen.
+  world: worldBasemapUrl,
 }
 
 const basemapCache = new Map<string, Promise<BasemapData>>()

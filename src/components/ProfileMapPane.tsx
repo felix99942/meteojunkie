@@ -7,6 +7,7 @@
 // (der Ort ist globaler Zustand).
 
 import { useShallow } from 'zustand/react/shallow'
+import { useSondeIndex } from '../api/queries'
 import { supportsPressureLevels } from '../config/levels'
 import { useWorkbench, visiblePanelIndices } from '../state/workbench'
 import { LocationMap } from './LocationMap'
@@ -38,5 +39,14 @@ function useProfileModels(): string[] {
 /** `width` kommt vom ziehbaren Trenner; null = noch nicht vermessen. */
 export function ProfileMapPane({ width }: { width: number | null }) {
   const models = useProfileModels()
-  return <LocationMap models={models} width={width} />
+  const sondes = useSondeIndex().data?.stations
+  const obsOnly = useWorkbench((s) => s.soundingSource === 'obs')
+  return (
+    <LocationMap
+      models={obsOnly ? [] : models}
+      gated={!obsOnly}
+      width={width}
+      sondes={sondes}
+    />
+  )
 }

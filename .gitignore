@@ -28,3 +28,13 @@ server/.cache/
 
 # MOS-Vorhersage: generierte Daten (stündlich per Cron erzeugt, nicht versionieren)
 public/mos/forecast/
+
+# Radiosonden-Aufstiege: ebenfalls im Deploy erzeugt (scripts/sonde-ingest.mjs)
+public/sondes/
+
+# Modellkarten (ECMWF IFS, ICON-EU, ICON-D2): Wertebilder, im Deploy erzeugt
+# (scripts/ecmwf-ingest.py, scripts/icon-ingest.py), zusammen ~350 MB
+public/nwp/
+
+# Python-Bytecode (scripts/ecmwf-ingest.py)
+__pycache__/

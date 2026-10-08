@@ -19,7 +19,7 @@ const IMAGE_WIDTH = 512
 // die LUT bildet den Wertebereich LINEAR ab, feine Schwellen brauchen sonst
 // mehr Zellen, als 256 über z.B. 0…100 mm bieten (0.6 mm bekäme sonst die
 // 0.2-Farbe). 4096 Zellen ≈ 0,025 mm-Raster bei 100 mm Spanne.
-const LUT_SIZE = 4096
+export const LUT_SIZE = 4096
 
 function mercatorY(latDeg: number): number {
   return Math.log(Math.tan(Math.PI / 4 + (latDeg * Math.PI) / 360))
@@ -40,7 +40,7 @@ function parseHex(color: string): [number, number, number, number] {
 // Lookup-Tabelle über [min, max] — einmal pro Skala, danach O(1) pro Pixel
 const lutCache = new WeakMap<ColorScale, Uint8ClampedArray>()
 
-function buildLut(scale: ColorScale): Uint8ClampedArray {
+export function buildLut(scale: ColorScale): Uint8ClampedArray {
   const cached = lutCache.get(scale)
   if (cached) return cached
 

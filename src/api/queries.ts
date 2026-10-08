@@ -15,6 +15,7 @@ import {
   type HourlySeries,
   type Profile,
 } from './openmeteo'
+import { loadSonde, loadSondeIndex, type SondeData, type SondeIndex } from './sondes'
 import type { DomainPreset } from '../config/domains'
 import { getEnsembleModel } from '../config/ensemble'
 import { getModel } from '../config/models'
@@ -234,5 +235,30 @@ export function useGridField(
     // kein Query-Retry: Backoff bei Rate-Limits macht der Fetch-Layer selbst,
     // ein Retry obendrauf würde erneut das volle Gitter-Budget kosten
     retry: false,
+  })
+}
+
+/**
+ * Index der gemessenen Radiosondenaufstiege (statisches Asset aus dem Ingest).
+ * Ändert sich höchstens mit dem nächsten Deploy — eine Stunde frisch genügt.
+ * `null` = keine Messungen vorhanden (lokal ohne Ingest).
+ */
+export function useSondeIndex(): UseQueryResult<SondeIndex | null> {
+  return useQuery({
+    queryKey: ['sondes', 'index'],
+    queryFn: loadSondeIndex,
+    staleTime: 60 * 60 * 1000,
+    gcTime: SERIES_GC_TIME_MS,
+  })
+}
+
+/** Ein einzelner Aufstieg — unveränderlich, einmal geladen genügt. */
+export function useSonde(file: string | null): UseQueryResult<SondeData> {
+  return useQuery({
+    queryKey: ['sondes', 'file', file],
+    queryFn: () => loadSonde(file as string),
+    enabled: file != null,
+    staleTime: Infinity,
+    gcTime: SERIES_GC_TIME_MS,
   })
 }

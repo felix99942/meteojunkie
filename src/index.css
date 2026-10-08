@@ -801,18 +801,166 @@ button:focus-visible {
   display: block;
 }
 
+/* QUELLEN der Sondierung: Vorhersage (Akzentblau, wie die Modellwahl) und
+   Messung (das Weiss der Messkurve). Dieselben zwei Farben tragen der
+   Umschalter, die Kennzeile darunter und die Tabellenspalte — so ist an jeder
+   Stelle sofort klar, ob eine Zahl gerechnet oder gemessen ist. */
+.skewt {
+  --src-model: var(--accent);
+  --src-obs: #ecebe6;
+}
+
+/* Kennzeile je Quelle: farbiges Etikett vorn, dann Zeit bzw. Station. */
 .skewt-time {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  z-index: 5;
-  background: rgba(24, 25, 27, 0.85);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 470px;
+  background: rgba(24, 25, 27, 0.88);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--src);
   border-radius: 3px;
-  padding: 1px 6px;
+  padding: 2px 8px 2px 6px;
   color: var(--ink-secondary);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  pointer-events: none;
+}
+
+.skewt-time-model {
+  --src: var(--src-model);
+}
+
+.skewt-time-obs {
+  --src: var(--src-obs);
+}
+
+.skewt-time-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--src);
+}
+
+.skewt-time select {
+  font: inherit;
+  font-size: 12px;
+  max-width: 210px;
+}
+
+/* Segmentierter Umschalter Vorhersage · Messung · Vergleich. Gross, weil er
+   entscheidet, WAS das Diagramm überhaupt ist — nicht eine Schicht darin. */
+.skewt-source {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  background: rgba(16, 17, 19, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.skewt-source-btn {
+  --src: var(--src-model);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 96px;
+  padding: 5px 12px 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+
+.skewt-source-btn.is-obs {
+  --src: var(--src-obs);
+}
+
+.skewt-source-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+/* Farbpunkt = Quelle; beim Vergleich zwei halbe. */
+.skewt-source-label::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--src);
+  opacity: 0.55;
+}
+
+.skewt-source-btn.is-both .skewt-source-label::before {
+  background: linear-gradient(90deg, var(--src-model) 50%, var(--src-obs) 50%);
+}
+
+.skewt-source-sub {
+  padding-left: 16px;
+  font-size: 10.5px;
+  line-height: 1.1;
+  opacity: 0.8;
+}
+
+.skewt-source-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-secondary);
+}
+
+.skewt-source-btn[aria-checked='true'] {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--src) 20%, rgb(28, 29, 32));
+  border-color: color-mix(in srgb, var(--src) 65%, transparent);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--src) 18%, transparent);
+}
+
+.skewt-source-btn.is-both[aria-checked='true'] {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--src-model) 22%, rgb(28, 29, 32)),
+    color-mix(in srgb, var(--src-obs) 14%, rgb(28, 29, 32))
+  );
+  border-color: color-mix(in srgb, var(--src-obs) 45%, var(--src-model));
+}
+
+.skewt-source-btn[aria-checked='true'] .skewt-source-label::before {
+  opacity: 1;
+  box-shadow: 0 0 6px var(--src);
+}
+
+.skewt-source-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.skewt-source-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Meldung, warum nichts gezeichnet ist — UNTER dem Umschalter, damit man aus
+   der leeren Ansicht heraus umschalten kann. */
+.skewt-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--bg-panel);
+  padding: 0 24px;
+  text-align: center;
 }
 
 /* Ist die θe-Spalte an, weichen die Überlagerungen nach links aus — sonst
@@ -837,7 +985,7 @@ button:focus-visible {
    steht, wenn diese bei schmalem Panel umbricht. */
 .skewt-topleft {
   position: absolute;
-  top: 28px;
+  top: 4px;
   left: 4px;
   z-index: 5;
   display: flex;
@@ -850,6 +998,37 @@ button:focus-visible {
 .skewt-layers {
   display: flex;
   gap: 6px;
+}
+
+.skewt-obs-note {
+  color: var(--ink-muted);
+}
+
+.skewt-obs-warn {
+  color: #e8b45a;
+}
+
+.skewt-obs-sync {
+  font: inherit;
+  font-size: 12px;
+  color: #e8b45a;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, #e8b45a 50%, transparent);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.skewt-obs-sync:hover {
+  background: color-mix(in srgb, #e8b45a 15%, transparent);
+}
+
+/* Die Messungsspalte der Kennzahlentabelle hebt sich leicht ab — sie ist die
+   Spalte, gegen die man die übrigen liest. */
+.skewt-table .skewt-obs-col {
+  color: var(--ink);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--src-obs) 7%, transparent);
 }
 
 .skewt-layer-btn {
@@ -3972,6 +4151,24 @@ button:focus-visible {
 
 /* Gewählter Punkt: Fadenkreuz-Ring, damit er über dem Relief nicht mit einem
    Stadtpunkt verwechselt wird. */
+/* Radiosondenstation: ein Dreieck (das übliche Symbol für einen
+   Aufstiegsort), bewusst ANDERS als der runde Ortspin und die Stadtpunkte —
+   es ist ein anklickbarer Messort, keine Beschriftung. */
+.sonde-marker {
+  width: 14px;
+  height: 13px;
+  padding: 0;
+  border: none;
+  background: #f4f4f4;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 0 1px #000);
+  cursor: pointer;
+}
+
+.sonde-marker:hover {
+  background: var(--accent);
+}
+
 .locmap-pin {
   width: 14px;
   height: 14px;
@@ -4014,4 +4211,244 @@ button:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
+}
+
+/* ===== Modellkarten (ECMWF IFS, ICON-EU, ICON-D2) ==========================
+   Teilt sich Leiste, Karte und Legende mit Radar/Satellit (`.radar-*`). */
+
+/* Ansicht Globus · Europa · Alpen: ein Segmentschalter, weil sich die drei
+   ausschließen und man sieht, welche gilt — wie der Quellenschalter im Skew-T,
+   nur in der Größe der Leiste. */
+.globe-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(16, 17, 19, 0.6);
+}
+
+.globe-seg button {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 3px 10px;
+}
+
+.globe-seg button:hover {
+  color: var(--ink);
+}
+
+.globe-seg button.is-active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+/* Die Zeitangabe ist hier kürzer als beim Radar („Mo 05.10. 12 UTC +132 h"),
+   bleibt aber fest breit — sonst zuckt der Schieber beim Ziehen. */
+.globe .radar-step.globe-step {
+  min-width: 25ch;
+}
+
+.globe-step em {
+  font-style: normal;
+  color: var(--ink-muted);
+}
+
+.globe .radar-sub {
+  min-width: 0;
+}
+
+.globe-warn {
+  color: var(--warn);
+}
+
+/* Die Legende einer globalen Temperatur hat 53 Stufen — als gleich breite
+   Kästchen mit Zahl wäre sie breiter als die Karte. Deshalb ein durchgehender
+   Balken, beschriftet nur jede n-te Stufe (`legendEvery`). */
+.globe-legend {
+  max-width: min(640px, calc(100% - 12px));
+}
+
+.globe-legend-bar {
+  display: flex;
+}
+
+.globe-legend-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1 1 0;
+  min-width: 6px;
+}
+
+.globe-legend-step i {
+  display: block;
+  width: 100%;
+  height: 9px;
+}
+
+/* Die Zahl gehört an die UNTERKANTE der Stufe (Schwellenwert), steht also am
+   linken Rand und darf über die Nachbarn hinausragen. */
+.globe-legend-step em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-height: 1.2em;
+}
+
+/* Wert am Zeiger: groß, oben links in der Karte — er ist das, wofür man den
+   Zeiger überhaupt auf die Kugel hält. */
+.globe-readout {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 9px;
+  background: rgba(20, 21, 24, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.globe-readout strong {
+  font-size: 19px;
+  color: var(--ink);
+}
+
+.globe-readout-pos {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.globe-msg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  max-width: 460px;
+  padding: 12px 16px;
+  background: rgba(20, 21, 24, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Wolkenschichten: je Schicht eine Leiter aus acht Stufen (1/8 … 8/8). */
+.globe-legend-octas {
+  display: grid;
+  gap: 2px;
+  font-size: 10.5px;
+  color: var(--ink-secondary);
+}
+
+.globe-legend-octa-row {
+  display: grid;
+  grid-template-columns: 44px repeat(8, 20px);
+  align-items: center;
+  gap: 1px;
+}
+
+.globe-legend-octa-row i {
+  display: block;
+  height: 10px;
+}
+
+.globe-legend-octa-scale em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+/* Pfeile unten mittig in der Karte: anklickbar UND Rückmeldung der
+   Pfeiltasten — sie leuchten beim Tastendruck kurz grün auf, man sieht also,
+   dass die Tasten ankommen. Ruhig zurückhaltend, damit sie nicht über dem
+   Feld stehen wie ein Bedienfeld. */
+.globe-arrows {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  gap: 14px;
+}
+
+.globe-arrows button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(20, 21, 24, 0.72);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition:
+    background 160ms,
+    color 160ms,
+    border-color 160ms,
+    box-shadow 160ms;
+}
+
+.globe-arrows button:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}
+
+.globe-arrows button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.globe-arrows svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Aufleuchten beim Tastendruck — schnell an, weich aus */
+.globe-arrows button.is-on {
+  color: #0d1a10;
+  background: #3fd46a;
+  border-color: #7cf09a;
+  box-shadow: 0 0 18px rgba(63, 212, 106, 0.65);
+  transition: none;
+}
+
+/* Sternenhimmel hinter dem Globus: MapLibre lässt die Fläche neben der Kugel
+   durchsichtig, darunter liegt dieser Hintergrund. Eine wiederholte
+   Sternkachel (`render/starfield.ts`), darüber ein dunkler Verlauf zur Mitte,
+   damit die Kugel sich vom Himmel abhebt und der Rand nicht unruhig wird.
+   Verschoben wird über --star-x/--star-y (Parallaxe beim Drehen). */
+.radar-body.globe-space {
+  background-color: #03040a;
+  background-image:
+    radial-gradient(ellipse at 50% 50%, rgba(3, 4, 10, 0) 0%, rgba(3, 4, 10, 0.25) 60%, rgba(3, 4, 10, 0.7) 100%),
+    var(--stars);
+  background-size:
+    100% 100%,
+    var(--star-tile) var(--star-tile);
+  background-position:
+    0 0,
+    var(--star-x, 0px) var(--star-y, 0px);
+  background-repeat: no-repeat, repeat;
 }

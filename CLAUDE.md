@@ -1770,6 +1770,46 @@ npm run preview   # gebautes dist/ servieren
   breit, ab drei Modellen lief der Kasten über seine Höchstbreite und die
   letzte Spalte stand abgeschnitten da (gemessen 460 px gebraucht bei 418 px
   Platz). Mit Umbruch kostet jede Modellspalte 88 px, vier Modelle passen.
+- **GEMESSENE AUFSTIEGE im Skew-T** (`scripts/sonde-ingest.mjs` → `public/
+  sondes/`, Kern `api/sondes.ts` mit Tests, npm `ingest:sondes`): weisse
+  Kurve über den Modellen, eigene Spalte in der Kennzahlentabelle, Dreiecke
+  auf der Ortswahl-Karte (Klick setzt den Punkt EXAKT auf den Startplatz).
+  Quelle ist die **University of Wyoming** (`/wsgi/sounding?…&type=TEXT:CSV`),
+  für die meisten Stationen die hochaufgelösten BUFR-Aufstiege (~3.000
+  Punkte), für Budapest/Cuneo/Poprad/Legionowo nur TEMP (~100). **Kein CORS**
+  (gemessen, ebenso opendata.dwd.de) → Ingest im Deploy wie MOSMIX, gitignored,
+  `continue-on-error`; LOKAL gibt es Messungen nur nach `npm run ingest:sondes`
+  (dauert ~3 min, ~840 KB). Die Stationsliste ist GEMESSEN (2026-10-02):
+  21 Stationen liefern, Graz, Linz, Udine, Mailand, Ljubljana, De Bilt, Uccle,
+  Nancy, Lyon, Kempten liefern NICHT — nicht erneut ergänzen. Innsbruck nur
+  zum 00-UTC-Termin. **Termin ≠ Startzeit**: gestartet wird ~1 h vorher
+  (Innsbruck führt den 02:15-Start unter 00 UTC) — beides steht in den Daten
+  und in der Anzeige. Ein früh abgerissener Aufstieg (Wien 00 UTC stand bei
+  der Messung zuerst bei 800 hPa, Stunden später vollständig) wird mit
+  „endet bei … hPa" markiert.
+  Ausgedünnt wird auf ECHTE Messpunkte (alle 2 hPa, über 300 hPa alle 1 hPa,
+  Druck streng fallend), nicht auf ein Gitter interpoliert. Gerechnet wird
+  über `sondeColumn` → dieselbe `computeSounding` wie bei den Modellen.
+  **Td der Messung ist DURCHGEZOGEN**: an scharfen Trockenschichten springt
+  er echt um 15 K in 2 hPa, die Strichelung zerhackte das zu Rauschen.
+  **Drei Ansichten, nicht eine Zusatzkurve** (`soundingSource` im Store,
+  Segmentschalter `.skewt-source`): Vorhersage · Messung · Vergleich. Ein
+  Skew-T liest man über die Flächen, und die gehören immer zu GENAU EINEM
+  Profil — in der Messansicht gehören Paket, CAPE/CIN, DCAPE, Tw, Windfiedern
+  und Hodograf dem Aufstieg, im Vergleich bleiben sie beim ersten Modell. Die
+  Messansicht holt KEINE Modelle (Budget) und die Karte prüft dort keine
+  Modellabdeckung (`LocationMap gated={false}`). Farbcode durchgehend:
+  Vorhersage = Akzentblau, Messung = Weiss der Messkurve (Umschalter,
+  Kennzeilen `.skewt-time-model/-obs`, Tabellenspalte). Leere Ansichten
+  melden sich IM Panel (`blocker`) statt per frühem `return` — sonst
+  verschwände der Umschalter, und man käme nicht mehr heraus. Windfiedern und
+  θe-Spalte der Messung laufen über `thinColumn` (25 hPa): auf 2-hPa-Punkten
+  wären die Fiedern ein Klumpen und die θe-Schichtung Messrauschen.
+  Automatisch dazugenommen wird die nächste Station nur bis
+  `SONDE_AUTO_KM` = 60 km — Salzburg gegen München wäre ein anderer Ort, kein
+  Modellfehler. Weicht die Modellzeit vom Termin ab, sagt das Panel es und
+  bietet „auf Termin setzen" (nur innerhalb des Zeitrasters, ältere Termine
+  sind reine Messung).
 - **Windfahnen im Skew-T sind von der API begrenzt, nicht vom Code**
   (`BARB_MIN_GAP`/`BARB_LEN` in `SkewTPanel.tsx`): Open-Meteo liefert genau die
   19 Drucklevel aus `PRESSURE_LEVELS`, davon 16 im Achsenbereich (1050–100 hPa).
@@ -2580,6 +2620,204 @@ npm run preview   # gebautes dist/ servieren
   die Städte über dieselbe Pseudo-Domain `'imagery'` in `config/cities.ts`
   (ein paar Einträge — Mailand, Venedig, Turin — liegen außerhalb der
   Radarfläche und tragen nur hier).
+- **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der
+  Bereich angefangen; `GlobePanel.tsx`, Registry/Kerne `config/globe.ts` mit
+  Tests, Kacheln `render/globeTiles.ts` + `render/globeProtocol.ts`, Laden
+  `api/globeData.ts`) — **ECMWF IFS 0,25°, DWD ICON-EU 7 km und ICON-D2
+  2,2 km** als drehbarer Globus oder flache Karte (Ansichten Globus · Europa ·
+  Alpen, MapLibre-Projektion je Ansicht): T2m, T850, 500 hPa, MSL,
+  Niederschlag, Wind, Böen, Bewölkung (gesamt; bei ICON auch die Schichten),
+  dazu Isolinien für Bodendruck und 500 hPa.
+  **NICHT über Open-Meteo**, und das ist eine Rechnung, keine Vorliebe: ein
+  Gitter kostet dort ~Punktzahl Calls — global 1° = 65.000, ICON-D2 nativ
+  ~900.000 Punkte je Feld; das Tagesbudget sind 10.000 (Professional 5 Mio.
+  im MONAT), und ein Browser-Cache hilft nicht, weil er je NUTZER gilt.
+  Geholt wird einmal je Modelllauf im Deploy, direkt beim Anbieter — die
+  Kosten hängen damit nicht an der Nutzerzahl. Punktdaten (Meteogramm,
+  Ensemble, Soundings, Verifikation) bleiben bei Open-Meteo, dort sind sie
+  billig.
+  **Python statt Node**, als einzige Ingests: das GRIB2 ist CCSDS-komprimiert,
+  `pip install eccodes` bringt die Bibliothek mit und dekodiert ein Feld in
+  0,01 s. `scripts/nwp_common.py` ist der gemeinsame Kern (Abruf mit
+  Gesamtfrist, `decode_grib`, Ableitung der Größen, Kodierung, atomare Ablage,
+  Metadaten); `scripts/ecmwf-ingest.py` und `scripts/icon-ingest.py` liefern
+  nur ihre Felder unter einheitlichen Namen. npm `ingest:ecmwf`,
+  `ingest:icon-d2`, `ingest:icon-eu`; lokal vorher
+  `python3 -m venv … && pip install -r scripts/requirements-nwp.txt`.
+  Ablage `public/nwp/<modell>/` (gitignored): `meta.json` +
+  `<lauf>/<größe>/<schritt>.webp`.
+  **Gemessen (2026-10-05), ECMWF**: je Schritt eine GRIB-Datei (~146 MB) plus
+  `.index` (JSON-Zeilen mit `_offset`/`_length`) — je Feld nur sein
+  Byte-Bereich (0,5–0,9 MB). 00/12 UTC bis +360 h (3 h bis 144, dann 6 h),
+  06/18 UTC nur +90 h und NICHT genommen. Verzug ~7,5 h. Raster 1440×721,
+  Nord → Süd. **Die Böe wechselt den Namen** (`10fg` bis +90 und ab +150,
+  `10fg3` von +93 bis +144, `PARAM_ALIASES`). **Das Netz TRÖPFELT**: derselbe
+  Byte-Bereich kam mit 7,8 MB/s und mit 90 KB/s; ein Socket-Timeout greift
+  nicht, deshalb `DEADLINE_S` = 8 s Gesamtfrist mit Neuversuch (halbierte die
+  Laufzeit, voller Lauf ~8 min). Der AWS-Spiegel antwortete durchgehend 503
+  „SlowDown".
+  **Gemessen (2026-10-05), DWD ICON** (opendata.dwd.de, KEIN CORS, eine
+  bz2-GRIB-Datei je Größe × Schritt): ICON-D2 regelmäßig 0,02°, 1215×746,
+  43,2–58,1° N / 3,9° W–20,3° O, alle 3 h, 0–48 h stündlich, komplett
+  ~HH+1:20; ICON-EU 0,0625°, 1377×657, 29,5–70,5° N / 23,5° W–62,5° O,
+  00/06/12/18 bis +120 h (stündlich bis 78, dann 3 h), komplett ~HH+3:40 —
+  die Zwischenläufe (~30 h) werden NICHT genommen. **ICON tastet Süd → Nord**
+  ab, ECMWF Nord → Süd — das Raster kommt deshalb aus der Nachricht
+  (`decode_grib`), nie aus einer Annahme. Durchsatz 22–26 MB/s, 0 Fehler:
+  D2 17 s / 54 MB, EU 38 s / 136 MB je Lauf. Vorhaltung beim DWD nur ~24 h.
+  Das gültige D2-Gebiet ist KEIN Rechteck (ca. 150.000 Randpunkte fehlen, nach
+  Süden schmaler) — die gezackte Kante in der Karte ist der Modellrand.
+  **Böen- und Niederschlagsintervall stehen je Schritt in `meta.json`**
+  (`intervals`, aus dem GRIB-`stepRange`) und in der Legende, weil sie
+  WECHSELN: der Niederschlag gilt bis zum vorigen Schritt (1/3/6 h), die Böe
+  bei ICON IMMER der letzten Stunde (auch EU nach +78 h, `80-81`), bei IFS bis
+  +90 h der letzten Stunde (`2-3`), dann 3 bzw. 6 h. Die frühere Beschriftung
+  „seit dem vorigen Zeitschritt" war für IFS bis +90 h falsch. Bei +0
+  (stepRange „0") gibt es keine Böe, der Schritt fehlt.
+  **Im Deploy**: ECMWF über den Actions-Cache JE LAUF (`--latest` liefert die
+  Kennung, `cache/restore`, Ingest nur ohne Treffer mit `--run`, `cache/save`
+  NUR bei Erfolg — der kombinierte Schritt speicherte auch halbfertige
+  Stände). ICON ohne Cache (D2 hat bei jedem Cron einen neuen Lauf). Der Cron
+  steht deshalb auf `30 1-22/3`: jeder D2-Lauf ist zehn Minuten nach
+  Fertigstellung online, bei xx:15 zur vollen Dreierstunde wäre er bis zu 6 h
+  alt gewesen. `continue-on-error` überall.
+  **Wertebilder statt Farbbilder**: je Pixel ein 16-Bit-Code in R (hoch) und
+  G (tief), `wert = lo + (code − 1) · step`, 0 = kein Wert; `lo`/`step` je
+  Größe für ALLE Modelle gleich (`nwp_common.VARIABLES`), damit die
+  Farbskalen modellunabhängig bleiben. Verlustfreies WebP, gemessen ~200–300 KB
+  (T2m), 50–160 KB (MSL) je Schritt; zusammen ~380 MB für die drei neuesten
+  Läufe — unter dem 1-GB-Limit von Pages. Der Lauf steht im PFAD, die Dateien
+  sind unveränderlich; nur `meta.json` wird mit `no-cache` geholt. Im
+  Speicher höchstens 24 dekodierte Felder.
+  **KEINE Auflösungspyramide** — sie brächte nichts: das Gitter IST die
+  Auflösung, beim Hineinzoomen gibt es nichts Feineres nachzuladen. Die
+  Zoomgrenze, bis zu der neu abgetastet wird, hängt am Modell
+  (`GlobeModel.maxzoom`: 6 / 7 / 8).
+  **Kacheln, im Browser gerechnet, über ein eigenes Protokoll**
+  (`globe://modell/lauf/größe/schritt/z/x/y`, `maplibregl.addProtocol`,
+  Rückgabe ImageBitmap). (1) MapLibre zieht im Globus nur KACHELquellen bis an
+  die Pole (`extendToNorthPole` in `create_tile_mesh`, in `draw_raster` für
+  Bildquellen aus) — der Prototyp mit canvas-Source hatte schwarze Polkappen.
+  (2) Je Zoomstufe neu abgetastet, also der WERT interpoliert, nicht die Farbe.
+  (3) Regionale Gitter (`GlobeGrid.global = false`) enden an ihrem Rand:
+  `gridX`/`gridY` liefern dort null, das Pixel bleibt durchsichtig und die
+  Werteanzeige sagt „außerhalb ICON-D2" — gewickelt wird nur global.
+  Eine Quelle je Modell (die Zoomgrenze lässt sich an einer bestehenden Quelle
+  nicht ändern), ein Zeitschritt ist ein `setTiles`. Gewählt wird eine
+  GÜLTIGKEITSZEIT, kein Index — beim Modellwechsel bleibt der Termin stehen;
+  reicht das Modell nicht so weit, steht „⚠" an der Zeit. Das geladene Feld
+  trägt seinen Schlüssel, sonst rechnete die Werteanzeige beim Wechsel kurz
+  mit dem Feld des vorigen Modells. Die Werte am Zeiger sind gegen Python
+  nachgerechnet, für ICON-D2 auch gegen die Original-GRIB-Punkte.
+  **Globale Temperaturskala −54 … 50 °C**: dieselben Anker wie die Feld-Karte,
+  nach unten HELLER verlängert.
+  **ISOLINIEN** (`render/globeContours.ts` mit Tests, Protokoll `globeiso://`,
+  Schalter „Isobaren"/„500 hPa" in der Leiste, `CONTOURS` in `config/globe.ts`):
+  Bodendruck alle 5 hPa, 500 hPa alle 4 gpdm, beschriftet, als EIGENE
+  Rasterebenen über JEDER Größe — Bodendruck über Niederschlag, 500 hPa über
+  T850 sind die klassischen Kombinationen. Wer MSL bzw. 500 hPa als Größe
+  wählt, bekommt die Linie dazu eingeschaltet. **Raster statt Vektorlinien,
+  wegen der Beschriftung**: ein Symbol-Layer bräuchte eine Glyphs-Quelle, die
+  Basemap ist aber bewusst lokal; die Kachel zeichnet die Zahl selbst und
+  spart die Linie darunter aus. Die Linie kommt aus dem ABSTAND zur Isolinie
+  (`|v − L| / |∇v|`), daraus Kern und Halo — gleich breit und kantengeglättet,
+  unabhängig vom Gefälle. Isobaren hell mit dunklem Halo, 500 hPa dunkel mit
+  hellem, damit beide gleichzeitig unterscheidbar bleiben. Drei Befunde, alle
+  im Browser gesehen und als Test festgehalten: (1) **Doppellinien und
+  Treppenkästen**, wo gespeicherte Werte GENAU auf einem Linienwert lagen
+  (1020,0 hPa ist ein häufiger Code) — eine Fläche ohne Gefälle, gezeichnet
+  wurde ihr Umriss. Die Linienwerte liegen deshalb um eine halbe Speicherstufe
+  versetzt. (2) **Geisterstriche**, wo das Feld nur an den Linienwert
+  heranreicht: gezeichnet wird nur, wenn er innerhalb von 4 Pixeln wirklich
+  durchschritten wird. (3) **Gebirgsrauschen** des reduzierten Bodendrucks:
+  ICON-D2 zog Kringel um jedes Alpental; geglättet wird je Linienart und
+  Modell (`ContourDef.smooth`, D2-Bodendruck ±12 Zellen ≈ 50 km), die
+  Farbfläche bleibt ungeglättet. Auf der ganzen Kugel (z ≤ 2) doppelter
+  Abstand; die Linien werden zwei Zoomstufen über der Feldgrenze noch neu
+  gerechnet (gestreckte Linien werden breit, gestreckte Flächen fallen nicht auf).
+  **GESAMTBEWÖLKUNG IN GRAUSTUFEN, wolkenlos hell, bedeckt dunkel** — dieselbe
+  Leserichtung wie im klassischen Meteogramm; das dunkle Ende bleibt über der
+  Kartenfarbe, sonst wäre „bedeckt" nicht von „außerhalb des Modells" zu trennen.
+  **WOLKENSCHICHTEN nur bei ICON** (`clch`/`clcm`/`clcl`; ECMWF Open Data führt
+  nur `tcc`, im Index nachgesehen): EIN Bild je Schritt mit drei Kanälen in %
+  (`encoding: 'rgb3'`, R = mittel, G = hoch, B = tief, 255 = kein Wert),
+  angezeigt als DREI HALBTRANSPARENTE FLÄCHEN, je Schicht EIN Farbton (hoch
+  grün, mittel rot, tief blau), die STÄRKE in ACHTELN als Leiter von dunkel
+  und blass (1/8) bis hell und kräftig (8/8) (`CLOUD_LAYER_RAMPS`,
+  `CLOUD_OCTA_ALPHA` 0,50 … 0,88, `toOcta` rundet wie die Synop-Meldung).
+  Übermalt wie von oben gesehen: tief unten, hoch oben. Zwei Vorstufen sind
+  auf Rückmeldung verworfen: **additive Mischung** (hoch + mittel = gelb, alle
+  drei = weiß — sieben Farben für drei Größen) und **eine Farbe mit
+  gestaffelter Deckkraft** (auf der dunklen Karte sahen 3/8 und 6/8 gleich
+  „rot" aus, die Stärke war nicht lesbar). Legende und Werteanzeige in Achteln.
+  **Interpoliert, nicht gepixelt**: je Schicht vorher geglättet (`smoothRgb3`,
+  zweimal Kastenfilter ±r = Dreiecksfilter; r aus der Gitterweite, D2 ±2,
+  EU ±1 Zellen), dann bilinear, Farbe und Deckkraft STUFENLOS zwischen den
+  Achtelstufen, unter 1/8 weich ausgeblendet. Der nächste Gitterpunkt war nur
+  bei der additiven Fassung nötig (Zwischenfarben hätten wie eine weitere
+  Schicht ausgesehen); mit ihm stand jede 2-km-Zelle als Klötzchen da, bilinear
+  allein ließ Treppen stehen (ICON springt oft von 0 auf 100 %), ein einzelner
+  Kastenfilter Kästchen — alles im Browser gesehen.
+  Bewölkung in 5-%-Stufen gespeichert: in 1-%-Schritten verrauscht, die
+  Schichten kosteten 639 KB je Bild (jetzt ~400–520 KB).
+  **STÄDTE UND BUNDESLÄNDER** in Europa und Alpen (`render/cityMarkers.ts`):
+  die Hauptstädte der Domain `europe` plus die ~130 Orte der Pseudo-Domain
+  `imagery` mit der Zoomleiter der Bildkarten; Bundesländer/Kantone aus dem
+  `dach`-Bündel. Auf der Kugel keins von beidem.
+  **DURCHBLÄTTERN — gemessen, wohin die Zeit geht** (2026-10-05, Headless mit
+  Software-Rendering, also eher zu langsam): je Zeitschritt beim IFS-Globus
+  mit Isobaren ~690 ms für 17 Isolinien-Kacheln, ~315 ms für das Erzeugen der
+  Bilder aus 17 Farbkacheln, nur ~38 ms für das Einfärben selbst, ~170 ms für
+  zwei Felder (Laden + Dekodieren). Drei Hebel, ohne Server: (1) **Abbruch
+  beachten** — das Protokoll rechnet eine Kachel nicht mehr, die MapLibre
+  inzwischen abbestellt hat (`bail`, `AbortError`); vorher lief jeder
+  übersprungene Schritt als Rückstau nach. (2) **Neuester Stand gewinnt** —
+  solange die Kacheln eines Schritts laden, wird der nächste nur vorgemerkt
+  und beim `idle` der Karte direkt auf den zuletzt gewählten gesprungen
+  (`queueTiles`/`flushTiles`, Sicherheitsnetz 1,5 s); das Zeitlabel folgt
+  sofort. (3) **Fertige Kacheln gemerkt** (256, LRU über die URL) — MapLibre
+  leert seinen Speicher bei jedem `setTiles`, Zurückblättern rechnete alles
+  neu; MapLibre schließt zurückgegebene Bilder nicht, die Wiederverwendung ist
+  sicher. Zusammen halbierte das die Rechenarbeit beim Durchblättern (zehn
+  Schritte im 150-ms-Takt: ~10 s → ~5 s). Vorgeladen werden zwei Schritte
+  vorwärts, einer rückwärts, und die Felder der eingeschalteten Isolinien mit.
+  Der nächste Hebel wäre ein Worker-Pool für Einfärben und Isolinien — mehrere
+  Kerne statt des Hauptthreads; bewusst noch nicht gebaut.
+  **PFEILTASTEN gehören der Zeit, von Anfang an**: MapLibre-Tastatur aus
+  (`keyboard: false` — sie verschob die Karte und verbrauchte das Ereignis:
+  nach einem Klick in die Karte schalteten zehn Tastendrücke keinen Schritt),
+  die Auswahllisten geben nach der Wahl den Fokus ab (sonst blätterten die
+  Pfeile in der Liste), und ein fokussiertes Häkchen sperrt die Tasten nicht
+  mehr (`globalKeyAllowed`, gilt für alle Bereiche). Unten mittig zwei große
+  Pfeile (`.globe-arrows`): anklickbar und Rückmeldung — sie leuchten beim
+  Tastendruck kurz grün; auf dem Zeitschieber selbst bewegt der Browser nativ,
+  dort nur die Rückmeldung.
+  **STERNENHIMMEL hinter der Kugel** (`render/starfield.ts` mit Tests, nur in
+  der Globus-Ansicht, `.globe-space`): MapLibre lässt die Fläche neben dem
+  Globus durchsichtig, darunter liegt eine wiederholte Sternkachel als
+  CSS-Hintergrund — kein WebGL, kostet beim Drehen nichts. Erzeugt statt
+  geladen, mit festem Startwert (bei jedem Besuch derselbe Himmel), in der
+  Auflösung des Schirms; Helligkeiten nach Potenzgesetz (viele schwache,
+  wenige helle mit Schein), Farbtöne bläulich bis gelblich. Beim Drehen zieht
+  der Himmel leicht mit (Parallaxe über `--star-x/-y`, direkt am Element
+  gesetzt statt über React). Dazu MapLibres Atmosphärenschein am Kugelrand
+  (`sky['atmosphere-blend']`, beim Hineinzoomen ausgeblendet).
+  **Vite-Dev-Server und neue Läufe**: Vite merkt sich beim Start, welche
+  Dateien in `public/` liegen, und erfährt von Dateien in einem UMBENANNTEN
+  Verzeichnis nichts — der Ingest legt jeden Lauf genau so ab. Nach einem
+  neuen lokalen Ingest liefert der laufende Dev-Server für die neuen Bilder
+  die Startseite aus (HTTP 200, text/html), MapLibre bekam dekodierfehlerhafte
+  Kacheln. Abhilfe: Dev-Server nach dem Ingest neu starten. Auf Pages tritt das
+  nicht auf. Die Kachelprotokolle liefern bei einem nicht ladbaren Feld
+  seither eine LEERE Kachel statt einen Fehler — ein abgelehnter Aufruf ließ
+  MapLibre 5 über eine Kachel ohne Textur stolpern („reading 'bind'").
+  **Laufalter je Modell** (`GlobeModel.staleHours` = Takt + Bereitstellung +
+  Cron-Abstand + Reserve: IFS 30 h, ICON-EU 15 h, ICON-D2 9 h); die Init-Zeit
+  ist GEMELDET (steht im Dateinamen). Quellenzeile je Anbieter (ECMWF CC BY 4.0
+  bzw. DWD GeoNutzV — beide kommerziell mit Namensnennung erlaubt).
+  Basemap: Bündel `world.basemap.json` (Natural Earth 1:50m global, auf 0,01°
+  gerundet, ~350 KB gzip, `build-basemap.mjs world`), in Europa/Alpen dazu die
+  Bundesländer/Kantone aus `dach`.
 - **Verifikation** (`VerifyPanel.tsx`, Kern `verify.ts`, AppView `verify`) — der
   einzige Bereich, der beide Welten der Seite zusammenbringt (Open-Meteo-Läufe
   UND gemessene GeoSphere-Stationswerte) und der einzige, der rückwärts schaut:

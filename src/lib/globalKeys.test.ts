@@ -5,11 +5,11 @@
 import { describe, expect, it } from 'vitest'
 import { globalKeyAllowed } from './globalKeys'
 
-const evt = (o: { tag?: string; prevented?: boolean; editable?: boolean }) =>
+const evt = (o: { tag?: string; prevented?: boolean; editable?: boolean; type?: string }) =>
   ({
     defaultPrevented: o.prevented ?? false,
     target: o.tag
-      ? ({ tagName: o.tag, isContentEditable: o.editable ?? false } as HTMLElement)
+      ? ({ tagName: o.tag, isContentEditable: o.editable ?? false, type: o.type ?? 'text' } as unknown as HTMLElement)
       : null,
   }) as unknown as KeyboardEvent
 
@@ -27,6 +27,18 @@ describe('globalKeyAllowed', () => {
    */
   it('lässt einen fokussierten KNOPF die Zeitsteuerung nicht blockieren', () => {
     expect(globalKeyAllowed(evt({ tag: 'BUTTON' }))).toBe(true)
+  })
+
+  /**
+   * Dasselbe Muster mit einem HÄKCHEN: in den Modellkarten blieb der Fokus
+   * nach dem Umschalten der Isobaren im Häkchen, und zehn Pfeiltastendrücke
+   * schalteten keinen Schritt weiter (gemessen). Ein Optionsfeld dagegen
+   * wechselt mit den Pfeilen seine Auswahl und bleibt ausgenommen.
+   */
+  it('lässt ein fokussiertes HÄKCHEN die Zeitsteuerung nicht blockieren', () => {
+    expect(globalKeyAllowed(evt({ tag: 'INPUT', type: 'checkbox' }))).toBe(true)
+    expect(globalKeyAllowed(evt({ tag: 'INPUT', type: 'radio' }))).toBe(false)
+    expect(globalKeyAllowed(evt({ tag: 'INPUT', type: 'range' }))).toBe(false)
   })
 
   // In Textfeld, Auswahlliste und Schieberegler ist die native Wirkung die

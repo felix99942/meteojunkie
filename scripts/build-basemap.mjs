@@ -20,6 +20,10 @@ const DOMAINS = {
   // Radarkarte weiter aus dem Europa-Bündel, das sie ohnehin lädt. Fläche =
   // die des DWD-Radarprodukts (lon 1,5–18,7 / lat 45,7–56,2).
   dach: { latMin: 45.7, lonMin: 1.5, latMax: 56.2, lonMax: 18.7, margin: 0.5, layers: ['admin1'] },
+  // Globus: die ganze Erde, Küsten und Staatsgrenzen in 1:50m. Gerundet auf
+  // 0,01° (~1 km) statt 0,001° — 1:50m ist ohnehin nicht genauer, und mit
+  // drei Nachkommastellen wäre das Bündel fast doppelt so groß.
+  world: { latMin: -90, lonMin: -180, latMax: 90, lonMax: 180, margin: 0, layers: ['coast', 'borders'], decimals: 2 },
 }
 
 /**
@@ -30,9 +34,9 @@ const DOMAINS = {
  */
 const ADMIN1_COUNTRIES = new Set(['DEU', 'AUT', 'CHE'])
 
-const round = (v) => Math.round(v * 1000) / 1000
-
 function clipLines(geojson, bbox, keepFeature = () => true) {
+  const f = 10 ** (bbox.decimals ?? 3)
+  const round = (v) => Math.round(v * f) / f
   const inside = ([lon, lat]) =>
     lat >= bbox.latMin - bbox.margin && lat <= bbox.latMax + bbox.margin &&
     lon >= bbox.lonMin - bbox.margin && lon <= bbox.lonMax + bbox.margin
