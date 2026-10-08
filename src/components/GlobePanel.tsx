@@ -40,6 +40,7 @@ import {
   sampleRgb3,
   sampleWind,
   validMs,
+  WAVE_VARIABLES,
   type ContourId,
   type GlobeField,
   type GlobeMeta,
@@ -110,7 +111,11 @@ export function GlobePanel() {
   const [readout, setReadout] = useState<{ lat: number; lon: number } | null>(null)
   /** Isolinien als eigene Ebenen über JEDER Größe — Isobaren sind die Vorgabe. */
   const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false })
-  /** Windpartikel (Strömung als Bewegung) — eingeschaltet, sobald eine Windgröße gewählt wird. */
+  /**
+   * Partikel (Strömung als Bewegung) — eingeschaltet, sobald eine Wind- oder
+   * Wellengröße gewählt wird. Über Wellenhöhe und -periode zeigen sie den
+   * WELLENLAUF (`wavedir`), sonst den Wind (`uv10`).
+   */
   const [particles, setParticles] = useState(false)
 
   const model = getGlobeModel(modelId)
@@ -155,7 +160,7 @@ export function GlobePanel() {
   // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
   // eingeschaltet, abschalten bleibt danach möglich
   useEffect(() => {
-    if (varId === 'wind10' || varId === 'gust') setParticles(true)
+    if (varId === 'wind10' || varId === 'gust' || WAVE_VARIABLES.has(varId)) setParticles(true)
   }, [varId])
 
   // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück
@@ -387,7 +392,9 @@ export function GlobePanel() {
       particlesRef.current = null
     }
   }, [mapReady])
-  const uvMeta = meta?.variables.uv10
+  const particleVar: GlobeVarId = WAVE_VARIABLES.has(varId) ? 'wavedir' : 'uv10'
+  const waves = particleVar === 'wavedir'
+  const uvMeta = meta?.variables[particleVar]
   const uvStep = meta && uvMeta && step != null ? uvMeta.steps[nearestStepIndex(uvMeta.steps, run, validMs(meta, step))] : undefined
   useEffect(() => {
     const wp = particlesRef.current
@@ -397,13 +404,13 @@ export function GlobePanel() {
       return
     }
     let cancelled = false
-    loadGlobeField(modelId, meta.runId, 'uv10', uvStep)
+    loadGlobeField(modelId, meta.runId, particleVar, uvStep)
       .then((f) => !cancelled && wp.setSampler((lat, lon) => sampleWind(f, lat, lon)))
       .catch(() => !cancelled && wp.setSampler(null))
     return () => {
       cancelled = true
     }
-  }, [mapReady, particles, meta, modelId, uvStep])
+  }, [mapReady, particles, meta, modelId, particleVar, uvStep])
 
   // Aktuelles Feld für die Werteanzeige + Vorladen der nächsten Schritte
   useEffect(() => {
@@ -422,7 +429,8 @@ export function GlobePanel() {
     // wenn ihre Kacheln gefragt werden
     const ahead = [1, 2, 3, -1].slice(0, PREFETCH_AHEAD + 1)
     const vars: GlobeVarId[] = [varId, ...CONTOURS.filter((c) => contours[c.id] && meta.variables[c.id]).map((c) => c.id)]
-    if (particles && meta.variables.uv10) vars.push('uv10')
+    const pv: GlobeVarId = WAVE_VARIABLES.has(varId) ? 'wavedir' : 'uv10'
+    if (particles && meta.variables[pv]) vars.push(pv)
     for (const v of vars) {
       const vsteps = meta.variables[v]?.steps ?? []
       const base = nearestStepIndex(vsteps, run, validMs(meta, step))
@@ -592,18 +600,22 @@ export function GlobePanel() {
           <label
             className="radar-opt"
             title={
-              meta && !meta.variables.uv10
-                ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
-                : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist für jede Zoomstufe gleich gewählt — den Betrag zeigt die Größe „Wind 10 m".'
+              meta && !uvMeta
+                ? waves
+                  ? 'Dieses Modell rechnet keine Wellen — Wellenlauf gibt es nur beim ECMWF IFS.'
+                  : 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
+                : waves
+                  ? 'Wellenlauf: die Spuren laufen in Ausbreitungsrichtung mit der Gruppengeschwindigkeit im tiefen Wasser (c = g·T/4π aus der Peak-Periode) — lange Dünung zieht sichtbar schneller als kurze Windsee.'
+                  : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
             }
           >
             <input
               type="checkbox"
               checked={particles}
-              disabled={!meta?.variables.uv10}
+              disabled={!uvMeta}
               onChange={(e) => setParticles(e.target.checked)}
             />{' '}
-            Windpartikel
+            {waves ? 'Wellenlauf' : 'Windpartikel'}
           </label>
         </span>
         <button

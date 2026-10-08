@@ -2765,6 +2765,27 @@ npm run preview   # gebautes dist/ servieren
   Kastenfilter Kästchen — alles im Browser gesehen.
   Bewölkung in 5-%-Stufen gespeichert: in 1-%-Schritten verrauscht, die
   Schichten kosteten 639 KB je Bild (jetzt ~400–520 KB).
+  **MEER: Wellenhöhe, Wellenperiode, Wassertemperatur — nur IFS**
+  (`swh`/`pp1d`/`sst`, Skalen `WAVE_HEIGHT`/`WAVE_PERIOD`/`SEA_TEMP` in
+  `config/globe.ts`). Quelle ist der Strom `wave` von ECMWF Open Data
+  (Wellenmodell WAM, gleiches 0,25°-Gitter, gleiche Schritte +0 … +360 h,
+  gemessen 2026-10-08); über Land kein Wert (36 % der Punkte), die Karte
+  bleibt dort durchsichtig. **Kein Open-Meteo-Budget** — wie alle
+  Modellkarten direkt beim Anbieter, im Deploy geholt. Die **Wassertemperatur
+  ist die Hauttemperatur `skt`** aus dem `oper`-Strom, aber NUR wo das
+  Wellenmodell Meer hat (es ist damit die Land-Meer-Maske, ohne eigenes
+  Feld), und NICHT unter −2 °C: dort ist es Meereis, gemessen bis −32 °C
+  Eisoberfläche in der Arktis. Gemeint ist die oberste Schicht, nicht die
+  Badetiefe — steht im Tooltip. Plausibilität: Ionisches Meer 24,5 °C bei
+  1,0 m Welle am 08.10. **Über Wellenhöhe und -periode zeigen die Partikel
+  den WELLENLAUF** (`wavedir`, gleiche `uv8`-Kodierung wie `uv10`): Richtung
+  = Gegenrichtung von `mwd` (das ist die Herkunft), Tempo = Gruppen-
+  geschwindigkeit im tiefen Wasser c_g = g·T/(4π) aus der Peak-Periode —
+  eine 10-s-Dünung läuft mit 7,8 m/s, lange Dünung zieht also sichtbar
+  schneller als kurze Windsee. Kosten: ~2,7 MB Abruf und ~0,8 MB Ablage je
+  Schritt, ~65 MB je IFS-Lauf; ECMWF-Cache-Schlüssel dafür `v4`. ICON führt
+  keine Wellen (DWD hat dafür ein eigenes Wellenmodell, EWAM/GWAM, nicht
+  angebunden), die Auswahl ist dort gesperrt.
   **WINDPARTIKEL** (`render/windParticles.ts` mit Tests, Schalter
   „Windpartikel", eingeschaltet beim Wechsel auf Wind oder Böen): die Strömung
   des 10-m-Winds als bewegte Spuren über JEDER Größe, wie bei Windy. Daten
@@ -2784,9 +2805,17 @@ npm run preview   # gebautes dist/ servieren
   erkennt man ungültige Punkte an der Rückprojektion. Gemessen (Headless,
   Software-Rendering): Raster 187×96 in 13–22 ms, Animation 61 fps. Während
   der Bewegung ruht sie (das Raster gilt für einen Kamerastand). **Das Tempo
-  ist ZOOMUNABHÄNGIG** (1,4 px/Frame bei 10 m/s): maßstäblich sind Richtung
-  und Verhältnis der Tempi, nicht die absolute Geschwindigkeit — sonst stünden
-  die Partikel auf dem Globus still und rasten über den Alpen. Den Betrag
+  ist NICHT maßstäblich** (`pxPerSecondAt10`: 22 px/s bei 10 m/s auf der
+  ganzen Kugel, linear bis 66 px/s ab Zoom 6 — nach Rückmeldung eingestellt:
+  15/45 war „zu langsam", das Bildraten-abhängige Original viel zu schnell): maßstäblich stünden die
+  Partikel auf dem Globus still und rasten über den Alpen. Maßstäblich sind
+  Richtung und Verhältnis der Tempi, nicht die absolute Geschwindigkeit.
+  **Gerechnet über die ZEIT, nicht je Bild** — die erste Fassung bewegte je
+  `requestAnimationFrame`, und das läuft auf einem 120/144-Hz-Schirm doppelt
+  so oft wie auf 60 Hz: im Test (60 Hz) ruhig, beim Nutzer „fetzte" es, und
+  ein Halbieren je Bild half dort nicht. Bewegung, Lebensdauer und Verblassen
+  (`FADE ** (dt·60)`) hängen an der vergangenen Zeit, ein Hänger wird auf
+  50 ms gedeckelt. Den Betrag
   zeigt die Größe „Wind 10 m". Weiße Spuren, Deckkraft und Breite nach fünf
   Tempostufen; das Canvas liegt direkt über der Kartenzeichenfläche, unter
   Städten und Bedienelementen.

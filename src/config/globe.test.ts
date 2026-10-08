@@ -12,6 +12,7 @@ import {
   sampleWind,
   tilePixelLat,
   tilePixelLon,
+  WAVE_VARIABLES,
   type GlobeField,
   type GlobeGrid,
 } from './globe'
@@ -255,5 +256,24 @@ describe('Windkomponenten (uv8)', () => {
     const f: GlobeField = { grid, lo: -63.5, step: 0.5, codes: new Uint16Array(0), uv }
     expect(sampleWind(f, 0.5, 0.5)).toBeNull()
     expect(sampleWind(f, 5, 5)).toBeNull()
+  })
+})
+
+describe('Meeresgrößen', () => {
+  it('Wellenhöhe, Periode und Wassertemperatur sind wählbar, mit aufsteigenden Stufen', () => {
+    for (const id of ['swh', 'pp1d', 'sst'] as const) {
+      const v = GLOBE_VARIABLES.find((x) => x.id === id)
+      expect(v, id).toBeDefined()
+      const values = v!.scale.stops.map((s) => s.value)
+      expect(values).toEqual([...values].sort((a, b) => a - b))
+    }
+  })
+  it('der Wellenlauf gehört nur zu Wellengrößen, die Wassertemperatur zeigt den Wind', () => {
+    expect(WAVE_VARIABLES.has('swh')).toBe(true)
+    expect(WAVE_VARIABLES.has('pp1d')).toBe(true)
+    expect(WAVE_VARIABLES.has('sst')).toBe(false)
+  })
+  it('die Partikelquellen stehen nicht in der Auswahl', () => {
+    expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10' || v.id === 'wavedir')).toBe(false)
   })
 })

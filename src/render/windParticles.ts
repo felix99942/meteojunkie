@@ -16,11 +16,17 @@
 // Während die Karte sich bewegt, ruht die Animation (Raster gilt nur für
 // einen Kamerastand); nach dem Loslassen geht es sofort weiter.
 //
-// TEMPO ist ZOOMUNABHÄNGIG: 10 m/s bewegen sich in jeder Zoomstufe etwa gleich
-// schnell über den Schirm (`PX_PER_FRAME_AT_10MS`) — sonst stünden die
-// Partikel auf dem Globus still und rasten über den Alpen. Die Bahnen sind
-// also maßstabsgetreu in der RICHTUNG und im VERHÄLTNIS der Tempi, nicht in
-// der absoluten Geschwindigkeit.
+// TEMPO ist NICHT maßstäblich: maßstäblich stünden die Partikel auf dem
+// Globus still und rasten über den Alpen. Stattdessen legt 10 m/s je SEKUNDE
+// eine feste Pixelzahl zurück (`pxPerSecondAt10`), auf der ganzen Kugel ein
+// Drittel dessen beim Hineinzoomen. Maßstäblich sind also RICHTUNG und
+// VERHÄLTNIS der Tempi, nicht die absolute Geschwindigkeit.
+//
+// Gerechnet wird über die ZEIT, nicht je Bild: die erste Fassung bewegte je
+// requestAnimationFrame, und das läuft auf einem 120- oder 144-Hz-Schirm
+// doppelt so oft wie auf 60 Hz — dort „fetzte" es (Rückmeldung), während es
+// im Test mit 60 Hz ruhig aussah. Bewegung, Lebensdauer und Verblassen hängen
+// deshalb an der vergangenen Zeit.
 
 import type maplibregl from 'maplibre-gl'
 
@@ -29,16 +35,24 @@ export type WindSampler = (lat: number, lon: number) => [number, number] | null
 
 /** Rasterweite des Geschwindigkeitsfelds im Bild (CSS-Pixel). */
 const CELL = 8
-/** So viele Pixel je Frame legt ein Partikel bei 10 m/s zurück. */
-export const PX_PER_FRAME_AT_10MS = 1.4
+/**
+ * So viele Pixel je SEKUNDE legt ein Partikel bei 10 m/s zurück: 22 auf der
+ * ganzen Kugel (Zoom ≤ 2), linear steigend bis 66 ab Zoom 6.
+ */
+export function pxPerSecondAt10(zoom: number): number {
+  const t = Math.max(0, Math.min(1, (zoom - 2) / 4))
+  return 22 + 44 * t
+}
 /** Partikel je CSS-Pixel² — bei 1500×760 rund 1.900. */
 const DENSITY = 1 / 600
 const MAX_PARTICLES = 5000
-/** Lebensdauer in Frames (zufällig dazwischen), danach neu gesetzt. */
-const AGE_MIN = 40
-const AGE_MAX = 100
-/** Wie stark die Spur je Frame verblasst (Deckkraft, die stehen bleibt). */
-const FADE = 0.96
+/** Lebensdauer in Sekunden (zufällig dazwischen), danach neu gesetzt. */
+const AGE_MIN = 1.5
+const AGE_MAX = 3.5
+/** Deckkraft, die eine Spur je 1/60 s behält — bei anderer Bildrate umgerechnet. */
+const FADE = 0.975
+/** Längster Zeitschritt (s): nach einem Hänger springen die Partikel nicht. */
+const MAX_DT = 0.05
 /** Tempostufen (m/s) — darüber kräftiger und breiter. */
 export const SPEED_STEPS = [2, 5, 9, 14, 20]
 const STEP_ALPHA = [0.45, 0.6, 0.72, 0.84, 0.93, 1]
@@ -80,7 +94,7 @@ export class WindParticles {
   private sampler: WindSampler | null = null
   private cols = 0
   private rows = 0
-  /** je Zelle vx, vy (px/Frame), Tempo (m/s); NaN = kein Wind/außerhalb */
+  /** je Zelle vx, vy (px/s), Tempo (m/s); NaN = kein Wind/außerhalb */
   private field = new Float32Array(0)
   private spawn = new Int32Array(0)
   /** je Partikel x, y, Alter, Lebensdauer */
@@ -158,6 +172,7 @@ export class WindParticles {
       this.parts = new Float32Array(n * 4)
       for (let i = 0; i < n; i++) this.respawn(i, true)
     }
+    this.last = 0
     this.raf = requestAnimationFrame(this.frame)
   }
 
@@ -173,7 +188,7 @@ export class WindParticles {
     const pc = map.project(c)
     const pcn = map.project([c.lng, c.lat + D])
     const pxPerM = Math.hypot(pcn.x - pc.x, pcn.y - pc.y) / (D * M_PER_DEG)
-    const k = pxPerM > 0 ? PX_PER_FRAME_AT_10MS / (10 * pxPerM) : 0
+    const k = pxPerM > 0 ? pxPerSecondAt10(map.getZoom()) / (10 * pxPerM) : 0
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
         const x = i * CELL
@@ -244,13 +259,17 @@ export class WindParticles {
   }
 
   private readonly v = new Float32Array(3)
+  /** Zeitstempel des vorigen Bilds (ms), 0 = noch keins */
+  private last = 0
 
-  private frame = (): void => {
+  private frame = (now: number): void => {
     const ctx = this.ctx
-    // Spuren verblassen lassen: die vorhandenen Pixel behalten nur FADE ihrer
-    // Deckkraft — durchsichtig, die Karte darunter bleibt unberührt
+    const dt = this.last ? Math.min(MAX_DT, (now - this.last) / 1000) : 1 / 60
+    this.last = now
+    // Spuren verblassen lassen: die vorhandenen Pixel behalten nur einen Teil
+    // ihrer Deckkraft — durchsichtig, die Karte darunter bleibt unberührt
     ctx.globalCompositeOperation = 'destination-in'
-    ctx.fillStyle = `rgba(0,0,0,${FADE})`
+    ctx.fillStyle = `rgba(0,0,0,${FADE ** (dt * 60)})`
     ctx.fillRect(0, 0, this.w, this.h)
     ctx.globalCompositeOperation = 'source-over'
 
@@ -266,14 +285,14 @@ export class WindParticles {
       }
       const x = p[o]
       const y = p[o + 1]
-      const nx = x + v[0]
-      const ny = y + v[1]
+      const nx = x + v[0] * dt
+      const ny = y + v[1] * dt
       const path = paths[speedStep(v[2])]
       path.moveTo(x, y)
       path.lineTo(nx, ny)
       p[o] = nx
       p[o + 1] = ny
-      p[o + 2] += 1
+      p[o + 2] += dt
     }
     ctx.lineCap = 'round'
     ctx.setLineDash([])

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { particleCount, screenVelocity, speedStep, SPEED_STEPS } from './windParticles'
+import { particleCount, pxPerSecondAt10, screenVelocity, speedStep, SPEED_STEPS } from './windParticles'
 
 describe('Windpartikel', () => {
   it('Tempostufen steigen monoton und schließen die Grenze ein', () => {
@@ -27,5 +27,15 @@ describe('Windpartikel', () => {
     const [vx, vy] = screenVelocity(10, 0, [0, 1], [1, 0], 0.1)
     expect(vx).toBeCloseTo(0)
     expect(vy).toBeCloseTo(1)
+  })
+})
+
+describe('Tempo je Zoom', () => {
+  it('auf der Kugel ein Drittel des Tempos beim Hineinzoomen, dazwischen stetig', () => {
+    expect(pxPerSecondAt10(1)).toBeCloseTo(22)
+    expect(pxPerSecondAt10(2)).toBeCloseTo(22)
+    expect(pxPerSecondAt10(4)).toBeCloseTo(44)
+    expect(pxPerSecondAt10(6)).toBeCloseTo(66)
+    expect(pxPerSecondAt10(9)).toBeCloseTo(66)
   })
 })

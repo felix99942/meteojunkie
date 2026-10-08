@@ -96,7 +96,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v3-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v4-${{ steps.ecmwf.outputs.run }}
 
       - name: ECMWF-Felder erzeugen (Open Data)
         id: ecmwf-ingest
@@ -110,7 +110,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v3-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v4-${{ steps.ecmwf.outputs.run }}
 
       # ICON OHNE Cache: ein Lauf kostet 17 s (D2) bzw. 38 s (EU) bei
       # 22–26 MB/s vom DWD (gemessen), und D2 hat bei jedem Cron einen neuen

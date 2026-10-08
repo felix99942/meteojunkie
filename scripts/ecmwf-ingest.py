@@ -59,6 +59,16 @@ FIELDS = {
     ('10fg', None): 'gust',
     ('gh', '500'): 'gh500',
     ('tcc', None): 'tcc',
+    ('skt', None): 'skt',
+}
+
+# Wellenmodell (WAM): eigener Strom `wave` im selben Verzeichnis, gleiches
+# 0,25°-Gitter, gleiche Schritte (gemessen 2026-10-08, +0 bis +360 h); über
+# Land kein Wert (36 % der Punkte). Je Feld ~0,8–1 MB Abruf.
+WAVE_FIELDS = {
+    ('swh', None): 'swh',
+    ('mwd', None): 'mwd',
+    ('pp1d', None): 'pp1d',
 }
 
 # Dieselbe Größe unter wechselndem Namen — gemessen 2026-10-05: die Böe heißt
@@ -71,8 +81,9 @@ def run_dir(run: datetime) -> str:
     return f"{BASE}/{run:%Y%m%d}/{run:%H}z/ifs/0p25/oper/"
 
 
-def step_file(run: datetime, step: int) -> str:
-    return f"{run_dir(run)}{run:%Y%m%d%H}0000-{step}h-oper-fc"
+def step_file(run: datetime, step: int, stream: str = 'oper') -> str:
+    base = run_dir(run).replace('/oper/', f'/{stream}/')
+    return f"{base}{run:%Y%m%d%H}0000-{step}h-{stream}-fc"
 
 
 def run_complete(run: datetime) -> bool:
@@ -94,17 +105,22 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
     """Alle Felder eines Schritts unter einheitlichen Namen, plus `_grid`."""
     import numpy as np
 
-    url = step_file(run, step)
-    index = [json.loads(line) for line in http_get(url + '.index').decode().splitlines() if line.strip()]
-    rows = {}
-    for row in index:
-        key = (PARAM_ALIASES.get(row['param'], row['param']), row.get('levelist'))
-        if key in FIELDS and key not in rows:
-            rows[key] = row
-    futures = {
-        FIELDS[key]: pool.submit(http_get, url + '.grib2', (row['_offset'], row['_length']))
-        for key, row in rows.items()
-    }
+    futures = {}
+    for stream, fields in (('oper', FIELDS), ('wave', WAVE_FIELDS)):
+        url = step_file(run, step, stream)
+        try:
+            index = [json.loads(line) for line in http_get(url + '.index').decode().splitlines() if line.strip()]
+        except Missing:
+            if stream == 'oper':
+                raise
+            continue  # Wellen fehlen zu diesem Schritt — die übrigen Größen bleiben
+        rows = {}
+        for row in index:
+            key = (PARAM_ALIASES.get(row['param'], row['param']), row.get('levelist'))
+            if key in fields and key not in rows:
+                rows[key] = row
+        for key, row in rows.items():
+            futures[fields[key]] = pool.submit(http_get, url + '.grib2', (row['_offset'], row['_length']))
     out: dict = {}
     for name, fut in futures.items():
         try:

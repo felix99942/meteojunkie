@@ -19,11 +19,13 @@
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
- * `uv10` ist keine wählbare Größe, sondern die Datenquelle der
- * Windpartikel (Windkomponenten, `encoding: 'uv8'`) — sie steht deshalb nicht
- * in `GLOBE_VARIABLES`.
+ * `uv10` und `wavedir` sind keine wählbaren Größen, sondern die Datenquellen
+ * der Partikel (Wind bzw. Wellenlauf, `encoding: 'uv8'`) — sie stehen deshalb
+ * nicht in `GLOBE_VARIABLES`.
  */
-export type GlobeVarId = 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'tcc' | 'clouds' | 'uv10'
+export type GlobeVarId =
+  | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'tcc' | 'clouds' | 'uv10'
+  | 'swh' | 'pp1d' | 'sst' | 'wavedir'
 
 export interface GlobeVariable {
   id: GlobeVarId
@@ -71,6 +73,36 @@ const TCC_GREY: ColorScale = {
   kind: 'stepped',
   belowMin: 'clamp',
   stops: bands(0, 10, lerpRamp(['#e4e5e7', '#2e3033'], 11)),
+}
+
+/**
+ * MEER (nur ECMWF, Wellenmodell WAM). Über Land gibt es keinen Wert, dort
+ * bleibt die Karte durchsichtig — Land und Meer trennen sich von selbst.
+ * Wellenhöhe: ruhige See dunkelblau, ab ~2,5 m warm, Sturmsee magenta; die
+ * Stufen sind unten fein (25 cm), weil dort entschieden wird, ob man baden
+ * oder segeln kann.
+ */
+const WAVE_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 10, 12]
+const WAVE_COLORS = lerpRamp(
+  ['#123a6e', '#1f6fb0', '#2fa6c4', '#5cc8a8', '#b5df6a', '#f2d24b', '#f39a35', '#e0532a', '#b9265a', '#7c1a7a'],
+  WAVE_STEPS.length,
+)
+const WAVE_HEIGHT: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: WAVE_STEPS.map((value, i) => ({ value, color: WAVE_COLORS[i] })),
+}
+/** Peak-Periode: kurze Windsee violett/blau, lange Dünung gelb/orange. */
+const WAVE_PERIOD: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(0, 2, lerpRamp(['#2b1a4f', '#3c3f9a', '#2f7fb8', '#35b0a0', '#9fd36a', '#f2d24b', '#f08a3a'], 11)),
+}
+/** Wassertemperatur in 1-K-Bändern von −2 bis 32 °C. */
+const SEA_TEMP: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(-2, 1, lerpRamp(['#3b2d7a', '#2f5fae', '#2d9cc0', '#3fbf9c', '#a6d65c', '#f2d24b', '#f39a35', '#e0532a', '#a8203f'], 35)),
 }
 
 const GH500: ColorScale = {
@@ -156,7 +188,37 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendEvery: 1,
     kind: 'rgb3',
   },
+  {
+    id: 'swh',
+    label: 'Wellenhöhe (nur IFS)',
+    title:
+      'Signifikante Wellenhöhe (m) aus dem ECMWF-Wellenmodell — das Mittel des höchsten Drittels der Wellen, Windsee und Dünung zusammen. Einzelne Wellen werden bis etwa doppelt so hoch.',
+    scale: WAVE_HEIGHT,
+    decimals: 1,
+    legendEvery: 2,
+  },
+  {
+    id: 'pp1d',
+    label: 'Wellenperiode (nur IFS)',
+    title:
+      'Peak-Periode (s): Abstand der energiereichsten Wellen. Unter ~8 s kurze, steile Windsee, über ~12 s lange Dünung aus fernen Sturmgebieten.',
+    scale: WAVE_PERIOD,
+    decimals: 1,
+    legendEvery: 1,
+  },
+  {
+    id: 'sst',
+    label: 'Wassertemperatur (nur IFS)',
+    title:
+      'Temperatur der Meeresoberfläche (°C) — die Hauttemperatur des Modells über dem Meer, also die oberste Schicht, nicht die Temperatur in Badetiefe. Über Meereis kein Wert.',
+    scale: SEA_TEMP,
+    decimals: 1,
+    legendEvery: 4,
+  },
 ]
+
+/** Größen, über denen die Partikel den WELLENLAUF statt des Winds zeigen. */
+export const WAVE_VARIABLES: ReadonlySet<GlobeVarId> = new Set(['swh', 'pp1d'])
 
 export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 't2m'
 
