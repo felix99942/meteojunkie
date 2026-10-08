@@ -249,15 +249,16 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
    * Feuchtkugelkurve. Sie liegt zwischen T und Td und ist die Kurve, an der
    * man abliest, wie weit Verdunstung die Luft abkühlen kann — Schneefall-
    * grenze (Tw = 0 °C) und Abwindtemperatur hängen daran. Bei mehreren
-   * Modellen wird es zu dritt eng, deshalb abschaltbar.
+   * Modellen wird es zu dritt eng, deshalb abschaltbar und
+   * standardmäßig aus.
    */
-  const [showWetBulb, setShowWetBulb] = useState(true)
+  const [showWetBulb, setShowWetBulb] = useState(false)
   /**
    * Abwindweg samt DCAPE-Fläche. Wie der Parzellenweg nur für das
    * Bezugsmodell — zwei Absinkkurven übereinander sagen nichts, was die Zahl
    * in der Tabelle nicht besser sagt.
    */
-  const [showDowndraft, setShowDowndraft] = useState(true)
+  const [showDowndraft, setShowDowndraft] = useState(false)
   /**
    * Die übrigen Schichten des Diagramms. Sie stehen als Häkchen IN der
    * Legende — die Legende sagt ohnehin, was welche Farbe bedeutet, und wer
