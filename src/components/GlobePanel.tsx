@@ -18,7 +18,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
 import { CLOUD_LAYER_RAMPS, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
-import { globeIsoUrl, registerGlobeProtocol } from '../render/globeProtocol'
+import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
 import { WindParticles } from '../render/windParticles'
 import { starTileDataUrl } from '../render/starfield'
@@ -63,6 +63,12 @@ const ISO_EXTRA_ZOOM = 2
 const PLAY_MS = 450
 /** Vorladen: so viele Schritte voraus (beim Abspielen und beim Ziehen). */
 const PREFETCH_AHEAD = 3
+/**
+ * Für welche Nachbarschritte die SICHTBAREN Kacheln vorgerechnet werden. Zwei
+ * vorwärts (Blättern und Abspielen gehen vorwärts), einer zurück; Gesehenes
+ * liegt ohnehin im Kachelspeicher (`globeProtocol.ts`).
+ */
+const TILE_PREFETCH_AHEAD = [1, 2, -1]
 /** Gradnetz je Ansicht: grob auf der Kugel, fein über den Alpen. */
 const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alps: 2, thailand: 5 }
 
@@ -101,6 +107,7 @@ type MetaState = { meta: GlobeMeta } | { error: string }
 export function GlobePanel() {
   const containerRef = useRef<HTMLDivElement>(null)
   const starsRef = useRef<HTMLDivElement>(null)
+  const tilePrefetchRef = useRef<() => void>(() => {})
   /** Sternkachel einmal je Sitzung, in der Auflösung des Schirms */
   const stars = useMemo(() => starTileDataUrl(STAR_TILE, 900, Math.min(2, window.devicePixelRatio || 1)), [])
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -329,6 +336,9 @@ export function GlobePanel() {
     const onIdle = () => {
       tilesBusy.current = 0
       flushTiles()
+      // Nach Drehen/Zoomen sind andere Kacheln sichtbar — für die nächsten
+      // Schritte nachziehen (schon Gerechnetes wird übersprungen)
+      tilePrefetchRef.current()
     }
     map.on('idle', onIdle)
     return () => {
@@ -460,6 +470,23 @@ export function GlobePanel() {
         if (s != null && !(v === varId && k === 0)) prefetchGlobeField(modelId, meta.runId, v, s)
       }
     }
+    // Und die sichtbaren KACHELN der nächsten Schritte gleich mit — sonst
+    // wartet jeder neue Schritt erst auf seine Rechnung. Fläche und
+    // eingeschaltete Isolinien, je mit den Schritten ihrer eigenen Größe.
+    const strip = (u: string) => u.replace('/{z}/{x}/{y}', '')
+    const templates: string[] = []
+    for (const k of TILE_PREFETCH_AHEAD) {
+      const s = steps[idx + k]
+      if (s != null) templates.push(strip(globeTileUrl(modelId, meta.runId, varId, s)))
+      for (const c of CONTOURS) {
+        if (!contours[c.id] || !meta.variables[c.id]) continue
+        const cs = meta.variables[c.id]!.steps
+        const t = cs[nearestStepIndex(cs, run, validMs(meta, step)) + k]
+        if (t != null) templates.push(strip(globeIsoUrl(modelId, meta.runId, c.id, t)))
+      }
+    }
+    tilePrefetchRef.current = () => prefetchVisibleTiles(templates)
+    tilePrefetchRef.current()
     return () => {
       cancelled = true
     }

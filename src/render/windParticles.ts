@@ -87,6 +87,9 @@ const M_PER_DEG = 111_320
 /** Abstand für die Ableitung der Projektion (Grad). */
 const D = 0.01
 
+/** Jenseits dieser Breite keine Partikel (Polsingularität von u/v). */
+const POLE_LAT = 88
+
 export class WindParticles {
   private readonly map: maplibregl.Map
   private readonly canvas: HTMLCanvasElement
@@ -190,6 +193,8 @@ export class WindParticles {
     const pcn = map.project([c.lng, c.lat + D])
     const pxPerM = Math.hypot(pcn.x - pc.x, pcn.y - pc.y) / (D * M_PER_DEG)
     const k = pxPerM > 0 ? pxPerSecondAt10(map.getZoom()) / (10 * pxPerM) : 0
+    // 70 m/s, gleiche Umrechnung wie die Partikel selbst
+    const maxPx = pxPerSecondAt10(map.getZoom()) * 7
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
         const x = i * CELL
@@ -201,18 +206,31 @@ export class WindParticles {
         if (Math.abs(p.x - x) > 1 || Math.abs(p.y - y) > 1) continue
         const wind = sampler(ll.lat, ll.lng)
         if (!wind) continue
-        const lat = Math.max(-89, Math.min(89, ll.lat))
+        // An den Polen ist „Ost" und „Nord" nicht definiert, u/v drehen sich
+        // auf kleinstem Raum — dort gibt es keine Strömungslinie
+        if (Math.abs(ll.lat) > POLE_LAT) continue
+        // Die Ableitung UM DENSELBEN Punkt, zentral: vorher wurde sie an einem
+        // auf 89° geklemmten Nachbarpunkt genommen, aber gegen die Lage des
+        // ECHTEN Punkts gerechnet — nahe am Pol war die Differenz beider
+        // Lagen, geteilt durch einen winzigen Längengrad, eine riesige
+        // Geschwindigkeit, und die Partikel schossen aus der Kugel.
+        const lat = ll.lat
         const pe = map.project([ll.lng + D, lat])
+        const pw = map.project([ll.lng - D, lat])
         const pn = map.project([ll.lng, lat + D])
-        const mLon = D * M_PER_DEG * Math.cos((lat * Math.PI) / 180)
-        const mLat = D * M_PER_DEG
+        const ps = map.project([ll.lng, lat - D])
+        const mLon = 2 * D * M_PER_DEG * Math.cos((lat * Math.PI) / 180)
+        const mLat = 2 * D * M_PER_DEG
         const [vx, vy] = screenVelocity(
           wind[0],
           wind[1],
-          [(pe.x - p.x) / mLon, (pe.y - p.y) / mLon],
-          [(pn.x - p.x) / mLat, (pn.y - p.y) / mLat],
+          [(pe.x - pw.x) / mLon, (pe.y - pw.y) / mLon],
+          [(pn.x - ps.x) / mLat, (pn.y - ps.y) / mLat],
           k,
         )
+        // Sicherheitsnetz gegen Ausreißer der Projektion (Kugelrand): mehr
+        // als das Tempo eines Orkans in Bildschirmpixeln ist kein Wind
+        if (!(Math.hypot(vx, vy) <= maxPx)) continue
         const o = 3 * (j * cols + i)
         field[o] = vx
         field[o + 1] = vy

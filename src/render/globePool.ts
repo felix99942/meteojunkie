@@ -31,6 +31,8 @@ export type WorkerRequest =
       x: number
       y: number
       contour?: { id: ContourId; interval: number; smooth: number }
+      /** Vorladen: erst rechnen, wenn nichts Sichtbares mehr wartet */
+      low?: boolean
     }
   | { type: 'cancel'; id: number }
 
@@ -115,8 +117,9 @@ export async function requestTile(
   y: number,
   signal: AbortSignal,
   contour?: { id: ContourId; interval: number; smooth: number },
+  low = false,
 ): Promise<ImageBitmap> {
-  const r = await send({ type: 'tile', id: nextId++, src, varId, z, x, y, contour }, signal)
+  const r = await send({ type: 'tile', id: nextId++, src, varId, z, x, y, contour, low }, signal)
   if ('bitmap' in r) return r.bitmap
   if ('aborted' in r) throw abortError()
   throw new Error('error' in r ? r.error : 'unerwartete Antwort')

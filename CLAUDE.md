@@ -2912,7 +2912,13 @@ npm run preview   # gebautes dist/ servieren
   8 px: `unproject`, Wind, Projektionsableitung über zwei Nachbarpunkte →
   Pixel je Frame), danach laufen die Partikel nur noch im Bild. Damit ist die
   Projektion gleich — auf der Kugel krümmen sich die Bahnen richtig, ohne dass
-  die Animation Globus und Mercator selbst können muss. Neben der Kugel
+  die Animation Globus und Mercator selbst können muss.
+  **Die Ableitung wird ZENTRAL um denselben Punkt genommen** — vorher am
+  auf 89° geklemmten Nachbarn, aber gegen die Lage des echten Punkts: nahe
+  am Pol wurde die Lagedifferenz durch einen winzigen Längengrad geteilt,
+  und Partikel schossen aus der Kugel. Jenseits 88° gibt es keine Partikel
+  (u/v drehen sich dort auf kleinstem Raum), und mehr als 70 m/s in
+  Bildschirmpixeln verwirft eine Zelle als Projektionsausreißer. Neben der Kugel
   erkennt man ungültige Punkte an der Rückprojektion. Gemessen (Headless,
   Software-Rendering): Raster 187×96 in 13–22 ms, Animation 61 fps. Während
   der Bewegung ruht sie (das Raster gilt für einen Kamerastand). **Das Tempo
@@ -2998,6 +3004,20 @@ npm run preview   # gebautes dist/ servieren
   Abbruch läuft über eine eigene Schlange im Worker (ein Auftrag je
   Makrotask), sonst käme das `cancel` erst nach allen schon eingetroffenen
   Kacheln an die Reihe.
+  **Gesehene Schritte kommen aus dem Speicher** (`globeProtocol.ts`): der
+  Kachelspeicher hat ein Budget nach `navigator.deviceMemory` (48 MB je GB,
+  128–512 MB, ohne Angabe 256 MB) statt fester 256 Kacheln — ein Schritt auf
+  der Kugel sind 68 Kacheln, vorher wurde schon der vierte Schritt zurück neu
+  gerechnet (gemessen). **Dazu werden die SICHTBAREN Kacheln der Nachbar-
+  schritte vorgerechnet** (`prefetchVisibleTiles`, +1/+2/−1, nach jedem
+  Schritt und nach jedem `idle`): das Protokoll merkt sich je Ebene, welche
+  Kacheln MapLibre zuletzt angefragt hat, und rechnet dieselben für die
+  nächsten Schritte mit NIEDRIGER Priorität (der Worker zieht Sichtbares
+  immer vor). Abbestellt wird nur, wenn sich die Schritte ändern — ein
+  Stopp mitten im Vorladen mit identischer Kachel in beiden Runden darf sie
+  nicht fallen lassen (`prefetching` hält das Signal, nicht nur die URL).
+  Gemessen (Software-Rendering): vorwärts 2–3 s → 0,3–0,7 s je Schritt,
+  zurück keine einzige Kachel mehr neu gerechnet.
   **Pixeldichte der Karte auf 1,5 gedeckelt** (`GLOBE_MAX_PIXEL_RATIO`,
   Windpartikel folgen `map.getPixelRatio()`): bei Pixeldichte 2 zeichnet die
   Grafikkarte je Frame viermal so viele Pixel. Die KACHELZAHL hängt NICHT

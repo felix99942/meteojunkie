@@ -24,7 +24,7 @@ import { CONTOUR_STYLES, contourTile, smoothField } from './globeContours'
 import type { FieldSource, WorkerRequest, WorkerResponse } from './globePool'
 
 /** Dekodierte Felder je Worker (~2 MB Codes, bei Isolinien +4 MB geglättet). */
-const FIELD_LRU = 10
+const FIELD_LRU = 16
 const fields = new Map<string, Promise<GlobeField>>()
 
 function loadField(src: FieldSource): Promise<GlobeField> {
@@ -102,8 +102,17 @@ function schedule(): void {
   setTimeout(pump, 0)
 }
 
+/**
+ * Nächster Auftrag: sichtbare Kacheln und Felder vor VORGELADENEN — ein
+ * Vorladen darf das, was gerade gezeigt werden soll, nie aufhalten.
+ */
+function next(): (typeof queue)[number] | undefined {
+  const i = queue.findIndex((j) => !(j.type === 'tile' && j.low))
+  return queue.splice(i >= 0 ? i : 0, 1)[0]
+}
+
 async function pump(): Promise<void> {
-  const job = queue.shift()
+  const job = next()
   try {
     if (job) await run(job)
   } finally {
