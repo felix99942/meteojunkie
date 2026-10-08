@@ -3,14 +3,17 @@
 // dem Hauptthread auf und übernimmt ein zurückgegebenes ImageBitmap direkt
 // (`image_request.ts`). Der Zeitschritt steckt in der URL — ein Wechsel ist ein
 // `setTiles`, und MapLibre fragt die sichtbaren Kacheln neu an.
+//
+// GERECHNET wird im Worker-Pool (`globePool.ts`/`globeWorker.ts`), nicht hier:
+// der Handler reicht nur weiter und merkt sich fertige Kacheln.
 
 import maplibregl from 'maplibre-gl'
-import { colorizeRgbTile, colorizeTile, GLOBE_PROTOCOL, GLOBE_TILE_SIZE } from './globeTiles'
-import { CONTOUR_STYLES, contourTile, smoothField } from './globeContours'
-import { CONTOURS, getGlobeVariable, type ContourId, type GlobeField, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import { GLOBE_PROTOCOL, GLOBE_TILE_SIZE } from './globeTiles'
+import { requestTile, type FieldSource } from './globePool'
+import { CONTOURS, type ContourId, type GlobeModelId, type GlobeVarId } from '../config/globe'
 
-/** Feldquelle des Protokolls — gesetzt vom Bereich, damit dieses Modul nichts vom Laden weiß. */
-export type GlobeFieldLoader = (model: GlobeModelId, runId: string, varId: GlobeVarId, step: number) => Promise<GlobeField>
+/** Quelle eines Felds für den Worker — gesetzt vom Bereich, damit dieses Modul nichts von der Meta weiß. */
+export type GlobeFieldSourceFn = (model: GlobeModelId, runId: string, varId: GlobeVarId, step: number) => FieldSource | null
 
 let registered = false
 
@@ -44,22 +47,6 @@ function cached(url: string): ImageBitmap | undefined {
 }
 
 /**
- * Wurde die Kachel inzwischen abbestellt, wird sie NICHT mehr gerechnet.
- * Beim schnellen Durchblättern bestellt MapLibre die Kacheln des vorigen
- * Schritts ab; vorher rechnete das Protokoll sie trotzdem fertig, und der
- * Rückstau war genau das „Nachziehen" (gemessen: ~1 s Rechenzeit je Schritt
- * beim IFS-Globus mit Isobaren). Der Name `AbortError` ist das, woran
- * MapLibre einen Abbruch erkennt — dann meldet es keinen Fehler.
- */
-function bail(ac: AbortController): void {
-  if (ac.signal.aborted) {
-    const e = new Error('AbortError')
-    e.name = 'AbortError'
-    throw e
-  }
-}
-
-/**
  * Kachel, wenn das Feld nicht ladbar ist: leer statt Fehler. Ein abgelehnter
  * Protokoll-Aufruf ließ MapLibre 5 über eine Kachel ohne Textur stolpern
  * („reading 'bind'") — gemessen, als der Dev-Server für noch unbekannte Dateien
@@ -72,51 +59,45 @@ function empty(): Promise<ImageBitmap> {
   return emptyTile
 }
 
+/**
+ * Kachel aus dem Pool; ein nicht ladbares Feld ergibt eine leere Kachel, ein
+ * Abbruch (`AbortError`) geht unverändert an MapLibre zurück.
+ */
+async function tile(url: string, src: FieldSource | null, run: (src: FieldSource) => Promise<ImageBitmap>): Promise<{ data: ImageBitmap }> {
+  const hit = cached(url)
+  if (hit) return { data: hit }
+  if (!src) return { data: await empty() }
+  try {
+    return { data: remember(url, await run(src)) }
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') throw e
+    return { data: await empty() }
+  }
+}
+
 /** Registriert das Protokoll einmal je Seite (MapLibre hält Protokolle global). */
-export function registerGlobeProtocol(load: GlobeFieldLoader): void {
+export function registerGlobeProtocol(source: GlobeFieldSourceFn): void {
   if (registered) return
   registered = true
   maplibregl.addProtocol(GLOBE_PROTOCOL, async (params, ac) => {
-    const hit = cached(params.url)
-    if (hit) return { data: hit }
     const m = /^globe:\/\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url)
     if (!m) throw new Error(`Modellkarten-Kachel: unbekannte URL ${params.url}`)
     const [, model, runId, varId, step, z, x, y] = m
-    let field: GlobeField
-    try {
-      field = await load(model as GlobeModelId, runId, varId as GlobeVarId, Number(step))
-    } catch {
-      return { data: await empty() }
-    }
-    bail(ac)
-    const rgba = field.rgb
-      ? colorizeRgbTile(field, Number(z), Number(x), Number(y))
-      : colorizeTile(field, getGlobeVariable(varId).scale, Number(z), Number(x), Number(y))
-    const data = await createImageBitmap(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, GLOBE_TILE_SIZE, GLOBE_TILE_SIZE))
-    return { data: remember(params.url, data) }
+    const src = source(model as GlobeModelId, runId, varId as GlobeVarId, Number(step))
+    return tile(params.url, src, (s) => requestTile(s, varId as GlobeVarId, +z, +x, +y, ac.signal))
   })
 
   // Isolinien als eigene Ebene: globeiso://modell/lauf/größe/schritt/z/x/y,
   // die Größe ist zugleich die Linienart (msl → Isobaren, gh500 → 500 hPa)
   maplibregl.addProtocol(GLOBE_ISO_PROTOCOL, async (params, ac) => {
-    const hit = cached(params.url)
-    if (hit) return { data: hit }
     const m = /^globeiso:\/\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url)
     if (!m) throw new Error(`Isolinien-Kachel: unbekannte URL ${params.url}`)
     const [, model, runId, varId, step, z, x, y] = m
     const def = CONTOURS.find((c) => c.id === varId)
     if (!def) throw new Error(`keine Isolinien für ${varId}`)
-    let field: GlobeField
-    try {
-      field = await load(model as GlobeModelId, runId, varId as GlobeVarId, Number(step))
-    } catch {
-      return { data: await empty() }
-    }
-    bail(ac)
-    const smooth = smoothField(field, def.smooth[model as GlobeModelId] ?? 0)
-    bail(ac)
-    const { rgba, labels } = contourTile(field, smooth, def.interval, CONTOUR_STYLES[def.id as ContourId], Number(z), Number(x), Number(y), GLOBE_TILE_SIZE)
-    return { data: remember(params.url, await drawContourTile(rgba, labels, def.id as ContourId)) }
+    const contour = { id: def.id as ContourId, interval: def.interval, smooth: def.smooth[model as GlobeModelId] ?? 0 }
+    const src = source(model as GlobeModelId, runId, varId as GlobeVarId, Number(step))
+    return tile(params.url, src, (s) => requestTile(s, varId as GlobeVarId, +z, +x, +y, ac.signal, contour))
   })
 }
 
@@ -124,39 +105,4 @@ export const GLOBE_ISO_PROTOCOL = 'globeiso'
 
 export function globeIsoUrl(model: GlobeModelId, runId: string, contour: ContourId, step: number): string {
   return `${GLOBE_ISO_PROTOCOL}://${model}/${runId}/${contour}/${step}/{z}/{x}/{y}`
-}
-
-/**
- * Linien plus Beschriftung auf eine Leinwand. Unter der Zahl wird die Linie
- * AUSGESPART (destination-out), sonst liefe sie mitten durch die Ziffern —
- * so wie in jeder gedruckten Wetterkarte.
- */
-async function drawContourTile(
-  rgba: Uint8ClampedArray,
-  labels: { x: number; y: number; text: string }[],
-  id: ContourId,
-): Promise<ImageBitmap> {
-  const size = GLOBE_TILE_SIZE
-  const canvas: OffscreenCanvas | HTMLCanvasElement =
-    typeof OffscreenCanvas !== 'undefined'
-      ? new OffscreenCanvas(size, size)
-      : Object.assign(document.createElement('canvas'), { width: size, height: size })
-  const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
-  ctx.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, size, size), 0, 0)
-  const st = CONTOUR_STYLES[id]
-  ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  for (const l of labels) {
-    const w = ctx.measureText(l.text).width
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.fillRect(l.x - w / 2 - 3, l.y - 7, w + 6, 14)
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.lineWidth = 3
-    ctx.strokeStyle = `rgba(${st.halo.join(',')},0.85)`
-    ctx.strokeText(l.text, l.x, l.y)
-    ctx.fillStyle = `rgb(${st.core.join(',')})`
-    ctx.fillText(l.text, l.x, l.y)
-  }
-  return createImageBitmap(canvas)
 }

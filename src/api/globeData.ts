@@ -8,12 +8,16 @@
 // ARBEITSSPEICHER: ein dekodiertes Feld sind 1,8–2 MB Codes, ein Lauf über
 // alle Größen wären Hunderte MB. Deshalb ein kleiner LRU über die Felder.
 
-import { decodeCodes, decodeRgb3, decodeUv8, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import type { GlobeField, GlobeMeta, GlobeModelId, GlobeVarId } from '../config/globe'
+import { requestField, warmField, type FieldSource } from '../render/globePool'
 
 const BASE = `${import.meta.env.BASE_URL}nwp/`
 
-/** Höchstzahl dekodierter Felder im Speicher (~2 MB je Feld). */
-const FIELD_LRU = 24
+/**
+ * Höchstzahl Felder auf dem HAUPTTHREAD (~2 MB je Feld). Klein: hier liegen
+ * nur noch Werteanzeige und Windpartikel, die Kachelfelder liegen im Worker.
+ */
+const FIELD_LRU = 6
 
 export async function loadGlobeMeta(model: GlobeModelId): Promise<GlobeMeta> {
   // `no-cache`: die Datei wechselt mit jedem Lauf unter derselben URL —
@@ -40,27 +44,32 @@ export function globeFieldUrl(model: GlobeModelId, runId: string, varId: GlobeVa
   return `${BASE}${model}/${runId}/${varId}/${String(step).padStart(3, '0')}.webp`
 }
 
-async function decodeImage(blob: Blob): Promise<{ data: Uint8ClampedArray; w: number; h: number }> {
-  // Ohne Farbraumumrechnung und ohne Vormultiplikation — sonst sind die
-  // Kanäle keine Codes mehr, sondern „ähnliche Farben".
-  const bmp = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })
-  const { width: w, height: h } = bmp
-  const canvas: OffscreenCanvas | HTMLCanvasElement =
-    typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h })
-  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as
-    | OffscreenCanvasRenderingContext2D
-    | CanvasRenderingContext2D
-    | null
-  if (!ctx) throw new Error('kein 2D-Kontext')
-  ctx.drawImage(bmp, 0, 0)
-  bmp.close()
-  return { data: ctx.getImageData(0, 0, w, h).data, w, h }
-}
-
-export function loadGlobeField(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): Promise<GlobeField> {
+/**
+ * Was ein Worker zum Laden braucht (URL, Raster, Kodierung), oder null, wenn
+ * Meta, Lauf oder Größe nicht passen. Die URL ist ABSOLUT: der Worker löst
+ * relative Pfade gegen SEINE Skript-Adresse auf, nicht gegen die Seite.
+ */
+export function globeFieldSource(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): FieldSource | null {
   const meta = metas.get(model)
   const vm = meta?.variables[varId]
-  if (!meta || meta.runId !== runId || !vm) return Promise.reject(new Error(`kein Feld ${model}/${runId}/${varId}/${step}`))
+  if (!meta || meta.runId !== runId || !vm) return null
+  return {
+    url: new URL(globeFieldUrl(model, runId, varId, step), location.href).href,
+    grid: meta.grid,
+    lo: vm.lo,
+    step: vm.step,
+    encoding: vm.encoding,
+  }
+}
+
+/**
+ * Feld auf dem HAUPTTHREAD — nur für Werteanzeige und Windpartikel. Dekodiert
+ * wird im Worker (`globePool.ts`), hierher kommt eine Kopie. Für die Kacheln
+ * wird das Feld hier gar nicht gebraucht; zum Vorladen `prefetchGlobeField`.
+ */
+export function loadGlobeField(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): Promise<GlobeField> {
+  const src = globeFieldSource(model, runId, varId, step)
+  if (!src) return Promise.reject(new Error(`kein Feld ${model}/${runId}/${varId}/${step}`))
   const key = `${model}/${runId}/${varId}/${step}`
   const hit = fields.get(key)
   if (hit) {
@@ -69,22 +78,16 @@ export function loadGlobeField(model: GlobeModelId, runId: string, varId: GlobeV
     fields.set(key, hit)
     return hit
   }
-  const p = (async () => {
-    const r = await fetch(globeFieldUrl(model, runId, varId, step))
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const { data, w, h } = await decodeImage(await r.blob())
-    if (w !== meta.grid.ni || h !== meta.grid.nj) throw new Error(`Raster ${w}×${h} statt ${meta.grid.ni}×${meta.grid.nj}`)
-    if (vm.encoding === 'uv8') {
-      return { grid: meta.grid, lo: vm.lo, step: vm.step, codes: new Uint16Array(0), uv: decodeUv8(data, w * h) }
-    }
-    if (vm.encoding === 'rgb3') {
-      return { grid: meta.grid, lo: vm.lo, step: vm.step, codes: new Uint16Array(0), rgb: decodeRgb3(data, w * h) }
-    }
-    return { grid: meta.grid, lo: vm.lo, step: vm.step, codes: decodeCodes(data, w * h) }
-  })()
+  const p = requestField(src)
   // Ein gescheiterter Abruf darf nicht für die Sitzung im Cache kleben
   p.catch(() => fields.get(key) === p && fields.delete(key))
   fields.set(key, p)
   while (fields.size > FIELD_LRU) fields.delete(fields.keys().next().value!)
   return p
+}
+
+/** Feld im Worker vorladen (nächste Zeitschritte), ohne es auf den Hauptthread zu holen. */
+export function prefetchGlobeField(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): void {
+  const src = globeFieldSource(model, runId, varId, step)
+  if (src) warmField(src).catch(() => {})
 }

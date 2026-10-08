@@ -22,7 +22,7 @@ import { globeIsoUrl, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
 import { WindParticles } from '../render/windParticles'
 import { starTileDataUrl } from '../render/starfield'
-import { loadGlobeField, loadGlobeMeta, setGlobeMeta } from '../api/globeData'
+import { globeFieldSource, loadGlobeField, loadGlobeMeta, prefetchGlobeField, setGlobeMeta } from '../api/globeData'
 import {
   CONTOURS,
   DEFAULT_GLOBE_MODEL,
@@ -69,6 +69,19 @@ const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alp
 /** Kantenlänge der Sternkachel in CSS-Pixeln (muss zur Parallaxe passen). */
 const STAR_TILE = 768
 
+/**
+ * Obergrenze der Zeichendichte der Karte. Bei Pixeldichte 2 zeichnet die
+ * Grafikkarte JEDEN Frame viermal so viele Pixel wie bei 1 — Kugel, Kacheln,
+ * Isolinien, Atmosphäre —, und auf schwächeren Grafikchips ist genau das der
+ * Engpass beim Drehen. Die Daten geben die Schärfe ohnehin nicht her (IFS
+ * 25 km, ICON-D2 2 km), weicher werden nur Linienkanten; Beschriftung und
+ * Bedienelemente sind DOM und bleiben gestochen. Die KACHELZAHL hängt NICHT
+ * daran (gemessen 2026-10-08: 68 Kacheln bei Pixeldichte 1 wie bei 2) — es
+ * geht allein um die Füllarbeit. 1,5 spart bei Pixeldichte 2 gut 40 % der
+ * Pixel.
+ */
+const GLOBE_MAX_PIXEL_RATIO = 1.5
+
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -87,7 +100,7 @@ type MetaState = { meta: GlobeMeta } | { error: string }
 
 export function GlobePanel() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const starsRef = useRef<HTMLDivElement>(null)
   /** Sternkachel einmal je Sitzung, in der Auflösung des Schirms */
   const stars = useMemo(() => starTileDataUrl(STAR_TILE, 900, Math.min(2, window.devicePixelRatio || 1)), [])
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -172,7 +185,7 @@ export function GlobePanel() {
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    registerGlobeProtocol(loadGlobeField)
+    registerGlobeProtocol(globeFieldSource)
     const map = new maplibregl.Map({
       container: el,
       style: {
@@ -192,6 +205,7 @@ export function GlobePanel() {
       // (`preventDefault`) — gemessen: nach einem Klick in die Karte schalteten
       // zehn Tastendrücke keinen einzigen Zeitschritt weiter.
       keyboard: false,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, GLOBE_MAX_PIXEL_RATIO),
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => setMapReady(true))
@@ -245,16 +259,21 @@ export function GlobePanel() {
   // Sterne ziehen beim Drehen der Kugel leicht mit (Parallaxe) — weit
   // langsamer als die Kugel, so wirkt der Himmel unendlich weit weg. Direkt am
   // Element gesetzt, nicht über React: das läuft bei jeder Kamerabewegung.
+  // Über `transform` einer EIGENEN Ebene, nicht über `background-position`:
+  // die zwang den Browser bei jedem Frame, die ganze Fläche neu zu malen
+  // (gemessen 2–3 ms Stilberechnung je Frame, bei Pixeldichte 2 ~7 ms, das
+  // Malen noch obendrauf) — ein Transform verschiebt nur die fertige Ebene im
+  // Compositor. Modulo eine Kachel; die Ebene ragt dafür links und oben eine Kachel hinaus.
   useEffect(() => {
     const map = mapRef.current
-    const body = bodyRef.current
-    if (!map || !mapReady || !body || view.id !== 'globe') return
+    const sky = starsRef.current
+    if (!map || !mapReady || !sky || view.id !== 'globe') return
+    const wrap = (v: number) => ((v % STAR_TILE) + STAR_TILE) % STAR_TILE
     const move = () => {
       const c = map.getCenter()
-      const x = (-c.lng / 360) * STAR_TILE * 0.6
-      const y = (c.lat / 180) * STAR_TILE * 0.6
-      body.style.setProperty('--star-x', `${x.toFixed(1)}px`)
-      body.style.setProperty('--star-y', `${y.toFixed(1)}px`)
+      const x = wrap((-c.lng / 360) * STAR_TILE * 0.6)
+      const y = wrap((c.lat / 180) * STAR_TILE * 0.6)
+      sky.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`
     }
     move()
     map.on('move', move)
@@ -438,7 +457,7 @@ export function GlobePanel() {
       const base = nearestStepIndex(vsteps, run, validMs(meta, step))
       for (const k of ahead) {
         const s = vsteps[base + k]
-        if (s != null && !(v === varId && k === 0)) loadGlobeField(modelId, meta.runId, v, s).catch(() => {})
+        if (s != null && !(v === varId && k === 0)) prefetchGlobeField(modelId, meta.runId, v, s)
       }
     }
     return () => {
@@ -673,9 +692,14 @@ export function GlobePanel() {
 
       <div
         className={`radar-body${view.id === 'globe' ? ' globe-space' : ''}`}
-        ref={bodyRef}
-        style={{ '--stars': `url(${stars})`, '--star-tile': `${STAR_TILE}px` } as CSSProperties}
+        style={{ '--star-tile': `${STAR_TILE}px` } as CSSProperties}
       >
+        {view.id === 'globe' && (
+          <>
+            <div className="globe-stars" ref={starsRef} style={{ backgroundImage: `url(${stars})` }} />
+            <div className="globe-vignette" />
+          </>
+        )}
         <div className="radar-container" ref={containerRef} />
         {(metaError || fieldError) && (
           <div className="globe-msg">

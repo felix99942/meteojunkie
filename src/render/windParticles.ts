@@ -151,7 +151,8 @@ export class WindParticles {
   private rebuild = (): void => {
     this.stop()
     const { clientWidth: w, clientHeight: h } = this.map.getContainer()
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    // Dieselbe Dichte wie die Karte darunter (dort gedeckelt, siehe GlobePanel)
+    const dpr = this.map.getPixelRatio()
     if (w !== this.w || h !== this.h || this.canvas.width !== Math.round(w * dpr)) {
       this.w = w
       this.h = h
