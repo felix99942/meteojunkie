@@ -177,6 +177,8 @@ jobs:
           VITE_IMPRESSUM_EMAIL: ${{ vars.IMPRESSUM_EMAIL || secrets.IMPRESSUM_EMAIL }}
           # Kartenkacheln Klima/MOS; fehlt der Schlüssel, bleibt der Hintergrund dunkel.
           VITE_CARTO_KEY: ${{ vars.CARTO_KEY || secrets.CARTO_KEY }}
+          # Besucherzähler (GoatCounter); fehlt der Code, wird nichts geladen.
+          VITE_GOATCOUNTER_CODE: ${{ vars.GOATCOUNTER_CODE || secrets.GOATCOUNTER_CODE }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

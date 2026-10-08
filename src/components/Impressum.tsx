@@ -39,6 +39,7 @@
 import { buildLabel, buildTitle } from '../config/build'
 import { DETAILS_MISSING, OWNER } from '../config/impressum'
 import { MODELS } from '../config/models'
+import { ANALYTICS_ENABLED } from '../config/analytics'
 
 /** Wetterdienste hinter den Modellen — aus der Registry, nicht gepflegt. */
 const PROVIDERS = [...new Set(Object.values(MODELS).map((m) => m.provider))]
@@ -47,6 +48,16 @@ const PROVIDERS = [...new Set(Object.values(MODELS).map((m) => m.provider))]
 
 /** Externe Dienste, die der BROWSER direkt kontaktiert (siehe Datenschutz). */
 const THIRD_PARTY_HOSTS = [
+  ...(ANALYTICS_ENABLED
+    ? [
+        {
+          host: 'gc.zgo.at, *.goatcounter.com',
+          what: 'cookieloser Besucherzähler GoatCounter (siehe „Besucherzählung")',
+          href: 'https://www.goatcounter.com/help/privacy',
+          hrefLabel: 'Datenschutz von GoatCounter',
+        },
+      ]
+    : []),
   {
     host: 'open-meteo.com',
     what: 'Vorhersagen, Ensembles, vergangene Läufe und die Ortssuche',
@@ -367,9 +378,16 @@ export function Impressum() {
           <p>
             Die Seite ist eine statische Webanwendung ohne eigenen Anwendungsserver und ohne
             Datenbank. Sie setzt <strong>keine Cookies</strong>, verwendet{' '}
-            <strong>keine Analyse-, Werbe- oder Tracking-Dienste</strong> und bindet keine
-            externen Schriftarten oder Karten-Kachel-Dienste ein. Es werden keine
-            Nutzerkonten geführt und keine Eingaben gespeichert.
+            {ANALYTICS_ENABLED ? (
+              <>
+                <strong>keine Werbe- oder Tracking-Dienste</strong>, nur einen cookielosen
+                Besucherzähler (siehe unten),
+              </>
+            ) : (
+              <strong>keine Analyse-, Werbe- oder Tracking-Dienste</strong>
+            )}{' '}
+            und bindet keine externen Schriftarten ein. Es werden keine Nutzerkonten geführt
+            und keine Eingaben gespeichert.
           </p>
 
           <h3>Verantwortlicher</h3>
@@ -435,6 +453,32 @@ export function Impressum() {
             <code>basemaps.cartocdn.com</code> werden nur im Bereich „Klima + MOS" geladen, und
             nur für den gerade sichtbaren Ausschnitt.
           </p>
+
+          {ANALYTICS_ENABLED && (
+            <>
+              <h3>Besucherzählung</h3>
+              <p>
+                Um zu erfahren, wie oft die Seite und welche ihrer Bereiche aufgerufen werden,
+                ist der Zähler{' '}
+                <a href="https://www.goatcounter.com/help/privacy" target="_blank" rel="noreferrer">
+                  GoatCounter
+                </a>{' '}
+                eingebunden (betrieben von Martin Tournoij, Irland; Server bei der Hetzner Online
+                GmbH in Deutschland und Finnland). Beim Aufruf und beim Wechsel eines Bereichs
+                lädt der Browser ein Skript von <code>gc.zgo.at</code> und meldet die
+                aufgerufene Seite, den Verweis (Referrer), Bildschirmbreite und Sprache. Aus
+                IP-Adresse und User-Agent wird lediglich ermittelt, ob es sich um einen neuen
+                Besuch handelt; beides wird <strong>nicht gespeichert</strong>, gespeichert
+                werden nur zusammengefasste Zählungen (Seiten, Browser, Betriebssystem, Land,
+                Bildschirmgröße), die sich keiner Person zuordnen lassen. Es werden{' '}
+                <strong>keine Cookies</strong> gesetzt und nichts auf dem Endgerät gespeichert
+                oder ausgelesen. Rechtsgrundlage ist Art. 6 Abs 1 lit. f DSGVO (berechtigtes
+                Interesse an der Kenntnis der Nutzung, um das Angebot zu verbessern). Wer das
+                nicht möchte, kann das Skript mit jedem gängigen Inhaltsblocker unterbinden;
+                die Seite funktioniert unverändert.
+              </p>
+            </>
+          )}
 
           <h3>Speicherung auf dem Endgerät</h3>
           <p>

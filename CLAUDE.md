@@ -1663,7 +1663,8 @@ npm run preview   # gebautes dist/ servieren
   sehen.
 - **FEUCHTKUGELKURVE UND DCAPE** (`wetBulb` in `lib/thermo.ts`,
   `wetBulbColumn`/`downdraftCape` in `lib/sounding.ts`; Umschalter „Tw",
-  Vorgabe AN). Die Feuchtkugeltemperatur ist die Temperatur, auf die
+  Vorgabe AUS, ebenso der Abwindweg — auf Wunsch, beide schaltet man in
+  der Legende dazu). Die Feuchtkugeltemperatur ist die Temperatur, auf die
   Verdunstung die Luft abkühlen KANN; sie liegt immer zwischen Taupunkt und
   Temperatur und fällt bei Sättigung mit beiden zusammen. Gerechnet nach
   NORMAND — trockenadiabatisch zum LCL, von dort feuchtadiabatisch zurück auf
@@ -2177,6 +2178,22 @@ npm run preview   # gebautes dist/ servieren
   Produkts und dem neuen Layer. Solange alles im 5-Minuten-Takt lief, fiel das
   nicht auf; zwischen 5 Minuten und einem Tag liegen Faktoren, und jede
   solche Zeit beantwortet der Dienst mit einer ServiceException.
+  **WIE ANDERE AN DIE ELEVATIONEN KOMMEN — nachgemessen 2026-10-08**: über
+  einen eigenen SERVER, nicht im Browser. Kachelmannwetter („3D-Radar-
+  Analyse") rechnet nach eigener Angabe alle 5 Minuten die Volumendaten
+  aller Standorte auf ein 3D-Gitter und leitet daraus Echotops, VIL und
+  Mesozyklonen ab — genau die Pipeline aus `sweep_vol_z` oben. Gemessen am
+  Standort Isen: 10 Elevationen (0,5/1,5/2,5/3,5/4,5/5,5° bis 180 km,
+  8° bis 124 km, 12/17/25° bis 60 km), 360 Strahlen × 250 m, ein Volumen
+  ~0,9 MB, alle Deutschland ~15 MB je 5 Minuten. Fertige 3D-ABLEITUNGEN
+  liegen ebenfalls offen, alle ODIM-HDF5 und alle OHNE CORS:
+  `composite/hx` und `composite/dmax` (Säulenmaximum dBZ, 250 m, 4400×4800,
+  ~1,2 bzw. 2 MB), `composite/vii` (VIL, 1 km, 45 KB), `sites/pe`
+  (Echotops je Standort, 1 km) und `konrad3d/` (Zellen als XML). Werkzeuge:
+  wradlib/xradar (lesen ODIM-Volumen direkt), wetterdienst (Abruf).
+  Gangbar wäre damit ein Ingest im Deploy-Cron wie bei MOSMIX — aber der
+  läuft alle 3 h, ein Radar braucht 5 Minuten. Echtes 3D-Radar heißt
+  also: ein dauerhaft laufender Server (Cloudflare-Plan), nicht GitHub Pages.
   Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
   `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
   kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
@@ -2966,8 +2983,25 @@ npm run preview   # gebautes dist/ servieren
   sicher. Zusammen halbierte das die Rechenarbeit beim Durchblättern (zehn
   Schritte im 150-ms-Takt: ~10 s → ~5 s). Vorgeladen werden zwei Schritte
   vorwärts, einer rückwärts, und die Felder der eingeschalteten Isolinien mit.
-  Der nächste Hebel wäre ein Worker-Pool für Einfärben und Isolinien — mehrere
-  Kerne statt des Hauptthreads; bewusst noch nicht gebaut.
+  **Seit 2026-10-08 rechnet ein WORKER-POOL** (`render/globePool.ts` +
+  `render/globeWorker.ts`, 2–4 Worker): Dekodieren, Glätten, Einfärben und
+  Isolinien laufen nicht mehr auf dem Hauptthread, das Protokoll reicht nur
+  weiter und merkt sich fertige Kacheln; zurück kommt ein ImageBitmap als
+  Transfer. Gemessen vorher: beim Durchblättern ~220 ms Dekodieren, ~100 ms
+  Glätten, ~65 ms Kacheln auf dem Hauptthread — in diesen Blöcken stand die
+  Kugel; danach ist davon nichts mehr übrig. **Zugeordnet wird nach FELD-URL,
+  nicht reihum**: so wird jedes Feld genau einmal dekodiert und geglättet.
+  Die Anfrage trägt URL (absolut — der Worker löst relativ gegen SEIN Skript
+  auf), Raster und Kodierung selbst, der Worker kennt keine Meta. Der
+  Hauptthread holt sich nur noch für Werteanzeige und Windpartikel eine KOPIE
+  (`loadGlobeField`), Vorladen wärmt nur den Worker (`prefetchGlobeField`).
+  Abbruch läuft über eine eigene Schlange im Worker (ein Auftrag je
+  Makrotask), sonst käme das `cancel` erst nach allen schon eingetroffenen
+  Kacheln an die Reihe.
+  **Pixeldichte der Karte auf 1,5 gedeckelt** (`GLOBE_MAX_PIXEL_RATIO`,
+  Windpartikel folgen `map.getPixelRatio()`): bei Pixeldichte 2 zeichnet die
+  Grafikkarte je Frame viermal so viele Pixel. Die KACHELZAHL hängt NICHT
+  daran (gemessen: 68 bei Pixeldichte 1 wie 2) — es geht nur um Füllarbeit.
   **PFEILTASTEN gehören der Zeit, von Anfang an**: MapLibre-Tastatur aus
   (`keyboard: false` — sie verschob die Karte und verbrauchte das Ereignis:
   nach einem Klick in die Karte schalteten zehn Tastendrücke keinen Schritt),
@@ -2984,8 +3018,11 @@ npm run preview   # gebautes dist/ servieren
   geladen, mit festem Startwert (bei jedem Besuch derselbe Himmel), in der
   Auflösung des Schirms; Helligkeiten nach Potenzgesetz (viele schwache,
   wenige helle mit Schein), Farbtöne bläulich bis gelblich. Beim Drehen zieht
-  der Himmel leicht mit (Parallaxe über `--star-x/-y`, direkt am Element
-  gesetzt statt über React). Dazu MapLibres Atmosphärenschein am Kugelrand
+  der Himmel leicht mit (Parallaxe, direkt am Element gesetzt statt über
+  React). **Als `transform` einer eigenen Ebene** (`.globe-stars`), nicht als
+  `background-position`: die zwang je Frame zum Neumalen der ganzen Fläche
+  samt Stilberechnung über alle Marker (gemessen beim Drehen, Pixeldichte 2:
+  0,78 s → 0,02 s Stilberechnung). Dazu MapLibres Atmosphärenschein am Kugelrand
   (`sky['atmosphere-blend']`, beim Hineinzoomen ausgeblendet).
   **Vite-Dev-Server und neue Läufe**: Vite merkt sich beim Start, welche
   Dateien in `public/` liegen, und erfährt von Dateien in einem UMBENANNTEN
@@ -3596,6 +3633,15 @@ npm run preview   # gebautes dist/ servieren
   Der einzige Bereich mit FLIESSTEXT: `.legal-body` setzt die Grundschrift von
   12 auf 14 px hoch und deckelt die Satzbreite auf 78ch — die Dichte der
   Workbench ist für Prosa falsch. Ein Scroll-Container, wie in der Verifikation.
+- **Besucherzähler: GoatCounter, nur für den Betreiber** (`config/analytics.ts`,
+  `lib/analytics.ts`): cookielos, speichert weder IP noch User-Agent, Server
+  bei Hetzner (DE/FI) — kein Banner nötig, genannt in der
+  Datenschutzerklärung. Site-Code aus `VITE_GOATCOUNTER_CODE` (Deploy:
+  Repository-Variable `GOATCOUNTER_CODE`); fehlt er, wird nichts geladen, und
+  die Datenschutzerklärung sagt weiter „kein Analysedienst" — sie beschreibt
+  den GEBAUTEN Stand (`ANALYTICS_ENABLED`). Nur im Produktions-Build.
+  Bereichswechsel gehen als EREIGNIS `bereich/<id>` hinaus, sonst sähe das
+  Dashboard einer Einzelseiten-Anwendung nur „/".
 - **„Punktprognosen" ist in der veröffentlichten Version AUSGEBLENDET**
   (`POINT_FORECASTS_ENABLED` in `config/features.ts`, gesetzt über
   `VITE_ENABLE_POINT_FORECASTS=false` in `npm run build:web`): der Bereich hat

@@ -25,6 +25,11 @@ interface ImportMetaEnv {
    * carto.com/basemaps/apikey. Fehlt er, bleibt der Kartenhintergrund dunkel.
    */
   readonly VITE_CARTO_KEY?: string
+  /**
+   * Site-Code des Besucherzählers (GoatCounter, `<code>.goatcounter.com`).
+   * Fehlt er, wird nichts geladen. Siehe `config/analytics.ts`.
+   */
+  readonly VITE_GOATCOUNTER_CODE?: string
 }
 
 interface ImportMeta {
