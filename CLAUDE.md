@@ -916,9 +916,18 @@ npm run preview   # gebautes dist/ servieren
   (gemessen am Climate Data Center wie am Radar) → anders als bei GeoSphere
   fragt der Browser nicht beim Anbieter, sondern liest im Deploy erzeugte
   Dateien unter `public/de/` (`scripts/de-ingest-climate.mjs`, npm
-  `ingest:de:climate`, gitignored). Folgen, beide bewusst: der Stand ist so
-  alt wie der letzte Deploy (Tageswerte bis GESTERN, kein Live-Tag), und
-  Tageskarten gibt es nur im „recent"-Fenster des DWD (~anderthalb Jahre).
+  `ingest:de:climate`, gitignored). Folge: der Stand ist so alt wie der
+  letzte Deploy, und Tageskarten gibt es nur im „recent"-Fenster des DWD
+  (~anderthalb Jahre, bis gestern). **HEUTE kommt aus den 10-Minuten-Werten**
+  (`10_minutes/*/now`, ~2,4 MB, 5 s für ~460 Stationen, beim DWD ~30 min
+  Verzug) → `today.json`, als `source: 'live'` mit Messzeitpunkt wie der
+  Live-Tag Österreichs; Tagesgrenze 00 UTC, Max/Min aus den 10-Minuten-
+  EXTREMEN (TX_10/TN_10), nicht aus den Terminwerten. Er ist die Vorgabe
+  beim Umschalten. `--today-only` erneuert nur diesen Teil — gedacht für
+  einen häufigeren Lauf; im Deploy-Cron (3 h) ist er so alt wie der Deploy.
+  **Nach einem lokalen Ingest den Dev-Server neu starten** (siehe
+  Modellkarten: neue Dateien in `public/` kennt Vite sonst nicht und liefert
+  die Startseite — hier war `today.json` deshalb zuerst „leer").
   **Die Größen tragen die CODES der Österreich-Registry** (`tl_mittel`,
   `tlmax`, `rr`, `tage_frost` …; Zuordnung DWD-Spalte → Code in
   `MONTHLY_MAP`/`DAILY_MAP` des Ingests), und `fetchDePeriodValues`

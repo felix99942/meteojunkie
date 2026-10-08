@@ -324,7 +324,8 @@ export function AtClimatePanel() {
   // gestern — ein Tag außerhalb zeigte eine leere Karte ohne Grund.
   useEffect(() => {
     if (!isDe || !deMeta || periodKind !== 'day') return
-    if (day > deMeta.lastDay || day < deMeta.dailyFrom) setDay(deMeta.lastDay)
+    const newest = deMeta.today ?? deMeta.lastDay
+    if (day > newest || day < deMeta.dailyFrom) setDay(newest)
   }, [isDe, deMeta, periodKind, day])
   // Allzeit-Rekorde gibt es für Deutschland noch nicht
   useEffect(() => {
@@ -389,7 +390,7 @@ export function AtClimatePanel() {
   // Deutschland: der jüngste Tag ist der letzte im DWD-Tagesdatensatz (gestern)
   const latestFor = () => {
     const l = latestPeriods()
-    if (isDe && deMeta) l.day = deMeta.lastDay
+    if (isDe && deMeta) l.day = deMeta.today ?? deMeta.lastDay
     return l
   }
   const latest = latestFor()
@@ -714,11 +715,11 @@ export function AtClimatePanel() {
             type="date"
             value={day}
             min={isDe ? deMeta?.dailyFrom : undefined}
-            max={isDe ? deMeta?.lastDay : isoDay(new Date())}
+            max={isDe ? (deMeta?.today ?? deMeta?.lastDay) : isoDay(new Date())}
             onChange={(e) => setDay(e.target.value)}
             title={
               isDe
-                ? 'Tageswerte gibt es für Deutschland im laufenden Fenster des DWD (rund anderthalb Jahre), bis gestern'
+                ? 'Tageswerte gibt es für Deutschland im laufenden Fenster des DWD (rund anderthalb Jahre); heute vorläufig aus den 10-Minuten-Werten'
                 : undefined
             }
           />
@@ -1057,7 +1058,11 @@ export function AtClimatePanel() {
         {liveNote && (
           <span
             className="atclima-live"
-            title="Der Tagesdatensatz klima-v2-1d wird erst nach Tagesende gerechnet; der laufende Tag wird hier aus den 10-Minuten-Messwerten (klima-v2-10min) zusammengefasst und alle 5 min aktualisiert."
+            title={
+              isDe
+                ? 'Der Tagesdatensatz des DWD kommt erst am Folgetag; der laufende Tag ist hier aus den 10-Minuten-Werten zusammengefasst (ab 00 UTC). Erneuert beim Bauen der Seite, also nicht minutenaktuell — der Stand steht daneben.'
+                : 'Der Tagesdatensatz klima-v2-1d wird erst nach Tagesende gerechnet; der laufende Tag wird hier aus den 10-Minuten-Messwerten (klima-v2-10min) zusammengefasst und alle 5 min aktualisiert.'
+            }
           >
             ● {liveNote}
           </span>

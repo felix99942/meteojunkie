@@ -30,6 +30,12 @@ export interface DeMeta {
   monthlyFrom: number
   /** Jüngster abgeschlossener Monat (YYYY-MM). */
   lastMonth: string | null
+  /**
+   * Der laufende Tag aus den 10-Minuten-Werten (`today.json`), falls beim
+   * letzten Ingest vorhanden — vorläufig, Stand `todayAsOf`.
+   */
+  today?: string | null
+  todayAsOf?: string | null
   stations: number
   active: number
 }
@@ -164,6 +170,15 @@ export async function fetchDePeriodValues(
   }
 
   if (period.kind === 'day') {
+    // Heute: aus den 10-Minuten-Werten, VORLÄUFIG — dieselbe Lesart wie der
+    // Live-Tag der Österreich-Karte (`source: 'live'` samt Messzeitpunkt)
+    const meta = await loadDeMeta().catch(() => null)
+    if (meta?.today && period.day === meta.today) {
+      const t = await load<DayFile & { asOf: string | null }>('today.json', true)
+      const col = t?.codes[spec.code] ?? {}
+      for (const id of ids) byStation[id] = col[id] ?? null
+      return { byStation, unit: spec.unit, source: 'live', asOf: t?.asOf ?? undefined }
+    }
     const d = await load<DayFile>(`daily/${period.day}.json`, true)
     const col = d?.codes[spec.code] ?? {}
     for (const id of ids) byStation[id] = col[id] ?? null

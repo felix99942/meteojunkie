@@ -30,7 +30,11 @@
 // (der Dateiname trägt das Datum des Reihenendes). Im Deploy hält der
 // Actions-Cache dieses Verzeichnis.
 //
-// Aufruf: node scripts/de-ingest-climate.mjs [--no-historical]
+// Dazu der LAUFENDE TAG aus den 10-Minuten-Werten (`10_minutes/*/now`, ~2,4 MB,
+// rund 30 min Verzug beim DWD) → public/de/today.json. Mit `--today-only`
+// wird nur dieser Teil erneuert (für einen häufigeren Lauf als den Deploy).
+//
+// Aufruf: node scripts/de-ingest-climate.mjs [--no-historical] [--today-only]
 
 import { mkdir, readdir, readFile, rm, writeFile, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -42,6 +46,7 @@ const OBS = `${CDC}/observations_germany/climate`
 const OUT = 'public/de'
 const CACHE = '.cache/de-climate'
 const NO_HIST = process.argv.includes('--no-historical')
+const TODAY_ONLY = process.argv.includes('--today-only')
 /** Monatskarten ab hier; davor sind es nur eine Handvoll Stationen. */
 const FIRST_YEAR = 1881
 const CONCURRENCY = 8
@@ -239,9 +244,73 @@ const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
 const daysIn = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate()
 const pad2 = (n) => String(n).padStart(2, '0')
 
+// --- Laufender Tag (10-Minuten-Werte) -------------------------------------
+
+/**
+ * Der heutige Tag (UTC) bis zum jüngsten 10-Minuten-Wert, je Station. Der
+ * Tagesdatensatz `daily/kl` kommt erst am Folgetag; ohne diesen Teil endete
+ * die Tageskarte immer bei gestern.
+ *
+ * Tagesgrenze 00 UTC, wie im Tagesdatensatz für die Temperatur. Maximum und
+ * Minimum aus den 10-Minuten-EXTREMEN (TX_10/TN_10), nicht aus den
+ * Terminwerten — die verfehlen die Spitze zwischen zwei Terminen. Sonne
+ * (`SD_10`) in Stunden; sie führen nur gut 70 Stationen.
+ */
+async function ingestToday(ids) {
+  const B = `${OBS}/10_minutes`
+  const day = new Date().toISOString().slice(0, 10)
+  const dayKey = day.replaceAll('-', '')
+  // code → Spalte → Aggregat, je Produkt
+  const PRODUCTS = [
+    ['air_temperature', /10minutenwerte_TU_(\d{5})_now\.zip/, [['tl_mittel', 'TT_10', 'mean'], ['rfb_mittel', 'RF_10', 'mean']]],
+    ['extreme_temperature', /10minutenwerte_extrema_temp_(\d{5})_now\.zip/, [['tlmax', 'TX_10', 'max'], ['tlmin', 'TN_10', 'min']]],
+    ['precipitation', /10minutenwerte_nieder_(\d{5})_now\.zip/, [['rr', 'RWS_10', 'sum']]],
+    ['solar', /10minutenwerte_SOLAR_(\d{5})_now\.zip/, [['so_h', 'SD_10', 'sum']]],
+  ]
+  const codes = {}
+  let asOf = ''
+  for (const [dir, re, cols] of PRODUCTS) {
+    const names = (await listing(`${B}/${dir}/now/`, re)).filter((n) => ids.has(Number(re.exec(n)[1])))
+    await pool(names, CONCURRENCY * 2, async (name) => {
+      const id = Number(re.exec(name)[1])
+      let rows
+      try {
+        rows = productOf(await get(`${B}/${dir}/now/${name}`, 2))
+      } catch {
+        return // eine fehlende Station soll den Tag nicht verhindern
+      }
+      rows = rows.filter((r) => r.MESS_DATUM?.startsWith(dayKey))
+      for (const [code, col, how] of cols) {
+        const vals = rows.map((r) => num(r[col])).filter((v) => v != null)
+        if (vals.length) (codes[code] ??= {})[id] = round1(reduce(vals, how))
+      }
+      const last = rows[rows.length - 1]?.MESS_DATUM
+      if (last) {
+        const iso = `${last.slice(0, 4)}-${last.slice(4, 6)}-${last.slice(6, 8)}T${last.slice(8, 10)}:${last.slice(10, 12)}:00Z`
+        if (iso > asOf) asOf = iso
+      }
+    })
+    console.log(`  ${dir}: ${names.length} Stationen`)
+  }
+  return { day, asOf: asOf || null, codes }
+}
+
 // --- Ablauf ---------------------------------------------------------------
 
+async function mainTodayOnly() {
+  const st = JSON.parse(await readFile(join(OUT, 'stations.json'), 'utf8')).stations
+  const today = await ingestToday(new Set(st.filter((s) => s.isActive).map((s) => s.id)))
+  await writeFile(join(OUT, 'today.json.tmp'), JSON.stringify(today))
+  await rename(join(OUT, 'today.json.tmp'), join(OUT, 'today.json'))
+  const meta = JSON.parse(await readFile(join(OUT, 'meta.json'), 'utf8'))
+  meta.today = today.day
+  meta.todayAsOf = today.asOf
+  await writeFile(join(OUT, 'meta.json'), JSON.stringify(meta, null, 1))
+  console.log(`Heute ${today.day}, Stand ${today.asOf}`)
+}
+
 async function main() {
+  if (TODAY_ONLY) return mainTodayOnly()
   const t0 = Date.now()
   await mkdir(OUT, { recursive: true })
   const tmp = `${OUT}.tmp`
@@ -473,6 +542,16 @@ async function main() {
     .sort((a, b) => a.name.localeCompare(b.name, 'de'))
   await writeFile(join(tmp, 'stations.json'), JSON.stringify({ stations }))
 
+  console.log('Heute (10-Minuten-Werte) …')
+  let todayData = null
+  try {
+    todayData = await ingestToday(runningIds)
+    await writeFile(join(tmp, 'today.json'), JSON.stringify(todayData))
+  } catch (e) {
+    // Ohne den laufenden Tag bleibt alles andere gültig
+    console.warn(`  laufender Tag fehlt: ${e.message}`)
+  }
+
   const lastMonth = (() => {
     // jüngster Monat mit Werten in mehr als der Hälfte der aktiven Stationen
     const ly = yearList[yearList.length - 1]
@@ -489,6 +568,8 @@ async function main() {
     dailyFrom: firstRecentDay,
     monthlyFrom: yearList[0],
     lastMonth,
+    today: todayData?.day ?? null,
+    todayAsOf: todayData?.asOf ?? null,
     stations: stations.length,
     active: stations.filter((s) => s.isActive).length,
   }
