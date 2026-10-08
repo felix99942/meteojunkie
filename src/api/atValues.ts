@@ -563,7 +563,13 @@ export async function fetchPeriodValues(
       return i === undefined ? null : clean(spec, s.byStation[id]?.[i] ?? null)
     })
     if (partial) vals.push(partialByStation[id] ?? null)
-    byStation[id] = vals.some((v) => v != null) ? aggregate(vals, spec.annualAgg) : null
+    // Nur aus ALLEN Monaten der Station — eine Lücke gibt keinen Wert. Sonst
+    // wird aus einer Station, die nur Jänner bis März gemessen hat, ein
+    // „Jahresmittel" von 1 °C, und eine Summe oder Kenntagzahl aus neun
+    // Monaten sieht genauso echt aus wie eine aus zwölf. Für Deutschland
+    // zuerst gemessen (43 Stationen 2025, Reit im Winkl −6,4 K), dieselbe
+    // Regel gilt seither hier.
+    byStation[id] = vals.length > 0 && vals.every((v) => v != null) ? aggregate(vals, spec.annualAgg) : null
   }
 
   return {

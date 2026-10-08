@@ -952,9 +952,11 @@ npm run preview   # gebautes dist/ servieren
   Teilwert in `running.json`.
   **Saison und Jahr nur aus ALLEN Monaten der Station** (`fetchDePeriodValues`):
   gemessen hatten 2025 43 Stationen Lücken — Reit im Winkl nur Jänner bis
-  März, „Jahresmittel" 1,0 °C, 6,4 K unter dem Normal. Die Österreich-Karte
-  bildet Saison/Jahr dagegen weiter aus den vorhandenen Monaten der Station
-  (`fetchPeriodValues`) — dieselbe Falle, dort bisher nicht aufgefallen.
+  März, „Jahresmittel" 1,0 °C, 6,4 K unter dem Normal. **Seit 2026-10-08 gilt
+  dieselbe Regel für Österreich** (`fetchPeriodValues`): gemessen hatten 2024
+  dort 7 Stationen beim Temperaturmittel und 9 beim Niederschlag nur
+  Teiljahre (Waizenkirchen 5, Jenbach 8 Monate) und standen bis dahin mit
+  verzerrten Jahreswerten in der Karte.
   **Normale rechnet der DWD selbst** (`multi_annual/mean_91-20`, `mean_61-90`):
   Temperaturmittel, Niederschlag, Sonne und vier Kenntage; für Max/Min und
   Niederschlagstage gibt es KEINE, dort bleibt die Abweichung leer.
