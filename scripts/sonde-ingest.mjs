@@ -133,6 +133,15 @@ export function parseUwyoCsv(text) {
   return out.p.length >= 5 ? out : null
 }
 
+/**
+ * Was UWyo geantwortet hat, je Ausgang gezählt. Im Deploy kamen über Stunden
+ * NULL Aufstiege, während derselbe Ingest lokal 21/21 Stationen lieferte —
+ * ohne diese Zählung sagt das Log nicht, ob abgelehnt (403/429), nichts
+ * gefunden (400) oder gar nicht geantwortet wurde (Zeitüberschreitung).
+ */
+const outcomes = new Map()
+const note = (key) => outcomes.set(key, (outcomes.get(key) ?? 0) + 1)
+
 async function fetchSounding(id, term) {
   // Eine LEERE Antwort kam bei der Messung vereinzelt statt „Unable to
   // retrieve" — einmal nachfragen, dann gilt der Termin als nicht vorhanden.
@@ -140,10 +149,21 @@ async function fetchSounding(id, term) {
     try {
       const res = await fetch(url(id, term), { signal: AbortSignal.timeout(60_000) })
       const text = await res.text()
-      if (res.ok && text.trim()) return parseUwyoCsv(text)
-      if (!res.ok) return null // 400 = kein Aufstieg zu diesem Termin
-    } catch {
+      if (res.ok && text.trim()) {
+        const parsed = parseUwyoCsv(text)
+        if (!parsed) note(`200 unlesbar: ${JSON.stringify(text.slice(0, 80))}`)
+        else note('200 ok')
+        return parsed
+      }
+      if (!res.ok) {
+        // 400 = kein Aufstieg zu diesem Termin
+        note(`HTTP ${res.status}: ${JSON.stringify(text.slice(0, 80))}`)
+        return null
+      }
+      note('200 leer')
+    } catch (e) {
       // Zeitüberschreitung/Netz: nochmal
+      note(`Fehler ${e?.name ?? ''} ${e?.cause?.code ?? e?.message ?? ''}`.trim())
     }
   }
   return null
@@ -204,6 +224,14 @@ async function main() {
       .map((t) => t.toISOString().slice(5, 13).replace('T', ' '))
       .join(', ')} UTC`,
   )
+  for (const [k, n] of [...outcomes].sort((a, b) => b[1] - a[1])) console.log(`  ${n}× ${k}`)
+  // Keine einzige Station ist ein Ausfall der Quelle, kein Normalzustand:
+  // sichtbar scheitern (der Deploy läuft dank continue-on-error weiter),
+  // statt mit „success" einen leeren Index auszuliefern.
+  if (index.stations.length === 0) {
+    console.error('Radiosonden: KEINE Station geliefert — Quelle prüfen (Zählung oben).')
+    process.exit(1)
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
