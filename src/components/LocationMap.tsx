@@ -361,7 +361,7 @@ export function LocationMap({
             <span className="locmap-warn">Kein drucklevelfähiges Modell gewählt.</span>
           ) : (
             !gated ? (
-              <>Klick auf ein Dreieck wählt die Radiosonde — oder irgendwo: die nächste Station</>
+              <>Klick auf einen roten Punkt wählt die Radiosonde — oder irgendwo: die nächste Station</>
             ) : (
               <>Klick wählt den Punkt{box ? ' — ausserhalb der Modellabdeckung abgeblendet' : ''}</>
             )

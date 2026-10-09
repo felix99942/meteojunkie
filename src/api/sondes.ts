@@ -1,16 +1,21 @@
 // Gemessene Radiosondenaufstiege für den Soundings-Bereich.
 //
 // Die Daten sind statische Assets (public/sondes/), erzeugt vom Ingest
-// `scripts/sonde-ingest.mjs` im Deploy-Workflow — UWyo und der DWD senden
-// keine CORS-Header, der Browser käme nicht heran (Begründung dort). Geladen
-// wird same-origin wie die MOS-Vorhersage; kein Open-Meteo-Budget.
+// `scripts/sonde-ingest.py` im Deploy-Workflow (DWD Open Data, GTS-Eingang als
+// BUFR) — der DWD sendet keine CORS-Header, der Browser käme nicht heran
+// (Begründung dort). Geladen wird same-origin wie die MOS-Vorhersage; kein
+// Open-Meteo-Budget.
 
 import type { SoundingColumn } from '../lib/sounding'
 import type { LatLon } from '../state/workbench'
 
 /** Ein Aufstieg im Index — die Werte selbst liegen in `file`. */
 export interface SondeEntry {
-  /** Nenntermin (00/12 UTC), ISO. */
+  /**
+   * Termin, ISO: der letzte 3-h-Termin bis 1¾ h nach dem Start (`term_of` im
+   * Ingest) — meist 00/12 UTC, bei Innsbruck und Graz 03 UTC, bei
+   * Lindenberg/Idar-Oberstein auch 06/18 UTC.
+   */
   term: string
   /** Tatsächlicher Start (erster Messpunkt), ISO — bis zu 2 h neben dem Termin. */
   launch: string

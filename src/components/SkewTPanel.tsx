@@ -628,7 +628,11 @@ export function SkewTPanel({ panel }: { panel: PanelConfig }) {
     : sondeIndex.isPending
       ? null
       : !hasSondes
-        ? 'Keine Messungen vorhanden — lokal erst nach „npm run ingest:sondes".'
+        ? // Index da, aber leer = die Quelle hat beim letzten Abruf nichts
+          // geliefert; ganz ohne Index fehlt der Ingest (lokal der Normalfall)
+          sondeIndex.data
+          ? `Keine Messungen — der letzte Abruf beim DWD (${formatLaunch(sondeIndex.data.generated)}) brachte keinen Aufstieg.`
+          : 'Keine Messungen vorhanden — lokal erst nach „npm run ingest:sondes".'
         : !obsStation
           ? 'Keine Station gewählt'
           : null

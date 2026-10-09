@@ -1900,23 +1900,51 @@ npm run preview   # gebautes dist/ servieren
   breit, ab drei Modellen lief der Kasten über seine Höchstbreite und die
   letzte Spalte stand abgeschnitten da (gemessen 460 px gebraucht bei 418 px
   Platz). Mit Umbruch kostet jede Modellspalte 88 px, vier Modelle passen.
-- **GEMESSENE AUFSTIEGE im Skew-T** (`scripts/sonde-ingest.mjs` → `public/
+- **GEMESSENE AUFSTIEGE im Skew-T** (`scripts/sonde-ingest.py` → `public/
   sondes/`, Kern `api/sondes.ts` mit Tests, npm `ingest:sondes`): weisse
-  Kurve über den Modellen, eigene Spalte in der Kennzahlentabelle, Dreiecke
-  auf der Ortswahl-Karte (Klick setzt den Punkt EXAKT auf den Startplatz).
-  Quelle ist die **University of Wyoming** (`/wsgi/sounding?…&type=TEXT:CSV`),
-  für die meisten Stationen die hochaufgelösten BUFR-Aufstiege (~3.000
-  Punkte), für Budapest/Cuneo/Poprad/Legionowo nur TEMP (~100). **Kein CORS**
-  (gemessen, ebenso opendata.dwd.de) → Ingest im Deploy wie MOSMIX, gitignored,
-  `continue-on-error`; LOKAL gibt es Messungen nur nach `npm run ingest:sondes`
-  (dauert ~3 min, ~840 KB). Die Stationsliste ist GEMESSEN (2026-10-02):
-  21 Stationen liefern, Graz, Linz, Udine, Mailand, Ljubljana, De Bilt, Uccle,
-  Nancy, Lyon, Kempten liefern NICHT — nicht erneut ergänzen. Innsbruck nur
-  zum 00-UTC-Termin. **Termin ≠ Startzeit**: gestartet wird ~1 h vorher
-  (Innsbruck führt den 02:15-Start unter 00 UTC) — beides steht in den Daten
-  und in der Anzeige. Ein früh abgerissener Aufstieg (Wien 00 UTC stand bei
-  der Messung zuerst bei 800 hPa, Stunden später vollständig) wird mit
-  „endet bei … hPa" markiert.
+  Kurve über den Modellen, eigene Spalte in der Kennzahlentabelle, **rote
+  Punkte** auf der Ortswahl-Karte (Klick setzt den Punkt EXAKT auf den
+  Startplatz; vorher weisse Dreiecke, die über dem hellen Alpenrelief
+  untergingen). **Quelle ist seit 2026-10-09 der DWD**
+  (`opendata.dwd.de/weather/weather_reports/radiosonde/bufr/`): sein
+  GTS-Eingang als BUFR, also die Meldungen ALLER Wetterdienste, ~2 Tage
+  vorgehalten (~425 Dateien, ~240 MB), überwiegend hochaufgelöst (bis ~7.000
+  Punkte). **Vorher University of Wyoming — und das ist der Grund für den
+  Wechsel**: vom GitHub-Runner aus lieferte UWyo stundenweise NICHTS (drei
+  Läufe hintereinander null Aufstiege, der Schritt meldete trotzdem
+  „success"), während derselbe Abruf lokal 21/21 Stationen brachte; ein
+  leerer Lauf ersetzte den letzten guten Stand, die Seite sagte „keine
+  Daten". Der DWD ist vom Runner aus verlässlich (MOSMIX, ICON) und
+  VOLLSTÄNDIGER: **Graz, Linz, Ljubljana, Rivolto (Udine), Novara, Altenstadt,
+  De Bilt** fehlten bei UWyo und sind jetzt dabei — 31 Stationen, Liste
+  gemessen. Nicht im Strom: Udine 16044, Mailand 16080, Uccle, Nancy, Lyon.
+  **Innsbruck und Graz steigen nur EINMAL täglich auf (≈ 02:15 UTC)** — das
+  ist der Startplan, keine Lücke der Quelle; im GTS steht nichts weiter. Wien
+  zweimal, Lindenberg/Idar-Oberstein alle 6 h.
+  **Drei Fallen beim Dekodieren, alle gemessen**: (1) ABSTIEGE — nach dem
+  Platzen misst die Sonde weiter und wird als eigene Meldung verteilt
+  (Vorlage 309056, Druck steigend); genommen werden nur 309052/309057 mit
+  fallendem Druck. (2) TEILMELDUNGEN — ein Aufstieg kommt erst bis 100 hPa,
+  später vollständig; je Station und Termin gilt die mit den meisten Punkten.
+  (3) In der DWD-Vorlage 309057 ist `pressure` um EINEN Wert länger als die
+  übrigen Reihen (hinten angehängter Tropopausen-/Maximalwind-Druck) — mit
+  dem Druck als Länge lief der Index über und acht deutsche Stationen fielen
+  still heraus; die Länge kommt deshalb aus der Temperatur.
+  **Termin ≠ Startzeit, und der Termin steht NICHT in der Meldung**:
+  `term_of` = letzter 3-h-Termin bis 1¾ h nach dem Start (DWD 10:45 → 12,
+  Cuneo 22:15 → 00, Innsbruck 02:15 → **03 UTC** — bei UWyo stand derselbe
+  Start unter 00 UTC). Termine sind also nicht nur 00/12. Ein früh
+  abgerissener Aufstieg wird mit „endet bei … hPa" markiert.
+  **Dekodieren kostet**, weil jede Meldung weltweit ausgepackt werden muss:
+  je BUFR-Datei liegt das Ergebnis in `.cache/sondes/` (für ALLE
+  europäischen Stationen, damit eine Änderung der Liste den Cache nicht
+  entwertet), im Deploy über den Actions-Cache mit einem Schlüssel je
+  6-Stunden-Block (je Lauf wären ~8 MB stündlich, 1,3 GB über die
+  Aufbewahrungszeit, und verdrängten die ECMWF-Läufe). Gemessen lokal: kalt
+  1½ min samt Download, warm 0,4 s. Bei null Stationen scheitert der Schritt
+  sichtbar (`continue-on-error`), und das Panel unterscheidet „Abruf brachte
+  nichts" von „Ingest fehlt". LOKAL braucht der Ingest `eccodes`
+  (`pip install -r scripts/requirements-nwp.txt`).
   Ausgedünnt wird auf ECHTE Messpunkte (alle 2 hPa, über 300 hPa alle 1 hPa,
   Druck streng fallend), nicht auf ein Gitter interpoliert. Gerechnet wird
   über `sondeColumn` → dieselbe `computeSounding` wie bei den Modellen.

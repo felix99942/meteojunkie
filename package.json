@@ -18,7 +18,7 @@
     "ingest:at:histalp": "node scripts/at-ingest-histalp.mjs",
     "ingest:mos:stations": "node scripts/mos-ingest-stations.mjs",
     "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs",
-    "ingest:sondes": "node scripts/sonde-ingest.mjs",
+    "ingest:sondes": "python3 scripts/sonde-ingest.py",
     "ingest:de:climate": "node scripts/de-ingest-climate.mjs",
     "ingest:ecmwf": "python3 scripts/ecmwf-ingest.py",
     "ingest:icon-d2": "python3 scripts/icon-ingest.py icon-d2",

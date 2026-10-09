@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { computeSounding } from '../lib/sounding'
 import { distanceKm, formatTerm, nearestSonde, sondeColumn, type SondeData, type SondeStation } from './sondes'
-// @ts-expect-error — reines Node-ESM ohne Typen, der Parser wird hier mitgeprüft
-import { parseUwyoCsv } from '../../scripts/sonde-ingest.mjs'
 
 const station = (id: string, lat: number, lon: number, n = 1): SondeStation => ({
   id,
@@ -72,35 +70,5 @@ describe('formatTerm', () => {
     expect(formatTerm('2026-10-03T00:00:00Z', now)).toBe('heute 00 UTC')
     expect(formatTerm('2026-10-02T12:00:00Z', now)).toBe('gestern 12 UTC')
     expect(formatTerm('2026-10-01T12:00:00Z', now)).toBe('01.10. 12 UTC')
-  })
-})
-
-describe('parseUwyoCsv', () => {
-  const head =
-    'time,longitude,latitude,pressure_hPa,geopotential height_m,temperature_C,dew point temperature_C,ice point temperature_C,relative humidity_%,humidity wrt ice_%,mixing ratio_g/kg,wind direction_degree,wind speed_m/s'
-  const row = (p: number, t: number, td: string, wd = '270', ws = '5.0') =>
-    `2026-10-02 10:45:00, 11.55,48.24,${p},  500,${t},${td},,,,,${wd},${ws}`
-
-  it('dünnt aus, verlangt streng fallenden Druck und hört bei 100 hPa auf', () => {
-    const csv = [
-      head,
-      row(1000, 20, '10'),
-      row(999.5, 20, '10'), // < 2 hPa gefallen → weg
-      row(998, 19.8, '10'),
-      row(999, 19.9, '10'), // Ballon pendelt zurück → weg
-      row(990, 19, '9'),
-      row(500, -10, ''), // fehlender Taupunkt bleibt als null
-      row(400, -20, '-30'),
-      row(250, -45, '-55'),
-      row(99, -60, '-70'), // über der Achse
-    ].join('\n')
-    const d = parseUwyoCsv(csv)
-    expect(d.p).toEqual([1000, 998, 990, 500, 400, 250])
-    expect(d.Td[3]).toBeNull()
-    expect(d.launch).toBe('2026-10-02T10:45:00.000Z')
-  })
-
-  it('lehnt die Fehlermeldung von UWyo ab', () => {
-    expect(parseUwyoCsv('Unable to retrieve the data for 11120 at 2026-10-02 12:00:00.')).toBeNull()
   })
 })

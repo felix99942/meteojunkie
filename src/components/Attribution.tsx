@@ -75,18 +75,18 @@ export function GroundAttribution({ className = '' }: { className?: string }) {
 
 /**
  * Gemessene Radiosondenaufstiege im Soundings-Bereich. Geholt im Deploy
- * (`scripts/sonde-ingest.mjs`), der Browser kontaktiert UWyo also NICHT —
+ * (`scripts/sonde-ingest.py`), der Browser kontaktiert den DWD also NICHT —
  * genannt wird die Quelle trotzdem: die Messungen stammen von den nationalen
- * Wetterdiensten, UWyo stellt sie nur abrufbar zusammen.
+ * Wetterdiensten, der DWD stellt sie aus seinem GTS-Eingang offen bereit.
  */
 export function SondeAttribution({ className = '' }: { className?: string }) {
   return (
     <span className={`attribution ${className}`.trim()}>
       Radiosonden:{' '}
-      <a href="https://weather.uwyo.edu/upperair/sounding.shtml" target="_blank" rel="noreferrer">
-        University of Wyoming
+      <a href="https://opendata.dwd.de/weather/weather_reports/radiosonde/" target="_blank" rel="noreferrer">
+        DWD Open Data
       </a>{' '}
-      (Messungen der nationalen Wetterdienste über das WMO-GTS), alle 3 h übernommen.
+      (Messungen der nationalen Wetterdienste über das WMO-GTS), stündlich übernommen.
     </span>
   )
 }

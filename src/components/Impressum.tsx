@@ -304,8 +304,9 @@ export function Impressum() {
               </a>{' '}
               — MOSMIX-Punktvorhersagen, Stationskatalog, die Klimadaten Deutschlands
               (Climate Data Center: Tages- und Monatswerte, Klimanormale), das Niederschlagsradar
-              (Radarkomposit RV über <code>maps.dwd.de</code>) und die Modellläufe ICON-D2 und
-              ICON-EU für die Modellkarten (beim Bauen der Seite übernommen). Nutzung nach{' '}
+              (Radarkomposit RV über <code>maps.dwd.de</code>), die Modellläufe ICON-D2 und
+              ICON-EU für die Modellkarten sowie die gemessenen Radiosondenaufstiege (beim Bauen der
+              Seite übernommen). Nutzung nach{' '}
               <a
                 href="https://www.dwd.de/DE/service/rechtliche_hinweise/rechtliche_hinweise_node.html"
                 target="_blank"
@@ -314,13 +315,6 @@ export function Impressum() {
                 GeoNutzV
               </a>
               .
-            </li>
-            <li>
-              <a href="https://weather.uwyo.edu/upperair/sounding.shtml" target="_blank" rel="noreferrer">
-                University of Wyoming, Department of Atmospheric Science
-              </a>{' '}
-              — gemessene Radiosondenaufstiege (Soundings). Übernommen beim Bauen der Seite; Ihr
-              Browser kontaktiert diesen Dienst nicht.
             </li>
             <li>
               <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noreferrer">

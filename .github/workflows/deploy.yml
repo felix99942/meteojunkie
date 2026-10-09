@@ -2,7 +2,7 @@
 # Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
 # Läuft bei jedem Push auf main/master UND stündlich (Cron) — der Cron-Lauf
 # frischt den heutigen Tag des Klimamonitors Deutschland auf (10-Minuten-Werte
-# des DWD), die MOS-Vorhersage (DWD MOSMIX rechnet ~4×/Tag), die Radiosonden
+# des DWD), die MOS-Vorhersage (DWD MOSMIX rechnet ~4×/Tag), die Radiosonden (DWD)
 # und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
 # Die Daten werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
 name: Deploy web version to GitHub Pages
@@ -75,15 +75,6 @@ jobs:
         timeout-minutes: 20
         run: npm run ingest:de:climate
 
-      # Gemessene Radiosondenaufstiege (UWyo, ~20 Stationen × 3 Termine) →
-      # public/sondes/. UWyo sendet keine CORS-Header, deshalb hier statt im
-      # Browser. Ein Ausfall darf das Deployment ebenfalls nicht blockieren —
-      # dann zeigt das Skew-T schlicht keine Messung.
-      - name: Radiosonden übernehmen
-        continue-on-error: true
-        timeout-minutes: 10
-        run: npm run ingest:sondes
-
       # Modellkarten: ECMWF IFS 0,25° und DWD ICON-EU/ICON-D2 → public/nwp/,
       # Wertebilder je neuestem Lauf (zusammen ~350 MB). Python, weil das GRIB2
       # CCSDS-komprimiert ist und eccodes es dekodiert (das pip-Paket bringt
@@ -100,6 +91,44 @@ jobs:
         id: nwp-deps
         continue-on-error: true
         run: pip install -q -r scripts/requirements-nwp.txt
+
+      # Gemessene Radiosondenaufstiege (DWD Open Data, GTS-Eingang als BUFR,
+      # ~30 Stationen) → public/sondes/. Der DWD sendet keine CORS-Header,
+      # deshalb hier statt im Browser; bis 2026-10-09 kamen die Aufstiege von
+      # UWyo, das vom Runner aus stundenweise nichts lieferte. Dekodiert wird
+      # je BUFR-Datei einmal: der Cache trägt die Ergebnisse von Lauf zu Lauf
+      # weiter, ein Lauf dekodiert nur die Dateien seit dem letzten Stand.
+      # Schlüssel je 6-STUNDEN-BLOCK, nicht je Lauf: ~8 MB stündlich abgelegt
+      # wären über die 7 Tage Aufbewahrung ~1,3 GB und verdrängten im
+      # 10-GB-Topf die ECMWF-Läufe; so sind es vier Einträge am Tag, und ein
+      # Lauf dekodiert höchstens sechs Stunden nach. Ein Ausfall darf das
+      # Deployment nicht blockieren — dann zeigt das Skew-T keine Messung.
+      - name: Block für den Radiosonden-Cache
+        id: sondeblock
+        run: echo "b=$(date -u +%Y%m%d)-$(( $(date -u +%-H) / 6 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Radiosonden-Dekodierungen aus dem Cache
+        id: sondes-cache
+        if: steps.nwp-deps.outcome == 'success'
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/sondes
+          key: sondes-bufr-v1-${{ steps.sondeblock.outputs.b }}
+          restore-keys: sondes-bufr-v1-
+
+      - name: Radiosonden übernehmen (DWD)
+        id: sondes
+        if: steps.nwp-deps.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 -u scripts/sonde-ingest.py
+
+      - name: Radiosonden-Dekodierungen im Cache ablegen
+        if: steps.sondes.outcome == 'success' && steps.sondes-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/sondes
+          key: sondes-bufr-v1-${{ steps.sondeblock.outputs.b }}
 
       # ECMWF über den Actions-Cache JE LAUF: der Lauf wechselt nur zweimal am
       # Tag, der Cron läuft alle 3 h, und ein Lauf kostet ~7,5 min (das Netz
