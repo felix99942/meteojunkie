@@ -3017,7 +3017,9 @@ npm run preview   # gebautes dist/ servieren
   zusätzlich Geopotential auf 1000 hPa (`gh1000`, ECMWF `gh`/1000, DWD
   `fi`/1000, beide live im Verzeichnis geprüft). Skala 488–592 gpdm in
   4-gpdm-Bändern auf der Temperaturrampe; wer sie wählt, bekommt die
-  500-hPa-Linien dazu (klassische Kombination). Gemessen ICON-D2 16.10.,
+  500-hPa-Linien dazu (klassische Kombination). Sie ist die VORGABE beim
+  Öffnen (`DEFAULT_GLOBE_VARIABLE`); fehlt sie in einem Lauf, fällt die
+  Auswahl auf T2m zurück. Gemessen ICON-D2 16.10.,
   +12 h: 535–561 gpdm über Mitteleuropa. Keine Schneefallgrenze im Text
   (dieselbe Regel wie bei den Ensemble-Schwellen). Die Cache-Schlüssel im
   Deploy sind dafür gesprungen (ECMWF `v5`, ICON `v2`) — `already_done`

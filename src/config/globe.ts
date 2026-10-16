@@ -257,7 +257,8 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
 /** Größen, über denen die Partikel den WELLENLAUF statt des Winds zeigen. */
 export const WAVE_VARIABLES: ReadonlySet<GlobeVarId> = new Set(['swh', 'pp1d'])
 
-export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 't2m'
+/** Vorgabe ist die Relative Topografie (auf Wunsch) — mit Isobaren und 500-hPa-Linien darüber. */
+export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'
 
 // --- Modelle und Ansichten -------------------------------------------------
 

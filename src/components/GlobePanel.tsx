@@ -185,9 +185,13 @@ export function GlobePanel() {
     if (varId === 'wind10' || varId === 'gust' || WAVE_VARIABLES.has(varId)) setParticles(true)
   }, [varId])
 
-  // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück
+  // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück — und
+  // fehlt AUCH die (ein Lauf von vor der Relativen Topografie), auf T2m,
+  // die jedes Modell führt
   useEffect(() => {
-    if (meta && !meta.variables[varId]) setVarId(DEFAULT_GLOBE_VARIABLE)
+    if (meta && !meta.variables[varId]) {
+      setVarId(meta.variables[DEFAULT_GLOBE_VARIABLE] ? DEFAULT_GLOBE_VARIABLE : 't2m')
+    }
   }, [meta, varId])
 
   // --- Karte -------------------------------------------------------------
