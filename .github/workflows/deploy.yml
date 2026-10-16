@@ -1,6 +1,7 @@
 # Baut die Web-Version (Karte deaktiviert) und deployt sie auf GitHub Pages.
 # Voraussetzung: im Repo unter Settings → Pages → Source = "GitHub Actions".
-# Läuft bei jedem Push auf main/master UND stündlich (Cron) — der Cron-Lauf
+# Läuft bei jedem Push auf main/master UND stündlich (Cron), dazu zehn Termine
+# passend zum Eingang der Radiosonden (s. schedule) — der Cron-Lauf
 # frischt den heutigen Tag des Klimamonitors Deutschland auf (10-Minuten-Werte
 # des DWD), die MOS-Vorhersage (DWD MOSMIX rechnet ~4×/Tag), die Radiosonden (DWD)
 # und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
@@ -19,6 +20,27 @@ on:
     # Die Modellfelder kommen dazwischen aus dem Actions-Cache (ein Lauf wird
     # nur einmal geholt), teuer ist ein stündlicher Lauf damit nicht.
     - cron: '30 * * * *'
+    # ZUSÄTZLICH auf die RADIOSONDEN gelegt (seit 2026-10-16). Grund: GitHub
+    # drosselt geplante Läufe massiv — vom 14. bis 16.10. starteten von ~66
+    # stündlichen Terminen nur 9, keiner abgebrochen, die übrigen gar nicht
+    # ausgelöst. Ein Aufstieg erschien dadurch bis zu 6 h verspätet. Die Zeiten
+    # folgen dem gemessenen Eingang beim DWD (Dateizeiten des BUFR-Verzeichnisses,
+    # 15.10.): 00/12 UTC kommt 00:00–01:30 bzw. 12:00–13:30 an, Innsbruck/Graz/
+    # Linz (Start 02:15) ~03–04 UTC, 06/18 UTC (Lindenberg, Idar-Oberstein,
+    # Prag) 06:00–07:30 bzw. 18:00–19:30. Krumme Minuten, weil GitHub zur
+    # vollen und halben Stunde am stärksten drosselt. Je Fenster ZWEI Zeilen:
+    # fällt die erste aus, fängt die zweite den Termin auf. Eine GARANTIE ist
+    # das nicht — verlässlich wäre nur ein externer Auslöser (workflow_dispatch).
+    - cron: '7 2 * * *'
+    - cron: '43 2 * * *'
+    - cron: '17 4 * * *'
+    - cron: '53 4 * * *'
+    - cron: '47 7 * * *'
+    - cron: '23 8 * * *'
+    - cron: '7 14 * * *'
+    - cron: '43 14 * * *'
+    - cron: '47 19 * * *'
+    - cron: '23 20 * * *'
   workflow_dispatch:
 
 permissions:
