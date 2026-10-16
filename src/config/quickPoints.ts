@@ -18,6 +18,7 @@
 // Chiang Mai im Norden — aus `config/thaiPlaces.ts` (geokodiert).
 
 import type { LatLon } from '../state/workbench'
+import { THAILAND_ENABLED } from './features'
 import { THAI_PLACES } from './thaiPlaces'
 
 export type QuickRegionId = 'at' | 'th'
@@ -30,7 +31,7 @@ export interface QuickRegion {
   bbox: [number, number, number, number]
 }
 
-export const QUICK_REGIONS: QuickRegion[] = [
+const ALL_QUICK_REGIONS: QuickRegion[] = [
   {
     id: 'at',
     label: 'Österreich',
@@ -53,6 +54,7 @@ export const QUICK_REGIONS: QuickRegion[] = [
     points: THAI_PLACES.filter((p) => p.quick).map(({ lat, lon, label }) => ({ lat, lon, label })),
   },
 ]
+export const QUICK_REGIONS: QuickRegion[] = ALL_QUICK_REGIONS.filter((r) => THAILAND_ENABLED || r.id !== 'th')
 
 /** Österreich-Punkte — die ursprüngliche Schnellwahl. */
 export const QUICK_POINTS: LatLon[] = QUICK_REGIONS[0].points

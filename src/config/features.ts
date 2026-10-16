@@ -31,3 +31,13 @@ export const MAP_ENABLED = import.meta.env.VITE_ENABLE_MAP !== 'false'
  */
 export const POINT_FORECASTS_ENABLED =
   import.meta.env.VITE_ENABLE_POINT_FORECASTS !== 'false'
+
+/**
+ * THAILAND_ENABLED: Südostasien in Modellkarten (Ansicht „Thailand") und in
+ * der Schnellwahl der Orte gibt es nur LOKAL — in der veröffentlichten
+ * Version ausgeblendet (auf Wunsch). AUSGENOMMEN ist der Satellitenbereich:
+ * die Himawari-Produkte bleiben überall.
+ *
+ * Wiedereinschalten: `VITE_ENABLE_THAILAND` aus `npm run build:web` entfernen.
+ */
+export const THAILAND_ENABLED = import.meta.env.VITE_ENABLE_THAILAND !== 'false'

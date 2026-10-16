@@ -16,6 +16,7 @@
 // Kachelgeometrie, Laufalter) — getestet in `globe.test.ts`. Das Einfärben
 // der Kacheln steht in `render/globeTiles.ts`, das Laden in `api/globeData.ts`.
 
+import { THAILAND_ENABLED } from './features'
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
@@ -376,7 +377,7 @@ export interface GlobeView {
   bounds?: [[number, number], [number, number]]
 }
 
-export const GLOBE_VIEWS: GlobeView[] = [
+const ALL_GLOBE_VIEWS: GlobeView[] = [
   { id: 'globe', label: 'Globus', projection: 'globe' },
   // Europa: das ICON-EU-Gebiet ohne Nordafrika und Ural-Rand — die synoptische Übersicht
   { id: 'europe', label: 'Europa', projection: 'mercator', bounds: [[-25, 34], [42, 71]] },
@@ -387,6 +388,7 @@ export const GLOBE_VIEWS: GlobeView[] = [
   // deckt es ab (ICON-EU/-D2 sind europäisch).
   { id: 'thailand', label: 'Thailand', projection: 'mercator', bounds: [[96.3, 5.2], [106.2, 20.6]] },
 ]
+export const GLOBE_VIEWS: GlobeView[] = ALL_GLOBE_VIEWS.filter((v) => THAILAND_ENABLED || v.id !== 'thailand')
 
 export function getGlobeVariable(id: string): GlobeVariable {
   return GLOBE_VARIABLES.find((v) => v.id === id) ?? GLOBE_VARIABLES[0]

@@ -2827,7 +2827,11 @@ npm run preview   # gebautes dist/ servieren
   Radarfläche und tragen nur hier).
 - **Thailand-Tropendienst** (seit 2026-10-08, Quellen gemessen in den
   Projektnotizen): kein eigener Bereich, sondern Südostasien in DREI
-  vorhandenen. (1) **Satellit: Himawari-9 über NASA GIBS** (Gruppe
+  vorhandenen. **In der VERÖFFENTLICHTEN Version nur der Satellit** (seit
+  2026-10-17, auf Wunsch, `THAILAND_ENABLED` in `config/features.ts`,
+  `VITE_ENABLE_THAILAND=false` in `build:web`): die Ansicht „Thailand" der
+  Modellkarten und die Region der Schnellwahl gibt es nur lokal; mit nur
+  einer Region verschwindet die Regionsauswahl ganz. Himawari bleibt überall. (1) **Satellit: Himawari-9 über NASA GIBS** (Gruppe
   „Himawari-9", `source: 'gibs'`, `HIMAWARI_AREA` 84–125° O / −5–28° N):
   Infrarot 10,4 µm, Sichtbar 0,64 µm (1 km, nur tagsüber) und Luftmassen-RGB.
   WMS wie EUMETView, CORS `*`, kein Key. **Die Zeitschritte kommen aus

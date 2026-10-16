@@ -6,7 +6,8 @@
 // Gelegenheiten, sie auseinanderlaufen zu lassen. Entstanden ist sie im
 // Ensemble-Panel, wo sie vorher inline stand.
 //
-// Davor eine REGIONSAUSWAHL (Österreich · Thailand): die Region folgt dem
+// Davor eine REGIONSAUSWAHL (Österreich · Thailand — Thailand nur lokal,
+// `THAILAND_ENABLED`): die Region folgt dem
 // gewählten Ort — wer auf der Karte oder per Suche nach Phuket springt, sieht
 // danach die Thai-Knöpfe —, lässt sich aber auch ohne Ortswechsel umschalten.
 
@@ -28,22 +29,26 @@ export function QuickPoints({ caption = 'Punkt' }: { caption?: string }) {
   return (
     <>
       <span className="quickpt-cap label-muted">{caption}</span>
-      <select
-        className="quickpt-region"
-        value={regionId}
-        onChange={(e) => {
-          setRegionId(e.target.value as QuickRegionId)
-          // Fokus abgeben: die Pfeiltasten gehören der Zeit
-          e.currentTarget.blur()
-        }}
-        title="Region der Schnellwahl"
-      >
-        {QUICK_REGIONS.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.label}
-          </option>
-        ))}
-      </select>
+      {/* Mit nur einer Region (veröffentlichte Version ohne Thailand) wäre die
+          Auswahl ohne Wirkung — dann gar nicht zeigen */}
+      {QUICK_REGIONS.length > 1 && (
+        <select
+          className="quickpt-region"
+          value={regionId}
+          onChange={(e) => {
+            setRegionId(e.target.value as QuickRegionId)
+            // Fokus abgeben: die Pfeiltasten gehören der Zeit
+            e.currentTarget.blur()
+          }}
+          title="Region der Schnellwahl"
+        >
+          {QUICK_REGIONS.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      )}
       {region.points.map((p) => (
         <button
           key={p.label}
