@@ -24,7 +24,7 @@ import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './
  * nicht in `GLOBE_VARIABLES`.
  */
 export type GlobeVarId =
-  | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'tcc' | 'clouds' | 'uv10'
+  | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'reltop' | 'tcc' | 'clouds' | 'uv10'
   | 'swh' | 'pp1d' | 'sst' | 'wavedir'
 
 export interface GlobeVariable {
@@ -127,6 +127,18 @@ const GH500: ColorScale = {
   stops: bands(480, 4, lerpRamp(TEMP_ANCHORS, 31)),
 }
 
+/**
+ * Relative Topografie 500/1000 hPa: 488 … 592 gpdm in 4-gpdm-Bändern auf der
+ * TEMPERATURrampe — die Schichtdicke IST ein Maß für die Mitteltemperatur
+ * der unteren Troposphäre (4 gpdm ≈ 2 K), kalt = blau, warm = rot. Keine
+ * Schneefallgrenze im Text: ohne Niederschlag sagt die Dicke darüber nichts.
+ */
+const RELTOP: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(488, 4, lerpRamp(GLOBAL_TEMP_ANCHORS.slice(2), 27)),
+}
+
 export const GLOBE_VARIABLES: GlobeVariable[] = [
   {
     id: 't2m',
@@ -152,6 +164,15 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     scale: GH500,
     decimals: 1,
     legendEvery: 5,
+  },
+  {
+    id: 'reltop',
+    label: 'Relative Topografie 500/1000 hPa',
+    title:
+      'Schichtdicke zwischen 1000 und 500 hPa in gpdm — proportional zur Mitteltemperatur der unteren Troposphäre (1 gpdm ≈ 0,5 K): zeigt Kalt- und Warmluftmassen ohne die bodennahe Grenzschicht. Über Hochland liegt 1000 hPa unter dem Gelände und ist vom Modell extrapoliert.',
+    scale: RELTOP,
+    decimals: 1,
+    legendEvery: 4,
   },
   {
     id: 'msl',

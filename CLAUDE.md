@@ -3011,6 +3011,22 @@ npm run preview   # gebautes dist/ servieren
   Farbfläche bleibt ungeglättet. Auf der ganzen Kugel (z ≤ 2) doppelter
   Abstand; die Linien werden zwei Zoomstufen über der Feldgrenze noch neu
   gerechnet (gestreckte Linien werden breit, gestreckte Flächen fallen nicht auf).
+  **RELATIVE TOPOGRAFIE 500/1000 hPa** (`reltop`, seit 2026-10-16, alle drei
+  Modelle): Schichtdicke in gpdm = (Z500 − Z1000)/10, proportional zur
+  Mitteltemperatur der Schicht (1 gpdm ≈ 0,5 K) — dafür holen die Ingests
+  zusätzlich Geopotential auf 1000 hPa (`gh1000`, ECMWF `gh`/1000, DWD
+  `fi`/1000, beide live im Verzeichnis geprüft). Skala 488–592 gpdm in
+  4-gpdm-Bändern auf der Temperaturrampe; wer sie wählt, bekommt die
+  500-hPa-Linien dazu (klassische Kombination). Gemessen ICON-D2 16.10.,
+  +12 h: 535–561 gpdm über Mitteleuropa. Keine Schneefallgrenze im Text
+  (dieselbe Regel wie bei den Ensemble-Schwellen). Die Cache-Schlüssel im
+  Deploy sind dafür gesprungen (ECMWF `v5`, ICON `v2`) — `already_done`
+  hätte die alten Läufe sonst bei JEDEM Deploy neu geholt.
+  **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
+  (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
+  500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-
+  Kästchen) — klein zwischen den Auswahllisten wurden sie übersehen, obwohl
+  man sie ständig umschaltet. Die Ecke zählt für die Beschriftung als belegt.
   **GESAMTBEWÖLKUNG IN GRAUSTUFEN, wolkenlos hell, bedeckt dunkel** — dieselbe
   Leserichtung wie im klassischen Meteogramm; das dunkle Ende bleibt über der
   Kartenfarbe, sonst wäre „bedeckt" nicht von „außerhalb des Modells" zu trennen.

@@ -73,6 +73,7 @@ FIELDS = [
     ('v_10m', None, 'v10'),
     ('vmax_10m', None, 'gust'),
     ('fi', '500', 'gh500'),
+    ('fi', '1000', 'gh1000'),
     ('clct', None, 'tcc'),
     # Wolkenschichten — nur ICON hat sie offen (ECMWF Open Data nur `tcc`)
     ('clch', None, 'clch'),
@@ -123,7 +124,7 @@ def fetch_step(model: str, run: datetime, step: int, pool: ThreadPoolExecutor) -
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals  # kg/m² = mm, doppelt genau (wird differenziert)
-        elif name == 'gh500':
+        elif name in ('gh500', 'gh1000'):
             out[name] = (vals / G).astype(np.float32)
         else:
             out[name] = vals.astype(np.float32)

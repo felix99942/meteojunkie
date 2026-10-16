@@ -58,6 +58,7 @@ FIELDS = {
     ('10v', None): 'v10',
     ('10fg', None): 'gust',
     ('gh', '500'): 'gh500',
+    ('gh', '1000'): 'gh1000',
     ('tcc', None): 'tcc',
     ('skt', None): 'skt',
 }

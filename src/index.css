@@ -4382,13 +4382,65 @@ button:focus-visible {
   min-height: 1.2em;
 }
 
-/* Wert am Zeiger: groß, oben links in der Karte — er ist das, wofür man den
-   Zeiger überhaupt auf die Kugel hält. */
-.globe-readout {
+/* Oben links in der Karte: die EBENEN zum Anhaken, darunter der Wert am
+   Zeiger. Die Häkchen standen klein in der Kopfleiste zwischen Auswahllisten
+   und wurden dort übersehen, obwohl man sie ständig umschaltet — hier sind
+   sie groß und liegen dort, wo man auf die Karte schaut. */
+.globe-corner {
   position: absolute;
   top: 8px;
   left: 8px;
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.globe-layers {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: rgba(20, 21, 24, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.globe-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+
+.globe-layer input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.globe-layer:has(input:disabled) {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.globe-layer:has(input:not(:checked)):not(:has(input:disabled)) {
+  color: var(--ink-secondary);
+}
+
+/* Wert am Zeiger: groß — er ist das, wofür man den Zeiger überhaupt auf die
+   Kugel hält. */
+.globe-readout {
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -4407,6 +4459,8 @@ button:focus-visible {
 
 /* Im Satellitenbereich unter den Sprungzielen (die stehen links oben) */
 .satellite-readout {
+  position: absolute;
+  z-index: 5;
   top: 38px;
   left: 6px;
 }

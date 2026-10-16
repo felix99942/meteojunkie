@@ -172,9 +172,11 @@ export function GlobePanel() {
   }, [modelId, metas])
 
   // Wer Bodendruck oder 500 hPa wählt, will die Linien dazu — einmal beim
-  // Wechsel eingeschaltet, abschalten bleibt danach möglich
+  // Wechsel eingeschaltet, abschalten bleibt danach möglich. Die Relative
+  // Topografie liest man klassisch mit den 500-hPa-Linien darüber.
   useEffect(() => {
-    if (varId === 'msl' || varId === 'gh500') setContours((c) => (c[varId] ? c : { ...c, [varId]: true }))
+    const line = varId === 'reltop' ? 'gh500' : varId
+    if (line === 'msl' || line === 'gh500') setContours((c) => (c[line] ? c : { ...c, [line]: true }))
   }, [varId])
 
   // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
@@ -294,7 +296,7 @@ export function GlobePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-readout, .maplibregl-ctrl-top-right')
+    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-corner, .maplibregl-ctrl-top-right')
   }, [mapReady])
 
   // NEUESTER STAND GEWINNT: solange die Kacheln eines Schritts noch laden,
@@ -637,39 +639,6 @@ export function GlobePanel() {
             </option>
           ))}
         </select>
-        <span className="radar-overlays">
-          {CONTOURS.map((c) => (
-            <label key={c.id} className="radar-opt" title={c.title}>
-              <input
-                type="checkbox"
-                checked={contours[c.id]}
-                disabled={!meta?.variables[c.id]}
-                onChange={(e) => setContours((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-              />{' '}
-              {c.label}
-            </label>
-          ))}
-          <label
-            className="radar-opt"
-            title={
-              meta && !uvMeta
-                ? waves
-                  ? 'Dieses Modell rechnet keine Wellen — Wellenlauf gibt es nur beim ECMWF IFS.'
-                  : 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
-                : waves
-                  ? 'Wellenlauf: die Spuren laufen in Ausbreitungsrichtung mit der Gruppengeschwindigkeit im tiefen Wasser (c = g·T/4π aus der Peak-Periode) — lange Dünung zieht sichtbar schneller als kurze Windsee.'
-                  : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
-            }
-          >
-            <input
-              type="checkbox"
-              checked={particles}
-              disabled={!uvMeta}
-              onChange={(e) => setParticles(e.target.checked)}
-            />{' '}
-            {waves ? 'Wellenlauf' : 'Windpartikel'}
-          </label>
-        </span>
         <button
           type="button"
           className="radar-play"
@@ -759,28 +728,65 @@ export function GlobePanel() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>
-        <div className="globe-readout" aria-live="polite">
-          {readout ? (
-            <>
-              <span className="globe-readout-pos">
-                {Math.abs(readout.lat).toFixed(2)}° {readout.lat >= 0 ? 'N' : 'S'} ·{' '}
-                {Math.abs(((readout.lon + 540) % 360) - 180).toFixed(2)}° {((readout.lon + 540) % 360) - 180 >= 0 ? 'O' : 'W'}
-              </span>
-              <strong>
-                {variable.kind === 'rgb3'
-                  ? readLayers
-                    ? `hoch ${toOcta(readLayers.high)}/8 · mittel ${toOcta(readLayers.mid)}/8 · tief ${toOcta(readLayers.low)}/8`
-                    : field ? `außerhalb ${model.label}` : '—'
-                  : Number.isFinite(readValue)
-                  ? `${readValue.toLocaleString('de-DE', { minimumFractionDigits: variable.decimals, maximumFractionDigits: variable.decimals })} ${vm?.unit ?? ''}`
-                  : field && !field.grid.global
-                    ? `außerhalb ${model.label}`
-                    : '—'}
-              </strong>
-            </>
-          ) : (
-            <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
-          )}
+        {/* Oben links: die Ebenen zum Anhaken (groß — sie werden ständig
+            umgeschaltet), darunter der Wert am Zeiger */}
+        <div className="globe-corner">
+          <div className="globe-layers" role="group" aria-label="Ebenen über der Karte">
+            {CONTOURS.map((c) => (
+              <label key={c.id} className="globe-layer" title={c.title}>
+                <input
+                  type="checkbox"
+                  checked={contours[c.id]}
+                  disabled={!meta?.variables[c.id]}
+                  onChange={(e) => setContours((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                />{' '}
+                {c.label}
+              </label>
+            ))}
+            <label
+              className="globe-layer"
+              title={
+                meta && !uvMeta
+                  ? waves
+                    ? 'Dieses Modell rechnet keine Wellen — Wellenlauf gibt es nur beim ECMWF IFS.'
+                    : 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
+                  : waves
+                    ? 'Wellenlauf: die Spuren laufen in Ausbreitungsrichtung mit der Gruppengeschwindigkeit im tiefen Wasser (c = g·T/4π aus der Peak-Periode) — lange Dünung zieht sichtbar schneller als kurze Windsee.'
+                    : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={particles}
+                disabled={!uvMeta}
+                onChange={(e) => setParticles(e.target.checked)}
+              />{' '}
+              {waves ? 'Wellenlauf' : 'Windpartikel'}
+            </label>
+          </div>
+          <div className="globe-readout" aria-live="polite">
+            {readout ? (
+              <>
+                <span className="globe-readout-pos">
+                  {Math.abs(readout.lat).toFixed(2)}° {readout.lat >= 0 ? 'N' : 'S'} ·{' '}
+                  {Math.abs(((readout.lon + 540) % 360) - 180).toFixed(2)}° {((readout.lon + 540) % 360) - 180 >= 0 ? 'O' : 'W'}
+                </span>
+                <strong>
+                  {variable.kind === 'rgb3'
+                    ? readLayers
+                      ? `hoch ${toOcta(readLayers.high)}/8 · mittel ${toOcta(readLayers.mid)}/8 · tief ${toOcta(readLayers.low)}/8`
+                      : field ? `außerhalb ${model.label}` : '—'
+                    : Number.isFinite(readValue)
+                    ? `${readValue.toLocaleString('de-DE', { minimumFractionDigits: variable.decimals, maximumFractionDigits: variable.decimals })} ${vm?.unit ?? ''}`
+                    : field && !field.grid.global
+                      ? `außerhalb ${model.label}`
+                      : '—'}
+                </strong>
+              </>
+            ) : (
+              <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
+            )}
+          </div>
         </div>
         <div className="radar-legend globe-legend" title={variable.title}>
           <span className="radar-legend-cap">

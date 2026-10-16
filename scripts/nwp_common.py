@@ -12,6 +12,7 @@ Einheitliche Feldnamen und Einheiten:
   u10, v10     m/s
   gust         m/s, höchste Böe im Intervall `gust_hours` vor dem Termin
   gh500        geopotentielle Höhe in m (DWD liefert Geopotential m²/s²)
+  gh1000       dasselbe auf 1000 hPa — nur für die Relative Topografie
   tcc          %
   clch, clcm, clcl   % Bedeckung hoch/mittel/tief (nur ICON — ECMWF Open Data
                      führt nur `tcc`, im Index nachgesehen 2026-10-05)
@@ -69,6 +70,9 @@ VARIABLES = {
     'wind10': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
     'gust': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
     'gh500': {'lo': 400.0, 'step': 0.1, 'unit': 'gpdm'},
+    # Relative Topografie 500/1000 hPa = Schichtdicke, proportional zur
+    # Mitteltemperatur der Schicht (1 gpdm ≈ 0,5 K); real ~470–600 gpdm
+    'reltop': {'lo': 400.0, 'step': 0.1, 'unit': 'gpdm'},
     # Bewölkung in 5-%-Stufen: die Skalen stufen in 10 %, und in 1-%-Schritten
     # ist das Feld verrauscht — gemessen ICON-D2 Schichten 639 KB je Bild
     'tcc': {'lo': 0.0, 'step': 5.0, 'unit': '%'},
@@ -87,7 +91,8 @@ VARIABLES = {
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
 NEEDS = {
     't2m': ('t2m',), 't850': ('t850',), 'msl': ('msl',), 'precip': ('tp',),
-    'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',), 'tcc': ('tcc',),
+    'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',),
+    'reltop': ('gh500', 'gh1000'), 'tcc': ('tcc',),
     'clouds': ('clch', 'clcm', 'clcl'), 'uv10': ('u10', 'v10'),
     'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'), 'wavedir': ('mwd', 'pp1d'),
 }
@@ -200,6 +205,10 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         return None if f.get('gust_hours', 0) <= 0 else f['gust'] * 3.6
     if var == 'gh500':
         return f['gh500'] / 10.0
+    if var == 'reltop':
+        # Über Hochland liegt 1000 hPa unter dem Gelände und ist vom Modell
+        # extrapoliert — so rechnet sie jeder Dienst, die Karte sagt es
+        return (f['gh500'] - f['gh1000']) / 10.0
     if var == 'tcc':
         return f['tcc']
     if var == 'clouds':
