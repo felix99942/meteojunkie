@@ -4,6 +4,7 @@ import {
   currentIndex,
   dataEnd,
   dominantPollutant,
+  eaqiAxisTop,
   EAQI_BANDS,
   EAQI_PARTS,
   eaqiBand,
@@ -68,5 +69,19 @@ describe('dominantPollutant', () => {
     const values: Record<string, (number | null)[]> = {}
     for (const p of EAQI_PARTS) values[p.key] = [null]
     expect(dominantPollutant({ domain: 'cams_europe', times: [0], values }, 0)).toBeNull()
+  })
+})
+
+describe('eaqiAxisTop', () => {
+  it('endet auf der nächsten Stufengrenze über dem Höchstwert', () => {
+    expect(eaqiAxisTop([12, 18])).toBe(20)
+    expect(eaqiAxisTop([25, 38.5])).toBe(40)
+    expect(eaqiAxisTop([30, 61])).toBe(80)
+  })
+  it('ein Wert genau auf der Grenze bekommt Luft bis zur nächsten', () => {
+    expect(eaqiAxisTop([40])).toBe(60)
+  })
+  it('ohne Werte die unterste Stufe', () => {
+    expect(eaqiAxisTop([null, null])).toBe(20)
   })
 })

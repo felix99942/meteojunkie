@@ -257,6 +257,17 @@ export interface ChartDef {
   hideCursor?: true
   /** Relative Zeilenhöhe im Stapel (CSS `flex-grow`), Standard 1. */
   flex?: number
+  /**
+   * Schriftgröße der Werteanzeige am Zeiger in px (Standard 12) — größer in
+   * Bereichen mit wenigen, breiten Zeilen wie der Luftqualität.
+   */
+  readoutPx?: number
+  /**
+   * Werteanzeige nennt die Kurve („PM2,5 18,2 µg/m³") statt nur die Zahl —
+   * nötig, wo zwei Kurven derselben Einheit nebeneinanderliegen und nur die
+   * Randfarbe sie unterscheidet.
+   */
+  readoutLabels?: true
 }
 
 export const chartHasData = (c: ChartDef): boolean =>

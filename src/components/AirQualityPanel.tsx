@@ -21,6 +21,7 @@ import {
   dataEnd,
   dominantPollutant,
   EAQI_BANDS,
+  eaqiAxisTop,
   eaqiBand,
 } from '../config/airQuality'
 import { useWorkbench } from '../state/workbench'
@@ -73,9 +74,10 @@ export function AirQualityPanel() {
         unit: 'EAQI',
         flex: 1.2,
         zeroBased: true,
-        // Bis „schlecht" immer sichtbar: an einem sauberen Tag (Index 15)
-        // sähe die Kurve sonst nach Belastung aus
-        minTop: 80,
+        // Die Achse endet auf der nächsten Stufengrenze über dem Höchstwert —
+        // eng gezoomt, solange der Index niedrig bleibt, und sofort weiter,
+        // sobald ein einzelner Wert in die nächste Stufe kommt
+        minTop: eaqiAxisTop(cut('european_aqi')),
         ySpace: 18,
         // Die Stufengrenzen in den Farben der Stufe darüber — so liest man
         // die Kurve gegen die Einteilung, ohne eine Legende zu suchen
@@ -95,7 +97,9 @@ export function AirQualityPanel() {
         title: 'Feinstaub',
         unit: 'µg/m³',
         zeroBased: true,
-        minTop: 25,
+        // Achse folgt dem Datenmaximum; die kleinen Böden verhindern nur, dass
+        // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
+        minTop: 5,
         curves: [
           { label: 'PM2,5', color: COLOR_PM25, type: 'line', values: cut('pm2_5'), width: 1.8 },
           { label: 'PM10', color: COLOR_PM10, type: 'line', values: cut('pm10'), width: 1.4 },
@@ -105,14 +109,14 @@ export function AirQualityPanel() {
         title: 'Stickstoffdioxid',
         unit: 'µg/m³',
         zeroBased: true,
-        minTop: 40,
+        minTop: 5,
         curves: [{ label: 'NO₂', color: COLOR_NO2, type: 'line', values: cut('nitrogen_dioxide'), width: 1.6 }],
       },
       {
         title: 'Ozon',
         unit: 'µg/m³',
         zeroBased: true,
-        minTop: 120,
+        minTop: 10,
         curves: [{ label: 'O₃', color: COLOR_O3, type: 'line', values: cut('ozone'), width: 1.6 }],
       },
       {
@@ -121,11 +125,17 @@ export function AirQualityPanel() {
         zeroBased: true,
         // Saharastaub kommt in Schüben — ohne Boden sähe ein Hauch von
         // 0,3 µg/m³ wie ein Ereignis aus
-        minTop: 20,
+        minTop: 5,
         note: 'Mineralstaub, meist aus der Sahara — steckt auch im Feinstaub',
         curves: [{ label: 'Staub', color: COLOR_DUST, type: 'line', values: cut('dust'), width: 1.6, fill: 0.18 }],
       },
     ]
+    // Wenige, breite Zeilen: die Werteanzeige am Zeiger darf groß sein, und
+    // sie nennt die Kurve — PM2,5 und PM10 teilen sich Einheit und Zeile
+    for (const c of charts) {
+      c.readoutPx = 16
+      c.readoutLabels = true
+    }
     return { xs: data.times.slice(0, n).map((t) => t / 1000), charts }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey])
@@ -141,7 +151,7 @@ export function AirQualityPanel() {
   const domain = data ? AIR_DOMAINS[data.domain] : null
 
   return (
-    <div className="meteo">
+    <div className="meteo air-panel">
       <div className="atclima-bar air-bar">
         <span className="atclima-title">Luftqualität</span>
         <LocationPicker />

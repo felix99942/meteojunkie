@@ -692,7 +692,8 @@ function readoutPlugin(
         ctx.lineTo(Math.round(x) + 0.5, u.bbox.top + u.bbox.height)
         ctx.stroke()
 
-        const chipH = 18
+        const fontPx = chart.readoutPx ?? 12
+        const chipH = Math.round(fontPx * 1.5)
         const entries: { y: number; text: string; color: string }[] = []
         for (const c of chart.curves) {
           const v = c.values[idx]
@@ -701,7 +702,8 @@ function readoutPlugin(
           const y = u.valToPos(v, c.rightAxis ? RIGHT_SCALE : 'y', true)
           if (!Number.isFinite(y)) continue
           const num = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1).replace('.', ',')
-          entries.push({ y, text: unit ? `${num} ${unit}` : num, color: c.color })
+          const value = unit ? `${num} ${unit}` : num
+          entries.push({ y, text: chart.readoutLabels ? `${c.label} ${value}` : value, color: c.color })
         }
         if (chart.octaRows) {
           const rows = chart.octaRows.rows
@@ -753,7 +755,7 @@ function readoutPlugin(
           if (overflow > 0) for (const e of entries) e.y -= overflow
           for (const e of entries) e.y = Math.max(e.y, u.bbox.top + chipH / 2)
 
-          ctx.font = READOUT_FONT
+          ctx.font = chart.readoutPx ? `600 ${chart.readoutPx}px system-ui, sans-serif` : READOUT_FONT
           ctx.textBaseline = 'middle'
           ctx.textAlign = 'left'
           for (const e of entries) {

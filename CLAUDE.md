@@ -2911,6 +2911,13 @@ npm run preview   # gebautes dist/ servieren
   Achse endet am letzten Wert (`dataEnd`). `uv_index` gibt es nur global und
   fehlt deshalb. Pollen bewusst noch nicht (Saison vorbei). Quellenzeile nennt
   CAMS (Copernicus-Bedingung) und Open-Meteo.
+  **Die Achsen folgen den DATEN, nicht festen Grenzen** (auf Wunsch): der
+  Index endet auf der nächsten Stufengrenze über dem Höchstwert
+  (`eaqiAxisTop` — unter 40 bis 40, reißt ein Wert die 60, bis 80), die
+  Konzentrationen am Datenmaximum mit nur kleinen Böden (5–10 µg/m³) gegen
+  das Aufblasen von Hauchwerten. Überschriften 16 px, Werteanzeige am Zeiger
+  16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
+  dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der
   Bereich angefangen; `GlobePanel.tsx`, Registry/Kerne `config/globe.ts` mit
   Tests, Kacheln `render/globeTiles.ts` + `render/globeProtocol.ts`, Laden

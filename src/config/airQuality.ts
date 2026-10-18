@@ -130,3 +130,17 @@ export function dominantPollutant(data: AirQualityData, i: number): string | nul
   }
   return best?.label ?? null
 }
+
+/**
+ * Obergrenze der Indexachse: die nächste Stufengrenze ÜBER dem höchsten Wert
+ * (mindestens 20). Bleibt der Index unter 40, reicht die Achse bis 40 und die
+ * Kurve füllt die Zeile; reißt ein einziger Wert die 60, geht sie bis 80. So
+ * bleibt die Achse eng, endet aber immer auf einer Grenze, gegen die man die
+ * Kurve liest. Über 100 (offene Stufe) in 20er-Schritten weiter.
+ */
+export function eaqiAxisTop(values: (number | null)[]): number {
+  let max = 0
+  for (const v of values) if (v != null && v > max) max = v
+  const step = 20
+  return Math.max(step, Math.floor(max / step) * step + step)
+}
