@@ -2921,17 +2921,17 @@ npm run preview   # gebautes dist/ servieren
   Beschriftung nur wo der Streifen hoch genug ist).
   **WHO-Richtwerte 2021, BEWUSST NUR WHO** (auf Wunsch, keine EU-Grenzwerte;
   `WHO_GUIDELINES`): PM2,5 15 und PM10 45 µg/m³ im 24-h-Mittel, NO₂ 25 im
-  24-h-Mittel, Ozon 100 im 8-h-Mittel — die Kurzzeitwerte, Jahresmittel sagen
-  an einer Vier-Tage-Vorhersage nichts. **Verglichen wird das GLEITENDE MITTEL,
-  nie der Stundenwert** (`rollingMean`, nachlaufend, Wert nur bei ≥ 3/4
-  belegtem Fenster): eine 24-h-Schwelle über Stundenwerte gelegt zeigte
-  Überschreitungen, die keine sind. Das Mittel steht gepunktet in der Farbe
-  seines Stoffs, die Richtwertlinie gestrichelt und beschriftet MIT Zeitraum.
-  Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab heute
-  00 UTC. Die Linie zieht die Achse nur mit, wenn das Mittel ≥ 60 % des
-  Richtwerts erreicht — sonst bleibt die Achse eng, der Wert steht in der
-  Kopfzeile. Der Index der laufenden Stunde steht GROSS links oben über dem
-  ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px, Werteanzeige am Zeiger
+  24-h-Mittel (dazu 200 als Stundenwert, aus den Leitlinien 2005), Ozon 100 im
+  8-h-Mittel. **Sie stehen NICHT als Linien im Diagramm**, sondern als
+  Erläuterung hinter einem ⓘ je Größe — mit der eigentlichen Auskunft, ab wann
+  STUNDENwerte einen Richtwert reißen (meist gar nicht: er gilt für ein
+  Mittel). Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  auf Wunsch wieder draußen: zu unübersichtlich. Stattdessen lassen sich je
+  Zeile **Mittelwerte zuschalten** (aufklappbar, 8 h und 24 h gleitend,
+  `rollingMean` nachlaufend, Wert nur bei ≥ 3/4 belegtem Fenster), Vorgabe
+  aus. Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab
+  heute 00 UTC. Der Index der laufenden Stunde steht GROSS links oben über dem
+  ersten Diagramm (`.air-now`), nicht in der Leiste.
   16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
   dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der

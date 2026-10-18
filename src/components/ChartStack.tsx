@@ -58,8 +58,6 @@ const VEIL_EDGE = 'rgba(137,135,129,0.45)'
 const VEIL_HATCH_STEP = 7
 /** Werteanzeige beim Überfahren: klar lesbar, deutlich über der Achsenschrift. */
 const READOUT_FONT = '600 12px system-ui, sans-serif'
-/** Beschriftung einer Bezugslinie (WHO-Richtwert in der Luftqualität). */
-const REFLINE_FONT = '600 13px system-ui, sans-serif'
 const READOUT_LINE = '#f0c04a'
 const CHIP_BG = 'rgba(18,19,21,0.95)'
 // Tagesmaxima/-minima sind die Zahlen, die man aus zwei Metern Abstand lesen
@@ -349,15 +347,6 @@ function refLinePlugin(lines: NonNullable<ChartDef['refLines']>): uPlot.Plugin {
           ctx.moveTo(u.bbox.left, Math.round(y) + 0.5)
           ctx.lineTo(u.bbox.left + u.bbox.width, Math.round(y) + 0.5)
           ctx.stroke()
-          if (l.label) {
-            // Rechts über der Linie, an fester Stelle bei jeder Achsenlage
-            ctx.setLineDash([])
-            ctx.font = REFLINE_FONT
-            ctx.textAlign = 'right'
-            ctx.textBaseline = 'bottom'
-            ctx.fillStyle = l.color
-            ctx.fillText(l.label, u.bbox.left + u.bbox.width - 6, Math.round(y) - 3)
-          }
         }
         ctx.restore()
       },

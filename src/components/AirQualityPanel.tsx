@@ -10,11 +10,11 @@
 // Registry, Domänenwahl und die live geprüften Fallen der API stehen in
 // `config/airQuality.ts`.
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAirQuality } from '../api/queries'
 import { seriesKey } from '../lib/dataKey'
 import { ChartRow } from './ChartStack'
-import { chartHasData, type ChartDef } from '../config/chartDef'
+import { chartHasData, type ChartDef, type Curve } from '../config/chartDef'
 import {
   AIR_DOMAINS,
   currentIndex,
@@ -46,6 +46,94 @@ const COLOR_NO2 = '#c0607a'
 const COLOR_O3 = '#4f97e0'
 const COLOR_DUST = '#c9a227'
 
+/** Gleitende Mittel, die je Zeile zugeschaltet werden können (Stunden). */
+const MEAN_WINDOWS = [8, 24] as const
+type MeanWindow = (typeof MEAN_WINDOWS)[number]
+
+const WHO = WHO_GUIDELINES
+const WhoLink = () => (
+  <a href={WHO_SOURCE_URL} target="_blank" rel="noreferrer">
+    WHO-Luftgüteleitlinien 2021
+  </a>
+)
+
+/**
+ * Erläuterung je Größe hinter dem ⓘ: welcher WHO-Richtwert gilt und — das ist
+ * die eigentliche Frage — ab wann ihn STUNDENwerte reißen. Bei den meisten
+ * Richtwerten gar nicht: sie gelten für ein Mittel über 8 oder 24 Stunden,
+ * ein einzelner Stundenwert darüber ist noch keine Überschreitung. Deshalb
+ * stehen die Werte bewusst NICHT als Linien im Diagramm (auf Wunsch wieder
+ * entfernt — gegen Stundenkurven gelesen täuschen sie).
+ */
+const INFO: Record<string, ReactNode> = {
+  eaqi: (
+    <>
+      <p>
+        Der Europäische Luftqualitätsindex (EAQI) der Europäischen Umweltagentur fasst Feinstaub, NO₂, Ozon und SO₂
+        zusammen. Jeder Stoff bekommt einen Teilindex, der Gesamtindex ist der <b>höchste</b> davon — oben steht,
+        welcher Stoff ihn gerade setzt.
+      </p>
+      <p>Stufen: 0–20 gut · 20–40 ausreichend · 40–60 mäßig · 60–80 schlecht · 80–100 sehr schlecht · über 100 extrem schlecht.</p>
+    </>
+  ),
+  pm: (
+    <>
+      <p>
+        WHO-Richtwerte: <b>PM2,5 {WHO.pm2_5.value} µg/m³</b> und <b>PM10 {WHO.pm10.value} µg/m³</b>, jeweils im{' '}
+        <b>24-Stunden-Mittel</b>.
+      </p>
+      <p>
+        Einen Stundenrichtwert gibt es für Feinstaub nicht: ein einzelner Stundenwert darüber reißt nichts.
+        Überschritten ist der Richtwert erst, wenn das Mittel über 24 Stunden darüber liegt — rechnerisch also, wenn
+        die Stundenwerte einen ganzen Tag lang im Schnitt über {WHO.pm2_5.value} bzw. {WHO.pm10.value} µg/m³ bleiben.
+        Ein kurzer Spitzenwert von 60 µg/m³ am Abend kann den Tag unter dem Richtwert lassen.
+      </p>
+      <p>Langfristig (Jahresmittel): PM2,5 5 µg/m³, PM10 15 µg/m³. Quelle: <WhoLink />.</p>
+    </>
+  ),
+  no2: (
+    <>
+      <p>
+        WHO-Richtwert: <b>{WHO.nitrogen_dioxide.value} µg/m³ im 24-Stunden-Mittel</b> — ein einzelner Stundenwert
+        darüber reißt ihn nicht, erst ein Tagesschnitt darüber.
+      </p>
+      <p>
+        Zusätzlich gilt ein <b>Stundenwert von 200 µg/m³</b> (aus den Leitlinien von 2005 übernommen): das ist der
+        einzige Richtwert hier, den schon eine einzige Stunde überschreiten kann. Er wird abseits stark befahrener
+        Straßen praktisch nie erreicht, und das ~10-km-Raster des Modells löst Straßenschluchten ohnehin nicht auf.
+      </p>
+      <p>Langfristig (Jahresmittel): 10 µg/m³. Quelle: <WhoLink />.</p>
+    </>
+  ),
+  o3: (
+    <>
+      <p>
+        WHO-Richtwert: <b>{WHO.ozone.value} µg/m³ als höchstes 8-Stunden-Mittel des Tages</b>. Einen
+        Stundenrichtwert gibt es nicht — überschritten ist er, wenn acht aufeinanderfolgende Stunden im Schnitt über{' '}
+        {WHO.ozone.value} µg/m³ liegen. An Sommernachmittagen ist das die typische Lage.
+      </p>
+      <p>Für das Sommerhalbjahr gilt zusätzlich ein Saisonwert von 60 µg/m³. Quelle: <WhoLink />.</p>
+    </>
+  ),
+  dust: (
+    <>
+      <p>
+        Mineralstaub, meist aus der Sahara. Einen eigenen WHO-Richtwert gibt es nicht: der Staub ist <b>Teil des
+        Feinstaubs</b> und zählt dort gegen die PM10- und PM2,5-Richtwerte mit. Diese Zeile zeigt, wie viel davon aus
+        der Wüste kommt.
+      </p>
+    </>
+  ),
+}
+
+interface RowSpec {
+  id: string
+  info: string
+  /** Darf ein gleitendes Mittel zugeschaltet werden? (Nicht beim Index.) */
+  meanable: boolean
+  chart: ChartDef
+}
+
 export function AirQualityPanel() {
   const location = useWorkbench((s) => s.lockedLocation)
   const q = useAirQuality(location)
@@ -61,12 +149,26 @@ export function AirQualityPanel() {
     setReadoutMs(ms)
   }, [])
 
+  /**
+   * Zugeschaltete gleitende Mittel je Zeile — Vorgabe: keine. Als Schlüssel
+   * ein String („pm:24,no2:8"), damit der Memo darauf keyen kann.
+   */
+  const [means, setMeans] = useState<Record<string, MeanWindow[]>>({})
+  const toggleMean = (row: string, w: MeanWindow) =>
+    setMeans((m) => {
+      const cur = m[row] ?? []
+      return { ...m, [row]: cur.includes(w) ? cur.filter((x) => x !== w) : [...cur, w].sort((a, b) => a - b) }
+    })
+  const meansKey = Object.entries(means)
+    .map(([k, v]) => `${k}:${v.join('/')}`)
+    .join(',')
+
   // Über die IDENTITÄT der Daten keyen, nicht über „geladen ja/nein"
   // (Begründung in `lib/dataKey.ts`)
   const dataKey = seriesKey([data])
 
-  const { xs, charts } = useMemo(() => {
-    if (!data) return { xs: [] as number[], charts: [] as ChartDef[] }
+  const { xs, rows } = useMemo(() => {
+    if (!data) return { xs: [] as number[], rows: [] as RowSpec[] }
     // Die API füllt den angefragten Zeitraum über den Modellhorizont hinaus
     // mit null — die Achse endet am letzten Wert statt an einer leeren Fläche
     const end = dataEnd(data) ?? -Infinity
@@ -76,119 +178,129 @@ export function AirQualityPanel() {
     const todayStart = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY
     const s0 = Math.max(0, data.times.findIndex((t) => t >= todayStart))
     const cut = (v: string) => (data.values[v] ?? []).slice(s0, n)
-    // Gleitendes Mittel über den Zeitraum des WHO-Richtwerts — über die
-    // VOLLE Reihe gerechnet, damit die ersten Stunden von heute ihr Fenster haben
-    const mean = (v: keyof typeof WHO_GUIDELINES) =>
-      rollingMean(data.values[v] ?? [], WHO_GUIDELINES[v].hours).slice(s0, n)
-    const pm25Mean = mean('pm2_5')
-    const pm10Mean = mean('pm10')
-    const no2Mean = mean('nitrogen_dioxide')
-    const o3Mean = mean('ozone')
+
     /**
-     * Achsenboden, damit die WHO-Linie ins Bild kommt — aber nur, wenn das
-     * Mittel ihr nahekommt (60 %). Sonst bleibt die Achse eng an den Daten
-     * und die Linie liegt außerhalb; der Wert steht dann in der Kopfzeile.
+     * Die Stundenkurven einer Zeile plus, falls zugeschaltet, ihre gleitenden
+     * Mittel — gepunktet in derselben Farbe, über die VOLLE Reihe gerechnet,
+     * damit die ersten Stunden von heute ihr Fenster haben.
      */
-    const reach = (floor: number, vals: (number | null)[], v: keyof typeof WHO_GUIDELINES) => {
-      const g = WHO_GUIDELINES[v].value
-      let max = 0
-      for (const x of vals) if (x != null && x > max) max = x
-      return max >= 0.6 * g ? Math.max(floor, g * 1.08) : floor
+    const curvesFor = (row: string, list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] => {
+      const out: Curve[] = list.map((c) => ({
+        label: c.label,
+        color: c.color,
+        type: 'line',
+        values: cut(c.v),
+        width: c.width ?? 1.6,
+        ...(c.fill ? { fill: c.fill } : {}),
+      }))
+      for (const w of means[row] ?? []) {
+        for (const c of list) {
+          out.push({
+            label: `${c.label} ${w}-h-Mittel`,
+            color: c.color,
+            type: 'line',
+            values: rollingMean(data.values[c.v] ?? [], w).slice(s0, n),
+            width: w === 24 ? 1.6 : 1.3,
+            dash: w === 24 ? [2, 3] : [6, 3],
+          })
+        }
+      }
+      return out
     }
-    const whoLine = (v: keyof typeof WHO_GUIDELINES, color: string, name: string) => ({
-      value: WHO_GUIDELINES[v].value,
-      color,
-      dash: [6, 4],
-      label: `WHO-Richtwert ${name} ${WHO_GUIDELINES[v].value} (${WHO_GUIDELINES[v].hours}-h-Mittel)`,
-    })
-    const charts: ChartDef[] = [
+
+    const rows: RowSpec[] = [
       {
-        title: 'Europäischer Luftqualitätsindex',
-        unit: 'EAQI',
-        // Höher als die übrigen Zeilen: die Stufen stehen als beschriftete
-        // Flächen darin, und die Schrift braucht Streifenhöhe
-        flex: 1.4,
-        zeroBased: true,
-        // Die Achse endet auf der nächsten Stufengrenze über dem Höchstwert —
-        // eng gezoomt, solange der Index niedrig bleibt, und sofort weiter,
-        // sobald ein einzelner Wert in die nächste Stufe kommt
-        minTop: eaqiAxisTop(cut('european_aqi')),
-        ySpace: 18,
-        // Jede Stufe als Fläche in ihrer Farbe, groß beschriftet — man liest
-        // die Kurve gegen die Einteilung, ohne eine Legende zu suchen
-        yZones: EAQI_BANDS.map((b, i) => ({
-          from: i === 0 ? 0 : EAQI_BANDS[i - 1].upTo,
-          to: b.upTo,
-          color: b.color,
-          label: b.label,
-        })),
-        note: EAQI_BANDS.map((b, i) =>
-          Number.isFinite(b.upTo)
-            ? `${i === 0 ? 0 : EAQI_BANDS[i - 1].upTo}–${b.upTo} ${b.label}`
-            : `über ${EAQI_BANDS[i - 1].upTo} ${b.label}`,
-        ).join(' · '),
-        curves: [{ label: 'Index', color: COLOR_EAQI, type: 'line', values: cut('european_aqi'), width: 2 }],
+        id: 'eaqi',
+        info: 'eaqi',
+        meanable: false,
+        chart: {
+          title: 'Europäischer Luftqualitätsindex',
+          unit: 'EAQI',
+          // Höher als die übrigen Zeilen: die Stufen stehen als beschriftete
+          // Flächen darin, und die Schrift braucht Streifenhöhe
+          flex: 1.4,
+          zeroBased: true,
+          // Die Achse endet auf der nächsten Stufengrenze über dem Höchstwert —
+          // eng gezoomt, solange der Index niedrig bleibt, und sofort weiter,
+          // sobald ein einzelner Wert in die nächste Stufe kommt
+          minTop: eaqiAxisTop(cut('european_aqi')),
+          ySpace: 18,
+          // Jede Stufe als Fläche in ihrer Farbe, groß beschriftet
+          yZones: EAQI_BANDS.map((b, i) => ({
+            from: i === 0 ? 0 : EAQI_BANDS[i - 1].upTo,
+            to: b.upTo,
+            color: b.color,
+            label: b.label,
+          })),
+          curves: [{ label: 'Index', color: COLOR_EAQI, type: 'line', values: cut('european_aqi'), width: 2 }],
+        },
       },
       {
-        title: 'Feinstaub',
-        unit: 'µg/m³',
-        zeroBased: true,
-        // Achse folgt dem Datenmaximum; die kleinen Böden verhindern nur, dass
-        // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
-        minTop: Math.max(reach(5, pm25Mean, 'pm2_5'), reach(5, pm10Mean, 'pm10')),
-        note: 'WHO-Richtwerte im 24-h-Mittel: PM2,5 15 · PM10 45 µg/m³',
-        refLines: [whoLine('pm2_5', COLOR_PM25, 'PM2,5'), whoLine('pm10', COLOR_PM10, 'PM10')],
-        curves: [
-          { label: 'PM2,5', color: COLOR_PM25, type: 'line', values: cut('pm2_5'), width: 1.8 },
-          { label: 'PM10', color: COLOR_PM10, type: 'line', values: cut('pm10'), width: 1.4 },
-          { label: 'PM2,5 24-h-Mittel', color: COLOR_PM25, type: 'line', values: pm25Mean, width: 1.3, dash: [2, 3] },
-          { label: 'PM10 24-h-Mittel', color: COLOR_PM10, type: 'line', values: pm10Mean, width: 1.3, dash: [2, 3] },
-        ],
+        id: 'pm',
+        info: 'pm',
+        meanable: true,
+        chart: {
+          title: 'Feinstaub',
+          unit: 'µg/m³',
+          zeroBased: true,
+          // Achse folgt dem Datenmaximum; der kleine Boden verhindert nur, dass
+          // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
+          minTop: 5,
+          curves: curvesFor('pm', [
+            { v: 'pm2_5', label: 'PM2,5', color: COLOR_PM25, width: 1.8 },
+            { v: 'pm10', label: 'PM10', color: COLOR_PM10, width: 1.4 },
+          ]),
+        },
       },
       {
-        title: 'Stickstoffdioxid',
-        unit: 'µg/m³',
-        zeroBased: true,
-        minTop: reach(5, no2Mean, 'nitrogen_dioxide'),
-        note: 'WHO-Richtwert 25 µg/m³ im 24-h-Mittel',
-        refLines: [whoLine('nitrogen_dioxide', COLOR_NO2, 'NO₂')],
-        curves: [
-          { label: 'NO₂', color: COLOR_NO2, type: 'line', values: cut('nitrogen_dioxide'), width: 1.6 },
-          { label: 'NO₂ 24-h-Mittel', color: COLOR_NO2, type: 'line', values: no2Mean, width: 1.3, dash: [2, 3] },
-        ],
+        id: 'no2',
+        info: 'no2',
+        meanable: true,
+        chart: {
+          title: 'Stickstoffdioxid',
+          unit: 'µg/m³',
+          zeroBased: true,
+          minTop: 5,
+          curves: curvesFor('no2', [{ v: 'nitrogen_dioxide', label: 'NO₂', color: COLOR_NO2 }]),
+        },
       },
       {
-        title: 'Ozon',
-        unit: 'µg/m³',
-        zeroBased: true,
-        minTop: reach(10, o3Mean, 'ozone'),
-        note: 'WHO-Richtwert 100 µg/m³ im 8-h-Mittel',
-        refLines: [whoLine('ozone', COLOR_O3, 'O₃')],
-        curves: [
-          { label: 'O₃', color: COLOR_O3, type: 'line', values: cut('ozone'), width: 1.6 },
-          { label: 'O₃ 8-h-Mittel', color: COLOR_O3, type: 'line', values: o3Mean, width: 1.3, dash: [2, 3] },
-        ],
+        id: 'o3',
+        info: 'o3',
+        meanable: true,
+        chart: {
+          title: 'Ozon',
+          unit: 'µg/m³',
+          zeroBased: true,
+          minTop: 10,
+          curves: curvesFor('o3', [{ v: 'ozone', label: 'O₃', color: COLOR_O3 }]),
+        },
       },
       {
-        title: 'Wüstenstaub',
-        unit: 'µg/m³',
-        zeroBased: true,
-        // Saharastaub kommt in Schüben — ohne Boden sähe ein Hauch von
-        // 0,3 µg/m³ wie ein Ereignis aus
-        minTop: 5,
-        note: 'Mineralstaub, meist aus der Sahara — steckt auch im Feinstaub',
-        curves: [{ label: 'Staub', color: COLOR_DUST, type: 'line', values: cut('dust'), width: 1.6, fill: 0.18 }],
+        id: 'dust',
+        info: 'dust',
+        meanable: true,
+        chart: {
+          title: 'Wüstenstaub',
+          unit: 'µg/m³',
+          zeroBased: true,
+          // Saharastaub kommt in Schüben — ohne Boden sähe ein Hauch von
+          // 0,3 µg/m³ wie ein Ereignis aus
+          minTop: 5,
+          curves: curvesFor('dust', [{ v: 'dust', label: 'Staub', color: COLOR_DUST, fill: 0.18 }]),
+        },
       },
     ]
     // Wenige, breite Zeilen: die Werteanzeige am Zeiger darf groß sein, und
     // sie nennt die Kurve — PM2,5 und PM10 teilen sich Einheit und Zeile
-    for (const c of charts) {
-      c.readoutPx = 16
-      c.readoutLabels = true
+    for (const r of rows) {
+      r.chart.readoutPx = 16
+      r.chart.readoutLabels = true
     }
-    return { xs: data.times.slice(s0, n).map((t) => t / 1000), charts }
+    return { xs: data.times.slice(s0, n).map((t) => t / 1000), rows }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey])
+  }, [dataKey, meansKey])
+
 
   // „Jetzt" einmal je Datenstand — Date.now() direkt im Render gäbe jeder
   // Zeile bei jedem Neuzeichnen einen neuen Markerzeitpunkt
@@ -248,14 +360,42 @@ export function AirQualityPanel() {
       )}
       {data && (
         <div className="meteo-stack">
-          {charts.map((c) => (
-            <div key={c.title} className="atfc-chart meteo-row" style={{ flexGrow: c.flex ?? 1, minHeight: 88 }}>
+          {rows.map(({ id, info, meanable, chart: c }) => (
+            <div key={id} className="atfc-chart meteo-row" style={{ flexGrow: c.flex ?? 1, minHeight: 88 }}>
               <div className="atfc-chartcap">
-                <span>
+                <span className="air-cap">
                   {c.title} <span className="label-muted">({c.unit})</span>
+                  {/* Erläuterung zum Aufklappen statt Linien im Diagramm */}
+                  <details className="air-pop">
+                    <summary className="air-info-btn" title="Erläuterung und WHO-Richtwert">
+                      ⓘ
+                    </summary>
+                    <div className="air-pop-body">{INFO[info]}</div>
+                  </details>
+                  {meanable && (
+                    <details className="air-pop">
+                      <summary className="air-means-btn">
+                        Mittelwerte{(means[id]?.length ?? 0) > 0 ? ` (${means[id]!.join(' + ')} h)` : ''} ▾
+                      </summary>
+                      <div className="air-pop-body air-means">
+                        {MEAN_WINDOWS.map((w) => (
+                          <label key={w}>
+                            <input
+                              type="checkbox"
+                              checked={means[id]?.includes(w) ?? false}
+                              onChange={() => toggleMean(id, w)}
+                            />{' '}
+                            {w}-Stunden-Mittel (gleitend)
+                          </label>
+                        ))}
+                        <span className="label-muted">
+                          Nachlaufend: der Wert zur Stunde mittelt die {MEAN_WINDOWS.join(' bzw. ')} Stunden davor.
+                        </span>
+                      </div>
+                    </details>
+                  )}
                 </span>
                 <span className="atfc-legend">
-                  {c.note && <span className="label-muted">{c.note}</span>}
                   {c.curves.length > 1 &&
                     c.curves.map((s) => (
                       <span key={s.label}>
@@ -289,11 +429,11 @@ export function AirQualityPanel() {
       <div className="app-attribution">
         <AirQualityAttribution />
         <span className="attribution">
-          Richtwerte:{' '}
+          Richtwerte in den Erläuterungen (ⓘ):{' '}
           <a href={WHO_SOURCE_URL} target="_blank" rel="noreferrer">
             WHO Global Air Quality Guidelines 2021
-          </a>{' '}
-          (Kurzzeitwerte; verglichen wird das gleitende Mittel, nicht der Stundenwert).
+          </a>
+          .
         </span>
       </div>
     </div>

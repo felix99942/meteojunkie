@@ -206,7 +206,7 @@ export interface ChartDef {
   /** Kurzer Hinweis in der Kopfzeile, z. B. der Bezugszeitraum der Extremwerte. */
   note?: string
   /** Waagrechte Bezugslinie, z. B. die 0-°C-Frostgrenze. */
-  refLines?: { value: number; color: string; dash?: number[]; label?: string }[]
+  refLines?: { value: number; color: string; dash?: number[] }[]
   /**
    * Bereich RECHTS von diesem Zeitpunkt ausgrauen: dort endet der
    * Modell- bzw. Ensemblehorizont dieser Zeile, es gibt also keine Daten
