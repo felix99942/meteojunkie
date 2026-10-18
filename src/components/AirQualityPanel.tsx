@@ -590,25 +590,6 @@ export function AirQualityPanel() {
           </span>
         </div>
       )}
-      {/* Alles hier ist CAMS-MODELL, auch der „Jetzt"-Wert und die Mittel über
-          die vergangenen Stunden — keine Messung. Ohne den Hinweis liest sich
-          „Jetzt 42" wie ein Messwert. */}
-      {band && (
-        <span
-          className="air-src"
-          title="Kästen und farbige Kurven sind Modellwerte des Copernicus-Atmosphärendienstes (CAMS Europa, ~10 km), auch der aktuelle Wert und die Mittel über die vergangenen Stunden. Weiß sind gemessene Stundenmittel der nächsten österreichischen Messstelle im Umkreis von 15 km (Hintergrundstationen bevorzugt) — aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur, rund 2–3 Stunden Verzug."
-        >
-          farbig: Modell (CAMS)
-          <br />
-          {Object.values(measured).some(Boolean)
-            ? 'weiß: Messung'
-            : nearStation && measuredQ.isPending
-              ? 'Messung lädt …'
-              : nearStation && measuredQ.isError
-                ? 'Messung nicht erreichbar'
-                : 'keine Messstelle nahe'}
-        </span>
-      )}
       </div>
       {data && (
         <div className="meteo-stack">

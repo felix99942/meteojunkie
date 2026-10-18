@@ -8,7 +8,7 @@
 // ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu liest:
 //
 //   mint   VORHERSAGE und Klima am Punkt bzw. an der Station — Meteogramm,
-//          Klima + MOS, Ensemble, Soundings, Föhn, dazu die Modellkarten.
+//          Modellkarten, Klima + MOS, Ensemble, Soundings, Föhn.
 //          Alles Zahlenwerke aus Modell- oder Messreihen (die Modellkarten
 //          zeigen zwar Karten, aber MODELLausgabe mit ablesbaren Werten, keine
 //          fertigen Karten eines fremden Dienstes).
@@ -17,6 +17,9 @@
 //          kein Open-Meteo-Budget.
 //   rot    VERIFIKATION — der einzige Bereich, der ZURÜCKschaut und die
 //          übrigen bewertet. Rot, weil er die unbequeme Frage stellt.
+//   lila   LUFTQUALITÄT — ein anderes Thema als das Wetter (Schadstoffe statt
+//          Wettergrößen), mit Modell UND Messung; steht deshalb abgesetzt am
+//          Ende der Reihe (auf Wunsch).
 //
 // Die Farbe ist NICHT der einzige Unterschied (der aktive Tab trägt zusätzlich
 // Hintergrund und Unterkante), damit die Reihe auch ohne Farbunterscheidung
@@ -27,13 +30,20 @@ import { POINT_FORECASTS_ENABLED } from '../config/features'
 import { useAppView, type AppView } from '../state/appView'
 
 /** Farbgruppe der Reihe — siehe Kopfkommentar. */
-type NavGroup = 'forecast' | 'imagery' | 'verify'
+type NavGroup = 'forecast' | 'imagery' | 'verify' | 'air'
 
 const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
   {
     id: 'classic',
     label: 'Meteogramm',
     title: 'Klassisches Meteogramm — Temperatur, Niederschlag, Wolken, Wind auf einen Blick',
+    group: 'forecast',
+  },
+  {
+    id: 'globe',
+    label: 'Modellkarten',
+    title:
+      'ECMWF IFS, ICON-EU und ICON-D2 als Globus oder Karte (Europa, Alpen) — Temperatur, Druck, Niederschlag, Wind, Bewölkung, 500 hPa',
     group: 'forecast',
   },
   {
@@ -61,19 +71,6 @@ const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
     group: 'forecast',
   },
   {
-    id: 'air',
-    label: 'Luftqualität',
-    title: 'Luftqualität am Punkt — Europäischer Luftqualitätsindex, Feinstaub, Stickstoffdioxid, Ozon, Saharastaub (CAMS)',
-    group: 'forecast',
-  },
-  {
-    id: 'globe',
-    label: 'Modellkarten',
-    title:
-      'ECMWF IFS, ICON-EU und ICON-D2 als Globus oder Karte (Europa, Alpen) — Temperatur, Druck, Niederschlag, Wind, Bewölkung, 500 hPa',
-    group: 'forecast',
-  },
-  {
     id: 'radar',
     label: 'Radar',
     title:
@@ -93,6 +90,12 @@ const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
     title:
       'Wie gut war die Vorhersage? Vergangene Modellläufe gegen die gemessenen Stationswerte',
     group: 'verify',
+  },
+  {
+    id: 'air',
+    label: 'Luftqualität',
+    title: 'Luftqualität am Punkt — Europäischer Luftqualitätsindex, Feinstaub, Stickstoffdioxid, Ozon, Saharastaub (CAMS)',
+    group: 'air',
   },
   // Steht in der veröffentlichten Version nicht in der Reihe
   // (`POINT_FORECASTS_ENABLED`) und deshalb am Ende: im vollen Build ist es
