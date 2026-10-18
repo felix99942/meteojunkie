@@ -2965,7 +2965,14 @@ npm run preview   # gebautes dist/ servieren
   (`measuredMean`, ≥ 3/4 der Stunden belegt). Dafür wird ab GESTERN
   abgerufen (~280 statt ~140 KB). Der Jetzt-Kasten ist zweizeilig und die
   Kopfzeilen tragen „Modell"/„gemessen", damit alle fünf Kästen in eine Reihe
-  passen — umgebrochen kosteten sie den Diagrammen eine ganze Zeile. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  passen — umgebrochen kosteten sie den Diagrammen eine ganze Zeile.
+  **Der aktuelle Zeitpunkt ist eine ROTE, 3 px breite Linie mit „aktuell"
+  LÄNGS der Linie** (`MarkStyle` in `chartDef.ts`, `markPlugin` in
+  `ChartStack`; ohne Stil bleibt es die dünne gestrichelte Markerlinie der
+  MOS-Vorhersage). Die Schrift schrumpft mit der Zeilenhöhe und entfällt
+  unter 8 px, statt in die Achse zu ragen. Eine Fassung, die die Achse erst
+  3 h vor der jüngsten Messung beginnen ließ, war auf Wunsch wieder draußen —
+  man sah zu wenig von der Messung. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.

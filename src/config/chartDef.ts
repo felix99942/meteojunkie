@@ -282,3 +282,11 @@ export const chartHasData = (c: ChartDef): boolean =>
   (c.octaRows?.rows.some((r) => r.values.some((v) => v != null)) ?? false) ||
   (c.flagRows?.rows.some((r) => r.values.some((v) => v != null)) ?? false) ||
   (c.symbols?.codes.some((v) => v != null) ?? false)
+
+/** Darstellung der Markerlinie in `ChartRow` — ohne: dünn gestrichelt (Kartenschieber). */
+export interface MarkStyle {
+  color: string
+  width?: number
+  /** Text längs der Linie, z. B. „aktuell". */
+  label?: string
+}

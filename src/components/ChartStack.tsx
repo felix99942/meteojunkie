@@ -22,6 +22,7 @@ import {
   Y_AXIS_SIZE,
   type ChartDef,
   type Curve,
+  type MarkStyle,
   type FlagRows,
   type OctaRows,
   type Symbols,
@@ -921,7 +922,7 @@ function dayMarkPlugin(
  * MOS-Vorhersage). Getrennt vom Cursor-Sync — ein von außen vorgegebener
  * Zeitpunkt ist etwas anderes als der Hover-Fadenkreuz-Sync über den Stapel.
  */
-function markPlugin(markRef: { current: number | undefined }): uPlot.Plugin {
+function markPlugin(markRef: { current: number | undefined }, style?: MarkStyle): uPlot.Plugin {
   return {
     hooks: {
       draw: (u) => {
@@ -931,18 +932,42 @@ function markPlugin(markRef: { current: number | undefined }): uPlot.Plugin {
         if (!Number.isFinite(x)) return
         const ctx = u.ctx
         ctx.save()
-        ctx.strokeStyle = MARK
-        ctx.lineWidth = 1
-        ctx.setLineDash([3, 3])
+        ctx.strokeStyle = style?.color ?? MARK
+        ctx.lineWidth = style?.width ?? 1
+        ctx.setLineDash(style ? [] : [3, 3])
         ctx.beginPath()
         ctx.moveTo(x, u.bbox.top)
         ctx.lineTo(x, u.bbox.top + u.bbox.height)
         ctx.stroke()
+        if (style?.label) {
+          // Beschriftung LÄNGS der Linie (von unten nach oben lesbar), oben
+          // angesetzt; dunkler Rand, damit sie über Kurven und Flächen steht
+          // Schrift so klein wie nötig, damit sie in flachen Zeilen nicht in
+          // die Achse ragt; unter 8 px entfällt sie
+          ctx.font = '700 12px system-ui, sans-serif'
+          const w12 = ctx.measureText(style.label).width
+          const px = Math.min(12, (12 * (u.bbox.height - 8)) / w12)
+          if (px < 8) {
+            ctx.restore()
+            return
+          }
+          ctx.translate(x - (style.width ?? 1) / 2 - 3, u.bbox.top + 4)
+          ctx.rotate(-Math.PI / 2)
+          ctx.font = `700 ${px.toFixed(1)}px system-ui, sans-serif`
+          ctx.textAlign = 'right'
+          ctx.textBaseline = 'bottom'
+          ctx.lineWidth = 3
+          ctx.strokeStyle = BG_PANEL
+          ctx.strokeText(style.label, 0, 0)
+          ctx.fillStyle = style.color
+          ctx.fillText(style.label, 0, 0)
+        }
         ctx.restore()
       },
     },
   }
 }
+
 
 /** Ein Diagramm des Stapels — uPlot-Setup, optional synchronisiertes Fadenkreuz über `syncKey`. */
 export function ChartRow({
@@ -955,6 +980,7 @@ export function ChartRow({
   dayRow = false,
   dayGrid = false,
   markTime,
+  markStyle,
   readoutTime,
   readoutLabel,
   onHoverTime,
@@ -989,6 +1015,8 @@ export function ChartRow({
   dayGrid?: boolean
   /** Fester Zeitpunkt (ms) als gestrichelte Markerlinie, z. B. vom Kartenschieber. */
   markTime?: number
+  /** Andere Darstellung der Markerlinie, z. B. „jetzt" rot und beschriftet. */
+  markStyle?: MarkStyle
   /**
    * Zeitpunkt (ms), zu dem die Werteanzeige eingeblendet wird — gedacht als
    * gemeinsamer Zustand über alle Zeilen eines Stapels (siehe `onHoverTime`).
@@ -1117,7 +1145,7 @@ export function ChartRow({
               ),
             ]
           : []),
-        markPlugin(markRef),
+        markPlugin(markRef, markStyle),
         ...(chart.marks ? [pointMarkPlugin(chart.marks)] : []),
         ...(windCurve
           ? [windBarbStripPlugin(windCurve, windCurve.color, topReserve, chart.barbGap ?? 34)]

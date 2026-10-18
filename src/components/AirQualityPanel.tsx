@@ -59,6 +59,8 @@ const readoutFmt = new Intl.DateTimeFormat('de-DE', {
 })
 
 const MS_PER_DAY = 86_400_000
+/** Der aktuelle Zeitpunkt: rot, kräftig und beschriftet — links davon Vergangenheit mit Messung, rechts Vorhersage. */
+const NOW_MARK = { color: '#e5484d', width: 3, label: 'aktuell' }
 const COLOR_EAQI = '#e0e3e8'
 const COLOR_PM25 = '#d9822b'
 const COLOR_PM10 = '#b8a04a'
@@ -591,6 +593,7 @@ export function AirQualityPanel() {
                   xSpace={X_TICK_SPACE}
                   dayRow
                   markTime={nowMs}
+                  markStyle={NOW_MARK}
                   readoutTime={readoutMs ?? undefined}
                   readoutLabel={id === 'eaqi' ? readoutLabel : undefined}
                   onHoverTime={handleHover}
