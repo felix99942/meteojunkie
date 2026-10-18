@@ -19,6 +19,8 @@ import {
 import { loadSonde, loadSondeIndex, type SondeData, type SondeIndex } from './sondes'
 import type { DomainPreset } from '../config/domains'
 import type { AirQualityData } from '../config/airQuality'
+import type { AirStation, MeasuredRow } from '../config/airMeasured'
+import { fetchMeasuredAt, loadAtStations } from './airMeasured'
 import { getEnsembleModel } from '../config/ensemble'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
@@ -279,5 +281,32 @@ export function useAirQuality(location: LatLon | null): UseQueryResult<AirQualit
     gcTime: SERIES_GC_TIME_MS,
     retry: 2,
     retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
+  })
+}
+
+/** Österreichische Luftgüte-Messstellen (statisches Asset, ändert sich nicht in der Sitzung). */
+export function useAtAirStations(enabled: boolean): UseQueryResult<AirStation[]> {
+  return useQuery({
+    queryKey: ['air-at-stations'],
+    queryFn: loadAtStations,
+    enabled,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+}
+
+/**
+ * Gemessene Stundenmittel ganz Österreichs ab `fromDay` — EIN Abruf für alle
+ * Stationen, der Ort wird erst danach ausgewählt; ein Ortswechsel kostet
+ * deshalb nichts. Neue Stunden kommen stündlich, daher 20 min Frische.
+ */
+export function useMeasuredAt(fromDay: string, enabled: boolean): UseQueryResult<MeasuredRow[]> {
+  return useQuery({
+    queryKey: ['air-at-measured', fromDay],
+    queryFn: () => fetchMeasuredAt(fromDay),
+    enabled,
+    staleTime: 20 * 60 * 1000,
+    gcTime: SERIES_GC_TIME_MS,
+    retry: 1,
   })
 }

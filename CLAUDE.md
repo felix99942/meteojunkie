@@ -2930,8 +2930,31 @@ npm run preview   # gebautes dist/ servieren
   **ALLES IST MODELL, AUCH „JETZT" UND DIE MITTEL** — CAMS-Vorhersage, die
   vergangenen Stunden aus `past_days` ebenso; keine Messung. Steht als
   „Modellwerte (CAMS) · keine Messung" am Ende der Kastenreihe, ohne das
-  läse sich „Jetzt 42" wie ein Messwert. Messwerte hätten nur die
-  Umweltbehörden (nicht angebunden). Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  läse sich „Jetzt 42" wie ein Messwert.
+  **GEMESSENE WERTE (nur Österreich) als WEISSE Kurven** (seit 2026-10-18,
+  `config/airMeasured.ts` mit Tests, Abruf `api/airMeasured.ts`, Messstellen
+  `public/air/at-stations.json` aus `scripts/air-ingest-stations.mjs`, npm
+  `ingest:air:stations`): Download-Dienst der EEA, „Up To Date" (E2a) —
+  aktuelle, UNGEPRÜFTE Stundenmittel, ~2–3 h Verzug. **CORS `*` samt
+  Preflight**, `POST /ParquetFile` schneidet den Zeitraum serverseitig zu: ganz
+  Österreich, vier Stoffe, ein Tag ≈ 140 KB in ~3 s, EIN Abruf, der Ort wird
+  erst danach gewählt (Ortswechsel kostet nichts). Abgerufen nur, wenn eine
+  Messstelle ≤ 15 km vom Ort liegt. ZIP/Parquet lesen `fflate`/`hyparquet`
+  (Versionen bewusst älter gepinnt), dynamisch geladen — eigene Pakete von
+  ~30 und ~60 KB. **Die Zeitstempel sind Wiener ORTSZEIT MIT SOMMERZEIT**,
+  obwohl die Metadaten „UTC+01" sagen — gemessen gegen die Halbstundenwerte
+  des Landes OÖ mit ausdrücklichem Offset (Linz Stadtpark: UTC+2 exakt,
+  UTC+1 2,4 µg/m³ daneben); umgerechnet über Europe/Vienna
+  (`viennaWallToUtc`). Nach der Winterzeit-Umstellung (25.10.2026) noch
+  einmal gegenprüfen. Gezeichnet am ENDE der Messstunde. **Stationswahl**:
+  nächste HINTERGRUNDstation ≤ 15 km, sonst die nächste beliebige — das Modell
+  rechnet Hintergrundbelastung, eine Straßenstation misst NO₂ systematisch
+  höher; Station, Abstand und Typ stehen in der Kopfzeile. Bei zwei Geräten
+  am selben Ort gewinnt das mit mehr Werten. Andere Quellen geprüft und
+  verworfen: UBA Deutschland ohne CORS, Österreich ohne bundesweite API
+  (nur einzelne Länder), OpenAQ nur mit Key; die EEA-JAHRESdateien
+  (`/ParquetFile/urls`) liegen ohne CORS. Erste Befunde: Salzburg NO₂ abends
+  gemessen ~29 gegen 8 µg/m³ im Modell, Sonnblick Ozon ~90 gegen 65. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.

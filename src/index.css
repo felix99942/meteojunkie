@@ -4781,3 +4781,9 @@ button:focus-visible {
   padding-left: 12px;
   cursor: help;
 }
+
+/* Herkunft der Messkurve in der Kopfzeile — in der Farbe der Messung */
+.air-measured-note {
+  color: #f2f2ef;
+  font-weight: 500;
+}

@@ -91,6 +91,14 @@ const THIRD_PARTY_HOSTS = [
     hrefLabel: 'Datenschutzerklärung der NASA',
   },
   {
+    host: 'eeadmz1-downloads-api-appservice.azurewebsites.net',
+    what:
+      'gemessene Luftgüte-Stundenwerte österreichischer Messstellen (Download-Dienst der ' +
+      'Europäischen Umweltagentur, nur im Bereich „Luftqualität" bei einem Ort in Österreich)',
+    href: 'https://www.eea.europa.eu/en/legal-notice',
+    hrefLabel: 'Rechtliche Hinweise der EEA',
+  },
+  {
     host: 'basemaps.cartocdn.com',
     what:
       'Kartenkacheln des Hintergrunds der Österreich-Klimakarte und der MOS-Vorhersage ' +

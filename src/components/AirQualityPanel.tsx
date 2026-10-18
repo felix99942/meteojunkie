@@ -11,7 +11,7 @@
 // `config/airQuality.ts`.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useAirQuality } from '../api/queries'
+import { useAirQuality, useAtAirStations, useMeasuredAt } from '../api/queries'
 import { seriesKey } from '../lib/dataKey'
 import { ChartRow } from './ChartStack'
 import { chartHasData, type ChartDef, type Curve } from '../config/chartDef'
@@ -29,6 +29,14 @@ import {
   WHO_GUIDELINES,
   WHO_SOURCE_URL,
 } from '../config/airQuality'
+import {
+  distanceKm,
+  MEASURED_MAX_KM,
+  MEASURED_POLLUTANTS,
+  measuredFor,
+  stationKind,
+  type MeasuredSeries,
+} from '../config/airMeasured'
 import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
 import { QuickPoints } from './QuickPoints'
@@ -56,6 +64,10 @@ const COLOR_PM10 = '#b8a04a'
 const COLOR_NO2 = '#c0607a'
 const COLOR_O3 = '#4f97e0'
 const COLOR_DUST = '#c9a227'
+/** Gemessen = WEISS: hebt sich von allen Modellfarben ab, und Weiß ist auch im
+ *  Skew-T die Farbe der Messung (Radiosonde). */
+const COLOR_MEASURED = '#f2f2ef'
+const kmFmt = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 })
 
 /** Mittelungszeiträume der Kästen neben dem Jetzt-Wert (Stunden). */
 const SUMMARY_WINDOWS = [8, 24] as const
@@ -159,6 +171,25 @@ export function AirQualityPanel() {
   const q = useAirQuality(location)
   const data = q.data
 
+  // GEMESSEN (nur Österreich): erst die Messstellen, und nur wenn eine im
+  // Umkreis liegt, der eine Abruf für ganz Österreich
+  const stationsQ = useAtAirStations(location !== null)
+  const nearStation =
+    location !== null &&
+    (stationsQ.data ?? []).some((st) => distanceKm(location.lat, location.lon, st.lat, st.lon) <= MEASURED_MAX_KM)
+  const measuredDay = new Date().toISOString().slice(0, 10)
+  const measuredQ = useMeasuredAt(measuredDay, nearStation)
+  /** Messreihe je Open-Meteo-Variable (nächste Hintergrundstation ≤ 15 km). */
+  const measured = useMemo(() => {
+    const out: Record<string, MeasuredSeries | null> = {}
+    if (!location || !stationsQ.data || !measuredQ.data) return out
+    for (const p of MEASURED_POLLUTANTS) {
+      out[p.variable] = measuredFor(p.code, location.lat, location.lon, stationsQ.data, measuredQ.data)
+    }
+    return out
+  }, [location, stationsQ.data, measuredQ.data])
+  const measuredKey = seriesKey([measuredQ.data, stationsQ.data, location])
+
   // Werteanzeige am überfahrenen Zeitpunkt für den ganzen Stapel — dasselbe
   // Muster wie im klassischen Meteogramm (neu gezeichnet nur bei neuer Stunde)
   const [readoutMs, setReadoutMs] = useState<number | null>(null)
@@ -185,8 +216,14 @@ export function AirQualityPanel() {
     const s0 = Math.max(0, data.times.findIndex((t) => t >= todayStart))
     const cut = (v: string) => (data.values[v] ?? []).slice(s0, n)
 
-    const curvesFor = (list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] =>
-      list.map((c) => ({
+    const times = data.times.slice(s0, n)
+    /**
+     * Modellkurven einer Zeile, dazu — wo es eine Messstelle gibt — die
+     * gemessenen Stundenmittel in WEISS (bei zwei Stoffen in einer Zeile der
+     * zweite gestrichelt). Gezeichnet am Ende der Messstunde.
+     */
+    const curvesFor = (list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] => {
+      const out: Curve[] = list.map((c) => ({
         label: c.label,
         color: c.color,
         type: 'line',
@@ -194,6 +231,33 @@ export function AirQualityPanel() {
         width: c.width ?? 1.6,
         ...(c.fill ? { fill: c.fill } : {}),
       }))
+      list.forEach((c, i) => {
+        const m = measured[c.v]
+        if (!m) return
+        out.push({
+          label: `${c.label} gemessen`,
+          color: COLOR_MEASURED,
+          type: 'line',
+          values: times.map((t) => m.values.get(t) ?? null),
+          width: 1.8,
+          ...(i > 0 ? { dash: [5, 3] } : {}),
+        })
+      })
+      return out
+    }
+    /** Herkunft der Messung für die Kopfzeile: Station, Abstand, Typ. */
+    const measuredNote = (vars: string[]) => {
+      const seen = new Map<string, MeasuredSeries>()
+      for (const v of vars) {
+        const m = measured[v]
+        if (m) seen.set(m.station.name, m)
+      }
+      if (!seen.size) return undefined
+      return (
+        'gemessen: ' +
+        [...seen.values()].map((m) => `${m.station.name} (${kmFmt.format(m.km)} km, ${stationKind(m.station)})`).join(' · ')
+      )
+    }
 
     const rows: RowSpec[] = [
       {
@@ -227,6 +291,7 @@ export function AirQualityPanel() {
         chart: {
           title: 'Feinstaub',
           unit: 'µg/m³',
+          note: measuredNote(['pm2_5', 'pm10']),
           zeroBased: true,
           // Achse folgt dem Datenmaximum; der kleine Boden verhindert nur, dass
           // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
@@ -243,6 +308,7 @@ export function AirQualityPanel() {
         chart: {
           title: 'Stickstoffdioxid',
           unit: 'µg/m³',
+          note: measuredNote(['nitrogen_dioxide']),
           zeroBased: true,
           minTop: 5,
           curves: curvesFor([{ v: 'nitrogen_dioxide', label: 'NO₂', color: COLOR_NO2 }]),
@@ -254,6 +320,7 @@ export function AirQualityPanel() {
         chart: {
           title: 'Ozon',
           unit: 'µg/m³',
+          note: measuredNote(['ozone']),
           zeroBased: true,
           minTop: 10,
           curves: curvesFor([{ v: 'ozone', label: 'O₃', color: COLOR_O3 }]),
@@ -281,7 +348,7 @@ export function AirQualityPanel() {
     }
     return { xs: data.times.slice(s0, n).map((t) => t / 1000), rows }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey])
+  }, [dataKey, measuredKey])
 
 
   // „Jetzt" einmal je Datenstand — Date.now() direkt im Render gäbe jeder
@@ -404,11 +471,11 @@ export function AirQualityPanel() {
       {band && (
         <span
           className="air-src"
-          title="Alle Werte sind Modellwerte des Copernicus-Atmosphärendienstes (CAMS Europa, ~10 km), auch der aktuelle Wert und die Mittel über die vergangenen Stunden. Gemessene Werte veröffentlichen die Umweltbehörden (in Österreich Umweltbundesamt und Länder, in Deutschland das Umweltbundesamt)."
+          title="Kästen und farbige Kurven sind Modellwerte des Copernicus-Atmosphärendienstes (CAMS Europa, ~10 km), auch der aktuelle Wert und die Mittel über die vergangenen Stunden. Weiß sind gemessene Stundenmittel der nächsten österreichischen Messstelle im Umkreis von 15 km (Hintergrundstationen bevorzugt) — aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur, rund 2–3 Stunden Verzug."
         >
-          Modellwerte (CAMS)
+          Kästen und farbige Kurven: Modell (CAMS)
           <br />
-          keine Messung
+          {Object.values(measured).some(Boolean) ? 'weiße Kurven: Messung' : 'keine Messstelle in der Nähe'}
         </span>
       )}
       </div>
@@ -423,6 +490,7 @@ export function AirQualityPanel() {
                   <InfoPop>{INFO[info]}</InfoPop>
                 </span>
                 <span className="atfc-legend">
+                  {c.note && <span className="air-measured-note">{c.note}</span>}
                   {c.curves.length > 1 &&
                     c.curves.map((s) => (
                       <span key={s.label}>
@@ -456,6 +524,15 @@ export function AirQualityPanel() {
       )}
       <div className="app-attribution">
         <AirQualityAttribution />
+        {Object.values(measured).some(Boolean) && (
+          <span className="attribution">
+            Messwerte (weiß):{' '}
+            <a href="https://www.eea.europa.eu/en/datahub/datahubitem-view/778ef9f5-6293-4846-badd-56a29c70880d" target="_blank" rel="noreferrer">
+              Europäische Umweltagentur
+            </a>{' '}
+            mit Daten der Messnetze der Länder und des Umweltbundesamts — aktuelle, noch ungeprüfte Werte.
+          </span>
+        )}
         <span className="attribution">
           Richtwerte in den Erläuterungen (ⓘ):{' '}
           <a href={WHO_SOURCE_URL} target="_blank" rel="noreferrer">

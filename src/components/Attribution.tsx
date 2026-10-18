@@ -128,7 +128,7 @@ export function AirQualityAttribution({ className = '' }: { className?: string }
         Open-Meteo
       </a>{' '}
       (<a href="https://creativecommons.org/licenses/by/4.0/deed.de" target="_blank" rel="noreferrer">CC BY 4.0</a>).
-      Modellvorhersage, keine Messung — amtliche Messwerte bei den Umweltbehörden.
+      Modellvorhersage (Kästen und farbige Kurven).
     </span>
   )
 }
