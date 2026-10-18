@@ -583,13 +583,16 @@ function buildAirQualityBody(u: URL): MockLocation {
   const lat = Number(u.searchParams.get('latitude') ?? 0)
   const lon = Number(u.searchParams.get('longitude') ?? 0)
   const days = Number(u.searchParams.get('forecast_days') ?? 5)
+  const past = Number(u.searchParams.get('past_days') ?? 0)
   const vars = (u.searchParams.get('hourly') ?? '').split(',').filter(Boolean)
-  const start = Math.floor(Date.now() / 86_400_000) * 86_400
-  const n = days * 24
+  const start = (Math.floor(Date.now() / 86_400_000) - past) * 86_400
+  const n = (days + past) * 24
+  // CAMS Europa endet ~96 h nach heute 00 UTC
+  const last = (past + 4) * 24
   const time = Array.from({ length: n }, (_, i) => start + i * 3600)
   const seed = hash01(`${lat.toFixed(2)},${lon.toFixed(2)}`) * 6
   const series = (f: (h: number, i: number) => number) =>
-    time.map((_, i) => (i >= 96 ? null : round1(Math.max(0, f(i % 24, i)))))
+    time.map((_, i) => (i >= last ? null : round1(Math.max(0, f(i % 24, i)))))
   const episode = (i: number) => 18 * Math.exp(-(((i - 40) / 10) ** 2))
   const pm25 = series((h, i) => 8 + seed + 4 * Math.cos(((h - 21) / 24) * 2 * Math.PI) + episode(i))
   const pm10 = pm25.map((v) => (v == null ? null : round1(v * 1.35)))
@@ -602,10 +605,10 @@ function buildAirQualityBody(u: URL): MockLocation {
     european_aqi_pm10: sub(pm10, 20),
     european_aqi_nitrogen_dioxide: sub(no2, 40),
     european_aqi_ozone: sub(o3, 60),
-    european_aqi_sulphur_dioxide: time.map((_, i) => (i >= 96 ? null : 1)),
+    european_aqi_sulphur_dioxide: time.map((_, i) => (i >= last ? null : 1)),
   }
   const eaqi = time.map((_, i) =>
-    i >= 96 ? null : Math.max(...Object.values(parts).map((p) => p[i] ?? 0)),
+    i >= last ? null : Math.max(...Object.values(parts).map((p) => p[i] ?? 0)),
   )
   const all: Record<string, (number | null)[]> = {
     european_aqi: eaqi,

@@ -26,6 +26,12 @@ export const AIR_QUALITY_URL = 'https://air-quality-api.open-meteo.com/v1/air-qu
 
 /** Tage ab heute 00 UTC — etwas mehr als CAMS Europa trägt, der Rest ist null und wird abgeschnitten. */
 export const AIR_QUALITY_FORECAST_DAYS = 5
+/**
+ * Ein Tag Vorlauf, nur für die gleitenden Mittel: das 24-h-Mittel um 05 UTC
+ * braucht die Stunden von gestern. Gezeigt wird ab heute 00 UTC. Kostet
+ * nichts extra (6 statt 5 Tage bleiben weit unter der 14-Tage-Gewichtung).
+ */
+export const AIR_QUALITY_PAST_DAYS = 1
 
 export type AirDomain = 'cams_europe' | 'cams_global'
 
@@ -143,4 +149,52 @@ export function eaqiAxisTop(values: (number | null)[]): number {
   for (const v of values) if (v != null && v > max) max = v
   const step = 20
   return Math.max(step, Math.floor(max / step) * step + step)
+}
+
+/**
+ * WHO-Luftgüte-Richtwerte 2021 (WHO Global Air Quality Guidelines), die
+ * KURZZEIT-Werte — die Jahresmittel lassen sich an einer Vier-Tage-Vorhersage
+ * nicht ablesen. Bewusst NUR die WHO (auf Wunsch), keine EU-Grenzwerte.
+ *
+ * Jeder Wert gilt für ein MITTEL über `hours` Stunden, nicht für den
+ * Stundenwert: verglichen wird deshalb das gleitende Mittel
+ * (`rollingMean`), und die Beschriftung nennt den Zeitraum. Eine
+ * 24-h-Schwelle gegen Stundenwerte zu legen, zeigte Überschreitungen, die
+ * keine sind.
+ */
+export const WHO_GUIDELINES = {
+  pm2_5: { value: 15, hours: 24 },
+  pm10: { value: 45, hours: 24 },
+  nitrogen_dioxide: { value: 25, hours: 24 },
+  ozone: { value: 100, hours: 8 },
+} as const
+
+export const WHO_SOURCE_URL = 'https://www.who.int/publications/i/item/9789240034228'
+
+/**
+ * Nachlaufendes gleitendes Mittel über `window` Stunden (der Wert zur Stunde
+ * i mittelt die Stunden i−window+1 … i). Eine Stunde bekommt nur dann einen
+ * Wert, wenn mindestens drei Viertel des Fensters belegt sind — die übliche
+ * Vollständigkeitsregel der Luftgüte-Auswertung; ein „Tagesmittel" aus drei
+ * Stunden wäre keines.
+ */
+export function rollingMean(values: (number | null)[], window: number): (number | null)[] {
+  const need = Math.ceil(window * 0.75)
+  const out: (number | null)[] = []
+  let sum = 0
+  let count = 0
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i]
+    if (v != null) {
+      sum += v
+      count++
+    }
+    const drop = i - window >= 0 ? values[i - window] : null
+    if (drop != null) {
+      sum -= drop
+      count--
+    }
+    out.push(i >= window - 1 && count >= need ? sum / count : null)
+  }
+  return out
 }

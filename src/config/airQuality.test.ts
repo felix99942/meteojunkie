@@ -9,6 +9,8 @@ import {
   EAQI_PARTS,
   eaqiBand,
   parseAirQuality,
+  rollingMean,
+  WHO_GUIDELINES,
 } from './airQuality'
 
 describe('eaqiBand', () => {
@@ -83,5 +85,30 @@ describe('eaqiAxisTop', () => {
   })
   it('ohne Werte die unterste Stufe', () => {
     expect(eaqiAxisTop([null, null])).toBe(20)
+  })
+})
+
+describe('rollingMean', () => {
+  it('mittelt nachlaufend über das Fenster', () => {
+    expect(rollingMean([1, 2, 3, 4, 5], 2)).toEqual([null, 1.5, 2.5, 3.5, 4.5])
+  })
+  it('erst ab vollem Fensterumfang, und nur mit drei Vierteln belegter Stunden', () => {
+    const v = [8, 8, 8, null, 8, 8, null, null, 8, 8]
+    const m = rollingMean(v, 4)
+    expect(m.slice(0, 3)).toEqual([null, null, null])
+    expect(m[3]).toBe(8) // 3 von 4 belegt
+    expect(m[7]).toBeNull() // 2 von 4 belegt
+  })
+  it('die Lücke fällt aus dem Fenster wieder heraus', () => {
+    expect(rollingMean([null, 2, 2, 2, 2], 4)[4]).toBe(2)
+  })
+})
+
+describe('WHO_GUIDELINES', () => {
+  it('Kurzzeit-Richtwerte 2021 mit ihrem Mittelungszeitraum', () => {
+    expect(WHO_GUIDELINES.pm2_5).toEqual({ value: 15, hours: 24 })
+    expect(WHO_GUIDELINES.pm10).toEqual({ value: 45, hours: 24 })
+    expect(WHO_GUIDELINES.nitrogen_dioxide).toEqual({ value: 25, hours: 24 })
+    expect(WHO_GUIDELINES.ozone).toEqual({ value: 100, hours: 8 })
   })
 })

@@ -4603,27 +4603,36 @@ button:focus-visible {
   pointer-events: none;
 }
 
-/* Luftqualität: Index der laufenden Stunde in der Leiste, Rand und Punkt in
-   der Farbe der EAQI-Stufe — die Zahl allein sagt nicht, ob 40 viel ist. */
+/* Luftqualität: Index der laufenden Stunde groß links oben über dem ersten
+   Diagramm, Rand, Zahl und Stufe in der Farbe der EAQI-Stufe — die Zahl
+   allein sagt nicht, ob 40 viel ist. */
 .air-now {
+  align-self: flex-start;
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border: 1px solid;
-  border-radius: 4px;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 12px;
+  margin: 6px 0 4px;
+  padding: 6px 16px;
+  border: 2px solid;
+  border-radius: 6px;
   white-space: nowrap;
 }
-.air-now i {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.air-now-label {
+  font-size: 18px;
+  color: var(--ink-muted);
 }
 .air-now b {
-  font-size: 15px;
+  font-size: 34px;
+  line-height: 1;
 }
-
+.air-now-band {
+  font-size: 24px;
+  font-weight: 700;
+}
+.air-now-driver {
+  font-size: 16px;
+  color: var(--ink-muted);
+}
 .air-domain {
   white-space: nowrap;
 }

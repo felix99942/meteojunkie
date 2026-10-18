@@ -23,6 +23,9 @@ import {
   EAQI_BANDS,
   eaqiAxisTop,
   eaqiBand,
+  rollingMean,
+  WHO_GUIDELINES,
+  WHO_SOURCE_URL,
 } from '../config/airQuality'
 import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
@@ -35,6 +38,7 @@ const X_TICK_SPACE = 40
 const hourFmt = new Intl.DateTimeFormat('de-DE', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' })
 const formatTick = (ts: number): string => hourFmt.format(new Date(ts * 1000))
 
+const MS_PER_DAY = 86_400_000
 const COLOR_EAQI = '#e0e3e8'
 const COLOR_PM25 = '#d9822b'
 const COLOR_PM10 = '#b8a04a'
@@ -67,14 +71,43 @@ export function AirQualityPanel() {
     // mit null — die Achse endet am letzten Wert statt an einer leeren Fläche
     const end = dataEnd(data) ?? -Infinity
     const n = data.times.filter((t) => t <= end).length
-    const cut = (v: string) => (data.values[v] ?? []).slice(0, n)
+    // Der Vortag ist nur für die gleitenden Mittel da — gezeigt wird ab heute
+    // 00 UTC, wie im Meteogramm
+    const todayStart = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY
+    const s0 = Math.max(0, data.times.findIndex((t) => t >= todayStart))
+    const cut = (v: string) => (data.values[v] ?? []).slice(s0, n)
+    // Gleitendes Mittel über den Zeitraum des WHO-Richtwerts — über die
+    // VOLLE Reihe gerechnet, damit die ersten Stunden von heute ihr Fenster haben
+    const mean = (v: keyof typeof WHO_GUIDELINES) =>
+      rollingMean(data.values[v] ?? [], WHO_GUIDELINES[v].hours).slice(s0, n)
+    const pm25Mean = mean('pm2_5')
+    const pm10Mean = mean('pm10')
+    const no2Mean = mean('nitrogen_dioxide')
+    const o3Mean = mean('ozone')
+    /**
+     * Achsenboden, damit die WHO-Linie ins Bild kommt — aber nur, wenn das
+     * Mittel ihr nahekommt (60 %). Sonst bleibt die Achse eng an den Daten
+     * und die Linie liegt außerhalb; der Wert steht dann in der Kopfzeile.
+     */
+    const reach = (floor: number, vals: (number | null)[], v: keyof typeof WHO_GUIDELINES) => {
+      const g = WHO_GUIDELINES[v].value
+      let max = 0
+      for (const x of vals) if (x != null && x > max) max = x
+      return max >= 0.6 * g ? Math.max(floor, g * 1.08) : floor
+    }
+    const whoLine = (v: keyof typeof WHO_GUIDELINES, color: string, name: string) => ({
+      value: WHO_GUIDELINES[v].value,
+      color,
+      dash: [6, 4],
+      label: `WHO-Richtwert ${name} ${WHO_GUIDELINES[v].value} (${WHO_GUIDELINES[v].hours}-h-Mittel)`,
+    })
     const charts: ChartDef[] = [
       {
         title: 'Europäischer Luftqualitätsindex',
         unit: 'EAQI',
         // Höher als die übrigen Zeilen: die Stufen stehen als beschriftete
         // Flächen darin, und die Schrift braucht Streifenhöhe
-        flex: 1.7,
+        flex: 1.4,
         zeroBased: true,
         // Die Achse endet auf der nächsten Stufengrenze über dem Höchstwert —
         // eng gezoomt, solange der Index niedrig bleibt, und sofort weiter,
@@ -102,25 +135,39 @@ export function AirQualityPanel() {
         zeroBased: true,
         // Achse folgt dem Datenmaximum; die kleinen Böden verhindern nur, dass
         // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
-        minTop: 5,
+        minTop: Math.max(reach(5, pm25Mean, 'pm2_5'), reach(5, pm10Mean, 'pm10')),
+        note: 'WHO-Richtwerte im 24-h-Mittel: PM2,5 15 · PM10 45 µg/m³',
+        refLines: [whoLine('pm2_5', COLOR_PM25, 'PM2,5'), whoLine('pm10', COLOR_PM10, 'PM10')],
         curves: [
           { label: 'PM2,5', color: COLOR_PM25, type: 'line', values: cut('pm2_5'), width: 1.8 },
           { label: 'PM10', color: COLOR_PM10, type: 'line', values: cut('pm10'), width: 1.4 },
+          { label: 'PM2,5 24-h-Mittel', color: COLOR_PM25, type: 'line', values: pm25Mean, width: 1.3, dash: [2, 3] },
+          { label: 'PM10 24-h-Mittel', color: COLOR_PM10, type: 'line', values: pm10Mean, width: 1.3, dash: [2, 3] },
         ],
       },
       {
         title: 'Stickstoffdioxid',
         unit: 'µg/m³',
         zeroBased: true,
-        minTop: 5,
-        curves: [{ label: 'NO₂', color: COLOR_NO2, type: 'line', values: cut('nitrogen_dioxide'), width: 1.6 }],
+        minTop: reach(5, no2Mean, 'nitrogen_dioxide'),
+        note: 'WHO-Richtwert 25 µg/m³ im 24-h-Mittel',
+        refLines: [whoLine('nitrogen_dioxide', COLOR_NO2, 'NO₂')],
+        curves: [
+          { label: 'NO₂', color: COLOR_NO2, type: 'line', values: cut('nitrogen_dioxide'), width: 1.6 },
+          { label: 'NO₂ 24-h-Mittel', color: COLOR_NO2, type: 'line', values: no2Mean, width: 1.3, dash: [2, 3] },
+        ],
       },
       {
         title: 'Ozon',
         unit: 'µg/m³',
         zeroBased: true,
-        minTop: 10,
-        curves: [{ label: 'O₃', color: COLOR_O3, type: 'line', values: cut('ozone'), width: 1.6 }],
+        minTop: reach(10, o3Mean, 'ozone'),
+        note: 'WHO-Richtwert 100 µg/m³ im 8-h-Mittel',
+        refLines: [whoLine('ozone', COLOR_O3, 'O₃')],
+        curves: [
+          { label: 'O₃', color: COLOR_O3, type: 'line', values: cut('ozone'), width: 1.6 },
+          { label: 'O₃ 8-h-Mittel', color: COLOR_O3, type: 'line', values: o3Mean, width: 1.3, dash: [2, 3] },
+        ],
       },
       {
         title: 'Wüstenstaub',
@@ -139,7 +186,7 @@ export function AirQualityPanel() {
       c.readoutPx = 16
       c.readoutLabels = true
     }
-    return { xs: data.times.slice(0, n).map((t) => t / 1000), charts }
+    return { xs: data.times.slice(s0, n).map((t) => t / 1000), charts }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey])
 
@@ -159,17 +206,6 @@ export function AirQualityPanel() {
         <span className="atclima-title">Luftqualität</span>
         <LocationPicker />
         <QuickPoints />
-        {band && (
-          <span
-            className="air-now"
-            style={{ borderColor: band.color }}
-            title="Europäischer Luftqualitätsindex (EAQI) für die laufende Stunde — der Index ist das Maximum der Teilindizes, der genannte Schadstoff setzt ihn."
-          >
-            <i style={{ background: band.color }} />
-            Jetzt <b>{Math.round(nowEaqi!)}</b> · {band.label}
-            {driver && <span className="label-muted"> · maßgeblich {driver}</span>}
-          </span>
-        )}
         {domain && (
           <span
             className="label-muted air-domain"
@@ -191,6 +227,23 @@ export function AirQualityPanel() {
       {data && data.domain === 'cams_global' && (
         <div className="atdetail-note">
           Dieser Ort liegt außerhalb von CAMS Europa — gezeigt wird das gröbere globale Modell (~45 km).
+        </div>
+      )}
+      {/* Der Index der laufenden Stunde ist die Antwort, mit der man den
+          Bereich öffnet — deshalb groß und links oben über dem ersten
+          Diagramm, nicht klein am Ende der Leiste */}
+      {band && (
+        <div
+          className="air-now"
+          style={{ borderColor: band.color }}
+          title="Europäischer Luftqualitätsindex (EAQI) für die laufende Stunde — der Index ist das Maximum der Teilindizes, der genannte Schadstoff setzt ihn."
+        >
+          <span className="air-now-label">Jetzt</span>
+          <b style={{ color: band.color }}>{Math.round(nowEaqi!)}</b>
+          <span className="air-now-band" style={{ color: band.color }}>
+            {band.label}
+          </span>
+          {driver && <span className="air-now-driver">maßgeblich {driver}</span>}
         </div>
       )}
       {data && (
@@ -235,6 +288,13 @@ export function AirQualityPanel() {
       )}
       <div className="app-attribution">
         <AirQualityAttribution />
+        <span className="attribution">
+          Richtwerte:{' '}
+          <a href={WHO_SOURCE_URL} target="_blank" rel="noreferrer">
+            WHO Global Air Quality Guidelines 2021
+          </a>{' '}
+          (Kurzzeitwerte; verglichen wird das gleitende Mittel, nicht der Stundenwert).
+        </span>
       </div>
     </div>
   )

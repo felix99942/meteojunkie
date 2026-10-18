@@ -2918,7 +2918,20 @@ npm run preview   # gebautes dist/ servieren
   das Aufblasen von Hauchwerten. Die Stufen stehen als FLÄCHEN in ihrer
   EEA-Farbe hinter der Kurve, groß beschriftet („ausreichend", „mäßig" …;
   `ChartDef.yZones`, gezeichnet im `drawClear`-Hook unter Gitter und Kurve,
-  Beschriftung nur wo der Streifen hoch genug ist). Überschriften 16 px, Werteanzeige am Zeiger
+  Beschriftung nur wo der Streifen hoch genug ist).
+  **WHO-Richtwerte 2021, BEWUSST NUR WHO** (auf Wunsch, keine EU-Grenzwerte;
+  `WHO_GUIDELINES`): PM2,5 15 und PM10 45 µg/m³ im 24-h-Mittel, NO₂ 25 im
+  24-h-Mittel, Ozon 100 im 8-h-Mittel — die Kurzzeitwerte, Jahresmittel sagen
+  an einer Vier-Tage-Vorhersage nichts. **Verglichen wird das GLEITENDE MITTEL,
+  nie der Stundenwert** (`rollingMean`, nachlaufend, Wert nur bei ≥ 3/4
+  belegtem Fenster): eine 24-h-Schwelle über Stundenwerte gelegt zeigte
+  Überschreitungen, die keine sind. Das Mittel steht gepunktet in der Farbe
+  seines Stoffs, die Richtwertlinie gestrichelt und beschriftet MIT Zeitraum.
+  Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab heute
+  00 UTC. Die Linie zieht die Achse nur mit, wenn das Mittel ≥ 60 % des
+  Richtwerts erreicht — sonst bleibt die Achse eng, der Wert steht in der
+  Kopfzeile. Der Index der laufenden Stunde steht GROSS links oben über dem
+  ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px, Werteanzeige am Zeiger
   16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
   dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der

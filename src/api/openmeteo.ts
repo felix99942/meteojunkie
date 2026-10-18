@@ -159,6 +159,7 @@ import { gridRequestQueue } from './queue'
 import { maybeMockApiGet, MOCK_MODE, mockGridDims, type HttpResult } from './mock'
 import {
   AIR_QUALITY_FORECAST_DAYS,
+  AIR_QUALITY_PAST_DAYS,
   AIR_QUALITY_URL,
   AIR_VARIABLES,
   parseAirQuality,
@@ -862,10 +863,11 @@ async function fetchAirQualityDomain(lat: number, lon: number, domain: AirDomain
     hourly: AIR_VARIABLES.join(','),
     domains: domain,
     forecast_days: String(AIR_QUALITY_FORECAST_DAYS),
+    past_days: String(AIR_QUALITY_PAST_DAYS),
     timezone: 'UTC',
     timeformat: 'unixtime',
   })
-  const cost = estimateWeight(1, AIR_VARIABLES.length, AIR_QUALITY_FORECAST_DAYS)
+  const cost = estimateWeight(1, AIR_VARIABLES.length, AIR_QUALITY_FORECAST_DAYS + AIR_QUALITY_PAST_DAYS)
   return apiGet(`${AIR_QUALITY_URL}?${params}`, cost, 'point')
 }
 
