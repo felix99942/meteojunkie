@@ -132,9 +132,9 @@ export function AppNav() {
   const tabs = POINT_FORECASTS_ENABLED ? TABS : TABS.filter((t) => t.id !== 'workbench')
 
   /**
-   * AUFKLAPPEN: die Gruppe des offenen Bereichs ist IMMER aufgeklappt, eine
-   * andere öffnet sich beim Überfahren UND per Klick (Touch hat kein
-   * Überfahren). Zugeklappt wird beim Verlassen erst nach `CLOSE_DELAY_MS` —
+   * AUFKLAPPEN beim Überfahren UND per Klick (Touch hat kein Überfahren);
+   * der Kategorieknopf der Gruppe mit dem aktiven Bereich nennt diesen, wenn
+   * sie zugeklappt ist. Zugeklappt wird beim Verlassen erst nach `CLOSE_DELAY_MS` —
    * die Reihe rutscht beim Aufklappen nach rechts, und ohne Verzögerung klappte
    * sie zu, sobald der Zeiger den Weg zum Ziel kurz über eine Lücke nimmt.
    */
@@ -176,7 +176,11 @@ export function AppNav() {
     else groups.push({ key: t.group, tabs: [t] })
   }
   const activeGroup = tabs.find((t) => t.id === view)?.group
-  const isOpen = (g: NavGroup) => g === activeGroup || g === hoverGroup || g === clickGroup
+  // Offen beim Überfahren oder nach Klick — auch die Gruppe des aktiven
+  // Bereichs klappt wieder ein (auf Wunsch); welcher Bereich offen ist, sagt
+  // dann der Kategorieknopf selbst
+  const isOpen = (g: NavGroup) => g === hoverGroup || g === clickGroup
+  const activeTab = tabs.find((t) => t.id === view)
   const tabButton = (t: (typeof tabs)[number]) => (
     <button
       key={t.id}
@@ -217,11 +221,19 @@ export function AppNav() {
               onClick={() => setClickGroup((c) => (c === g.key ? null : g.key))}
             >
               {GROUP_LABELS[g.key]}
+              {g.key === activeGroup && activeTab && !isOpen(g.key) && (
+                <span className="appnav-cat-current">{activeTab.label}</span>
+              )}
               <span className="appnav-cat-chev" aria-hidden="true">
-                {isOpen(g.key) ? '‹' : '›'}
+                ›
               </span>
             </button>
-            {isOpen(g.key) && g.tabs.map(tabButton)}
+            {/* Immer gerendert, damit das Ein- und Ausfahren animiert werden
+                kann (CSS-Gitter 0fr ↔ 1fr); zugeklappt `inert`, sonst ließen
+                sich die unsichtbaren Knöpfe mit Tab ansteuern */}
+            <span className="appnav-items" inert={!isOpen(g.key)}>
+              <span className="appnav-items-inner">{g.tabs.map(tabButton)}</span>
+            </span>
           </span>
         ),
       )}

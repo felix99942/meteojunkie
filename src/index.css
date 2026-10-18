@@ -1911,6 +1911,56 @@ button:focus-visible {
 .appnav-cat-chev {
   font-size: 16px;
   line-height: 1;
+  display: inline-block;
+  transition: transform 260ms ease;
+}
+.appnav-group.is-open .appnav-cat-chev {
+  transform: rotate(180deg);
+}
+/* Gruppe mit dem aktiven Bereich, zugeklappt: Knopf kräftiger, dahinter der
+   Name des offenen Bereichs */
+.appnav-cat.has-active {
+  background: color-mix(in srgb, var(--nav) 30%, var(--bg-control-hover));
+  border-color: var(--nav);
+  box-shadow: inset 0 -2px 0 var(--nav);
+}
+.appnav-cat-current {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--nav) 40%, #ffffff);
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--nav) 50%, transparent);
+}
+/* AUSKLAPPEN ANIMIERT: ein Gitter mit einer Spalte, die zwischen 0fr und 1fr
+   wechselt — so animiert die Breite auf den echten Inhalt, ohne ihn zu
+   messen (eine max-width-Animation liefe gegen einen geratenen Höchstwert und
+   wäre je nach Inhalt zu schnell oder zu träge). */
+.appnav-items {
+  display: inline-grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  margin-left: -5px;
+  transition:
+    grid-template-columns 280ms ease,
+    opacity 200ms ease,
+    margin-left 280ms ease;
+}
+.appnav-group.is-open > .appnav-items {
+  grid-template-columns: 1fr;
+  opacity: 1;
+  margin-left: 0;
+}
+.appnav-items-inner {
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .appnav-items,
+  .appnav-cat-chev {
+    transition: none;
+  }
 }
 
 .appnav {

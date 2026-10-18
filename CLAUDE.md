@@ -3995,9 +3995,14 @@ npm run preview   # gebautes dist/ servieren
   Klima + MOS, Ensemble, Soundings, Föhn) und „Analyse" (Radar, Satellit);
   Verifikation und Luftqualität stehen EINZELN (eine Gruppe mit nur einem
   Bereich ist einfach ihr Knopf). Die Bereiche klappen in DERSELBEN Zeile
-  auf, der Rest rutscht nach rechts. Offen ist eine Gruppe, wenn sie den
-  aktiven Bereich enthält (IMMER), beim Überfahren und nach Klick/Tipp
-  (Touch hat kein Überfahren); zugeklappt wird beim Verlassen erst nach
+  auf, der Rest rutscht nach rechts — ANIMIERT über ein Gitter mit einer
+  Spalte 0fr ↔ 1fr (`.appnav-items`; animiert auf die echte Inhaltsbreite,
+  ohne zu messen; zugeklappt `inert`, damit Tab die unsichtbaren Knöpfe nicht
+  erreicht; `prefers-reduced-motion` schaltet ab). Offen ist eine Gruppe beim
+  Überfahren und nach Klick/Tipp (Touch hat kein Überfahren) — AUCH die mit
+  dem aktiven Bereich klappt wieder ein (auf Wunsch; die erste Fassung hielt
+  sie immer offen); zugeklappt nennt ihr Kategorieknopf den offenen Bereich
+  („Vorhersage + Klima | Meteogramm"); zugeklappt wird beim Verlassen erst nach
   `CLOSE_DELAY_MS` = 450 ms — sonst klappte sie zu, sobald der Zeiger auf dem
   Weg zum nach rechts gerutschten Ziel über eine Lücke fährt. Klick daneben
   oder Escape schließt eine per Klick geöffnete Gruppe. Zwischen den Gruppen
