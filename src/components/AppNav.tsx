@@ -25,12 +25,24 @@
 // Hintergrund und Unterkante), damit die Reihe auch ohne Farbunterscheidung
 // benutzbar bleibt.
 
+import { useEffect, useRef, useState } from 'react'
 import { buildLabel, buildTitle } from '../config/build'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
 import { useAppView, type AppView } from '../state/appView'
 
 /** Farbgruppe der Reihe — siehe Kopfkommentar. */
 type NavGroup = 'forecast' | 'imagery' | 'verify' | 'air'
+
+/** Beschriftung der aufklappbaren Gruppenknöpfe (Gruppen mit mehr als einem Bereich). */
+const GROUP_LABELS: Record<NavGroup, string> = {
+  forecast: 'Vorhersage + Klima',
+  imagery: 'Analyse',
+  verify: 'Verifikation',
+  air: 'Luftqualität',
+}
+
+/** Verzögerung beim Zuklappen nach dem Verlassen mit dem Zeiger. */
+const CLOSE_DELAY_MS = 450
 
 const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
   {
@@ -118,23 +130,101 @@ export function AppNav() {
    * und Vertikalprofil teilen seine Panel-Configs (siehe `config/features.ts`).
    */
   const tabs = POINT_FORECASTS_ENABLED ? TABS : TABS.filter((t) => t.id !== 'workbench')
+
+  /**
+   * AUFKLAPPEN: die Gruppe des offenen Bereichs ist IMMER aufgeklappt, eine
+   * andere öffnet sich beim Überfahren UND per Klick (Touch hat kein
+   * Überfahren). Zugeklappt wird beim Verlassen erst nach `CLOSE_DELAY_MS` —
+   * die Reihe rutscht beim Aufklappen nach rechts, und ohne Verzögerung klappte
+   * sie zu, sobald der Zeiger den Weg zum Ziel kurz über eine Lücke nimmt.
+   */
+  const [hoverGroup, setHoverGroup] = useState<NavGroup | null>(null)
+  const [clickGroup, setClickGroup] = useState<NavGroup | null>(null)
+  const closeTimer = useRef<number | null>(null)
+  const navRef = useRef<HTMLElement>(null)
+  const openHover = (g: NavGroup) => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = null
+    setHoverGroup(g)
+  }
+  const closeHoverSoon = () => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => setHoverGroup(null), CLOSE_DELAY_MS)
+  }
+  // Per Klick geöffnet: Klick daneben oder Escape klappt wieder zu
+  useEffect(() => {
+    if (!clickGroup) return
+    const onDown = (e: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setClickGroup(null)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setClickGroup(null)
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [clickGroup])
+  useEffect(() => () => {
+    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
+  }, [])
+  // Gruppen in der Reihenfolge ihres ersten Auftretens
+  const groups: { key: NavGroup; tabs: typeof tabs }[] = []
+  for (const t of tabs) {
+    const g = groups.find((x) => x.key === t.group)
+    if (g) g.tabs.push(t)
+    else groups.push({ key: t.group, tabs: [t] })
+  }
+  const activeGroup = tabs.find((t) => t.id === view)?.group
+  const isOpen = (g: NavGroup) => g === activeGroup || g === hoverGroup || g === clickGroup
+  const tabButton = (t: (typeof tabs)[number]) => (
+    <button
+      key={t.id}
+      type="button"
+      className={`appnav-tab is-${t.group}${view === t.id ? ' is-active' : ''}`}
+      title={t.title}
+      aria-pressed={view === t.id}
+      onClick={() => {
+        setView(t.id)
+        setClickGroup(null)
+      }}
+    >
+      {t.label}
+    </button>
+  )
   return (
-    <nav className="appnav">
-      {tabs.map((t, i) => (
-        <button
-          key={t.id}
-          type="button"
-          // Erster Knopf einer neuen Farbgruppe bekommt Abstand nach links —
-          // die Gruppen lesen sich dann als Blöcke, auch ohne auf die Farbe
-          // zu achten
-          className={`appnav-tab is-${t.group}${i > 0 && tabs[i - 1].group !== t.group ? ' is-group-start' : ''}${view === t.id ? ' is-active' : ''}`}
-          title={t.title}
-          aria-pressed={view === t.id}
-          onClick={() => setView(t.id)}
-        >
-          {t.label}
-        </button>
-      ))}
+    <nav className="appnav" ref={navRef}>
+      {groups.map((g, gi) =>
+        // Eine Gruppe mit nur EINEM Bereich (Verifikation, Luftqualität) ist
+        // einfach ihr Knopf — ein Aufklappen um einen einzigen Eintrag wäre
+        // ein Klick zu viel
+        g.tabs.length === 1 ? (
+          <span key={g.key} className={`appnav-group${gi > 0 ? ' is-group-start' : ''}`}>
+            {tabButton(g.tabs[0])}
+          </span>
+        ) : (
+          <span
+            key={g.key}
+            className={`appnav-group${gi > 0 ? ' is-group-start' : ''}${isOpen(g.key) ? ' is-open' : ''}`}
+            onMouseEnter={() => openHover(g.key)}
+            onMouseLeave={closeHoverSoon}
+          >
+            <button
+              type="button"
+              className={`appnav-cat is-${g.key}${g.key === activeGroup ? ' has-active' : ''}`}
+              aria-expanded={isOpen(g.key)}
+              title={g.tabs.map((t) => t.label).join(' · ')}
+              onClick={() => setClickGroup((c) => (c === g.key ? null : g.key))}
+            >
+              {GROUP_LABELS[g.key]}
+              <span className="appnav-cat-chev" aria-hidden="true">
+                {isOpen(g.key) ? '‹' : '›'}
+              </span>
+            </button>
+            {isOpen(g.key) && g.tabs.map(tabButton)}
+          </span>
+        ),
+      )}
       {/* Impressum gehört NICHT in die Tab-Reihe: es beantwortet keine
           Wetterfrage und stünde gleichrangig neben Werkzeugen, die man
           täglich benutzt. Es muss aber aus jedem Bereich mit einem Klick

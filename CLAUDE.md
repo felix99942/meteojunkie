@@ -3990,9 +3990,19 @@ npm run preview   # gebautes dist/ servieren
   **lila** Luftqualität (`air`) — ein anderes Thema (Schadstoffe statt
   Wettergrößen), mit Modell UND Messung, deshalb abgesetzt rechts neben der
   Verifikation (auf Wunsch; #b48cf0, Kontrast nachgerechnet 4,9/5,4/5,1:1).
-  **Zwischen den Gruppen steht ein Abstand** (`.is-group-start`, 14 px statt
-  5) — auf Wunsch, statt die Fachbereiche in ein Menü zu legen: die Reihe
-  bleibt einzeln anklickbar, liest sich aber als Blöcke.
+  **Die Gruppen sind AUFKLAPPBAR** (seit 2026-10-19, auf Wunsch): je Gruppe
+  ein Kategorieknopf — „Vorhersage + Klima" (Meteogramm, Modellkarten,
+  Klima + MOS, Ensemble, Soundings, Föhn) und „Analyse" (Radar, Satellit);
+  Verifikation und Luftqualität stehen EINZELN (eine Gruppe mit nur einem
+  Bereich ist einfach ihr Knopf). Die Bereiche klappen in DERSELBEN Zeile
+  auf, der Rest rutscht nach rechts. Offen ist eine Gruppe, wenn sie den
+  aktiven Bereich enthält (IMMER), beim Überfahren und nach Klick/Tipp
+  (Touch hat kein Überfahren); zugeklappt wird beim Verlassen erst nach
+  `CLOSE_DELAY_MS` = 450 ms — sonst klappte sie zu, sobald der Zeiger auf dem
+  Weg zum nach rechts gerutschten Ziel über eine Lücke fährt. Klick daneben
+  oder Escape schließt eine per Klick geöffnete Gruppe. Zwischen den Gruppen
+  14 px Abstand (`.appnav-group.is-group-start`). Sind beide Gruppen offen,
+  bricht die Reihe auf schmalen Fenstern um.
   `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.
   **Die Farbe liegt auf JEDEM Tab, nicht nur auf dem aktiven** — sie ordnet die
   Reihe in Blöcke, und das tut sie nur, wenn man sie durchgehend sieht. Die

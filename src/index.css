@@ -1874,8 +1874,43 @@ button:focus-visible {
 
 /* --- Bereichs-Navigation ------------------------------------------------- */
 
-.appnav-tab.is-group-start {
+/* Gruppen: Kategorieknopf + (aufgeklappt) seine Bereiche in derselben Zeile */
+.appnav-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.appnav-group.is-group-start {
   margin-left: 14px;
+}
+/* Kategorieknopf: dieselbe Gruppenfarbe wie die Bereiche, aber als
+   Überschrift gesetzt — fett, mit Pfeil, und bei offener Gruppe gefüllt */
+.appnav-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--nav) 45%, transparent);
+  color: color-mix(in srgb, var(--nav) 70%, #ffffff);
+  background: color-mix(in srgb, var(--nav) 16%, var(--bg-control));
+  cursor: pointer;
+}
+.appnav-cat.is-forecast {
+  --nav: #3fbf94;
+}
+.appnav-cat.is-imagery {
+  --nav: #d59220;
+}
+.appnav-group.is-open > .appnav-cat {
+  background: color-mix(in srgb, var(--nav) 26%, var(--bg-control-hover));
+  border-color: var(--nav);
+}
+.appnav-cat-chev {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .appnav {
