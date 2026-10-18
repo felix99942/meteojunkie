@@ -68,77 +68,41 @@ const SUMMARY_VARS = [
 const WHO = WHO_GUIDELINES
 const WhoLink = () => (
   <a href={WHO_SOURCE_URL} target="_blank" rel="noreferrer">
-    WHO-Luftgüteleitlinien 2021
+    (WHO 2021)
   </a>
 )
 
 /**
- * Erläuterung je Größe hinter dem ⓘ: welcher WHO-Richtwert gilt und — das ist
- * die eigentliche Frage — ab wann ihn STUNDENwerte reißen. Bei den meisten
- * Richtwerten gar nicht: sie gelten für ein Mittel über 8 oder 24 Stunden,
- * ein einzelner Stundenwert darüber ist noch keine Überschreitung. Deshalb
- * stehen die Werte bewusst NICHT als Linien im Diagramm (auf Wunsch wieder
- * entfernt — gegen Stundenkurven gelesen täuschen sie).
+ * Erläuterung je Größe hinter dem ⓘ — auf Wunsch so kurz wie möglich: der
+ * WHO-Richtwert samt Mittelungszeitraum, denn ob ein STUNDENwert ihn reißt,
+ * hängt genau daran (meist nicht, er gilt für ein Mittel).
  */
 const INFO: Record<string, ReactNode> = {
   eaqi: (
-    <>
-      <p>
-        Der Europäische Luftqualitätsindex (EAQI) der Europäischen Umweltagentur fasst Feinstaub, NO₂, Ozon und SO₂
-        zusammen. Jeder Stoff bekommt einen Teilindex, der Gesamtindex ist der <b>höchste</b> davon — oben steht,
-        welcher Stoff ihn gerade setzt.
-      </p>
-      <p>Stufen: 0–20 gut · 20–40 ausreichend · 40–60 mäßig · 60–80 schlecht · 80–100 sehr schlecht · über 100 extrem schlecht.</p>
-    </>
+    <p>
+      Höchster Teilindex aus Feinstaub, NO₂, Ozon und SO₂ (EEA). 0–20 gut · 20–40 ausreichend · 40–60 mäßig · 60–80
+      schlecht · 80–100 sehr schlecht · über 100 extrem schlecht.
+    </p>
   ),
   pm: (
-    <>
-      <p>
-        WHO-Richtwerte: <b>PM2,5 {WHO.pm2_5.value} µg/m³</b> und <b>PM10 {WHO.pm10.value} µg/m³</b>, jeweils im{' '}
-        <b>24-Stunden-Mittel</b>.
-      </p>
-      <p>
-        Einen Stundenrichtwert gibt es für Feinstaub nicht: ein einzelner Stundenwert darüber reißt nichts.
-        Überschritten ist der Richtwert erst, wenn das Mittel über 24 Stunden darüber liegt — rechnerisch also, wenn
-        die Stundenwerte einen ganzen Tag lang im Schnitt über {WHO.pm2_5.value} bzw. {WHO.pm10.value} µg/m³ bleiben.
-        Ein kurzer Spitzenwert von 60 µg/m³ am Abend kann den Tag unter dem Richtwert lassen.
-      </p>
-      <p>Langfristig (Jahresmittel): PM2,5 5 µg/m³, PM10 15 µg/m³. Quelle: <WhoLink />.</p>
-    </>
+    <p>
+      WHO-Richtwert: PM2,5 <b>{WHO.pm2_5.value}</b>, PM10 <b>{WHO.pm10.value} µg/m³</b> im <b>24-h-Mittel</b> — ein
+      einzelner Stundenwert darüber reißt ihn nicht. <WhoLink />
+    </p>
   ),
   no2: (
-    <>
-      <p>
-        WHO-Richtwert: <b>{WHO.nitrogen_dioxide.value} µg/m³ im 24-Stunden-Mittel</b> — ein einzelner Stundenwert
-        darüber reißt ihn nicht, erst ein Tagesschnitt darüber.
-      </p>
-      <p>
-        Zusätzlich gilt ein <b>Stundenwert von 200 µg/m³</b> (aus den Leitlinien von 2005 übernommen): das ist der
-        einzige Richtwert hier, den schon eine einzige Stunde überschreiten kann. Er wird abseits stark befahrener
-        Straßen praktisch nie erreicht, und das ~10-km-Raster des Modells löst Straßenschluchten ohnehin nicht auf.
-      </p>
-      <p>Langfristig (Jahresmittel): 10 µg/m³. Quelle: <WhoLink />.</p>
-    </>
+    <p>
+      WHO-Richtwert: <b>{WHO.nitrogen_dioxide.value} µg/m³</b> im <b>24-h-Mittel</b>, als Stundenwert erst{' '}
+      <b>200 µg/m³</b>. <WhoLink />
+    </p>
   ),
   o3: (
-    <>
-      <p>
-        WHO-Richtwert: <b>{WHO.ozone.value} µg/m³ als höchstes 8-Stunden-Mittel des Tages</b>. Einen
-        Stundenrichtwert gibt es nicht — überschritten ist er, wenn acht aufeinanderfolgende Stunden im Schnitt über{' '}
-        {WHO.ozone.value} µg/m³ liegen. An Sommernachmittagen ist das die typische Lage.
-      </p>
-      <p>Für das Sommerhalbjahr gilt zusätzlich ein Saisonwert von 60 µg/m³. Quelle: <WhoLink />.</p>
-    </>
+    <p>
+      WHO-Richtwert: <b>{WHO.ozone.value} µg/m³</b> im <b>8-h-Mittel</b> — ein einzelner Stundenwert darüber reißt ihn
+      nicht. <WhoLink />
+    </p>
   ),
-  dust: (
-    <>
-      <p>
-        Mineralstaub, meist aus der Sahara. Einen eigenen WHO-Richtwert gibt es nicht: der Staub ist <b>Teil des
-        Feinstaubs</b> und zählt dort gegen die PM10- und PM2,5-Richtwerte mit. Diese Zeile zeigt, wie viel davon aus
-        der Wüste kommt.
-      </p>
-    </>
-  ),
+  dust: <p>Wüstenstaub, meist aus der Sahara. Kein eigener Richtwert — zählt beim Feinstaub mit.</p>,
 }
 
 interface RowSpec {

@@ -2923,9 +2923,9 @@ npm run preview   # gebautes dist/ servieren
   `WHO_GUIDELINES`): PM2,5 15 und PM10 45 µg/m³ im 24-h-Mittel, NO₂ 25 im
   24-h-Mittel (dazu 200 als Stundenwert, aus den Leitlinien 2005), Ozon 100 im
   8-h-Mittel. **Sie stehen NICHT als Linien im Diagramm**, sondern als
-  Erläuterung hinter einem ⓘ je Größe — mit der eigentlichen Auskunft, ab wann
-  STUNDENwerte einen Richtwert reißen (meist gar nicht: er gilt für ein
-  Mittel). Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  Erläuterung hinter einem ⓘ je Größe — auf Wunsch auf ein Minimum gekürzt:
+  Richtwert, Mittelungszeitraum und dass ein einzelner Stundenwert ihn nicht
+  reißt, ein Satz je Größe. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.
