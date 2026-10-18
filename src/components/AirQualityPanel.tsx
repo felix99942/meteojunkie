@@ -23,8 +23,13 @@ import {
   EAQI_BANDS,
   eaqiAxisTop,
   eaqiBand,
+  HOURLY_LIMITS,
+  LIMIT_COLORS,
+  limitStops,
+  meanLimits,
   rollingMean,
   WHO_GUIDELINES,
+  WHO_WARN_SHARE,
   WHO_SOURCE_URL,
 } from '../config/airQuality'
 import { useWorkbench } from '../state/workbench'
@@ -54,6 +59,12 @@ const COLOR_PM10 = '#b8a04a'
 const COLOR_NO2 = '#c0607a'
 const COLOR_O3 = '#4f97e0'
 const COLOR_DUST = '#c9a227'
+/** Mittel ohne passenden Richtwert (Staub, 8-h-Feinstaub …) bleiben grau. */
+const COLOR_MEAN_PLAIN = '#9aa0a8'
+/** PM10 gestrichelt — PM2,5 und PM10 teilen sich die Zeile UND die Ampelfarben. */
+const PM10_DASH = [7, 4]
+/** Strichart der Mittel: 24 h gepunktet, 8 h strich-punktiert. */
+const MEAN_DASH: Record<MeanWindow, number[]> = { 8: [9, 3, 2, 3], 24: [2, 3] }
 
 /** Gleitende Mittel, die je Zeile zugeschaltet werden können (Stunden). */
 const MEAN_WINDOWS = [8, 24] as const
@@ -65,6 +76,28 @@ const WhoLink = () => (
     WHO-Luftgüteleitlinien 2021
   </a>
 )
+
+/** Wie die Kurve gefärbt ist — dieselben Zahlen wie in `HOURLY_LIMITS`/`meanLimits`. */
+function AmpelNote({ vars }: { vars: { v: string; label: string }[] }) {
+  const pct = Math.round(WHO_WARN_SHARE * 100)
+  return (
+    <p>
+      <b>Farbe der Kurve:</b>{' '}
+      <span style={{ color: LIMIT_COLORS.ok }}>grün</span> ·{' '}
+      <span style={{ color: LIMIT_COLORS.warn }}>gelb</span> ·{' '}
+      <span style={{ color: LIMIT_COLORS.bad }}>rot</span>. Stundenwerte nach den Stufen des Luftqualitätsindex — gelb
+      ab „mäßig", rot ab „schlecht":{' '}
+      {vars.map((x, i) => (
+        <span key={x.v}>
+          {i > 0 && ' · '}
+          {x.label} gelb ab {HOURLY_LIMITS[x.v].warn}, rot ab {HOURLY_LIMITS[x.v].bad} µg/m³
+        </span>
+      ))}
+      . Zugeschaltete Mittel gegen den WHO-Richtwert desselben Zeitraums — gelb ab {pct} % davon, rot darüber; ein
+      Mittel ohne passenden Richtwert bleibt grau.
+    </p>
+  )
+}
 
 /**
  * Erläuterung je Größe hinter dem ⓘ: welcher WHO-Richtwert gilt und — das ist
@@ -83,6 +116,10 @@ const INFO: Record<string, ReactNode> = {
         welcher Stoff ihn gerade setzt.
       </p>
       <p>Stufen: 0–20 gut · 20–40 ausreichend · 40–60 mäßig · 60–80 schlecht · 80–100 sehr schlecht · über 100 extrem schlecht.</p>
+      <p>
+        Gerechnet wird je Stunde nach der neuen Einteilung der EEA, die sich an den WHO-Leitlinien orientiert: die
+        Grenze zu „mäßig" liegt bei Feinstaub und NO₂ genau auf dem WHO-Tagesrichtwert.
+      </p>
     </>
   ),
   pm: (
@@ -97,6 +134,7 @@ const INFO: Record<string, ReactNode> = {
         die Stundenwerte einen ganzen Tag lang im Schnitt über {WHO.pm2_5.value} bzw. {WHO.pm10.value} µg/m³ bleiben.
         Ein kurzer Spitzenwert von 60 µg/m³ am Abend kann den Tag unter dem Richtwert lassen.
       </p>
+      <AmpelNote vars={[{ v: 'pm2_5', label: 'PM2,5' }, { v: 'pm10', label: 'PM10' }]} />
       <p>Langfristig (Jahresmittel): PM2,5 5 µg/m³, PM10 15 µg/m³. Quelle: <WhoLink />.</p>
     </>
   ),
@@ -111,6 +149,7 @@ const INFO: Record<string, ReactNode> = {
         einzige Richtwert hier, den schon eine einzige Stunde überschreiten kann. Er wird abseits stark befahrener
         Straßen praktisch nie erreicht, und das ~10-km-Raster des Modells löst Straßenschluchten ohnehin nicht auf.
       </p>
+      <AmpelNote vars={[{ v: 'nitrogen_dioxide', label: 'NO₂' }]} />
       <p>Langfristig (Jahresmittel): 10 µg/m³. Quelle: <WhoLink />.</p>
     </>
   ),
@@ -121,6 +160,7 @@ const INFO: Record<string, ReactNode> = {
         Stundenrichtwert gibt es nicht — überschritten ist er, wenn acht aufeinanderfolgende Stunden im Schnitt über{' '}
         {WHO.ozone.value} µg/m³ liegen. An Sommernachmittagen ist das die typische Lage.
       </p>
+      <AmpelNote vars={[{ v: 'ozone', label: 'O₃' }]} />
       <p>Für das Sommerhalbjahr gilt zusätzlich ein Saisonwert von 60 µg/m³. Quelle: <WhoLink />.</p>
     </>
   ),
@@ -193,24 +233,46 @@ export function AirQualityPanel() {
      * Mittel — gepunktet in derselben Farbe, über die VOLLE Reihe gerechnet,
      * damit die ersten Stunden von heute ihr Fenster haben.
      */
-    const curvesFor = (row: string, list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] => {
-      const out: Curve[] = list.map((c) => ({
-        label: c.label,
-        color: c.color,
-        type: 'line',
-        values: cut(c.v),
-        width: c.width ?? 1.6,
-        ...(c.fill ? { fill: c.fill } : {}),
-      }))
+    /**
+     * Die Stundenkurven einer Zeile plus, falls zugeschaltet, ihre gleitenden
+     * Mittel — über die VOLLE Reihe gerechnet, damit die ersten Stunden von
+     * heute ihr Fenster haben.
+     *
+     * FARBE = AMPEL nach dem Wert: Stundenwerte gegen die Index-Stufen
+     * (`HOURLY_LIMITS`), Mittel gegen den WHO-Richtwert DESSELBEN Zeitraums
+     * (`meanLimits`). Wo es keine Grenze gibt (Staub, ein 8-h-Mittel des
+     * Feinstaubs), bleibt die Kurve in ihrer eigenen, neutralen Farbe. Zwei
+     * Kurven derselben Zeile unterscheidet deshalb die STRICHART, nicht die
+     * Farbe — die gehört der Ampel.
+     */
+    const curvesFor = (
+      row: string,
+      list: { v: string; label: string; color: string; width?: number; dash?: number[]; fill?: number }[],
+    ): Curve[] => {
+      const out: Curve[] = list.map((c) => {
+        const lim = HOURLY_LIMITS[c.v]
+        return {
+          label: c.label,
+          color: c.color,
+          type: 'line',
+          values: cut(c.v),
+          width: c.width ?? 1.8,
+          ...(c.dash ? { dash: c.dash } : {}),
+          ...(c.fill ? { fill: c.fill } : {}),
+          ...(lim ? { colorStops: limitStops(lim) } : {}),
+        }
+      })
       for (const w of means[row] ?? []) {
         for (const c of list) {
+          const lim = meanLimits(c.v, w)
           out.push({
             label: `${c.label} ${w}-h-Mittel`,
-            color: c.color,
+            color: lim ? c.color : COLOR_MEAN_PLAIN,
             type: 'line',
             values: rollingMean(data.values[c.v] ?? [], w).slice(s0, n),
-            width: w === 24 ? 1.6 : 1.3,
-            dash: w === 24 ? [2, 3] : [6, 3],
+            width: 2.2,
+            dash: MEAN_DASH[w],
+            ...(lim ? { colorStops: limitStops(lim) } : {}),
           })
         }
       }
@@ -256,8 +318,8 @@ export function AirQualityPanel() {
           // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
           minTop: 5,
           curves: curvesFor('pm', [
-            { v: 'pm2_5', label: 'PM2,5', color: COLOR_PM25, width: 1.8 },
-            { v: 'pm10', label: 'PM10', color: COLOR_PM10, width: 1.4 },
+            { v: 'pm2_5', label: 'PM2,5', color: COLOR_PM25, width: 2 },
+            { v: 'pm10', label: 'PM10', color: COLOR_PM10, width: 1.6, dash: PM10_DASH },
           ]),
         },
       },
@@ -416,10 +478,30 @@ export function AirQualityPanel() {
                   )}
                 </span>
                 <span className="atfc-legend">
+                  {/* Ampel-Legende einmal je Zeile mit gefärbter Kurve, dazu
+                      die Kurven nach STRICHART — die Farbe trägt die Ampel */}
+                  {c.curves.some((x) => x.colorStops) && (
+                    <span className="air-ampel">
+                      <i style={{ background: LIMIT_COLORS.ok }} />
+                      <i style={{ background: LIMIT_COLORS.warn }} />
+                      <i style={{ background: LIMIT_COLORS.bad }} />
+                    </span>
+                  )}
                   {c.curves.length > 1 &&
-                    c.curves.map((s) => (
-                      <span key={s.label}>
-                        <i style={{ background: s.color }} /> {s.label}
+                    c.curves.map((x) => (
+                      <span key={x.label} className="air-legend-item">
+                        <svg width="26" height="8" aria-hidden="true">
+                          <line
+                            x1="1"
+                            y1="4"
+                            x2="25"
+                            y2="4"
+                            stroke={x.colorStops ? 'var(--ink)' : x.color}
+                            strokeWidth={2}
+                            strokeDasharray={x.dash?.join(' ')}
+                          />
+                        </svg>
+                        {x.label}
                       </span>
                     ))}
                 </span>

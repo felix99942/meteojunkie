@@ -198,3 +198,61 @@ export function rollingMean(values: (number | null)[], window: number): (number 
   }
   return out
 }
+
+/**
+ * Ampelfarben der Kurven: grün = unbedenklich, gelb = erhöht, rot = über der
+ * Grenze. Bewusst nur drei Stufen — die Kurve soll auf einen Blick sagen, ob
+ * etwas los ist; die Feinheit steht im Index darüber.
+ */
+export const LIMIT_COLORS = { ok: '#3fbf6f', warn: '#e8c547', bad: '#e5534b' } as const
+
+export interface Limits {
+  /** Ab hier gelb. */
+  warn: number
+  /** Ab hier rot. */
+  bad: number
+}
+
+/**
+ * Grenzen für STUNDENwerte: die Stufen des Europäischen Luftqualitätsindex,
+ * gelb ab „mäßig", rot ab „schlecht". GEMESSEN (2026-10-18, Wien, 96 Stunden):
+ * Open-Meteo rechnet den Teilindex nach der NEUEN Einteilung der EEA (an die
+ * WHO-Leitlinien angelehnt) und auf den STUNDENwert — linear zwischen den
+ * Grenzen nachgerechnet bleibt höchstens 0,5 Indexpunkte Abweichung (=
+ * Rundung), mit der älteren Einteilung (PM2,5 10/20/25, NO₂ 40/90/120) bis
+ * 32 Punkte. Bestätigt sind die Grenzen bis in die Stufe „mäßig" (PM2,5 bis
+ * 39, NO₂ bis 62, Ozon bis 76 µg/m³ gemessen); die Grenze zu „schlecht"
+ * folgt derselben Tabelle. Bemerkenswert: die Grenze zu „mäßig" IST bei
+ * PM2,5, PM10 und NO₂ der WHO-Tageswert (15/45/25).
+ */
+export const HOURLY_LIMITS: Record<string, Limits> = {
+  pm2_5: { warn: 15, bad: 50 },
+  pm10: { warn: 45, bad: 120 },
+  nitrogen_dioxide: { warn: 25, bad: 60 },
+  ozone: { warn: 100, bad: 120 },
+}
+
+/** Ab diesem Anteil am WHO-Richtwert wird ein Mittel gelb („nähert sich"). */
+export const WHO_WARN_SHARE = 0.75
+
+/**
+ * Grenzen für ein gleitendes MITTEL: der WHO-Richtwert, aber NUR, wenn er für
+ * genau diesen Zeitraum definiert ist (PM und NO₂ 24 h, Ozon 8 h). Ein
+ * 8-h-Mittel des Feinstaubs gegen einen 24-h-Richtwert zu färben wäre
+ * dieselbe Verwechslung, wegen der die Richtwertlinien wieder raus sind —
+ * dort bleibt die Kurve ungefärbt (`null`).
+ */
+export function meanLimits(variable: string, hours: number): Limits | null {
+  const g = (WHO_GUIDELINES as Record<string, { value: number; hours: number }>)[variable]
+  if (!g || g.hours !== hours) return null
+  return { warn: g.value * WHO_WARN_SHARE, bad: g.value }
+}
+
+/** Farbstufen für `Curve.colorStops` (aufsteigend, Farbe gilt ab `from`). */
+export function limitStops(l: Limits): { from: number; color: string }[] {
+  return [
+    { from: -Infinity, color: LIMIT_COLORS.ok },
+    { from: l.warn, color: LIMIT_COLORS.warn },
+    { from: l.bad, color: LIMIT_COLORS.bad },
+  ]
+}

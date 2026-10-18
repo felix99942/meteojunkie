@@ -63,6 +63,15 @@ export interface Curve {
    * ist der Boden eine Kurve.
    */
   fillTo?: number
+  /**
+   * Linienfarbe nach dem WERT statt einer festen Farbe: aufsteigende Stufen,
+   * `color` gilt ab `from` (die erste Stufe mit `from: -Infinity`). Gezeichnet
+   * als senkrechter Verlauf mit harten Übergängen auf der Wertachse — die
+   * Kurve wechselt die Farbe genau dort, wo sie die Grenze kreuzt. Auch die
+   * Werteanzeige am Zeiger nimmt die Farbe des Werts. `color` bleibt die
+   * Ersatzfarbe (Legende).
+   */
+  colorStops?: { from: number; color: string }[]
 }
 
 /**

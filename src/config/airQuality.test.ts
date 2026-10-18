@@ -11,6 +11,10 @@ import {
   parseAirQuality,
   rollingMean,
   WHO_GUIDELINES,
+  HOURLY_LIMITS,
+  LIMIT_COLORS,
+  limitStops,
+  meanLimits,
 } from './airQuality'
 
 describe('eaqiBand', () => {
@@ -110,5 +114,30 @@ describe('WHO_GUIDELINES', () => {
     expect(WHO_GUIDELINES.pm10).toEqual({ value: 45, hours: 24 })
     expect(WHO_GUIDELINES.nitrogen_dioxide).toEqual({ value: 25, hours: 24 })
     expect(WHO_GUIDELINES.ozone).toEqual({ value: 100, hours: 8 })
+  })
+})
+
+describe('Ampelgrenzen', () => {
+  it('Stundenwerte: gelb ab „mäßig", rot ab „schlecht" (neue EEA-Einteilung, gemessen)', () => {
+    expect(HOURLY_LIMITS.pm2_5).toEqual({ warn: 15, bad: 50 })
+    expect(HOURLY_LIMITS.nitrogen_dioxide).toEqual({ warn: 25, bad: 60 })
+    expect(HOURLY_LIMITS.ozone).toEqual({ warn: 100, bad: 120 })
+  })
+  it('die Grenze zu „mäßig" ist bei PM und NO₂ der WHO-Tagesrichtwert', () => {
+    expect(HOURLY_LIMITS.pm2_5.warn).toBe(WHO_GUIDELINES.pm2_5.value)
+    expect(HOURLY_LIMITS.pm10.warn).toBe(WHO_GUIDELINES.pm10.value)
+    expect(HOURLY_LIMITS.nitrogen_dioxide.warn).toBe(WHO_GUIDELINES.nitrogen_dioxide.value)
+  })
+  it('Mittel nur gegen den WHO-Wert DESSELBEN Zeitraums', () => {
+    expect(meanLimits('pm2_5', 24)).toEqual({ warn: 11.25, bad: 15 })
+    expect(meanLimits('ozone', 8)).toEqual({ warn: 75, bad: 100 })
+    expect(meanLimits('pm2_5', 8)).toBeNull()
+    expect(meanLimits('ozone', 24)).toBeNull()
+    expect(meanLimits('dust', 24)).toBeNull()
+  })
+  it('Farbstufen steigen an und beginnen offen', () => {
+    const st = limitStops({ warn: 10, bad: 20 })
+    expect(st.map((x) => x.from)).toEqual([-Infinity, 10, 20])
+    expect(st.map((x) => x.color)).toEqual([LIMIT_COLORS.ok, LIMIT_COLORS.warn, LIMIT_COLORS.bad])
   })
 })
