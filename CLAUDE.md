@@ -2997,7 +2997,9 @@ npm run preview   # gebautes dist/ servieren
   Abruf einen Tag Vorlauf (`past_days=1`), die Diagramme beginnen trotzdem
   heute 00 UTC.
   Der Index der laufenden Stunde steht GROSS links oben über dem
-  ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px,
+  ersten Diagramm (`.air-now`), nicht in der Leiste. Ein Hinweis „farbig:
+  Modell / weiß: Messung" neben den Kästen ist auf Wunsch wieder raus — er
+  verwirrte bei den Kästen, und die Diagramme sagen es selbst. Überschriften 16 px,
   der Ort steht groß im Jetzt-Kasten, die Uhrzeit des Zeigers als Kästchen
   NUR in der Indexzeile (in den flachen Zeilen überdeckte sie die Werte),
   Werteanzeige am Zeiger 16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
@@ -3978,12 +3980,17 @@ npm run preview   # gebautes dist/ servieren
   **Die Reihe ist GRUPPIERT, und die Farbe trägt die Gruppe** — bei acht
   Bereichen ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu
   liest:
-  **mint** Meteogramm (`classic`) · Klima + MOS (`at-klima`) · Ensemble ·
-  Soundings (`profile`) · Föhn — Zahlenwerke aus Modell- und Messreihen;
+  **mint** Meteogramm (`classic`) · Modellkarten (`globe`) · Klima + MOS
+  (`at-klima`) · Ensemble · Soundings (`profile`) · Föhn — Zahlenwerke aus
+  Modell- und Messreihen;
   **ocker** Radar · Satellit — fertige Karten fremder Dienste, Zeitschleife
   statt Zeitraster, kein Open-Meteo-Budget;
   **rot** Verifikation — der einzige Bereich, der ZURÜCKschaut und die übrigen
-  bewertet. `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.
+  bewertet;
+  **lila** Luftqualität (`air`) — ein anderes Thema (Schadstoffe statt
+  Wettergrößen), mit Modell UND Messung, deshalb abgesetzt rechts neben der
+  Verifikation (auf Wunsch; #b48cf0, Kontrast nachgerechnet 4,9/5,4/5,1:1).
+  `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.
   **Die Farbe liegt auf JEDEM Tab, nicht nur auf dem aktiven** — sie ordnet die
   Reihe in Blöcke, und das tut sie nur, wenn man sie durchgehend sieht. Die
   Zustände unterscheiden sich deshalb über die INTENSITÄT: ruhig gefärbt →
