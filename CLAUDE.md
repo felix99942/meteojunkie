@@ -2931,8 +2931,8 @@ npm run preview   # gebautes dist/ servieren
   `rollingMean` nachlaufend, Wert nur bei ≥ 3/4 belegtem Fenster), Vorgabe
   aus. Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab
   heute 00 UTC. Der Index der laufenden Stunde steht GROSS links oben über dem
-  ersten Diagramm (`.air-now`), nicht in der Leiste.
-  16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
+  ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px,
+  Werteanzeige am Zeiger 16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
   dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der
   Bereich angefangen; `GlobePanel.tsx`, Registry/Kerne `config/globe.ts` mit
