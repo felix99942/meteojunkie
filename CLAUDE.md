@@ -2930,20 +2930,7 @@ npm run preview   # gebautes dist/ servieren
   Zeile **Mittelwerte zuschalten** (aufklappbar, 8 h und 24 h gleitend,
   `rollingMean` nachlaufend, Wert nur bei ≥ 3/4 belegtem Fenster), Vorgabe
   aus. Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab
-  heute 00 UTC. **Die Kurven sind AMPELFARBEN nach dem Wert** (`Curve.colorStops`,
-  senkrechter Verlauf mit harten Kanten in `ChartStack`, auch die Werteanzeige
-  am Zeiger nimmt die Farbe des Werts): Stundenwerte gegen die Stufen des
-  Index (`HOURLY_LIMITS`, gelb ab „mäßig", rot ab „schlecht"), zugeschaltete
-  Mittel gegen den WHO-Richtwert DESSELBEN Zeitraums (`meanLimits`, gelb ab
-  75 %, rot darüber; ohne passenden Richtwert grau). **Die Indexgrenzen sind
-  GEMESSEN, nicht aus der Doku** (2026-10-18, Wien, 96 h): Open-Meteo rechnet
-  die Teilindizes nach der NEUEN EEA-Einteilung (PM2,5 5/15/50, PM10 15/45/120,
-  NO₂ 10/25/60, O₃ 60/100/120) auf den STUNDENwert — höchstens 0,5 Punkte
-  Abweichung, mit der älteren Tabelle (PM2,5 10/20/25, NO₂ 40/90/120) bis 32.
-  Die Grenze zu „mäßig" ist dort der WHO-Tageswert. Weil die Farbe der Ampel
-  gehört, unterscheidet die STRICHART zwei Kurven derselben Zeile (PM10
-  gestrichelt, 24-h-Mittel gepunktet, 8-h-Mittel strichpunktiert).
-  Der Index der laufenden Stunde steht GROSS links oben über dem
+  heute 00 UTC. Der Index der laufenden Stunde steht GROSS links oben über dem
   ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px,
   der Ort steht groß im Jetzt-Kasten, die Uhrzeit des Zeigers als Kästchen
   NUR in der Indexzeile (in den flachen Zeilen überdeckte sie die Werte),

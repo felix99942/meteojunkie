@@ -331,43 +331,6 @@ function yZonePlugin(zones: NonNullable<ChartDef['yZones']>): uPlot.Plugin {
   }
 }
 
-/** Farbe einer Kurve beim Wert `v` — die Stufe aus `colorStops`, sonst die feste Farbe. */
-function curveColorAt(c: Curve, v: number): string {
-  if (!c.colorStops) return c.color
-  let col = c.colorStops[0]?.color ?? c.color
-  for (const st of c.colorStops) if (v >= st.from) col = st.color
-  return col
-}
-
-/**
- * Senkrechter Verlauf mit harten Kanten an den Stufengrenzen (`colorStops`),
- * in Gerätepixeln der aktuellen Skala — uPlot ruft die Funktion bei jedem
- * Zeichnen neu auf, der Verlauf folgt also Zoom und Größenänderung.
- */
-function stopsGradient(u: uPlot, scaleKey: string, stops: NonNullable<Curve['colorStops']>): CanvasGradient | string {
-  const sc = u.scales[scaleKey]
-  const min = sc?.min
-  const max = sc?.max
-  if (min == null || max == null || !(max > min)) return stops[0].color
-  const yMin = u.valToPos(min, scaleKey, true)
-  const yMax = u.valToPos(max, scaleKey, true)
-  const g = u.ctx.createLinearGradient(0, yMin, 0, yMax)
-  // Farbe am unteren Rand: die letzte Stufe, deren Grenze darunter liegt
-  let prev = stops[0].color
-  for (const st of stops) if (st.from <= min) prev = st.color
-  g.addColorStop(0, prev)
-  for (const st of stops) {
-    if (st.from <= min) continue
-    if (st.from >= max) break
-    const f = (st.from - min) / (max - min)
-    g.addColorStop(f, prev)
-    g.addColorStop(f, st.color)
-    prev = st.color
-  }
-  g.addColorStop(1, prev)
-  return g
-}
-
 function refLinePlugin(lines: NonNullable<ChartDef['refLines']>): uPlot.Plugin {
   return {
     hooks: {
@@ -787,7 +750,7 @@ function readoutPlugin(
           if (!Number.isFinite(y)) continue
           const num = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1).replace('.', ',')
           const value = unit ? `${num} ${unit}` : num
-          entries.push({ y, text: chart.readoutLabels ? `${c.label} ${value}` : value, color: curveColorAt(c, v) })
+          entries.push({ y, text: chart.readoutLabels ? `${c.label} ${value}` : value, color: c.color })
         }
         if (chart.octaRows) {
           const rows = chart.octaRows.rows
@@ -866,7 +829,7 @@ function readoutPlugin(
           if (!Number.isFinite(y)) continue
           ctx.beginPath()
           ctx.arc(x, y, 3.4, 0, Math.PI * 2)
-          ctx.fillStyle = curveColorAt(c, v)
+          ctx.fillStyle = c.color
           ctx.fill()
           ctx.strokeStyle = BG_PANEL
           ctx.lineWidth = 1.2
@@ -1240,9 +1203,7 @@ export function ChartRow({
               {},
               ...chart.curves.map((s) => ({
                 label: s.label,
-                stroke: s.colorStops
-                  ? (u: uPlot) => stopsGradient(u, s.rightAxis ? RIGHT_SCALE : 'y', s.colorStops!)
-                  : s.color,
+                stroke: s.color,
                 width: s.width ?? 1.5,
                 points: { show: false },
                 ...(s.rightAxis ? { scale: RIGHT_SCALE } : {}),

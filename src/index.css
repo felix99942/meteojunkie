@@ -4740,20 +4740,3 @@ button:focus-visible {
   gap: 6px;
   width: max-content;
 }
-
-/* Luftqualität: Ampel-Legende und Kurven nach Strichart */
-.air-ampel {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-}
-.air-ampel i {
-  width: 12px !important;
-  height: 4px !important;
-  border-radius: 2px;
-}
-.air-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
