@@ -2955,8 +2955,9 @@ npm run preview   # gebautes dist/ servieren
   (nur einzelne Länder), OpenAQ nur mit Key; die EEA-JAHRESdateien
   (`/ParquetFile/urls`) liegen ohne CORS. Erste Befunde: Salzburg NO₂ abends
   gemessen ~29 gegen 8 µg/m³ im Modell, Sonnblick Ozon ~90 gegen 65.
-  **Gemessene 8-/24-h-Mittel als eigene Kästen** neben den Modellmitteln
-  (Kopfzeile weiß, „bis HH:MM UTC"): sie enden an der JÜNGSTEN gemessenen
+  **Gemessene 8-/24-h-Mittel ERSETZEN die Modellmittel** (auf Wunsch, je
+  Zeitraum: gibt es das gemessene Mittel, steht nur dieses da, sonst das
+  Modell; Kopfzeile weiß, „bis HH:MM UTC"): sie enden an der JÜNGSTEN gemessenen
   Stunde, nicht an „jetzt" — die Messung hinkt 2–3 h hinterher
   (`measuredMean`, ≥ 3/4 der Stunden belegt). Dafür wird ab GESTERN
   abgerufen (~280 statt ~140 KB). Der Jetzt-Kasten ist zweizeilig und die

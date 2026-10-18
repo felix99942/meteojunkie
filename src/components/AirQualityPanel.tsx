@@ -509,7 +509,10 @@ export function AirQualityPanel() {
       )}
       {/* 8- und 24-h-Mittel daneben: NO₂ und Ozon richten sich nach Mitteln
           (WHO 24 h bzw. 8 h), der Stundenwert allein sagt dort zu wenig */}
-      {summary.map((b) => (
+      {/* Je Zeitraum ENTWEDER die Messung ODER das Modell (auf Wunsch): wo
+          eine Messstelle das Mittel liefert, gilt die Messung — das
+          Modellmittel daneben wäre die schwächere Auskunft zur selben Frage */}
+      {summary.filter((b) => !measuredSummary.some((m) => m.w === b.w)).map((b) => (
         <MeanBox
           key={b.w}
           head={`Modell ${b.w}-h-Mittel`}
@@ -539,7 +542,13 @@ export function AirQualityPanel() {
         >
           farbig: Modell (CAMS)
           <br />
-          {Object.values(measured).some(Boolean) ? 'weiß: Messung' : 'keine Messstelle nahe'}
+          {Object.values(measured).some(Boolean)
+            ? 'weiß: Messung'
+            : nearStation && measuredQ.isPending
+              ? 'Messung lädt …'
+              : nearStation && measuredQ.isError
+                ? 'Messung nicht erreichbar'
+                : 'keine Messstelle nahe'}
         </span>
       )}
       </div>
