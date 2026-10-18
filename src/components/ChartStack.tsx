@@ -284,6 +284,53 @@ function veilPlugin(veil: NonNullable<ChartDef['veil']>): uPlot.Plugin {
 }
 
 /** Waagrechte Bezugslinie (0 °C) — über dem Gitter, unter den Kurven. */
+/**
+ * Wertebereiche als Flächen hinter den Kurven, mit großer Beschriftung links
+ * im Streifen (`ChartDef.yZones`). Im `drawClear`-Hook, also UNTER Gitter und
+ * Kurven — die Fläche ordnet ein, sie soll nichts verdecken. Blass gefüllt,
+ * weil die Kurve darüber die eigentliche Aussage ist; die Schrift trägt die
+ * Farbe der Stufe etwas kräftiger.
+ */
+const ZONE_FILL_ALPHA = 0.13
+const ZONE_TEXT_ALPHA = 0.55
+const ZONE_FONT_PX = 26
+
+function hexAlpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
+
+function yZonePlugin(zones: NonNullable<ChartDef['yZones']>): uPlot.Plugin {
+  return {
+    hooks: {
+      drawClear: (u) => {
+        const ctx = u.ctx
+        const top = u.bbox.top
+        const bottom = u.bbox.top + u.bbox.height
+        ctx.save()
+        ctx.setLineDash([])
+        for (const z of zones) {
+          const yLo = u.valToPos(z.from, 'y', true)
+          const yHi = Number.isFinite(z.to) ? u.valToPos(z.to, 'y', true) : top
+          const y0 = Math.max(top, Math.min(yLo, yHi))
+          const y1 = Math.min(bottom, Math.max(yLo, yHi))
+          if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 - y0 < 1) continue
+          ctx.fillStyle = hexAlpha(z.color, ZONE_FILL_ALPHA)
+          ctx.fillRect(u.bbox.left, y0, u.bbox.width, y1 - y0)
+          const px = Math.min(ZONE_FONT_PX, (y1 - y0) * 0.8)
+          if (px < 10) continue
+          ctx.font = `700 ${Math.round(px)}px system-ui, sans-serif`
+          ctx.textBaseline = 'middle'
+          ctx.textAlign = 'left'
+          ctx.fillStyle = hexAlpha(z.color, ZONE_TEXT_ALPHA)
+          ctx.fillText(z.label, u.bbox.left + 10, (y0 + y1) / 2)
+        }
+        ctx.restore()
+      },
+    },
+  }
+}
+
 function refLinePlugin(lines: NonNullable<ChartDef['refLines']>): uPlot.Plugin {
   return {
     hooks: {
@@ -1053,6 +1100,7 @@ export function ChartRow({
       },
       plugins: [
         ...(chart.night ? [nightPlugin(chart.night)] : []),
+        ...(chart.yZones ? [yZonePlugin(chart.yZones)] : []),
         ...(chart.refLines ? [refLinePlugin(chart.refLines)] : []),
         // Nach den Bezugslinien, damit die Fläche über ihnen liegt (beide im
         // drawAxes-Hook — die Reihenfolge hier ist die Zeichenreihenfolge).

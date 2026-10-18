@@ -258,6 +258,13 @@ export interface ChartDef {
   /** Relative Zeilenhöhe im Stapel (CSS `flex-grow`), Standard 1. */
   flex?: number
   /**
+   * Waagrechte Wertebereiche als FLÄCHEN hinter den Kurven, groß beschriftet
+   * — für Größen mit einer festen Einteilung (Stufen des Luftqualitätsindex).
+   * `to` darf `Infinity` sein (offene oberste Stufe). Gezeichnet wird nur der
+   * sichtbare Teil; die Beschriftung nur, wenn sie in den Streifen passt.
+   */
+  yZones?: { from: number; to: number; color: string; label: string }[]
+  /**
    * Schriftgröße der Werteanzeige am Zeiger in px (Standard 12) — größer in
    * Bereichen mit wenigen, breiten Zeilen wie der Luftqualität.
    */

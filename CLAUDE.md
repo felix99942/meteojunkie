@@ -2915,7 +2915,10 @@ npm run preview   # gebautes dist/ servieren
   Index endet auf der nächsten Stufengrenze über dem Höchstwert
   (`eaqiAxisTop` — unter 40 bis 40, reißt ein Wert die 60, bis 80), die
   Konzentrationen am Datenmaximum mit nur kleinen Böden (5–10 µg/m³) gegen
-  das Aufblasen von Hauchwerten. Überschriften 16 px, Werteanzeige am Zeiger
+  das Aufblasen von Hauchwerten. Die Stufen stehen als FLÄCHEN in ihrer
+  EEA-Farbe hinter der Kurve, groß beschriftet („ausreichend", „mäßig" …;
+  `ChartDef.yZones`, gezeichnet im `drawClear`-Hook unter Gitter und Kurve,
+  Beschriftung nur wo der Streifen hoch genug ist). Überschriften 16 px, Werteanzeige am Zeiger
   16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
   dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der

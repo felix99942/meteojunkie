@@ -72,19 +72,22 @@ export function AirQualityPanel() {
       {
         title: 'Europäischer Luftqualitätsindex',
         unit: 'EAQI',
-        flex: 1.2,
+        // Höher als die übrigen Zeilen: die Stufen stehen als beschriftete
+        // Flächen darin, und die Schrift braucht Streifenhöhe
+        flex: 1.7,
         zeroBased: true,
         // Die Achse endet auf der nächsten Stufengrenze über dem Höchstwert —
         // eng gezoomt, solange der Index niedrig bleibt, und sofort weiter,
         // sobald ein einzelner Wert in die nächste Stufe kommt
         minTop: eaqiAxisTop(cut('european_aqi')),
         ySpace: 18,
-        // Die Stufengrenzen in den Farben der Stufe darüber — so liest man
+        // Jede Stufe als Fläche in ihrer Farbe, groß beschriftet — man liest
         // die Kurve gegen die Einteilung, ohne eine Legende zu suchen
-        refLines: EAQI_BANDS.slice(0, 5).map((b, i) => ({
-          value: b.upTo,
-          color: EAQI_BANDS[i + 1].color,
-          dash: [3, 4],
+        yZones: EAQI_BANDS.map((b, i) => ({
+          from: i === 0 ? 0 : EAQI_BANDS[i - 1].upTo,
+          to: b.upTo,
+          color: b.color,
+          label: b.label,
         })),
         note: EAQI_BANDS.map((b, i) =>
           Number.isFinite(b.upTo)
