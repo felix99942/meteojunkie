@@ -34,6 +34,7 @@ import {
   MEASURED_MAX_KM,
   MEASURED_POLLUTANTS,
   measuredFor,
+  measuredMean,
   stationKind,
   type MeasuredSeries,
 } from '../config/airMeasured'
@@ -160,6 +161,50 @@ function InfoPop({ children }: { children: ReactNode }) {
   )
 }
 
+const endFmt = new Intl.DateTimeFormat('de-DE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+/** Kasten mit NO₂ und Ozon als Mittel — Modell oder Messung (weiße Kopfzeile). */
+function MeanBox({
+  head,
+  sub,
+  items,
+  color,
+  title,
+  measured = false,
+}: {
+  head: string
+  sub?: string
+  items: { v: string; label: string; value: number | null; band: { label: string; color: string } | null }[]
+  color?: string
+  title: string
+  measured?: boolean
+}) {
+  return (
+    <div className={`air-mean${measured ? ' is-measured' : ''}`} style={color ? { borderColor: color } : undefined} title={title}>
+      <span className="air-mean-head">
+        {head}
+        {sub && <span className="air-mean-sub">{sub}</span>}
+      </span>
+      {items.map((it) => (
+        <span key={it.v} className="air-mean-item">
+          <span className="air-mean-name">{it.label}</span>
+          {it.value != null && it.band ? (
+            <>
+              <b style={{ color: it.band.color }}>{Math.round(it.value)}</b>
+              <span className="air-mean-unit">µg/m³</span>
+              <span className="air-mean-band" style={{ color: it.band.color }}>
+                {it.band.label}
+              </span>
+            </>
+          ) : (
+            <span className="label-muted">—</span>
+          )}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 interface RowSpec {
   id: string
   info: string
@@ -177,7 +222,9 @@ export function AirQualityPanel() {
   const nearStation =
     location !== null &&
     (stationsQ.data ?? []).some((st) => distanceKm(location.lat, location.lon, st.lat, st.lon) <= MEASURED_MAX_KM)
-  const measuredDay = new Date().toISOString().slice(0, 10)
+  // Ab GESTERN: das gemessene 24-h-Mittel braucht die Stunden vor Mitternacht
+  // (~280 statt ~140 KB, weiterhin ein Abruf)
+  const measuredDay = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
   const measuredQ = useMeasuredAt(measuredDay, nearStation)
   /** Messreihe je Open-Meteo-Variable (nächste Hintergrundstation ≤ 15 km). */
   const measured = useMemo(() => {
@@ -378,6 +425,27 @@ export function AirQualityPanel() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey, nowIdx])
+  /**
+   * Dieselben Mittel aus der MESSUNG (nur Österreich, nur mit Messstelle in
+   * der Nähe) — endend an der jüngsten gemessenen Stunde, die steht im Kasten.
+   */
+  const measuredSummary = useMemo(() => {
+    return SUMMARY_WINDOWS.map((w) => {
+      let end: number | null = null
+      const stations = new Set<string>()
+      const items = SUMMARY_VARS.map(({ v, label }) => {
+        const m = measured[v]
+        const r = m ? measuredMean(m.values, w) : null
+        if (m && r) {
+          stations.add(m.station.name)
+          end = end == null ? r.end : Math.max(end, r.end)
+        }
+        return { v, label, value: r?.value ?? null, band: r ? concBand(v, r.value) : null }
+      })
+      const worst = items.reduce<number>((acc, it) => Math.max(acc, it.band ? BANDS_ORDER.indexOf(it.band) : -1), -1)
+      return { w, items, end, stations: [...stations], color: worst >= 0 ? BANDS_ORDER[worst].color : undefined }
+    }).filter((b) => b.items.some((it) => it.value != null))
+  }, [measured])
   const placeName = location
     ? (location.label ?? `${location.lat.toFixed(2)}° N, ${location.lon.toFixed(2)}° O`)
     : ''
@@ -428,11 +496,13 @@ export function AirQualityPanel() {
         >
           {/* Der Ort steht mit dabei: der Kasten ist die Antwort, und ohne
               Ort weiß man bei einem Blick nicht, wofür sie gilt */}
-          <span className="air-now-place">{placeName}</span>
-          <span className="air-now-label">Jetzt</span>
-          <b style={{ color: band.color }}>{Math.round(nowEaqi!)}</b>
-          <span className="air-now-band" style={{ color: band.color }}>
-            {band.label}
+          <span className="air-now-main">
+            <span className="air-now-place">{placeName}</span>
+            <span className="air-now-label">Jetzt</span>
+            <b style={{ color: band.color }}>{Math.round(nowEaqi!)}</b>
+            <span className="air-now-band" style={{ color: band.color }}>
+              {band.label}
+            </span>
           </span>
           {driver && <span className="air-now-driver">maßgeblich {driver}</span>}
         </div>
@@ -440,30 +510,24 @@ export function AirQualityPanel() {
       {/* 8- und 24-h-Mittel daneben: NO₂ und Ozon richten sich nach Mitteln
           (WHO 24 h bzw. 8 h), der Stundenwert allein sagt dort zu wenig */}
       {summary.map((b) => (
-        <div
+        <MeanBox
           key={b.w}
-          className="air-mean"
-          style={b.color ? { borderColor: b.color } : undefined}
-          title={`Gleitendes ${b.w}-Stunden-Mittel bis zur laufenden Stunde, eingeordnet in die Stufen des Luftqualitätsindex. WHO-Richtwerte: NO₂ ${WHO_GUIDELINES.nitrogen_dioxide.value} µg/m³ im 24-h-Mittel, Ozon ${WHO_GUIDELINES.ozone.value} µg/m³ im 8-h-Mittel — jeweils die Grenze zu „mäßig".`}
-        >
-          <span className="air-mean-head">{b.w}-h-Mittel</span>
-          {b.items.map((it) => (
-            <span key={it.v} className="air-mean-item">
-              <span className="air-mean-name">{it.label}</span>
-              {it.value != null && it.band ? (
-                <>
-                  <b style={{ color: it.band.color }}>{Math.round(it.value)}</b>
-                  <span className="air-mean-unit">µg/m³</span>
-                  <span className="air-mean-band" style={{ color: it.band.color }}>
-                    {it.band.label}
-                  </span>
-                </>
-              ) : (
-                <span className="label-muted">—</span>
-              )}
-            </span>
-          ))}
-        </div>
+          head={`Modell ${b.w}-h-Mittel`}
+          items={b.items}
+          color={b.color}
+          title={`Modell: gleitendes ${b.w}-Stunden-Mittel bis zur laufenden Stunde, eingeordnet in die Stufen des Luftqualitätsindex. WHO-Richtwerte: NO₂ ${WHO_GUIDELINES.nitrogen_dioxide.value} µg/m³ im 24-h-Mittel, Ozon ${WHO_GUIDELINES.ozone.value} µg/m³ im 8-h-Mittel — jeweils die Grenze zu „mäßig".`}
+        />
+      ))}
+      {measuredSummary.map((b) => (
+        <MeanBox
+          key={`m${b.w}`}
+          measured
+          head={`gemessen ${b.w}-h-Mittel`}
+          sub={b.end != null ? `bis ${endFmt.format(new Date(b.end))} UTC` : undefined}
+          items={b.items}
+          color={b.color}
+          title={`Gemessen: ${b.w}-Stunden-Mittel bis zur jüngsten gemeldeten Stunde (die Messung kommt 2–3 h verzögert), ${b.stations.join(' / ')}. Aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur.`}
+        />
       ))}
       {/* Alles hier ist CAMS-MODELL, auch der „Jetzt"-Wert und die Mittel über
           die vergangenen Stunden — keine Messung. Ohne den Hinweis liest sich
@@ -473,9 +537,9 @@ export function AirQualityPanel() {
           className="air-src"
           title="Kästen und farbige Kurven sind Modellwerte des Copernicus-Atmosphärendienstes (CAMS Europa, ~10 km), auch der aktuelle Wert und die Mittel über die vergangenen Stunden. Weiß sind gemessene Stundenmittel der nächsten österreichischen Messstelle im Umkreis von 15 km (Hintergrundstationen bevorzugt) — aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur, rund 2–3 Stunden Verzug."
         >
-          Kästen und farbige Kurven: Modell (CAMS)
+          farbig: Modell (CAMS)
           <br />
-          {Object.values(measured).some(Boolean) ? 'weiße Kurven: Messung' : 'keine Messstelle in der Nähe'}
+          {Object.values(measured).some(Boolean) ? 'weiß: Messung' : 'keine Messstelle nahe'}
         </span>
       )}
       </div>

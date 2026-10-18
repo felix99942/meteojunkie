@@ -150,3 +150,25 @@ export function stationKind(s: AirStation): string {
   const area = s.area.startsWith('rural') ? 'ländlich' : s.area === 'suburban' ? 'Stadtrand' : s.area === 'urban' ? 'städtisch' : ''
   return area ? `${type}, ${area}` : type
 }
+
+/**
+ * Nachlaufendes Mittel der MESSUNG über `hours` Stunden, endend an der
+ * jüngsten gemessenen Stunde — nicht an „jetzt": die Messung hinkt 2–3 h
+ * hinterher, ein Fenster bis jetzt wäre am Ende leer. Wert nur, wenn
+ * mindestens drei Viertel der Stunden belegt sind (dieselbe Regel wie beim
+ * Modell, `rollingMean`).
+ */
+export function measuredMean(values: Map<number, number>, hours: number): { value: number; end: number } | null {
+  if (!values.size) return null
+  const end = Math.max(...values.keys())
+  let sum = 0
+  let n = 0
+  for (let i = 0; i < hours; i++) {
+    const v = values.get(end - i * 3_600_000)
+    if (v != null) {
+      sum += v
+      n++
+    }
+  }
+  return n >= Math.ceil(hours * 0.75) ? { value: sum / n, end } : null
+}

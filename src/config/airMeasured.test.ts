@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   distanceKm,
   measuredFor,
+  measuredMean,
   stationKind,
   viennaOffsetMs,
   viennaWallToUtc,
@@ -77,5 +78,24 @@ describe('stationKind', () => {
   it('Klartext aus Typ und Lage', () => {
     expect(stationKind(st('x', 8, 0, 0, 'traffic', 'urban'))).toBe('verkehrsnah, städtisch')
     expect(stationKind(st('x', 8, 0, 0, 'background', 'rural-regional'))).toBe('Hintergrund, ländlich')
+  })
+})
+
+describe('measuredMean', () => {
+  const series = (vals: (number | null)[]) => {
+    const m = new Map<number, number>()
+    vals.forEach((v, i) => v != null && m.set(i * H, v))
+    return m
+  }
+  it('mittelt die letzten Stunden bis zur JÜNGSTEN Messung', () => {
+    const r = measuredMean(series([100, 100, 2, 4, 6, 8]), 4)
+    expect(r).toEqual({ value: 5, end: 5 * H })
+  })
+  it('braucht drei Viertel des Fensters', () => {
+    expect(measuredMean(series([null, null, 3, 3, 3, 3, 3, 3]), 8)).toEqual({ value: 3, end: 7 * H })
+    expect(measuredMean(series([null, null, null, 3, 3, 3, 3, 3]), 8)).toBeNull()
+  })
+  it('ohne Werte nichts', () => {
+    expect(measuredMean(new Map(), 8)).toBeNull()
   })
 })

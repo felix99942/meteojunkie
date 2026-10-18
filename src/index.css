@@ -4615,8 +4615,9 @@ button:focus-visible {
 }
 .air-now {
   display: inline-flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   padding: 6px 16px;
   border: 2px solid;
   border-radius: 6px;
@@ -4786,4 +4787,25 @@ button:focus-visible {
 .air-measured-note {
   color: #f2f2ef;
   font-weight: 500;
+}
+
+/* Gemessene Mittel: Kopfzeile in WEISS — dieselbe Farbe wie die Messkurven */
+.air-mean.is-measured .air-mean-head {
+  color: #f2f2ef;
+}
+.air-mean-sub {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Jetzt-Kasten zweizeilig: Ort + Wert oben, maßgeblicher Stoff darunter —
+   so passen Modell- und Messkästen in EINE Reihe */
+.air-now-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.air-mean-sub {
+  display: block;
 }

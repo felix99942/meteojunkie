@@ -2954,7 +2954,14 @@ npm run preview   # gebautes dist/ servieren
   verworfen: UBA Deutschland ohne CORS, Österreich ohne bundesweite API
   (nur einzelne Länder), OpenAQ nur mit Key; die EEA-JAHRESdateien
   (`/ParquetFile/urls`) liegen ohne CORS. Erste Befunde: Salzburg NO₂ abends
-  gemessen ~29 gegen 8 µg/m³ im Modell, Sonnblick Ozon ~90 gegen 65. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  gemessen ~29 gegen 8 µg/m³ im Modell, Sonnblick Ozon ~90 gegen 65.
+  **Gemessene 8-/24-h-Mittel als eigene Kästen** neben den Modellmitteln
+  (Kopfzeile weiß, „bis HH:MM UTC"): sie enden an der JÜNGSTEN gemessenen
+  Stunde, nicht an „jetzt" — die Messung hinkt 2–3 h hinterher
+  (`measuredMean`, ≥ 3/4 der Stunden belegt). Dafür wird ab GESTERN
+  abgerufen (~280 statt ~140 KB). Der Jetzt-Kasten ist zweizeilig und die
+  Kopfzeilen tragen „Modell"/„gemessen", damit alle fünf Kästen in eine Reihe
+  passen — umgebrochen kosteten sie den Diagrammen eine ganze Zeile. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.
