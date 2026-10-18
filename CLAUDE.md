@@ -3998,14 +3998,16 @@ npm run preview   # gebautes dist/ servieren
   auf, der Rest rutscht nach rechts — ANIMIERT über ein Gitter mit einer
   Spalte 0fr ↔ 1fr (`.appnav-items`; animiert auf die echte Inhaltsbreite,
   ohne zu messen; zugeklappt `inert`, damit Tab die unsichtbaren Knöpfe nicht
-  erreicht; `prefers-reduced-motion` schaltet ab). Offen ist eine Gruppe beim
-  Überfahren und nach Klick/Tipp (Touch hat kein Überfahren) — AUCH die mit
-  dem aktiven Bereich klappt wieder ein (auf Wunsch; die erste Fassung hielt
-  sie immer offen); zugeklappt nennt ihr Kategorieknopf den offenen Bereich
-  („Vorhersage + Klima | Meteogramm"); zugeklappt wird beim Verlassen erst nach
-  `CLOSE_DELAY_MS` = 450 ms — sonst klappte sie zu, sobald der Zeiger auf dem
-  Weg zum nach rechts gerutschten Ziel über eine Lücke fährt. Klick daneben
-  oder Escape schließt eine per Klick geöffnete Gruppe. Zwischen den Gruppen
+  erreicht; `prefers-reduced-motion` schaltet ab). **Aufgeklappt wird beim
+  Überfahren UND per Klick/Tipp, ZUGEKLAPPT NUR per Klick auf den
+  Kategorieknopf** (auf Wunsch — zwei Vorstufen klappten beim Verlassen zu:
+  fuhr man Richtung „Analyse", fiel „Vorhersage + Klima" hinter einem
+  zusammen und alles rutschte). Mehrere Gruppen dürfen gleichzeitig offen
+  sein. Touch löst vor dem Klick ein `mouseenter` aus — ein Klick binnen
+  `HOVER_CLICK_GRACE_MS` nach dem Öffnen zählt deshalb nicht als Zuklappen,
+  geprüft IM State-Updater (im gerenderten Stand ist das Öffnen beim Tipp noch
+  nicht angekommen; so war es zuerst falsch). Zugeklappt nennt der
+  Kategorieknopf den offenen Bereich („Vorhersage + Klima | Meteogramm").
   14 px Abstand (`.appnav-group.is-group-start`). Sind beide Gruppen offen,
   bricht die Reihe auf schmalen Fenstern um.
   `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.

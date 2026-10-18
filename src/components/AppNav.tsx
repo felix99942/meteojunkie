@@ -25,7 +25,7 @@
 // Hintergrund und Unterkante), damit die Reihe auch ohne Farbunterscheidung
 // benutzbar bleibt.
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { buildLabel, buildTitle } from '../config/build'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
 import { useAppView, type AppView } from '../state/appView'
@@ -41,8 +41,8 @@ const GROUP_LABELS: Record<NavGroup, string> = {
   air: 'Luftqualität',
 }
 
-/** Verzögerung beim Zuklappen nach dem Verlassen mit dem Zeiger. */
-const CLOSE_DELAY_MS = 450
+/** Ein Klick so kurz nach dem Öffnen per Überfahren klappt nicht gleich wieder zu (Touch). */
+const HOVER_CLICK_GRACE_MS = 600
 
 const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
   {
@@ -132,42 +132,39 @@ export function AppNav() {
   const tabs = POINT_FORECASTS_ENABLED ? TABS : TABS.filter((t) => t.id !== 'workbench')
 
   /**
-   * AUFKLAPPEN beim Überfahren UND per Klick (Touch hat kein Überfahren);
-   * der Kategorieknopf der Gruppe mit dem aktiven Bereich nennt diesen, wenn
-   * sie zugeklappt ist. Zugeklappt wird beim Verlassen erst nach `CLOSE_DELAY_MS` —
-   * die Reihe rutscht beim Aufklappen nach rechts, und ohne Verzögerung klappte
-   * sie zu, sobald der Zeiger den Weg zum Ziel kurz über eine Lücke nimmt.
+   * AUFKLAPPEN beim Überfahren UND per Klick/Tipp, ZUKLAPPEN NUR per Klick auf
+   * den Kategorieknopf (auf Wunsch): ein Zuklappen beim Verlassen störte —
+   * fuhr man in der Leiste Richtung „Analyse", klappte „Vorhersage + Klima"
+   * hinter einem zusammen, und alles rutschte. Mehrere Gruppen dürfen
+   * gleichzeitig offen sein.
+   *
+   * Touch kennt kein Überfahren, löst aber vor dem Klick ein `mouseenter` aus
+   * — der Tipp öffnete die Gruppe also und schlösse sie im selben Zug. Ein
+   * Klick kurz nach dem Öffnen per Überfahren (`HOVER_CLICK_GRACE_MS`) zählt
+   * deshalb nicht als Zuklappen.
    */
-  const [hoverGroup, setHoverGroup] = useState<NavGroup | null>(null)
-  const [clickGroup, setClickGroup] = useState<NavGroup | null>(null)
-  const closeTimer = useRef<number | null>(null)
-  const navRef = useRef<HTMLElement>(null)
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<NavGroup>>(new Set())
+  const openedAt = useRef<Partial<Record<NavGroup, number>>>({})
   const openHover = (g: NavGroup) => {
-    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
-    closeTimer.current = null
-    setHoverGroup(g)
+    if (openGroups.has(g)) return
+    openedAt.current[g] = Date.now()
+    setOpenGroups((prev) => new Set(prev).add(g))
   }
-  const closeHoverSoon = () => {
-    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
-    closeTimer.current = window.setTimeout(() => setHoverGroup(null), CLOSE_DELAY_MS)
+  const toggleGroup = (g: NavGroup) => {
+    // Im Updater prüfen, nicht am gerenderten Stand: beim Tipp kommen
+    // mouseenter und click im selben Zug, der Stand im Render kennt das
+    // Öffnen dann noch nicht
+    setOpenGroups((prev) => {
+      if (prev.has(g) && Date.now() - (openedAt.current[g] ?? 0) < HOVER_CLICK_GRACE_MS) return prev
+      const next = new Set(prev)
+      if (next.has(g)) next.delete(g)
+      else {
+        next.add(g)
+        openedAt.current[g] = Date.now()
+      }
+      return next
+    })
   }
-  // Per Klick geöffnet: Klick daneben oder Escape klappt wieder zu
-  useEffect(() => {
-    if (!clickGroup) return
-    const onDown = (e: PointerEvent) => {
-      if (navRef.current && !navRef.current.contains(e.target as Node)) setClickGroup(null)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setClickGroup(null)
-    document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [clickGroup])
-  useEffect(() => () => {
-    if (closeTimer.current != null) window.clearTimeout(closeTimer.current)
-  }, [])
   // Gruppen in der Reihenfolge ihres ersten Auftretens
   const groups: { key: NavGroup; tabs: typeof tabs }[] = []
   for (const t of tabs) {
@@ -179,7 +176,7 @@ export function AppNav() {
   // Offen beim Überfahren oder nach Klick — auch die Gruppe des aktiven
   // Bereichs klappt wieder ein (auf Wunsch); welcher Bereich offen ist, sagt
   // dann der Kategorieknopf selbst
-  const isOpen = (g: NavGroup) => g === hoverGroup || g === clickGroup
+  const isOpen = (g: NavGroup) => openGroups.has(g)
   const activeTab = tabs.find((t) => t.id === view)
   const tabButton = (t: (typeof tabs)[number]) => (
     <button
@@ -188,16 +185,13 @@ export function AppNav() {
       className={`appnav-tab is-${t.group}${view === t.id ? ' is-active' : ''}`}
       title={t.title}
       aria-pressed={view === t.id}
-      onClick={() => {
-        setView(t.id)
-        setClickGroup(null)
-      }}
+      onClick={() => setView(t.id)}
     >
       {t.label}
     </button>
   )
   return (
-    <nav className="appnav" ref={navRef}>
+    <nav className="appnav">
       {groups.map((g, gi) =>
         // Eine Gruppe mit nur EINEM Bereich (Verifikation, Luftqualität) ist
         // einfach ihr Knopf — ein Aufklappen um einen einzigen Eintrag wäre
@@ -211,14 +205,13 @@ export function AppNav() {
             key={g.key}
             className={`appnav-group${gi > 0 ? ' is-group-start' : ''}${isOpen(g.key) ? ' is-open' : ''}`}
             onMouseEnter={() => openHover(g.key)}
-            onMouseLeave={closeHoverSoon}
           >
             <button
               type="button"
               className={`appnav-cat is-${g.key}${g.key === activeGroup ? ' has-active' : ''}`}
               aria-expanded={isOpen(g.key)}
               title={g.tabs.map((t) => t.label).join(' · ')}
-              onClick={() => setClickGroup((c) => (c === g.key ? null : g.key))}
+              onClick={() => toggleGroup(g.key)}
             >
               {GROUP_LABELS[g.key]}
               {g.key === activeGroup && activeTab && !isOpen(g.key) && (
