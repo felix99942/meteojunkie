@@ -129,3 +129,12 @@ describe('concBand', () => {
     expect(concBand('ozone', WHO_GUIDELINES.ozone.value + 0.1).label).toBe('mäßig')
   })
 })
+
+describe('concBand Feinstaub', () => {
+  it('die Grenze zu „mäßig" ist der WHO-Tagesrichtwert', () => {
+    expect(concBand('pm2_5', WHO_GUIDELINES.pm2_5.value).label).toBe('ausreichend')
+    expect(concBand('pm2_5', WHO_GUIDELINES.pm2_5.value + 0.1).label).toBe('mäßig')
+    expect(concBand('pm10', WHO_GUIDELINES.pm10.value).label).toBe('ausreichend')
+    expect(concBand('pm10', 130).label).toBe('schlecht')
+  })
+})

@@ -2957,7 +2957,10 @@ npm run preview   # gebautes dist/ servieren
   gemessen ~29 gegen 8 µg/m³ im Modell, Sonnblick Ozon ~90 gegen 65.
   **Gemessene 8-/24-h-Mittel ERSETZEN die Modellmittel** (auf Wunsch, je
   Zeitraum: gibt es das gemessene Mittel, steht nur dieses da, sonst das
-  Modell; Kopfzeile weiß, „bis HH:MM UTC"): sie enden an der JÜNGSTEN gemessenen
+  Modell; Kopfzeile weiß, „bis HH:MM UTC"; der gemessene 24-h-Kasten führt
+  zusätzlich PM10 und PM2,5 — deren WHO-Richtwert gilt fürs 24-h-Mittel, und
+  der Jetzt-Index ist ein Modellwert, gemessener Feinstaub stünde oben sonst
+  nirgends; Feinstaubgrenzen `CONC_BANDS` 5/15/50 bzw. 15/45/120): sie enden an der JÜNGSTEN gemessenen
   Stunde, nicht an „jetzt" — die Messung hinkt 2–3 h hinterher
   (`measuredMean`, ≥ 3/4 der Stunden belegt). Dafür wird ab GESTERN
   abgerufen (~280 statt ~140 KB). Der Jetzt-Kasten ist zweizeilig und die

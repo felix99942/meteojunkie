@@ -207,11 +207,16 @@ export function rollingMean(values: (number | null)[], window: number): (number 
  * (Rundung), mit der älteren Tabelle (NO₂ 40/90/120 …) bis 32. Bestätigt bis
  * in die Stufe „mäßig" (NO₂ bis 62, Ozon bis 76 µg/m³ gemessen), die oberen
  * Grenzen aus derselben Tabelle. Die Grenze zu „mäßig" ist dabei der
- * WHO-Richtwert: NO₂ 25 (24-h-Mittel), Ozon 100 (8-h-Mittel).
+ * WHO-Richtwert: NO₂ 25 (24-h-Mittel), Ozon 100 (8-h-Mittel), PM2,5 15 und
+ * PM10 45 (24-h-Mittel).
  */
-export const CONC_BANDS: Record<'nitrogen_dioxide' | 'ozone', readonly number[]> = {
+export const CONC_BANDS: Record<'nitrogen_dioxide' | 'ozone' | 'pm2_5' | 'pm10', readonly number[]> = {
   nitrogen_dioxide: [10, 25, 60, 100, 150, Infinity],
   ozone: [60, 100, 120, 160, 180, Infinity],
+  // Feinstaub ebenso gemessen (PM2,5 bis 39, PM10 bis 44 µg/m³ belegt); die
+  // Grenze zu „mäßig" ist der WHO-Tagesrichtwert 15 bzw. 45
+  pm2_5: [5, 15, 50, 90, 140, Infinity],
+  pm10: [15, 45, 120, 195, 270, Infinity],
 }
 
 /** EAQI-Stufe einer Konzentration (auch eines Mittels — als Einordnung). */

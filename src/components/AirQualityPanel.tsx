@@ -77,6 +77,15 @@ const SUMMARY_VARS = [
   { v: 'nitrogen_dioxide', label: 'NO₂' },
   { v: 'ozone', label: 'O₃' },
 ] as const
+/**
+ * Feinstaub nur im GEMESSENEN 24-h-Kasten: sein WHO-Richtwert gilt fürs
+ * 24-h-Mittel (ein 8-h-Mittel hat keinen Bezug), und der Jetzt-Index darüber
+ * ist ein Modellwert — gemessener Feinstaub käme oben sonst nirgends vor.
+ */
+const MEASURED_PM_VARS = [
+  { v: 'pm10', label: 'PM10' },
+  { v: 'pm2_5', label: 'PM2,5' },
+] as const
 
 const WHO = WHO_GUIDELINES
 const WhoLink = () => (
@@ -433,7 +442,8 @@ export function AirQualityPanel() {
     return SUMMARY_WINDOWS.map((w) => {
       let end: number | null = null
       const stations = new Set<string>()
-      const items = SUMMARY_VARS.map(({ v, label }) => {
+      const vars = w === 24 ? [...SUMMARY_VARS, ...MEASURED_PM_VARS] : SUMMARY_VARS
+      const items = vars.map(({ v, label }) => {
         const m = measured[v]
         const r = m ? measuredMean(m.values, w) : null
         if (m && r) {
@@ -529,7 +539,7 @@ export function AirQualityPanel() {
           sub={b.end != null ? `bis ${endFmt.format(new Date(b.end))} UTC` : undefined}
           items={b.items}
           color={b.color}
-          title={`Gemessen: ${b.w}-Stunden-Mittel bis zur jüngsten gemeldeten Stunde (die Messung kommt 2–3 h verzögert), ${b.stations.join(' / ')}. Aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur.`}
+          title={`Gemessen: ${b.w}-Stunden-Mittel bis zur jüngsten gemeldeten Stunde (WHO-Richtwerte im 24-h-Mittel: NO₂ ${WHO_GUIDELINES.nitrogen_dioxide.value}, PM2,5 ${WHO_GUIDELINES.pm2_5.value}, PM10 ${WHO_GUIDELINES.pm10.value} µg/m³; Ozon ${WHO_GUIDELINES.ozone.value} im 8-h-Mittel) (die Messung kommt 2–3 h verzögert), ${b.stations.join(' / ')}. Aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur.`}
         />
       ))}
       {/* Alles hier ist CAMS-MODELL, auch der „Jetzt"-Wert und die Mittel über
