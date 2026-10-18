@@ -37,6 +37,15 @@ const CHART_HEIGHT = 110
 const X_TICK_SPACE = 40
 const hourFmt = new Intl.DateTimeFormat('de-DE', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' })
 const formatTick = (ts: number): string => hourFmt.format(new Date(ts * 1000))
+const readoutFmt = new Intl.DateTimeFormat('de-DE', {
+  timeZone: TZ,
+  weekday: 'short',
+  day: '2-digit',
+  month: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
 
 const MS_PER_DAY = 86_400_000
 const COLOR_EAQI = '#e0e3e8'
@@ -311,6 +320,14 @@ export function AirQualityPanel() {
   const band = nowEaqi != null ? eaqiBand(nowEaqi) : null
   const driver = data && nowIdx != null ? dominantPollutant(data, nowIdx) : null
   const domain = data ? AIR_DOMAINS[data.domain] : null
+  const placeName = location
+    ? (location.label ?? `${location.lat.toFixed(2)}° N, ${location.lon.toFixed(2)}° O`)
+    : ''
+  // Zeitpunkt unter dem Zeiger als Kästchen in der Indexzeile — die Achse
+  // beschriftet nur jede dritte Stunde. NUR dort: in den flachen
+  // Konzentrationszeilen schob es sich über die Werte (gesehen), und der
+  // Cursor ist ohnehin über alle Zeilen gekoppelt
+  const readoutLabel = readoutMs != null ? `${readoutFmt.format(new Date(readoutMs))} UTC` : undefined
 
   return (
     <div className="meteo air-panel">
@@ -350,6 +367,9 @@ export function AirQualityPanel() {
           style={{ borderColor: band.color }}
           title="Europäischer Luftqualitätsindex (EAQI) für die laufende Stunde — der Index ist das Maximum der Teilindizes, der genannte Schadstoff setzt ihn."
         >
+          {/* Der Ort steht mit dabei: der Kasten ist die Antwort, und ohne
+              Ort weiß man bei einem Blick nicht, wofür sie gilt */}
+          <span className="air-now-place">{placeName}</span>
           <span className="air-now-label">Jetzt</span>
           <b style={{ color: band.color }}>{Math.round(nowEaqi!)}</b>
           <span className="air-now-band" style={{ color: band.color }}>
@@ -414,6 +434,7 @@ export function AirQualityPanel() {
                   dayRow
                   markTime={nowMs}
                   readoutTime={readoutMs ?? undefined}
+                  readoutLabel={id === 'eaqi' ? readoutLabel : undefined}
                   onHoverTime={handleHover}
                   syncKey="air-quality"
                   height={CHART_HEIGHT}

@@ -2932,6 +2932,8 @@ npm run preview   # gebautes dist/ servieren
   aus. Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab
   heute 00 UTC. Der Index der laufenden Stunde steht GROSS links oben über dem
   ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px,
+  der Ort steht groß im Jetzt-Kasten, die Uhrzeit des Zeigers als Kästchen
+  NUR in der Indexzeile (in den flachen Zeilen überdeckte sie die Werte),
   Werteanzeige am Zeiger 16 px und MIT Kurvennamen (`ChartDef.readoutPx`/`readoutLabels`, gilt nur
   dort, wo gesetzt) — PM2,5 und PM10 teilen sich Einheit und Zeile.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der

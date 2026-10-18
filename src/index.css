@@ -4617,6 +4617,13 @@ button:focus-visible {
   border-radius: 6px;
   white-space: nowrap;
 }
+.air-now-place {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  padding-right: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
 .air-now-label {
   font-size: 18px;
   color: var(--ink-muted);
