@@ -2972,7 +2972,15 @@ npm run preview   # gebautes dist/ servieren
   MOS-Vorhersage). Die Schrift schrumpft mit der Zeilenhöhe und entfällt
   unter 8 px, statt in die Achse zu ragen. Eine Fassung, die die Achse erst
   3 h vor der jüngsten Messung beginnen ließ, war auf Wunsch wieder draußen —
-  man sah zu wenig von der Messung. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  man sah zu wenig von der Messung.
+  **AMPEL rechts neben den Kästen** (`ampelDecision`/`ampelOf` in
+  `config/airQuality.ts` mit Tests): grün bis „ausreichend", gelb „mäßig",
+  rot ab „schlecht". Grundlage sind die Modell-Teilindizes der laufenden
+  Stunde; fällt das jüngste GEMESSENE PM2,5 (höchstens 6 h alt,
+  `AMPEL_MAX_AGE_H`) in eine ANDERE Stufe als das Modell-PM2,5, ersetzt es
+  dessen Teilindex (auf Wunsch) — die Ampel folgt dann dem höchsten aus
+  gemessenem Feinstaub und den übrigen Modell-Teilindizes. Darunter steht,
+  ob sie „nach Modell" oder „nach Messung PM2,5 … µg/m³ (HH:MM UTC)" steht. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.

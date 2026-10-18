@@ -23,7 +23,9 @@ import {
   EAQI_BANDS,
   eaqiAxisTop,
   eaqiBand,
+  ampelDecision,
   concBand,
+  EAQI_PARTS,
   EAQI_BANDS as BANDS_ORDER,
   rollingMean,
   WHO_GUIDELINES,
@@ -59,6 +61,8 @@ const readoutFmt = new Intl.DateTimeFormat('de-DE', {
 })
 
 const MS_PER_DAY = 86_400_000
+/** Älter darf die PM2,5-Messung für die Ampel nicht sein (die Meldung hinkt 2–3 h). */
+const AMPEL_MAX_AGE_H = 6
 /** Der aktuelle Zeitpunkt: rot, kräftig und beschriftet — links davon Vergangenheit mit Messung, rechts Vorhersage. */
 const NOW_MARK = { color: '#e5484d', width: 3, label: 'aktuell' }
 const COLOR_EAQI = '#e0e3e8'
@@ -214,6 +218,13 @@ function MeanBox({
       ))}
     </div>
   )
+}
+
+/** Jüngster Wert einer Messreihe (Zeit → Wert). */
+function latestValue(values: Map<number, number> | undefined): { t: number; v: number } | null {
+  let best: { t: number; v: number } | null = null
+  if (values) for (const [t, v] of values) if (best === null || t > best.t) best = { t, v }
+  return best
 }
 
 interface RowSpec {
@@ -417,6 +428,21 @@ export function AirQualityPanel() {
   const nowEaqi = data && nowIdx != null ? data.values.european_aqi[nowIdx] : null
   const band = nowEaqi != null ? eaqiBand(nowEaqi) : null
   const driver = data && nowIdx != null ? dominantPollutant(data, nowIdx) : null
+  /**
+   * Ampel: Modell-Teilindizes der laufenden Stunde, aber gemessenes PM2,5
+   * statt des Modells, wenn es in eine andere Stufe fällt. Die Messung zählt
+   * nur, wenn sie frisch ist (≤ AMPEL_MAX_AGE_H) — sonst wäre es ein alter
+   * Wert gegen eine aktuelle Vorhersage.
+   */
+  const ampel = useMemo(() => {
+    if (!data || nowIdx == null) return null
+    const parts = Object.fromEntries(EAQI_PARTS.map((p) => [p.key, data.values[p.key]?.[nowIdx] ?? null]))
+    const latest = latestValue(measured.pm2_5?.values)
+    const pm = latest && nowMs - latest.t <= AMPEL_MAX_AGE_H * 3_600_000 ? latest : null
+    const d = ampelDecision(parts, pm?.v ?? null)
+    return d ? { ...d, pm } : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey, nowIdx, measured])
   const domain = data ? AIR_DOMAINS[data.domain] : null
   /**
    * Nachlaufende 8- und 24-h-Mittel von NO₂ und Ozon zur laufenden Stunde —
@@ -544,6 +570,26 @@ export function AirQualityPanel() {
           title={`Gemessen: ${b.w}-Stunden-Mittel bis zur jüngsten gemeldeten Stunde (WHO-Richtwerte im 24-h-Mittel: NO₂ ${WHO_GUIDELINES.nitrogen_dioxide.value}, PM2,5 ${WHO_GUIDELINES.pm2_5.value}, PM10 ${WHO_GUIDELINES.pm10.value} µg/m³; Ozon ${WHO_GUIDELINES.ozone.value} im 8-h-Mittel) (die Messung kommt 2–3 h verzögert), ${b.stations.join(' / ')}. Aktuelle, noch ungeprüfte Werte über die Europäische Umweltagentur.`}
         />
       ))}
+      {ampel && (
+        <div
+          className="air-ampel-light"
+          title={'Ampel zum aktuellen Luftqualitätsindex: grün bis „ausreichend", gelb „mäßig", rot ab „schlecht". Grundlage ist das Modell; fällt gemessenes PM2,5 der nächsten Messstelle in eine andere Stufe als das Modell, zählt die Messung.'}
+        >
+          <span className="air-ampel-lamps" aria-hidden="true">
+            {(['red', 'yellow', 'green'] as const).map((l) => (
+              <i key={l} className={`lamp-${l}${ampel.level === l ? ' is-on' : ''}`} />
+            ))}
+          </span>
+          <span className="air-ampel-text">
+            <b style={{ color: ampel.band.color }}>{ampel.band.label}</b>
+            <span>
+              {ampel.source === 'measured' && ampel.pm
+                ? `nach Messung PM2,5 ${Math.round(ampel.pm.v)} µg/m³ (${endFmt.format(new Date(ampel.pm.t))} UTC)`
+                : 'nach Modell'}
+            </span>
+          </span>
+        </div>
+      )}
       {/* Alles hier ist CAMS-MODELL, auch der „Jetzt"-Wert und die Mittel über
           die vergangenen Stunden — keine Messung. Ohne den Hinweis liest sich
           „Jetzt 42" wie ein Messwert. */}

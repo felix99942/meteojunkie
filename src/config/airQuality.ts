@@ -225,3 +225,52 @@ export function concBand(variable: keyof typeof CONC_BANDS, value: number): Eaqi
   const i = tops.findIndex((t) => value <= t)
   return EAQI_BANDS[i < 0 ? EAQI_BANDS.length - 1 : i]
 }
+
+export type AmpelLevel = 'green' | 'yellow' | 'red'
+
+/** EAQI-Stufe → Ampel: gut/ausreichend grün, mäßig gelb, ab schlecht rot. */
+export function ampelOf(band: EaqiBand): AmpelLevel {
+  const i = EAQI_BANDS.indexOf(band)
+  return i <= 1 ? 'green' : i === 2 ? 'yellow' : 'red'
+}
+
+export interface AmpelDecision {
+  level: AmpelLevel
+  band: EaqiBand
+  /** Woher die maßgebliche Stufe kommt. */
+  source: 'model' | 'measured'
+}
+
+/**
+ * Ampel zum aktuellen Index. Grundlage sind die Modell-Teilindizes der
+ * laufenden Stunde (der Gesamtindex ist ihr Maximum). Liegt eine MESSUNG von
+ * PM2,5 vor und fällt sie in eine ANDERE Stufe als das Modell-PM2,5, ersetzt
+ * sie den Modell-Teilindex (auf Wunsch) — die Ampel folgt dann dem höchsten
+ * aus gemessenem Feinstaub und den übrigen Modell-Teilindizes. Ohne Messung
+ * oder bei gleicher Stufe bleibt es beim Modell.
+ */
+export function ampelDecision(
+  modelParts: Partial<Record<(typeof EAQI_PARTS)[number]['key'], number | null>>,
+  measuredPm25: number | null,
+): AmpelDecision | null {
+  const idx = (b: EaqiBand) => EAQI_BANDS.indexOf(b)
+  let worst = -1
+  for (const p of EAQI_PARTS) {
+    const v = modelParts[p.key]
+    if (v != null) worst = Math.max(worst, idx(eaqiBand(v)))
+  }
+  if (worst < 0) return null
+  const modelBand = EAQI_BANDS[worst]
+  const modelPm = modelParts.european_aqi_pm2_5
+  if (measuredPm25 == null || modelPm == null) return { level: ampelOf(modelBand), band: modelBand, source: 'model' }
+  const measuredBand = concBand('pm2_5', measuredPm25)
+  if (idx(measuredBand) === idx(eaqiBand(modelPm))) return { level: ampelOf(modelBand), band: modelBand, source: 'model' }
+  let others = -1
+  for (const p of EAQI_PARTS) {
+    if (p.key === 'european_aqi_pm2_5') continue
+    const v = modelParts[p.key]
+    if (v != null) others = Math.max(others, idx(eaqiBand(v)))
+  }
+  const band = EAQI_BANDS[Math.max(others, idx(measuredBand))]
+  return { level: ampelOf(band), band, source: 'measured' }
+}

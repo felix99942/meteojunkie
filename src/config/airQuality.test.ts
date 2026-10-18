@@ -12,6 +12,8 @@ import {
   rollingMean,
   WHO_GUIDELINES,
   concBand,
+  ampelDecision,
+  ampelOf,
 } from './airQuality'
 
 describe('eaqiBand', () => {
@@ -136,5 +138,33 @@ describe('concBand Feinstaub', () => {
     expect(concBand('pm2_5', WHO_GUIDELINES.pm2_5.value + 0.1).label).toBe('mäßig')
     expect(concBand('pm10', WHO_GUIDELINES.pm10.value).label).toBe('ausreichend')
     expect(concBand('pm10', 130).label).toBe('schlecht')
+  })
+})
+
+describe('Ampel', () => {
+  it('Stufe → Ampel: bis ausreichend grün, mäßig gelb, ab schlecht rot', () => {
+    expect(ampelOf(EAQI_BANDS[1])).toBe('green')
+    expect(ampelOf(EAQI_BANDS[2])).toBe('yellow')
+    expect(ampelOf(EAQI_BANDS[3])).toBe('red')
+  })
+  const parts = { european_aqi_pm2_5: 45, european_aqi_ozone: 30, european_aqi_nitrogen_dioxide: 15 }
+  it('ohne Messung zählt das Modell (höchster Teilindex)', () => {
+    expect(ampelDecision(parts, null)).toMatchObject({ level: 'yellow', source: 'model' })
+  })
+  it('Messung in DERSELBEN Stufe wie Modell-PM2,5 ändert nichts', () => {
+    // Modell 45 = mäßig, gemessen 30 µg/m³ = mäßig (15–50)
+    expect(ampelDecision(parts, 30)).toMatchObject({ level: 'yellow', source: 'model' })
+  })
+  it('Messung in ANDERER Stufe ersetzt den Modell-Feinstaub', () => {
+    // gemessen 10 µg/m³ = ausreichend → übrige Teilindizes ausreichend/gut → grün
+    expect(ampelDecision(parts, 10)).toMatchObject({ level: 'green', source: 'measured' })
+    // gemessen 60 µg/m³ = schlecht → rot
+    expect(ampelDecision(parts, 60)).toMatchObject({ level: 'red', source: 'measured' })
+  })
+  it('ein anderer Stoff kann die Ampel trotzdem halten', () => {
+    expect(ampelDecision({ ...parts, european_aqi_ozone: 50 }, 10)).toMatchObject({ level: 'yellow', source: 'measured' })
+  })
+  it('ohne Modellwerte keine Ampel', () => {
+    expect(ampelDecision({}, 10)).toBeNull()
   })
 })
