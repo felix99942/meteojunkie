@@ -10,7 +10,7 @@
 // Registry, Domänenwahl und die live geprüften Fallen der API stehen in
 // `config/airQuality.ts`.
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAirQuality } from '../api/queries'
 import { seriesKey } from '../lib/dataKey'
 import { ChartRow } from './ChartStack'
@@ -103,6 +103,49 @@ const INFO: Record<string, ReactNode> = {
     </p>
   ),
   dust: <p>Wüstenstaub, meist aus der Sahara. Kein eigener Richtwert — zählt beim Feinstaub mit.</p>,
+}
+
+/** Wie lange eine geöffnete Erläuterung von selbst stehen bleibt. */
+const INFO_AUTO_CLOSE_MS = 10_000
+
+/**
+ * ⓘ mit aufklappender Erläuterung. Schließt sich beim Klick daneben, mit
+ * Escape und nach `INFO_AUTO_CLOSE_MS` von selbst — ein natives <details>
+ * blieb offen, bis man das ⓘ ein zweites Mal traf, und lag dann über dem
+ * Diagramm.
+ */
+function InfoPop({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const timer = window.setTimeout(() => setOpen(false), INFO_AUTO_CLOSE_MS)
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div className="air-pop" ref={ref}>
+      <button
+        type="button"
+        className="air-info-btn"
+        title="Erläuterung und WHO-Richtwert"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        ⓘ
+      </button>
+      {open && <div className="air-pop-body">{children}</div>}
+    </div>
+  )
 }
 
 interface RowSpec {
@@ -355,6 +398,19 @@ export function AirQualityPanel() {
           ))}
         </div>
       ))}
+      {/* Alles hier ist CAMS-MODELL, auch der „Jetzt"-Wert und die Mittel über
+          die vergangenen Stunden — keine Messung. Ohne den Hinweis liest sich
+          „Jetzt 42" wie ein Messwert. */}
+      {band && (
+        <span
+          className="air-src"
+          title="Alle Werte sind Modellwerte des Copernicus-Atmosphärendienstes (CAMS Europa, ~10 km), auch der aktuelle Wert und die Mittel über die vergangenen Stunden. Gemessene Werte veröffentlichen die Umweltbehörden (in Österreich Umweltbundesamt und Länder, in Deutschland das Umweltbundesamt)."
+        >
+          Modellwerte (CAMS)
+          <br />
+          keine Messung
+        </span>
+      )}
       </div>
       {data && (
         <div className="meteo-stack">
@@ -364,12 +420,7 @@ export function AirQualityPanel() {
                 <span className="air-cap">
                   {c.title} <span className="label-muted">({c.unit})</span>
                   {/* Erläuterung zum Aufklappen statt Linien im Diagramm */}
-                  <details className="air-pop">
-                    <summary className="air-info-btn" title="Erläuterung und WHO-Richtwert">
-                      ⓘ
-                    </summary>
-                    <div className="air-pop-body">{INFO[info]}</div>
-                  </details>
+                  <InfoPop>{INFO[info]}</InfoPop>
                 </span>
                 <span className="atfc-legend">
                   {c.curves.length > 1 &&

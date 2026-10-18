@@ -2925,7 +2925,13 @@ npm run preview   # gebautes dist/ servieren
   8-h-Mittel. **Sie stehen NICHT als Linien im Diagramm**, sondern als
   Erläuterung hinter einem ⓘ je Größe — auf Wunsch auf ein Minimum gekürzt:
   Richtwert, Mittelungszeitraum und dass ein einzelner Stundenwert ihn nicht
-  reißt, ein Satz je Größe. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  reißt, ein Satz je Größe. Das ⓘ ist ein eigenes `InfoPop` statt `<details>`:
+  schließt beim Klick daneben, mit Escape und nach 10 s von selbst.
+  **ALLES IST MODELL, AUCH „JETZT" UND DIE MITTEL** — CAMS-Vorhersage, die
+  vergangenen Stunden aus `past_days` ebenso; keine Messung. Steht als
+  „Modellwerte (CAMS) · keine Messung" am Ende der Kastenreihe, ohne das
+  läse sich „Jetzt 42" wie ein Messwert. Messwerte hätten nur die
+  Umweltbehörden (nicht angebunden). Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.
