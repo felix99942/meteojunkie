@@ -4602,3 +4602,36 @@ button:focus-visible {
   background: radial-gradient(ellipse at 50% 50%, rgba(3, 4, 10, 0) 0%, rgba(3, 4, 10, 0.25) 60%, rgba(3, 4, 10, 0.7) 100%);
   pointer-events: none;
 }
+
+/* Luftqualität: Index der laufenden Stunde in der Leiste, Rand und Punkt in
+   der Farbe der EAQI-Stufe — die Zahl allein sagt nicht, ob 40 viel ist. */
+.air-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.air-now i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.air-now b {
+  font-size: 15px;
+}
+
+.air-domain {
+  white-space: nowrap;
+}
+
+/* Die Leiste trägt Ortswahl, acht Schnellwahlknöpfe UND den Index — sie darf
+   umbrechen, sonst läuft der Index über den rechten Rand hinaus. */
+.air-bar {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 6px;
+}

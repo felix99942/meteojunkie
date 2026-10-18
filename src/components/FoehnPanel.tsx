@@ -601,7 +601,9 @@ export function FoehnPanel() {
           ))}
         </div>
       </div>
-      <OpenMeteoAttribution className="app-attribution" />
+      <div className="app-attribution">
+        <OpenMeteoAttribution />
+      </div>
     </div>
   )
 }

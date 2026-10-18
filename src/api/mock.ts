@@ -573,6 +573,59 @@ function buildEnsembleBody(u: URL): MockLocation {
 }
 
 /**
+ * Luftqualität (CAMS) in API-Form: Feinstaub mit Tagesgang und einer
+ * Belastungsepisode am zweiten Tag, Ozon mit Nachmittagsmaximum, NO₂ mit
+ * Morgen- und Abendspitze. Die Teilindizes folgen grob den EAQI-Schwellen,
+ * der Gesamtindex ist ihr Maximum — wie bei der echten API. Ab +96 h null,
+ * so wie CAMS Europa dort endet.
+ */
+function buildAirQualityBody(u: URL): MockLocation {
+  const lat = Number(u.searchParams.get('latitude') ?? 0)
+  const lon = Number(u.searchParams.get('longitude') ?? 0)
+  const days = Number(u.searchParams.get('forecast_days') ?? 5)
+  const vars = (u.searchParams.get('hourly') ?? '').split(',').filter(Boolean)
+  const start = Math.floor(Date.now() / 86_400_000) * 86_400
+  const n = days * 24
+  const time = Array.from({ length: n }, (_, i) => start + i * 3600)
+  const seed = hash01(`${lat.toFixed(2)},${lon.toFixed(2)}`) * 6
+  const series = (f: (h: number, i: number) => number) =>
+    time.map((_, i) => (i >= 96 ? null : round1(Math.max(0, f(i % 24, i)))))
+  const episode = (i: number) => 18 * Math.exp(-(((i - 40) / 10) ** 2))
+  const pm25 = series((h, i) => 8 + seed + 4 * Math.cos(((h - 21) / 24) * 2 * Math.PI) + episode(i))
+  const pm10 = pm25.map((v) => (v == null ? null : round1(v * 1.35)))
+  const no2 = series((h) => 10 + 12 * Math.exp(-(((h - 7) / 2) ** 2)) + 9 * Math.exp(-(((h - 18) / 2.5) ** 2)))
+  const o3 = series((h) => 45 + 40 * Math.exp(-(((h - 15) / 4) ** 2)) - 15 * Math.exp(-(((h - 7) / 3) ** 2)))
+  const dust = series((_, i) => 25 * Math.exp(-(((i - 70) / 9) ** 2)))
+  const sub = (vals: (number | null)[], per20: number) => vals.map((v) => (v == null ? null : Math.round((v / per20) * 20)))
+  const parts: Record<string, (number | null)[]> = {
+    european_aqi_pm2_5: sub(pm25, 10),
+    european_aqi_pm10: sub(pm10, 20),
+    european_aqi_nitrogen_dioxide: sub(no2, 40),
+    european_aqi_ozone: sub(o3, 60),
+    european_aqi_sulphur_dioxide: time.map((_, i) => (i >= 96 ? null : 1)),
+  }
+  const eaqi = time.map((_, i) =>
+    i >= 96 ? null : Math.max(...Object.values(parts).map((p) => p[i] ?? 0)),
+  )
+  const all: Record<string, (number | null)[]> = {
+    european_aqi: eaqi,
+    ...parts,
+    pm2_5: pm25,
+    pm10,
+    nitrogen_dioxide: no2,
+    ozone: o3,
+    dust,
+  }
+  const hourly: Record<string, unknown> = { time }
+  const hourly_units: Record<string, string> = { time: 'unixtime' }
+  for (const v of vars) {
+    hourly[v] = all[v] ?? time.map(() => null)
+    hourly_units[v] = v.startsWith('european_aqi') ? 'EAQI' : 'μg/m³'
+  }
+  return { latitude: lat, longitude: lon, elevation: mockElevation(lat, lon), hourly, hourly_units } as MockLocation
+}
+
+/**
  * Mock-Interception für den API-Layer: null = kein Mock, echt fetchen.
  * Gilt für Forecast- und Ensemble-Endpoint; Geocoding bleibt echt (zählt nicht
  * gegen das gewichtete Limit und ist nur nutzerausgelöst).
@@ -590,6 +643,17 @@ export async function maybeMockApiGet(url: string): Promise<HttpResult | null> {
       }
     }
     return { ok: true, status: 200, text: JSON.stringify(buildEnsembleBody(u)) }
+  }
+  if (u.pathname.startsWith('/v1/air-quality')) {
+    await new Promise((r) => setTimeout(r, 120))
+    if (MOCK_MODE === 'ratelimit') {
+      return {
+        ok: false,
+        status: 429,
+        text: JSON.stringify({ error: true, reason: 'Mock: Minutely API request limit exceeded.' }),
+      }
+    }
+    return { ok: true, status: 200, text: JSON.stringify(buildAirQualityBody(u)) }
   }
   if (!u.pathname.startsWith('/v1/forecast')) return null
   await new Promise((r) => setTimeout(r, 120)) // Ladezustände bleiben sichtbar

@@ -111,3 +111,24 @@ export function ReliefAttribution({ className = '' }: { className?: string }) {
     </span>
   )
 }
+
+/**
+ * Quellenangabe der Luftqualität: die Werte sind CAMS-Vorhersagen, Open-Meteo
+ * liefert sie nur aus. Copernicus verlangt die Nennung des Dienstes.
+ */
+export function AirQualityAttribution({ className = '' }: { className?: string }) {
+  return (
+    <span className={`attribution ${className}`.trim()}>
+      Datenquelle:{' '}
+      <a href="https://atmosphere.copernicus.eu/" target="_blank" rel="noreferrer">
+        Copernicus Atmosphere Monitoring Service (CAMS)
+      </a>
+      , ausgeliefert über{' '}
+      <a href="https://open-meteo.com/en/docs/air-quality-api" target="_blank" rel="noreferrer">
+        Open-Meteo
+      </a>{' '}
+      (<a href="https://creativecommons.org/licenses/by/4.0/deed.de" target="_blank" rel="noreferrer">CC BY 4.0</a>).
+      Modellvorhersage, keine Messung — amtliche Messwerte bei den Umweltbehörden.
+    </span>
+  )
+}

@@ -5,6 +5,7 @@
 
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query'
 import {
+  fetchAirQuality,
   fetchDeterministicSeries,
   fetchEnsembleSeries,
   fetchGridField,
@@ -17,6 +18,7 @@ import {
 } from './openmeteo'
 import { loadSonde, loadSondeIndex, type SondeData, type SondeIndex } from './sondes'
 import type { DomainPreset } from '../config/domains'
+import type { AirQualityData } from '../config/airQuality'
 import { getEnsembleModel } from '../config/ensemble'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
@@ -260,5 +262,22 @@ export function useSonde(file: string | null): UseQueryResult<SondeData> {
     enabled: file != null,
     staleTime: Infinity,
     gcTime: SERIES_GC_TIME_MS,
+  })
+}
+
+/**
+ * Luftqualität am Punkt (ein Abruf für alle Größen). CAMS Europa rechnet EINEN
+ * Lauf am Tag — eine Stunde Frische ist deshalb großzügig, und jeder Ort wird
+ * je Sitzung praktisch nur einmal geholt.
+ */
+export function useAirQuality(location: LatLon | null): UseQueryResult<AirQualityData> {
+  return useQuery({
+    queryKey: ['air-quality', location?.lat.toFixed(4) ?? null, location?.lon.toFixed(4) ?? null],
+    queryFn: () => fetchAirQuality(location!.lat, location!.lon),
+    enabled: location !== null,
+    staleTime: 60 * 60 * 1000,
+    gcTime: SERIES_GC_TIME_MS,
+    retry: 2,
+    retryDelay: (attempt: number) => Math.min(8000, 1000 * 2 ** attempt),
   })
 }

@@ -1397,7 +1397,9 @@ export function VerifyPanel() {
           </>
         )}
       </div>
-      <OpenMeteoAttribution className="app-attribution" />
+      <div className="app-attribution">
+        <OpenMeteoAttribution />
+      </div>
     </div>
   )
 }

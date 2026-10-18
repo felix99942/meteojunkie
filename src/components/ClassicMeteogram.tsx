@@ -617,7 +617,9 @@ export function ClassicMeteogram() {
           ))}
         </div>
       )}
-      <OpenMeteoAttribution className="app-attribution" />
+      <div className="app-attribution">
+        <OpenMeteoAttribution />
+      </div>
     </div>
   )
 }

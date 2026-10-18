@@ -61,6 +61,12 @@ const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
     group: 'forecast',
   },
   {
+    id: 'air',
+    label: 'Luftqualität',
+    title: 'Luftqualität am Punkt — Europäischer Luftqualitätsindex, Feinstaub, Stickstoffdioxid, Ozon, Saharastaub (CAMS)',
+    group: 'forecast',
+  },
+  {
     id: 'globe',
     label: 'Modellkarten',
     title:

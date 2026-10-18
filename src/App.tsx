@@ -6,6 +6,7 @@ import { TimeScrubber } from './components/TimeScrubber'
 import { AppNav } from './components/AppNav'
 import { AtSection } from './components/AtSection'
 import { ClassicMeteogram } from './components/ClassicMeteogram'
+import { AirQualityPanel } from './components/AirQualityPanel'
 import { VerifyPanel } from './components/VerifyPanel'
 import { FoehnPanel } from './components/FoehnPanel'
 import { Impressum } from './components/Impressum'
@@ -57,6 +58,8 @@ export default function App() {
         </>
       ) : view === 'classic' ? (
         <ClassicMeteogram />
+      ) : view === 'air' ? (
+        <AirQualityPanel />
       ) : view === 'verify' ? (
         <VerifyPanel />
       ) : view === 'foehn' ? (

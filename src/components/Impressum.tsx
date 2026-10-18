@@ -60,7 +60,7 @@ const THIRD_PARTY_HOSTS = [
     : []),
   {
     host: 'open-meteo.com',
-    what: 'Vorhersagen, Ensembles, vergangene Läufe und die Ortssuche',
+    what: 'Vorhersagen, Ensembles, vergangene Läufe, Luftqualität (CAMS) und die Ortssuche',
     href: 'https://open-meteo.com/en/terms',
     hrefLabel: 'Nutzungsbedingungen und Datenschutz',
   },

@@ -68,6 +68,13 @@ export type AppView =
    */
   | 'globe'
   /**
+   * Luftqualität am Punkt (CAMS über Open-Meteo): Europäischer
+   * Luftqualitätsindex, Feinstaub, NO₂, Ozon, Wüstenstaub. Eigenes Gerüst wie
+   * das klassische Meteogramm, teilt sich `lockedLocation` (siehe
+   * `config/airQuality.ts`).
+   */
+  | 'air'
+  /**
    * Impressum/Offenlegung. Kein Werkzeug-Bereich — steht nicht in der
    * Tab-Reihe, sondern hinter dem kleinen Link am rechten Rand der Navigation
    * (siehe AppNav). Als AppView geführt, weil die Anbieterkennzeichnung

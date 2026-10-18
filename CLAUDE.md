@@ -2892,6 +2892,25 @@ npm run preview   # gebautes dist/ servieren
   Am Stück lädt der Bucket von hier 6 MB/s (580 MB ≈ 95 s); gangbar ist also
   nur der GANZDATEI-Download im Deploy (Actions in den USA, nahe am Bucket),
   danach lokal ausschneiden und auf ein reguläres Gitter umrechnen.
+- **Luftqualität** (`AirQualityPanel.tsx`, Registry/Kerne `config/airQuality.ts`
+  mit Tests, Abruf `fetchAirQuality` in `api/openmeteo.ts`, AppView `air`,
+  seit 2026-10-18) — CAMS-Vorhersage über die Air-Quality-API von Open-Meteo
+  am globalen `lockedLocation`: Europäischer Luftqualitätsindex (EAQI) mit den
+  Stufengrenzen als Linien, Feinstaub PM2,5/PM10, NO₂, Ozon, Wüstenstaub. In
+  der Leiste der Index der laufenden Stunde samt Stufe und dem MASSGEBLICHEN
+  Schadstoff (höchster Teilindex — „mäßig wegen Ozon" ist eine andere Lage als
+  „mäßig wegen Feinstaub"). **Punkt statt Karte, das ist Budget**: EIN Abruf je
+  Ort für alle 11 Größen (≈ 1 Call), `staleTime` 1 h (CAMS rechnet einen Lauf
+  am Tag); über `apiGet`, also mock-fähig und im Zähler. Live geprüft
+  (2026-10-18): CORS `*`, kein Key. **NUR `cams_europe`** (0,1°, bis ~+4 Tage):
+  die Vorgabe `auto` hängt danach CAMS global (0,4°) an, mit einem Sprung an
+  der Naht (Ozon nachts 41 gegen 5 µg/m³) — der sähe wie ein Wetterwechsel
+  aus. Außerhalb Europas antwortet `cams_europe` mit HTTP 400 „No data is
+  available for this location", NUR dann wird auf `cams_global` gewechselt und
+  ein Hinweis gezeigt. Über den Horizont hinaus kommen nulls (SPEC §6) — die
+  Achse endet am letzten Wert (`dataEnd`). `uv_index` gibt es nur global und
+  fehlt deshalb. Pollen bewusst noch nicht (Saison vorbei). Quellenzeile nennt
+  CAMS (Copernicus-Bedingung) und Open-Meteo.
 - **Modellkarten** (Tab „Modellkarten", AppView-Id `globe` — dort hat der
   Bereich angefangen; `GlobePanel.tsx`, Registry/Kerne `config/globe.ts` mit
   Tests, Kacheln `render/globeTiles.ts` + `render/globeProtocol.ts`, Laden

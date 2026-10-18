@@ -157,6 +157,14 @@ import { runsBaseKey, sliceRuns, type PastRunSeries } from './pastRuns'
 export { sliceRuns, type PastRunSeries } from './pastRuns'
 import { gridRequestQueue } from './queue'
 import { maybeMockApiGet, MOCK_MODE, mockGridDims, type HttpResult } from './mock'
+import {
+  AIR_QUALITY_FORECAST_DAYS,
+  AIR_QUALITY_URL,
+  AIR_VARIABLES,
+  parseAirQuality,
+  type AirDomain,
+  type AirQualityData,
+} from '../config/airQuality'
 
 /**
  * Einziger Weg zur Forecast-API: im Mock-Modus antwortet mock.ts in exakter
@@ -839,6 +847,56 @@ export async function fetchPastRuns(
   await cacheSet(exactKey, series, endDate >= today ? RUNS_TODAY_TTL_MS : undefined)
   noteRange(base, startDate, endDate)
   return series
+}
+
+// --- Luftqualität (CAMS über Open-Meteo) ------------------------------------
+// Eigener Endpunkt (air-quality-api.open-meteo.com), derselbe apiGet-Pfad:
+// mock-fähig und im Verbrauchszähler sichtbar. EIN Abruf je Ort für alle
+// Größen; Registry, Domänenwahl und die live geprüften Fallen stehen in
+// `config/airQuality.ts`.
+
+async function fetchAirQualityDomain(lat: number, lon: number, domain: AirDomain): Promise<HttpResult> {
+  const params = new URLSearchParams({
+    latitude: lat.toFixed(4),
+    longitude: lon.toFixed(4),
+    hourly: AIR_VARIABLES.join(','),
+    domains: domain,
+    forecast_days: String(AIR_QUALITY_FORECAST_DAYS),
+    timezone: 'UTC',
+    timeformat: 'unixtime',
+  })
+  const cost = estimateWeight(1, AIR_VARIABLES.length, AIR_QUALITY_FORECAST_DAYS)
+  return apiGet(`${AIR_QUALITY_URL}?${params}`, cost, 'point')
+}
+
+function errorReason(res: HttpResult): string {
+  try {
+    const body = JSON.parse(res.text) as { reason?: string }
+    if (body.reason) return body.reason
+  } catch {
+    // Status reicht
+  }
+  return `HTTP ${res.status}`
+}
+
+/**
+ * Luftqualität am Punkt — CAMS Europa, und NUR wenn der Ort dort nicht
+ * abgedeckt ist („No data is available for this location") CAMS global.
+ * Kein `auto`: das mischt beide Modelle mit einem Sprung an der Naht.
+ */
+export async function fetchAirQuality(lat: number, lon: number): Promise<AirQualityData> {
+  let domain: AirDomain = 'cams_europe'
+  let res = await fetchAirQualityDomain(lat, lon, domain)
+  if (!res.ok && /no data is available/i.test(errorReason(res))) {
+    domain = 'cams_global'
+    res = await fetchAirQualityDomain(lat, lon, domain)
+  }
+  if (!res.ok) {
+    const reason = errorReason(res)
+    if (isRateLimited(res.status, reason)) throw new RateLimitError(reason)
+    throw new Error(`Open-Meteo Luftqualität: ${reason}`)
+  }
+  return parseAirQuality(JSON.parse(res.text) as Parameters<typeof parseAirQuality>[0], domain)
 }
 
 const ENSEMBLE_URL = 'https://ensemble-api.open-meteo.com/v1/ensemble'
