@@ -1874,6 +1874,10 @@ button:focus-visible {
 
 /* --- Bereichs-Navigation ------------------------------------------------- */
 
+.appnav-tab.is-group-start {
+  margin-left: 14px;
+}
+
 .appnav {
   display: flex;
   gap: 5px;

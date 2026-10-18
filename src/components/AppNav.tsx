@@ -120,11 +120,14 @@ export function AppNav() {
   const tabs = POINT_FORECASTS_ENABLED ? TABS : TABS.filter((t) => t.id !== 'workbench')
   return (
     <nav className="appnav">
-      {tabs.map((t) => (
+      {tabs.map((t, i) => (
         <button
           key={t.id}
           type="button"
-          className={`appnav-tab is-${t.group}${view === t.id ? ' is-active' : ''}`}
+          // Erster Knopf einer neuen Farbgruppe bekommt Abstand nach links —
+          // die Gruppen lesen sich dann als Blöcke, auch ohne auf die Farbe
+          // zu achten
+          className={`appnav-tab is-${t.group}${i > 0 && tabs[i - 1].group !== t.group ? ' is-group-start' : ''}${view === t.id ? ' is-active' : ''}`}
           title={t.title}
           aria-pressed={view === t.id}
           onClick={() => setView(t.id)}

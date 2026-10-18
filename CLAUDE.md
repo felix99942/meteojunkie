@@ -3990,6 +3990,9 @@ npm run preview   # gebautes dist/ servieren
   **lila** Luftqualität (`air`) — ein anderes Thema (Schadstoffe statt
   Wettergrößen), mit Modell UND Messung, deshalb abgesetzt rechts neben der
   Verifikation (auf Wunsch; #b48cf0, Kontrast nachgerechnet 4,9/5,4/5,1:1).
+  **Zwischen den Gruppen steht ein Abstand** (`.is-group-start`, 14 px statt
+  5) — auf Wunsch, statt die Fachbereiche in ein Menü zu legen: die Reihe
+  bleibt einzeln anklickbar, liest sich aber als Blöcke.
   `NavGroup` setzt nur `--nav`, alles Weitere leitet sich daraus ab.
   **Die Farbe liegt auf JEDEM Tab, nicht nur auf dem aktiven** — sie ordnet die
   Reihe in Blöcke, und das tut sie nur, wenn man sie durchgehend sieht. Die
