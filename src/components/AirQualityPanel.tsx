@@ -58,9 +58,7 @@ const readoutFmt = new Intl.DateTimeFormat('de-DE', {
   hourCycle: 'h23',
 })
 
-const MS_PER_HOUR = 3_600_000
-/** So viele Stunden vor der jüngsten Messung (bzw. vor jetzt) beginnt die Achse. */
-const PAST_HOURS = 3
+const MS_PER_DAY = 86_400_000
 const COLOR_EAQI = '#e0e3e8'
 const COLOR_PM25 = '#d9822b'
 const COLOR_PM10 = '#b8a04a'
@@ -268,16 +266,10 @@ export function AirQualityPanel() {
     // mit null — die Achse endet am letzten Wert statt an einer leeren Fläche
     const end = dataEnd(data) ?? -Infinity
     const n = data.times.filter((t) => t <= end).length
-    // Vergangenheit nur so weit, wie sie etwas sagt (auf Wunsch): höchstens
-    // PAST_HOURS vor der jüngsten MESSUNG — dort kann man Modell und Messung
-    // vergleichen; ohne Messstelle ebenso viele Stunden vor jetzt. Ältere
-    // Modellwerte sind abgelaufene Vorhersage. Die Mittel in den Kästen
-    // rechnen weiter über die volle Reihe.
-    let lastMeasured = -Infinity
-    for (const m of Object.values(measured)) if (m) for (const t of m.values.keys()) if (t > lastMeasured) lastMeasured = t
-    const anchor = Number.isFinite(lastMeasured) ? lastMeasured : Math.floor(Date.now() / MS_PER_HOUR) * MS_PER_HOUR
-    const start = anchor - PAST_HOURS * MS_PER_HOUR
-    const s0 = Math.max(0, data.times.findIndex((t) => t >= start))
+    // Der Vortag ist nur für die gleitenden Mittel da — gezeigt wird ab heute
+    // 00 UTC, wie im Meteogramm
+    const todayStart = Math.floor(Date.now() / MS_PER_DAY) * MS_PER_DAY
+    const s0 = Math.max(0, data.times.findIndex((t) => t >= todayStart))
     const cut = (v: string) => (data.values[v] ?? []).slice(s0, n)
 
     const times = data.times.slice(s0, n)

@@ -2965,11 +2965,7 @@ npm run preview   # gebautes dist/ servieren
   (`measuredMean`, ≥ 3/4 der Stunden belegt). Dafür wird ab GESTERN
   abgerufen (~280 statt ~140 KB). Der Jetzt-Kasten ist zweizeilig und die
   Kopfzeilen tragen „Modell"/„gemessen", damit alle fünf Kästen in eine Reihe
-  passen — umgebrochen kosteten sie den Diagrammen eine ganze Zeile.
-  **Die Zeitachse beginnt 3 h vor der JÜNGSTEN Messung** (`PAST_HOURS`, auf
-  Wunsch; ohne Messstelle 3 h vor jetzt): länger vergangene Modellwerte sind
-  abgelaufene Vorhersage. Die Mittel in den Kästen rechnen weiter über die
-  volle abgerufene Reihe. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
+  passen — umgebrochen kosteten sie den Diagrammen eine ganze Zeile. Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
   auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
   zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
   gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.
