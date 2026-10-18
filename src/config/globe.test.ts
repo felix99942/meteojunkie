@@ -12,7 +12,6 @@ import {
   sampleWind,
   tilePixelLat,
   tilePixelLon,
-  WAVE_VARIABLES,
   type GlobeField,
   type GlobeGrid,
 } from './globe'
@@ -268,13 +267,8 @@ describe('Meeresgrößen', () => {
       expect(values).toEqual([...values].sort((a, b) => a - b))
     }
   })
-  it('der Wellenlauf gehört nur zu Wellengrößen, die Wassertemperatur zeigt den Wind', () => {
-    expect(WAVE_VARIABLES.has('swh')).toBe(true)
-    expect(WAVE_VARIABLES.has('pp1d')).toBe(true)
-    expect(WAVE_VARIABLES.has('sst')).toBe(false)
-  })
-  it('die Partikelquellen stehen nicht in der Auswahl', () => {
-    expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10' || v.id === 'wavedir')).toBe(false)
+  it('die Partikelquelle steht nicht in der Auswahl', () => {
+    expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10')).toBe(false)
   })
 })
 

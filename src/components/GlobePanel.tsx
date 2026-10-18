@@ -40,7 +40,6 @@ import {
   sampleRgb3,
   sampleWind,
   validMs,
-  WAVE_VARIABLES,
   type ContourId,
   type GlobeField,
   type GlobeMeta,
@@ -132,9 +131,9 @@ export function GlobePanel() {
   /** Isolinien als eigene Ebenen über JEDER Größe — Isobaren sind die Vorgabe. */
   const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false })
   /**
-   * Partikel (Strömung als Bewegung) — eingeschaltet, sobald eine Wind- oder
-   * Wellengröße gewählt wird. Über Wellenhöhe und -periode zeigen sie den
-   * WELLENLAUF (`wavedir`), sonst den Wind (`uv10`).
+   * Windpartikel (10-m-Wind `uv10` als Bewegung) — eingeschaltet, sobald Wind
+   * oder Böen gewählt werden. IMMER der Wind, auch über den Wellengrößen: ein
+   * eigener Wellenlauf (Gruppengeschwindigkeit) war auf Wunsch wieder raus.
    */
   const [particles, setParticles] = useState(false)
 
@@ -182,7 +181,7 @@ export function GlobePanel() {
   // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
   // eingeschaltet, abschalten bleibt danach möglich
   useEffect(() => {
-    if (varId === 'wind10' || varId === 'gust' || WAVE_VARIABLES.has(varId)) setParticles(true)
+    if (varId === 'wind10' || varId === 'gust') setParticles(true)
   }, [varId])
 
   // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück — und
@@ -429,8 +428,7 @@ export function GlobePanel() {
       particlesRef.current = null
     }
   }, [mapReady])
-  const particleVar: GlobeVarId = WAVE_VARIABLES.has(varId) ? 'wavedir' : 'uv10'
-  const waves = particleVar === 'wavedir'
+  const particleVar: GlobeVarId = 'uv10'
   const uvMeta = meta?.variables[particleVar]
   const uvStep = meta && uvMeta && step != null ? uvMeta.steps[nearestStepIndex(uvMeta.steps, run, validMs(meta, step))] : undefined
   useEffect(() => {
@@ -466,8 +464,7 @@ export function GlobePanel() {
     // wenn ihre Kacheln gefragt werden
     const ahead = [1, 2, 3, -1].slice(0, PREFETCH_AHEAD + 1)
     const vars: GlobeVarId[] = [varId, ...CONTOURS.filter((c) => contours[c.id] && meta.variables[c.id]).map((c) => c.id)]
-    const pv: GlobeVarId = WAVE_VARIABLES.has(varId) ? 'wavedir' : 'uv10'
-    if (particles && meta.variables[pv]) vars.push(pv)
+    if (particles && meta.variables.uv10) vars.push('uv10')
     for (const v of vars) {
       const vsteps = meta.variables[v]?.steps ?? []
       const base = nearestStepIndex(vsteps, run, validMs(meta, step))
@@ -751,12 +748,8 @@ export function GlobePanel() {
               className="globe-layer"
               title={
                 meta && !uvMeta
-                  ? waves
-                    ? 'Dieses Modell rechnet keine Wellen — Wellenlauf gibt es nur beim ECMWF IFS.'
-                    : 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
-                  : waves
-                    ? 'Wellenlauf: die Spuren laufen in Ausbreitungsrichtung mit der Gruppengeschwindigkeit im tiefen Wasser (c = g·T/4π aus der Peak-Periode) — lange Dünung zieht sichtbar schneller als kurze Windsee.'
-                    : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
+                  ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
+                  : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
               }
             >
               <input
@@ -765,7 +758,7 @@ export function GlobePanel() {
                 disabled={!uvMeta}
                 onChange={(e) => setParticles(e.target.checked)}
               />{' '}
-              {waves ? 'Wellenlauf' : 'Windpartikel'}
+              Windpartikel
             </label>
           </div>
           <div className="globe-readout" aria-live="polite">

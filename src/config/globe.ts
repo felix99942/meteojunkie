@@ -20,13 +20,12 @@ import { THAILAND_ENABLED } from './features'
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
- * `uv10` und `wavedir` sind keine wählbaren Größen, sondern die Datenquellen
- * der Partikel (Wind bzw. Wellenlauf, `encoding: 'uv8'`) — sie stehen deshalb
- * nicht in `GLOBE_VARIABLES`.
+ * `uv10` ist keine wählbare Größe, sondern die Datenquelle der Windpartikel
+ * (`encoding: 'uv8'`) — sie steht deshalb nicht in `GLOBE_VARIABLES`.
  */
 export type GlobeVarId =
   | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'reltop' | 'tcc' | 'clouds' | 'uv10'
-  | 'swh' | 'pp1d' | 'sst' | 'wavedir'
+  | 'swh' | 'pp1d' | 'sst'
 
 export interface GlobeVariable {
   id: GlobeVarId
@@ -254,9 +253,6 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendEvery: 3,
   },
 ]
-
-/** Größen, über denen die Partikel den WELLENLAUF statt des Winds zeigen. */
-export const WAVE_VARIABLES: ReadonlySet<GlobeVarId> = new Set(['swh', 'pp1d'])
 
 /** Vorgabe ist die Relative Topografie (auf Wunsch) — mit Isobaren und 500-hPa-Linien darüber. */
 export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'

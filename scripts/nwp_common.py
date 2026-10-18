@@ -18,7 +18,6 @@ Einheitliche Feldnamen und Einheiten:
                      führt nur `tcc`, im Index nachgesehen 2026-10-05)
   swh          m, signifikante Wellenhöhe (nur ECMWF, Wellenmodell WAM; über
                Land kein Wert)
-  mwd          °, mittlere Wellenrichtung, AUS der die Wellen kommen
   pp1d         s, Peak-Periode
   skt          K, Hauttemperatur — über dem Meer die Wassertemperatur
 
@@ -82,10 +81,6 @@ VARIABLES = {
     'swh': {'lo': 0.0, 'step': 0.05, 'unit': 'm'},
     'pp1d': {'lo': 0.0, 'step': 0.1, 'unit': 's'},
     'sst': {'lo': -5.0, 'step': 0.1, 'unit': '°C'},
-    # Wellenlauf für die Partikel: Ausbreitungsrichtung × Gruppengeschwindigkeit
-    # im tiefen Wasser, c_g = g·T/(4π) — eine 10-s-Dünung läuft mit 7,8 m/s.
-    # Dieselbe Kodierung wie `uv10`, die Partikel-Animation nimmt beides.
-    'wavedir': {'lo': -63.5, 'step': 0.5, 'unit': 'm/s', 'encoding': 'uv8'},
 }
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
@@ -94,10 +89,10 @@ NEEDS = {
     'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',),
     'reltop': ('gh500', 'gh1000'), 'tcc': ('tcc',),
     'clouds': ('clch', 'clcm', 'clcl'), 'uv10': ('u10', 'v10'),
-    'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'), 'wavedir': ('mwd', 'pp1d'),
+    'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
-OPTIONAL = {'gust', 'precip', 'clouds', 'swh', 'pp1d', 'sst', 'wavedir'}
+OPTIONAL = {'gust', 'precip', 'clouds', 'swh', 'pp1d', 'sst'}
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
 # 8-MB-Bereich einmal mit 7,8 MB/s, einmal mit 90 KB/s = 88 s). Ein
@@ -229,12 +224,6 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         # in der Arktis — als „Wassertemperatur" wäre das falsch, also kein Wert.
         sst = np.where(np.isfinite(f['swh']), f['skt'] - 273.15, np.nan)
         return np.where(sst < -2.0, np.nan, sst)
-    if var == 'wavedir':
-        # mwd ist die Richtung, AUS der die Wellen kommen — gelaufen wird
-        # in die Gegenrichtung
-        to = np.radians(f['mwd'] + 180.0)
-        cg = 9.81 * f['pp1d'] / (4 * np.pi)
-        return np.stack([cg * np.sin(to), cg * np.cos(to)], axis=-1)
     raise KeyError(var)
 
 

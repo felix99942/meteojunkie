@@ -68,7 +68,6 @@ FIELDS = {
 # Land kein Wert (36 % der Punkte). Je Feld ~0,8–1 MB Abruf.
 WAVE_FIELDS = {
     ('swh', None): 'swh',
-    ('mwd', None): 'mwd',
     ('pp1d', None): 'pp1d',
 }
 

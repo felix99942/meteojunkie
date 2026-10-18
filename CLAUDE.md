@@ -3070,13 +3070,13 @@ npm run preview   # gebautes dist/ servieren
   Feld), und NICHT unter −2 °C: dort ist es Meereis, gemessen bis −32 °C
   Eisoberfläche in der Arktis. Gemeint ist die oberste Schicht, nicht die
   Badetiefe — steht im Tooltip. Plausibilität: Ionisches Meer 24,5 °C bei
-  1,0 m Welle am 08.10. **Über Wellenhöhe und -periode zeigen die Partikel
-  den WELLENLAUF** (`wavedir`, gleiche `uv8`-Kodierung wie `uv10`): Richtung
-  = Gegenrichtung von `mwd` (das ist die Herkunft), Tempo = Gruppen-
-  geschwindigkeit im tiefen Wasser c_g = g·T/(4π) aus der Peak-Periode —
-  eine 10-s-Dünung läuft mit 7,8 m/s, lange Dünung zieht also sichtbar
-  schneller als kurze Windsee. Kosten: ~2,7 MB Abruf und ~0,8 MB Ablage je
-  Schritt, ~65 MB je IFS-Lauf; ECMWF-Cache-Schlüssel dafür `v4`. ICON führt
+  1,0 m Welle am 08.10. **Über den Wellengrößen zeigen die Partikel den WIND, keinen Wellenlauf**
+  (seit 2026-10-18, auf Wunsch): eine Fassung ließ sie dort in
+  Ausbreitungsrichtung (Gegenrichtung von `mwd`) mit der Gruppengeschwindigkeit
+  c_g = g·T/(4π) laufen — bei mäßigem Seegang viel zu schnell und neben dem
+  Farbfeld unverhältnismäßig. Die Wellenhöhe ist das Farbfeld, die Partikel
+  bleiben der 10-m-Wind; `mwd` und das Feld `wavedir` sind aus dem Ingest
+  entfernt. Kosten der Wellengrößen: ~2 MB Abruf je Schritt. ICON führt
   keine Wellen (DWD hat dafür ein eigenes Wellenmodell, EWAM/GWAM, nicht
   angebunden), die Auswahl ist dort gesperrt.
   **WINDPARTIKEL** (`render/windParticles.ts` mit Tests, Schalter
