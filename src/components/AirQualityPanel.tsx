@@ -23,6 +23,8 @@ import {
   EAQI_BANDS,
   eaqiAxisTop,
   eaqiBand,
+  concBand,
+  EAQI_BANDS as BANDS_ORDER,
   rollingMean,
   WHO_GUIDELINES,
   WHO_SOURCE_URL,
@@ -55,9 +57,13 @@ const COLOR_NO2 = '#c0607a'
 const COLOR_O3 = '#4f97e0'
 const COLOR_DUST = '#c9a227'
 
-/** Gleitende Mittel, die je Zeile zugeschaltet werden können (Stunden). */
-const MEAN_WINDOWS = [8, 24] as const
-type MeanWindow = (typeof MEAN_WINDOWS)[number]
+/** Mittelungszeiträume der Kästen neben dem Jetzt-Wert (Stunden). */
+const SUMMARY_WINDOWS = [8, 24] as const
+/** Die Stoffe in den Mittelwert-Kästen — Feinstaub steckt schon im Index. */
+const SUMMARY_VARS = [
+  { v: 'nitrogen_dioxide', label: 'NO₂' },
+  { v: 'ozone', label: 'O₃' },
+] as const
 
 const WHO = WHO_GUIDELINES
 const WhoLink = () => (
@@ -138,8 +144,6 @@ const INFO: Record<string, ReactNode> = {
 interface RowSpec {
   id: string
   info: string
-  /** Darf ein gleitendes Mittel zugeschaltet werden? (Nicht beim Index.) */
-  meanable: boolean
   chart: ChartDef
 }
 
@@ -158,20 +162,6 @@ export function AirQualityPanel() {
     setReadoutMs(ms)
   }, [])
 
-  /**
-   * Zugeschaltete gleitende Mittel je Zeile — Vorgabe: keine. Als Schlüssel
-   * ein String („pm:24,no2:8"), damit der Memo darauf keyen kann.
-   */
-  const [means, setMeans] = useState<Record<string, MeanWindow[]>>({})
-  const toggleMean = (row: string, w: MeanWindow) =>
-    setMeans((m) => {
-      const cur = m[row] ?? []
-      return { ...m, [row]: cur.includes(w) ? cur.filter((x) => x !== w) : [...cur, w].sort((a, b) => a - b) }
-    })
-  const meansKey = Object.entries(means)
-    .map(([k, v]) => `${k}:${v.join('/')}`)
-    .join(',')
-
   // Über die IDENTITÄT der Daten keyen, nicht über „geladen ja/nein"
   // (Begründung in `lib/dataKey.ts`)
   const dataKey = seriesKey([data])
@@ -188,13 +178,8 @@ export function AirQualityPanel() {
     const s0 = Math.max(0, data.times.findIndex((t) => t >= todayStart))
     const cut = (v: string) => (data.values[v] ?? []).slice(s0, n)
 
-    /**
-     * Die Stundenkurven einer Zeile plus, falls zugeschaltet, ihre gleitenden
-     * Mittel — gepunktet in derselben Farbe, über die VOLLE Reihe gerechnet,
-     * damit die ersten Stunden von heute ihr Fenster haben.
-     */
-    const curvesFor = (row: string, list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] => {
-      const out: Curve[] = list.map((c) => ({
+    const curvesFor = (list: { v: string; label: string; color: string; width?: number; fill?: number }[]): Curve[] =>
+      list.map((c) => ({
         label: c.label,
         color: c.color,
         type: 'line',
@@ -202,26 +187,11 @@ export function AirQualityPanel() {
         width: c.width ?? 1.6,
         ...(c.fill ? { fill: c.fill } : {}),
       }))
-      for (const w of means[row] ?? []) {
-        for (const c of list) {
-          out.push({
-            label: `${c.label} ${w}-h-Mittel`,
-            color: c.color,
-            type: 'line',
-            values: rollingMean(data.values[c.v] ?? [], w).slice(s0, n),
-            width: w === 24 ? 1.6 : 1.3,
-            dash: w === 24 ? [2, 3] : [6, 3],
-          })
-        }
-      }
-      return out
-    }
 
     const rows: RowSpec[] = [
       {
         id: 'eaqi',
         info: 'eaqi',
-        meanable: false,
         chart: {
           title: 'Europäischer Luftqualitätsindex',
           unit: 'EAQI',
@@ -247,7 +217,6 @@ export function AirQualityPanel() {
       {
         id: 'pm',
         info: 'pm',
-        meanable: true,
         chart: {
           title: 'Feinstaub',
           unit: 'µg/m³',
@@ -255,7 +224,7 @@ export function AirQualityPanel() {
           // Achse folgt dem Datenmaximum; der kleine Boden verhindert nur, dass
           // ein Hauch (0,5 µg/m³) die ganze Zeile füllt
           minTop: 5,
-          curves: curvesFor('pm', [
+          curves: curvesFor([
             { v: 'pm2_5', label: 'PM2,5', color: COLOR_PM25, width: 1.8 },
             { v: 'pm10', label: 'PM10', color: COLOR_PM10, width: 1.4 },
           ]),
@@ -264,31 +233,28 @@ export function AirQualityPanel() {
       {
         id: 'no2',
         info: 'no2',
-        meanable: true,
         chart: {
           title: 'Stickstoffdioxid',
           unit: 'µg/m³',
           zeroBased: true,
           minTop: 5,
-          curves: curvesFor('no2', [{ v: 'nitrogen_dioxide', label: 'NO₂', color: COLOR_NO2 }]),
+          curves: curvesFor([{ v: 'nitrogen_dioxide', label: 'NO₂', color: COLOR_NO2 }]),
         },
       },
       {
         id: 'o3',
         info: 'o3',
-        meanable: true,
         chart: {
           title: 'Ozon',
           unit: 'µg/m³',
           zeroBased: true,
           minTop: 10,
-          curves: curvesFor('o3', [{ v: 'ozone', label: 'O₃', color: COLOR_O3 }]),
+          curves: curvesFor([{ v: 'ozone', label: 'O₃', color: COLOR_O3 }]),
         },
       },
       {
         id: 'dust',
         info: 'dust',
-        meanable: true,
         chart: {
           title: 'Wüstenstaub',
           unit: 'µg/m³',
@@ -296,7 +262,7 @@ export function AirQualityPanel() {
           // Saharastaub kommt in Schüben — ohne Boden sähe ein Hauch von
           // 0,3 µg/m³ wie ein Ereignis aus
           minTop: 5,
-          curves: curvesFor('dust', [{ v: 'dust', label: 'Staub', color: COLOR_DUST, fill: 0.18 }]),
+          curves: curvesFor([{ v: 'dust', label: 'Staub', color: COLOR_DUST, fill: 0.18 }]),
         },
       },
     ]
@@ -308,7 +274,7 @@ export function AirQualityPanel() {
     }
     return { xs: data.times.slice(s0, n).map((t) => t / 1000), rows }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey, meansKey])
+  }, [dataKey])
 
 
   // „Jetzt" einmal je Datenstand — Date.now() direkt im Render gäbe jeder
@@ -320,6 +286,24 @@ export function AirQualityPanel() {
   const band = nowEaqi != null ? eaqiBand(nowEaqi) : null
   const driver = data && nowIdx != null ? dominantPollutant(data, nowIdx) : null
   const domain = data ? AIR_DOMAINS[data.domain] : null
+  /**
+   * Nachlaufende 8- und 24-h-Mittel von NO₂ und Ozon zur laufenden Stunde —
+   * eingeordnet in die EAQI-Stufen (die Grenze zu „mäßig" ist dort der
+   * WHO-Richtwert). Feinstaub fehlt bewusst: er bestimmt schon den Index.
+   */
+  const summary = useMemo(() => {
+    if (!data || nowIdx == null) return []
+    return SUMMARY_WINDOWS.map((w) => {
+      const items = SUMMARY_VARS.map(({ v, label }) => {
+        const m = rollingMean(data.values[v] ?? [], w)[nowIdx]
+        return { v, label, value: m, band: m != null ? concBand(v, m) : null }
+      })
+      // Rand in der Farbe der schlechteren Stufe
+      const worst = items.reduce<number>((acc, it) => Math.max(acc, it.band ? BANDS_ORDER.indexOf(it.band) : -1), -1)
+      return { w, items, color: worst >= 0 ? BANDS_ORDER[worst].color : undefined }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey, nowIdx])
   const placeName = location
     ? (location.label ?? `${location.lat.toFixed(2)}° N, ${location.lon.toFixed(2)}° O`)
     : ''
@@ -361,6 +345,7 @@ export function AirQualityPanel() {
       {/* Der Index der laufenden Stunde ist die Antwort, mit der man den
           Bereich öffnet — deshalb groß und links oben über dem ersten
           Diagramm, nicht klein am Ende der Leiste */}
+      <div className="air-summary">
       {band && (
         <div
           className="air-now"
@@ -378,9 +363,38 @@ export function AirQualityPanel() {
           {driver && <span className="air-now-driver">maßgeblich {driver}</span>}
         </div>
       )}
+      {/* 8- und 24-h-Mittel daneben: NO₂ und Ozon richten sich nach Mitteln
+          (WHO 24 h bzw. 8 h), der Stundenwert allein sagt dort zu wenig */}
+      {summary.map((b) => (
+        <div
+          key={b.w}
+          className="air-mean"
+          style={b.color ? { borderColor: b.color } : undefined}
+          title={`Gleitendes ${b.w}-Stunden-Mittel bis zur laufenden Stunde, eingeordnet in die Stufen des Luftqualitätsindex. WHO-Richtwerte: NO₂ ${WHO_GUIDELINES.nitrogen_dioxide.value} µg/m³ im 24-h-Mittel, Ozon ${WHO_GUIDELINES.ozone.value} µg/m³ im 8-h-Mittel — jeweils die Grenze zu „mäßig".`}
+        >
+          <span className="air-mean-head">{b.w}-h-Mittel</span>
+          {b.items.map((it) => (
+            <span key={it.v} className="air-mean-item">
+              <span className="air-mean-name">{it.label}</span>
+              {it.value != null && it.band ? (
+                <>
+                  <b style={{ color: it.band.color }}>{Math.round(it.value)}</b>
+                  <span className="air-mean-unit">µg/m³</span>
+                  <span className="air-mean-band" style={{ color: it.band.color }}>
+                    {it.band.label}
+                  </span>
+                </>
+              ) : (
+                <span className="label-muted">—</span>
+              )}
+            </span>
+          ))}
+        </div>
+      ))}
+      </div>
       {data && (
         <div className="meteo-stack">
-          {rows.map(({ id, info, meanable, chart: c }) => (
+          {rows.map(({ id, info, chart: c }) => (
             <div key={id} className="atfc-chart meteo-row" style={{ flexGrow: c.flex ?? 1, minHeight: 88 }}>
               <div className="atfc-chartcap">
                 <span className="air-cap">
@@ -392,28 +406,6 @@ export function AirQualityPanel() {
                     </summary>
                     <div className="air-pop-body">{INFO[info]}</div>
                   </details>
-                  {meanable && (
-                    <details className="air-pop">
-                      <summary className="air-means-btn">
-                        Mittelwerte{(means[id]?.length ?? 0) > 0 ? ` (${means[id]!.join(' + ')} h)` : ''} ▾
-                      </summary>
-                      <div className="air-pop-body air-means">
-                        {MEAN_WINDOWS.map((w) => (
-                          <label key={w}>
-                            <input
-                              type="checkbox"
-                              checked={means[id]?.includes(w) ?? false}
-                              onChange={() => toggleMean(id, w)}
-                            />{' '}
-                            {w}-Stunden-Mittel (gleitend)
-                          </label>
-                        ))}
-                        <span className="label-muted">
-                          Nachlaufend: der Wert zur Stunde mittelt die {MEAN_WINDOWS.join(' bzw. ')} Stunden davor.
-                        </span>
-                      </div>
-                    </details>
-                  )}
                 </span>
                 <span className="atfc-legend">
                   {c.curves.length > 1 &&

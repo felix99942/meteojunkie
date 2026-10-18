@@ -11,6 +11,7 @@ import {
   parseAirQuality,
   rollingMean,
   WHO_GUIDELINES,
+  concBand,
 } from './airQuality'
 
 describe('eaqiBand', () => {
@@ -110,5 +111,21 @@ describe('WHO_GUIDELINES', () => {
     expect(WHO_GUIDELINES.pm10).toEqual({ value: 45, hours: 24 })
     expect(WHO_GUIDELINES.nitrogen_dioxide).toEqual({ value: 25, hours: 24 })
     expect(WHO_GUIDELINES.ozone).toEqual({ value: 100, hours: 8 })
+  })
+})
+
+describe('concBand', () => {
+  it('ordnet Konzentrationen den EAQI-Stufen zu (neue EEA-Einteilung, gemessen)', () => {
+    expect(concBand('nitrogen_dioxide', 9.4).label).toBe('gut')
+    expect(concBand('nitrogen_dioxide', 25).label).toBe('ausreichend')
+    expect(concBand('nitrogen_dioxide', 25.1).label).toBe('mäßig')
+    expect(concBand('ozone', 61).label).toBe('ausreichend')
+    expect(concBand('ozone', 130).label).toBe('schlecht')
+    expect(concBand('ozone', 500).label).toBe('extrem schlecht')
+  })
+  it('die Grenze zu „mäßig" ist der WHO-Richtwert', () => {
+    expect(concBand('nitrogen_dioxide', WHO_GUIDELINES.nitrogen_dioxide.value).label).toBe('ausreichend')
+    expect(concBand('ozone', WHO_GUIDELINES.ozone.value).label).toBe('ausreichend')
+    expect(concBand('ozone', WHO_GUIDELINES.ozone.value + 0.1).label).toBe('mäßig')
   })
 })

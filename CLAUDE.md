@@ -2926,11 +2926,22 @@ npm run preview   # gebautes dist/ servieren
   Erläuterung hinter einem ⓘ je Größe — mit der eigentlichen Auskunft, ab wann
   STUNDENwerte einen Richtwert reißen (meist gar nicht: er gilt für ein
   Mittel). Eine Fassung mit Richtwertlinien plus gleitenden Mittelkurven war
-  auf Wunsch wieder draußen: zu unübersichtlich. Stattdessen lassen sich je
-  Zeile **Mittelwerte zuschalten** (aufklappbar, 8 h und 24 h gleitend,
-  `rollingMean` nachlaufend, Wert nur bei ≥ 3/4 belegtem Fenster), Vorgabe
-  aus. Dafür holt der Abruf einen Tag Vorlauf (`past_days=1`), gezeigt wird ab
-  heute 00 UTC. Der Index der laufenden Stunde steht GROSS links oben über dem
+  auf Wunsch wieder draußen: zu unübersichtlich — ebenso danach je Zeile
+  zuschaltbare Mittelkurven und AMPELFARBEN der Kurven nach Grenzwerten (beides
+  gebaut und wieder entfernt). Die Diagramme zeigen nur die Stundenwerte.
+  **Die Mittel stehen stattdessen als ZAHLEN neben dem Jetzt-Kasten**: je ein
+  Kasten 8-h- und 24-h-Mittel mit NO₂ und Ozon (nachlaufend bis zur laufenden
+  Stunde, `rollingMean`, Wert nur bei ≥ 3/4 belegtem Fenster), Zahl und Stufe
+  in der EAQI-Farbe, Rand in der schlechteren. Feinstaub fehlt dort bewusst —
+  er bestimmt meist schon den Index. Eingeordnet über `concBand`/`CONC_BANDS`:
+  **die Indexgrenzen sind GEMESSEN** (2026-10-18, Wien, 96 h) — Open-Meteo
+  rechnet die Teilindizes nach der NEUEN EEA-Einteilung (NO₂ 10/25/60/100/150,
+  O₃ 60/100/120/160/180, PM2,5 5/15/50, PM10 15/45/120) auf den STUNDENwert,
+  höchstens 0,5 Punkte Abweichung, mit der älteren Tabelle (NO₂ 40/90/120)
+  bis 32. Die Grenze zu „mäßig" ist dort der WHO-Richtwert. Dafür holt der
+  Abruf einen Tag Vorlauf (`past_days=1`), die Diagramme beginnen trotzdem
+  heute 00 UTC.
+  Der Index der laufenden Stunde steht GROSS links oben über dem
   ersten Diagramm (`.air-now`), nicht in der Leiste. Überschriften 16 px,
   der Ort steht groß im Jetzt-Kasten, die Uhrzeit des Zeigers als Kästchen
   NUR in der Indexzeile (in den flachen Zeilen überdeckte sie die Werte),

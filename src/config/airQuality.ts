@@ -198,3 +198,25 @@ export function rollingMean(values: (number | null)[], window: number): (number 
   }
   return out
 }
+
+/**
+ * Konzentrationsgrenzen der EAQI-Stufen (µg/m³, Obergrenze je Stufe wie
+ * `EAQI_BANDS`) für die Mittelwert-Kästen. GEMESSEN (2026-10-18, Wien, 96 h):
+ * Open-Meteo rechnet die Teilindizes nach der NEUEN Einteilung der EEA — linear
+ * zwischen diesen Grenzen nachgerechnet höchstens 0,5 Punkte Abweichung
+ * (Rundung), mit der älteren Tabelle (NO₂ 40/90/120 …) bis 32. Bestätigt bis
+ * in die Stufe „mäßig" (NO₂ bis 62, Ozon bis 76 µg/m³ gemessen), die oberen
+ * Grenzen aus derselben Tabelle. Die Grenze zu „mäßig" ist dabei der
+ * WHO-Richtwert: NO₂ 25 (24-h-Mittel), Ozon 100 (8-h-Mittel).
+ */
+export const CONC_BANDS: Record<'nitrogen_dioxide' | 'ozone', readonly number[]> = {
+  nitrogen_dioxide: [10, 25, 60, 100, 150, Infinity],
+  ozone: [60, 100, 120, 160, 180, Infinity],
+}
+
+/** EAQI-Stufe einer Konzentration (auch eines Mittels — als Einordnung). */
+export function concBand(variable: keyof typeof CONC_BANDS, value: number): EaqiBand {
+  const tops = CONC_BANDS[variable]
+  const i = tops.findIndex((t) => value <= t)
+  return EAQI_BANDS[i < 0 ? EAQI_BANDS.length - 1 : i]
+}

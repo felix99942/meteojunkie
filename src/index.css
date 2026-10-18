@@ -4606,12 +4606,17 @@ button:focus-visible {
 /* Luftqualität: Index der laufenden Stunde groß links oben über dem ersten
    Diagramm, Rand, Zahl und Stufe in der Farbe der EAQI-Stufe — die Zahl
    allein sagt nicht, ob 40 viel ist. */
-.air-now {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: baseline;
+.air-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 12px;
   margin: 6px 0 4px;
+}
+.air-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   padding: 6px 16px;
   border: 2px solid;
   border-radius: 6px;
@@ -4697,18 +4702,6 @@ button:focus-visible {
   font-size: 17px;
   font-weight: 700;
 }
-.air-means-btn {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-muted);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-  padding: 1px 8px;
-}
-.air-pop[open] > .air-means-btn,
-.air-means-btn:hover {
-  color: var(--ink);
-}
 .air-pop-body {
   position: absolute;
   z-index: 20;
@@ -4734,9 +4727,47 @@ button:focus-visible {
 .air-pop-body a {
   color: var(--accent, #5aa9e6);
 }
-.air-means {
-  display: flex;
+
+/* Mittelwert-Kästen neben dem Jetzt-Wert: NO₂ und Ozon im 8- und 24-h-Mittel,
+   Zahl und Stufe in der Farbe der EAQI-Stufe, Rand in der schlechteren. */
+.air-mean {
+  display: inline-flex;
   flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.air-mean-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.air-mean-item {
+  display: inline-flex;
+  align-items: baseline;
   gap: 6px;
-  width: max-content;
+}
+.air-mean-name {
+  font-size: 16px;
+  color: var(--ink-muted);
+  min-width: 2.2em;
+}
+.air-mean-item b {
+  font-size: 22px;
+  line-height: 1.1;
+  min-width: 1.6em;
+  text-align: right;
+}
+.air-mean-unit {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.air-mean-band {
+  font-size: 16px;
+  font-weight: 700;
 }
