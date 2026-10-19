@@ -3817,6 +3817,23 @@ npm run preview   # gebautes dist/ servieren
   absichtlich: das vorige Bild stehen zu lassen wäre dieselbe falsche
   Aussage, die hier gerade behoben wurde (vgl. „lieber nichts zeigen" im
   Satellitenbereich).
+- **HANDY-ANSICHT unter 760 px** (`lib/useIsPhone.ts`, CSS-Block
+  `@media (max-width: 760px)` am Ende von `index.css`): JEDE Handy-Regel hängt
+  an dieser einen Grenze, die Desktop-Ansicht bleibt dadurch unberührt — Regeln
+  nie in die Grundregeln schreiben. Geprüft wird das per Pixelvergleich des
+  Desktops bei Pixeldichte 1 gegen `master` (muss identisch sein). Stand
+  (Meteogramm): Navigation als EINE wischbare Zeile, kompakte Leiste,
+  Schnellwahl als Auswahlliste, Zeitraum 2/3/7 Tage, feste Zeilenhöhen
+  (`PHONE_ROW_BASE`) und der Bereich `.meteo` scrollt — geteilte Fensterhöhe
+  ließ der Temperatur ~20 px. Übrige Bereiche sind noch nicht angepasst.
+- **Diagramm-Plugins zeichnen in CSS-PIXELN** (`inCssPixels` in
+  `ChartStack.tsx`): uPlot liefert `bbox` und `valToPos(…, true)` in
+  GERÄTEpixeln, die Plugins rechnen Schrift, Abstände und Radien aber in
+  CSS-Pixeln. Auf Retina (2) und iPhone (3) war alles Gezeichnete zwei- bis
+  dreimal zu klein, und das Datum rutschte in die Stundenzeile. Jeder
+  Zeichen-Hook sieht jetzt eine Sicht in CSS-Pixeln auf eine skalierte
+  Zeichenfläche; bei Pixeldichte 1 wird nichts umgeleitet (Desktop
+  pixelgleich). Neue Plugins brauchen dafür nichts zu tun.
 - **Sync-Semantik**: Der SYNC-Button eines Panels koppelt Zeit-Cursor,
   Kartenzoom (`sharedView`) und Modellauswahl (`sharedModels`/`sharedMapModel`).
   Sync-aktive Panels LESEN die gemeinsamen Werte über `useEffectivePanel()` —

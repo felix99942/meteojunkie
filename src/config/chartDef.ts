@@ -97,6 +97,12 @@ export interface OctaRows {
     /** Zusätzlich die Achtel-Zahl neben dem Kreis (nur für die Gesamtzeile). */
     withNumber?: true
   }[]
+  /**
+   * Abstand der Zeilenbeschriftung zur Fläche (px, uPlot-Vorgabe 5). Das
+   * erste Achtelsymbol sitzt AUF dem linken Rand und ragt um seinen Radius
+   * in die Achse — auf dem Handy deckte es so das Wortende zu.
+   */
+  labelGap?: number
 }
 
 /**

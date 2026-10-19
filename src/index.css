@@ -4950,3 +4950,144 @@ button:focus-visible {
 .air-ampel-text b {
   font-size: 24px;
 }
+
+/* ===== HANDY-ANSICHT ========================================================
+   ALLES hier gilt NUR unter 760 px Breite (`PHONE_MAX_PX` in
+   lib/useIsPhone.ts) — die Desktop-Ansicht bleibt dadurch unberührt. Wer eine
+   Handy-Regel ergänzt, setzt sie in diesen Block, nie in die Grundregeln. */
+@media (max-width: 760px) {
+  .app {
+    padding: 4px;
+    gap: 4px;
+  }
+
+  /* Leisten umbrechen statt die Seite seitlich zu verbreitern */
+  .atclima-bar {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 6px;
+    gap: 8px;
+  }
+  .atclima-bar > * {
+    min-width: 0;
+  }
+  .atclima-bar select {
+    max-width: 100%;
+  }
+  /* Ortssuche über die volle Breite — sie ist auf dem Handy der Einstieg */
+  .location-picker {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .location-picker input {
+    flex: 1 1 160px;
+    width: auto;
+    min-width: 0;
+  }
+
+  /* Schnellwahl als Auswahlliste (QuickPoints) */
+  .quickpt-select {
+    font-size: 14px;
+    padding: 4px 6px;
+  }
+
+  /* Zeitraum des Meteogramms */
+  .phone-days {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .phone-days button {
+    padding: 4px 9px;
+    font-size: 13px;
+  }
+  .phone-days button.is-active {
+    border-color: var(--accent);
+    background: var(--bg-control-hover);
+    color: var(--ink);
+  }
+
+  /* Navigation als EINE seitlich wischbare Zeile — umbrochen belegte sie
+     mit Impressum vier Zeilen, ein Fünftel des Bildschirms */
+  .appnav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .appnav::-webkit-scrollbar {
+    display: none;
+  }
+  .appnav > * {
+    flex: 0 0 auto;
+  }
+  /* Fingertaugliche Knöpfe in der Bereichsnavigation */
+  .appnav-tab,
+  .appnav-cat {
+    padding: 8px 11px;
+    font-size: 13px;
+  }
+  .appnav-group.is-group-start {
+    margin-left: 0;
+  }
+  .appnav-build {
+    display: none;
+  }
+
+  /* Meteogramm: Kopfzeilen der Diagramme dürfen umbrechen */
+  .atfc-chartcap {
+    flex-wrap: wrap;
+  }
+
+  /* METEOGRAMM SCROLLT als Ganzes (Leiste + Zeilen), die Navigation bleibt
+     oben stehen. Die Zeilen haben feste Höhen (PHONE_ROW_BASE in
+     ClassicMeteogram) — geteilte Fensterhöhe ließ der Temperatur ~20 px. */
+  .meteo {
+    overflow-y: auto;
+    gap: 6px;
+  }
+  .meteo-stack {
+    flex: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+  .meteo-row {
+    flex: none;
+    min-height: 0;
+  }
+
+  /* Kompakte Leiste: Suche über die Breite, darunter Schnellwahl + Modell,
+     darunter Zeitraum und die Laufangaben klein. Der Titel steht schon in
+     der Navigation. */
+  .meteo .atclima-title {
+    display: none;
+  }
+  .meteo .atclima-bar {
+    gap: 6px 8px;
+  }
+  .meteo .location-picker {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .meteo .location-current {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 45%;
+  }
+  /* Modell füllt die Zeile neben der Schnellwahl; der Zeitraum rutscht in
+     die nächste — zusammen gequetscht blieb vom Modellnamen „ECMW" übrig */
+  .meteo .atclima-ctrl {
+    flex: 1 1 calc(100% - 150px);
+    min-width: 0;
+  }
+  .meteo .atclima-ctrl > .label-muted {
+    display: none;
+  }
+  .meteo .atclima-ctrl select {
+    width: 100%;
+  }
+  .meteo .atclima-bar > .label-muted {
+    font-size: 11px;
+  }
+}

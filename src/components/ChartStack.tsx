@@ -969,6 +969,58 @@ function markPlugin(markRef: { current: number | undefined }, style?: MarkStyle)
 }
 
 
+/**
+ * ZEICHNEN IN CSS-PIXELN, auch auf hochauflösenden Bildschirmen.
+ *
+ * uPlot zeichnet in GERÄTEpixeln: `u.bbox` und `valToPos(…, true)` liefern
+ * Gerätepixel. Die Plugins hier sind aber in CSS-Pixeln geschrieben —
+ * Schriftgrößen, Abstände, Symbolradien, Mindestabstände. Bei
+ * `devicePixelRatio` 1 ist beides dasselbe; auf einem Retina-Desktop (2) oder
+ * iPhone (3) war alles Gezeichnete zwei- bis dreimal zu klein und das Datum
+ * rutschte in die Stundenzeile (die Achsenhöhen sind CSS-Pixel, `bbox` nicht).
+ *
+ * Statt jedes Plugin umzurechnen, sieht jeder Zeichen-Hook eine Sicht auf den
+ * Plot in CSS-Pixeln (`bbox` und `valToPos(…, true)` geteilt durch den
+ * Faktor) und eine Zeichenfläche, die um den Faktor skaliert ist. Bei Faktor 1
+ * wird gar nichts umgeleitet — der Desktop zeichnet Pixel für Pixel wie zuvor.
+ */
+const DRAW_HOOKS = ['drawClear', 'drawAxes', 'drawSeries', 'draw'] as const
+
+function cssView(u: uPlot, r: number): uPlot {
+  const b = u.bbox
+  const bbox = { left: b.left / r, top: b.top / r, width: b.width / r, height: b.height / r }
+  return new Proxy(u, {
+    get(target, prop, receiver) {
+      if (prop === 'bbox') return bbox
+      if (prop === 'valToPos') {
+        return (val: number, scale: string, canvasPixels?: boolean) =>
+          canvasPixels ? target.valToPos(val, scale, true) / r : target.valToPos(val, scale, false)
+      }
+      return Reflect.get(target, prop, receiver)
+    },
+  })
+}
+
+function inCssPixels(plugin: uPlot.Plugin): uPlot.Plugin {
+  const hooks: uPlot.Plugin['hooks'] = { ...plugin.hooks }
+  for (const name of DRAW_HOOKS) {
+    const fn = plugin.hooks[name] as ((u: uPlot) => void) | undefined
+    if (!fn) continue
+    ;(hooks as Record<string, (u: uPlot, ...rest: unknown[]) => void>)[name] = (u: uPlot, ...rest: unknown[]) => {
+      const r = uPlot.pxRatio || 1
+      if (r === 1) return (fn as (u: uPlot, ...rest: unknown[]) => void)(u, ...rest)
+      u.ctx.save()
+      u.ctx.scale(r, r)
+      try {
+        ;(fn as (u: uPlot, ...rest: unknown[]) => void)(cssView(u, r), ...rest)
+      } finally {
+        u.ctx.restore()
+      }
+    }
+  }
+  return { ...plugin, hooks }
+}
+
 /** Ein Diagramm des Stapels — uPlot-Setup, optional synchronisiertes Fadenkreuz über `syncKey`. */
 export function ChartRow({
   xs,
@@ -1162,7 +1214,7 @@ export function ChartRow({
         // Kästchen unter den Kriterienzellen und den Achtel-Kreisen, also
         // genau in den Zeilen, deren Werte man nur dort ablesen kann.
         ...(chart.hideCursor ? [] : [readoutPlugin(readoutRef, chart, readoutLabelRef)]),
-      ],
+      ].map(inCssPixels),
       scales: {
         // Bei Achtel-Zeilen ist die y-Skala reine Geometrie: eine Einheit je
         // Zeile, damit die Achsenbeschriftung genau auf den Zeilenmitten sitzt.
@@ -1275,6 +1327,7 @@ export function ChartRow({
             ? {
                 splits: () => lanes.map((_, i) => lanes.length - i - 0.5),
                 values: () => lanes.map((r) => r.label),
+                ...(octaRows?.labelGap != null ? { gap: octaRows.labelGap } : {}),
               }
             : blankAxis
               ? { values: blankValues }

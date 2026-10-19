@@ -49,6 +49,7 @@ import { useWorkbench } from '../state/workbench'
 import { LocationPicker } from './LocationPicker'
 import { QuickPoints } from './QuickPoints'
 import { OpenMeteoAttribution } from './Attribution'
+import { useIsPhone } from '../lib/useIsPhone'
 
 const DEFAULT_MODEL = 'ecmwf_ifs025'
 // UTC, wie der Rest der App intern durchgehend rechnet (siehe CLAUDE.md) — der
@@ -76,6 +77,17 @@ const X_TICK_SPACE = 40
 const MIN_HOURS_FOR_DAILY_MAX = 18
 const MIN_HOURS_FOR_NIGHT_MIN = 9
 const MS_PER_DAY = 86_400_000
+/** Zeiträume der Handy-Ansicht (Tage ab heute) und die Vorgabe. */
+const PHONE_DAY_OPTIONS = [2, 3, 7] as const
+const PHONE_DEFAULT_DAYS = 3
+/**
+ * Zeilenhöhe in der Handy-Ansicht (px, inkl. Kopfzeile und Achsen). Auf dem
+ * Desktop teilen sich die Zeilen die Fensterhöhe per Flex; auf 844 px
+ * Handyhöhe blieben der Temperatur so ~20 px — dort bekommt jede Zeile eine
+ * feste, lesbare Höhe nach ihrem Gewicht, und der Bereich scrollt.
+ */
+const PHONE_ROW_BASE = 150
+const PHONE_SYMBOL_ROW = 62
 
 const COLOR_T2M = '#d95926'
 const COLOR_TMIN = '#4f97e0'
@@ -241,7 +253,16 @@ export function ClassicMeteogram() {
   // liegen mehrere Modelle übereinander, die gemeinsame Achse muss das
   // längste tragen und die kürzeren werden schraffiert.)
   const horizon = modelHorizonEnd(model)
-  const gridMs = useMemo(() => timeGridMs().filter((t) => t <= horizon), [horizon])
+  // HANDY: 16 Tage auf 390 px sind ein Teppich aus Symbolen — dort ein
+  // wählbarer kürzerer Zeitraum ab heute (Vorgabe 3 Tage). Desktop unverändert.
+  const isPhone = useIsPhone()
+  const [phoneDays, setPhoneDays] = useState(PHONE_DEFAULT_DAYS)
+  const gridMs = useMemo(() => {
+    const all = timeGridMs().filter((t) => t <= horizon)
+    if (!isPhone || !all.length) return all
+    const end = all[0] + phoneDays * MS_PER_DAY
+    return all.filter((t) => t <= end)
+  }, [horizon, isPhone, phoneDays])
   const xs = useMemo(() => gridMs.map((t) => t / 1000), [gridMs])
 
   // Einzelabrufe (1 Modell × 1 Variable) — der Batcher in openmeteo.ts bündelt
@@ -345,11 +366,14 @@ export function ClassicMeteogram() {
         // Ein Kreis sagt „5 von 8" genau — eine Graustufe nur „ungefähr dunkel".
         octaRows: {
           rows: [
-            { label: 'Gesamt', values: cloud, withNumber: true },
+            // Handy: kurz — das erste Achtelsymbol steht am linken Rand und
+            // deckte das Wortende zu („Gesam", „Tie")
+            { label: isPhone ? 'Ges.' : 'Gesamt', values: cloud, withNumber: true },
             { label: 'Hoch', values: cloudHigh },
-            { label: 'Mittel', values: cloudMid },
+            { label: isPhone ? 'Mitt.' : 'Mittel', values: cloudMid },
             { label: 'Tief', values: cloudLow },
           ],
+          ...(isPhone ? { labelGap: 12 } : {}),
         },
       },
       {
@@ -458,7 +482,7 @@ export function ClassicMeteogram() {
     // — auf die Identität der DATEN keyen, sonst rechnet der Memo bei jedem
     // Render neu (oder, schlimmer, gar nicht: siehe `lib/dataKey.ts`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey, gridMs, horizon])
+  }, [dataKey, gridMs, horizon, isPhone])
 
   const syncKey = 'classic-meteogram'
   // Die Zeitleiste zwischen Bewölkung und Temperatur trägt den Zeitpunkt —
@@ -509,6 +533,20 @@ export function ClassicMeteogram() {
             ))}
           </select>
         </label>
+        {isPhone && (
+          <span className="phone-days" role="group" aria-label="Zeitraum">
+            {PHONE_DAY_OPTIONS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={phoneDays === d ? 'is-active' : ''}
+                onClick={() => setPhoneDays(d)}
+              >
+                {d} Tage
+              </button>
+            ))}
+          </span>
+        )}
         <span className="label-muted" title={RUN_TITLE}>
           Lauf {formatRunLong(run, Date.now())}
         </span>
@@ -565,7 +603,11 @@ export function ClassicMeteogram() {
               // für kleine Fenster. Zu groß gesetzt reißen sie die Summe über
               // die Fensterhöhe, der Stapel scrollt — und dann wächst KEINE
               // Zeile mehr per Flex, obwohl Platz da wäre.
-              style={{ flexGrow: c.flex ?? 1, minHeight: c.symbols ? 46 : 88 }}
+              style={
+                isPhone
+                  ? { height: c.symbols ? PHONE_SYMBOL_ROW : Math.round(PHONE_ROW_BASE * (c.flex ?? 1)) }
+                  : { flexGrow: c.flex ?? 1, minHeight: c.symbols ? 46 : 88 }
+              }
             >
               {/* Die Wettersymbolzeile bekommt keine Kopfzeile: „Wetter" über
                   einer Reihe Wettersymbole sagt nichts, kostet aber Höhe. */}

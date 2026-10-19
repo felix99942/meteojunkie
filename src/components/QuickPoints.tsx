@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { QUICK_POINT_EPS, QUICK_REGIONS, regionFor, type QuickRegionId } from '../config/quickPoints'
 import { useWorkbench } from '../state/workbench'
+import { useIsPhone } from '../lib/useIsPhone'
 
 export function QuickPoints({ caption = 'Punkt' }: { caption?: string }) {
   const location = useWorkbench((s) => s.lockedLocation)
@@ -26,6 +27,33 @@ export function QuickPoints({ caption = 'Punkt' }: { caption?: string }) {
     if (hit) setRegionId(hit.id)
   }, [location])
   const region = QUICK_REGIONS.find((r) => r.id === regionId) ?? QUICK_REGIONS[0]
+  const isPhone = useIsPhone()
+  const current = region.points.find(
+    (p) =>
+      location && Math.abs(location.lat - p.lat) < QUICK_POINT_EPS && Math.abs(location.lon - p.lon) < QUICK_POINT_EPS,
+  )
+  // Handy: acht Knöpfe nebeneinander sind breiter als der Bildschirm — eine
+  // Auswahlliste trägt dieselbe Liste in einer Zeile
+  if (isPhone) {
+    return (
+      <select
+        className="quickpt-select"
+        value={current?.label ?? ''}
+        onChange={(e) => {
+          const p = region.points.find((x) => x.label === e.target.value)
+          if (p) setLockedLocation(p)
+        }}
+        title="Schnellwahl des Orts"
+      >
+        {!current && <option value="">{caption} wählen …</option>}
+        {region.points.map((p) => (
+          <option key={p.label} value={p.label}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+    )
+  }
   return (
     <>
       <span className="quickpt-cap label-muted">{caption}</span>
