@@ -166,7 +166,7 @@ export function registerGlobeProtocol(source: GlobeFieldSourceFn): void {
   }
   maplibregl.addProtocol(GLOBE_PROTOCOL, handler)
   // Isolinien als eigene Ebene: globeiso://modell/lauf/größe/schritt/z/x/y,
-  // die Größe ist zugleich die Linienart (msl → Isobaren, gh500 → 500 hPa)
+  // die Größe ist zugleich die Linienart (msl → Isobaren, gh500 → 500 hPa, gh300 → 300 hPa)
   maplibregl.addProtocol(GLOBE_ISO_PROTOCOL, handler)
 }
 

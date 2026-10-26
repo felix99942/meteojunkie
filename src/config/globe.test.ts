@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  contoursFor,
   decodeCodes,
   decodeUv8,
   GLOBE_VARIABLES,
@@ -9,11 +10,13 @@ import {
   intervalHours,
   nearestStepIndex,
   sampleField,
+  particleSource,
   sampleWind,
   tilePixelLat,
   tilePixelLon,
   type GlobeField,
   type GlobeGrid,
+  type GlobeMeta,
 } from './globe'
 import { colorizeTile } from '../render/globeTiles'
 import { colorForValue } from './colorscales'
@@ -250,6 +253,12 @@ describe('Windkomponenten (uv8)', () => {
     expect(w[0]).toBeCloseTo(5)
     expect(w[1]).toBeCloseTo(2)
   })
+  it('Höhenwind: rechnet mit der Stufe des Felds (1 m/s), damit der Strahlstrom nicht bei 63,5 klemmt', () => {
+    const c1 = (u: number, v: number) => [u + 128, v + 128]
+    const uv = decodeUv8(rgba([c1(90, -20), c1(90, -20), c1(90, -20), c1(90, -20)]), 4)
+    const f: GlobeField = { grid, lo: -127, step: 1, codes: new Uint16Array(0), uv }
+    expect(sampleWind(f, 0.5, 0.5)).toEqual([90, -20])
+  })
   it('kein Wert, sobald ein Nachbar fehlt oder der Punkt außerhalb liegt', () => {
     const uv = decodeUv8(rgba([code(0, 0), [0, 0], code(0, 4), code(10, 4)]), 4)
     const f: GlobeField = { grid, lo: -63.5, step: 0.5, codes: new Uint16Array(0), uv }
@@ -267,8 +276,21 @@ describe('Meeresgrößen', () => {
       expect(values).toEqual([...values].sort((a, b) => a - b))
     }
   })
-  it('die Partikelquelle steht nicht in der Auswahl', () => {
-    expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10')).toBe(false)
+  it('über dem Höhenwind stehen die 300-hPa-Linien statt der 500er', () => {
+    expect(contoursFor('wind300').map((c) => c.id)).toEqual(['msl', 'gh300'])
+    expect(contoursFor('t850').map((c) => c.id)).toEqual(['msl', 'gh500'])
+  })
+  it('die Partikelquellen stehen nicht in der Auswahl', () => {
+    expect(GLOBE_VARIABLES.some((v) => v.id === 'uv10' || v.id === 'uv300')).toBe(false)
+  })
+  it('über dem Höhenwind laufen die Partikel mit dem 300-hPa-Wind, sonst mit dem Bodenwind', () => {
+    const vm = { lo: 0, step: 1, unit: 'm/s', steps: [0] }
+    const meta = { variables: { uv10: vm, uv300: vm } } as unknown as GlobeMeta
+    expect(particleSource('wind300', meta)).toEqual({ var: 'uv300', refSpeed: 40 })
+    expect(particleSource('t2m', meta).var).toBe('uv10')
+    // ein Lauf ohne Höhenwind fällt auf den Bodenwind zurück
+    const old = { variables: { uv10: vm } } as unknown as GlobeMeta
+    expect(particleSource('wind300', old).var).toBe('uv10')
   })
 })
 

@@ -100,9 +100,11 @@ export interface ContourStyle {
 }
 
 /** Isobaren hell mit dunklem Halo, 500 hPa dunkel mit hellem — so bleiben beide gleichzeitig unterscheidbar und auf jeder Farbe lesbar. */
-export const CONTOUR_STYLES: Record<'msl' | 'gh500', ContourStyle> = {
+export const CONTOUR_STYLES: Record<'msl' | 'gh500' | 'gh300', ContourStyle> = {
   msl: { core: [245, 246, 248], halo: [12, 13, 15] },
   gh500: { core: [14, 15, 17], halo: [235, 236, 238] },
+  // wie 500 hPa — die beiden stehen nie gleichzeitig in der Karte
+  gh300: { core: [14, 15, 17], halo: [235, 236, 238] },
 }
 
 export interface ContourLabel {

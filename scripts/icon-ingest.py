@@ -71,8 +71,12 @@ FIELDS = [
     ('tot_prec', None, 'tp'),
     ('u_10m', None, 'u10'),
     ('v_10m', None, 'v10'),
+    # Höhenwind 300 hPa (Strahlstrom) — live im Verzeichnis geprüft 2026-10-26
+    ('u', '300', 'u300'),
+    ('v', '300', 'v300'),
     ('vmax_10m', None, 'gust'),
     ('fi', '500', 'gh500'),
+    ('fi', '300', 'gh300'),
     ('fi', '1000', 'gh1000'),
     ('clct', None, 'tcc'),
     # Wolkenschichten — nur ICON hat sie offen (ECMWF Open Data nur `tcc`)
@@ -124,7 +128,7 @@ def fetch_step(model: str, run: datetime, step: int, pool: ThreadPoolExecutor) -
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals  # kg/m² = mm, doppelt genau (wird differenziert)
-        elif name in ('gh500', 'gh1000'):
+        elif name in ('gh500', 'gh300', 'gh1000'):
             out[name] = (vals / G).astype(np.float32)
         else:
             out[name] = vals.astype(np.float32)

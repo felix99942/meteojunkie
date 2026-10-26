@@ -3140,6 +3140,30 @@ npm run preview   # gebautes dist/ servieren
   (dieselbe Regel wie bei den Ensemble-Schwellen). Die Cache-Schlüssel im
   Deploy sind dafür gesprungen (ECMWF `v5`, ICON `v2`) — `already_done`
   hätte die alten Läufe sonst bei JEDEM Deploy neu geholt.
+  **HÖHENWIND 300 hPa** (`wind300` + Partikelquelle `uv300`, seit
+  2026-10-26, alle drei Modelle — u/v auf 300 hPa live in Index bzw.
+  Verzeichnis geprüft, 250 hPa gäbe es ebenso): der Strahlstrom als Farbfeld
+  in km/h, unter 70 km/h DURCHSICHTIG (in der Höhe ist das schwacher Wind,
+  eine durchgefärbte Kugel verdeckte das Band) und auf einer eigenen kühlen
+  Rampe, damit er nicht wie der 10-m-Wind aussieht. Wer ihn wählt, bekommt
+  die Partikel dazu — und die laufen dann mit dem HÖHENwind
+  (`particleSource`): **`uv300` hat 1 m/s je Stufe statt 0,5** (±127 m/s;
+  mit der `uv10`-Kodierung klemmten die Kerne bei 63,5 m/s), die Stufe steht
+  als `step` in der Meta und `sampleWind` rechnet damit; **Bezugstempo 40 statt
+  10 m/s** (`setSampler(…, refSpeed)`, Tempostufen skalieren mit), sonst
+  rasten die Partikel im Strahlstrom achtmal so schnell wie am Boden.
+  Gemessen ICON-D2 26.10. 18 UTC, +12 h: Median 101, Maximum 266 km/h;
+  Kosten je Schritt 122 KB (Betrag) + 98 KB (Komponenten). Cache-Schlüssel
+  im Deploy dafür gesprungen (ECMWF `v6`, ICON `v3`).
+  **Darüber das Geopotential DERSELBEN Fläche** (`gh300`, Größe heißt
+  „Höhenwind + Geopotential 300 hPa"): über dem Höhenwind ersetzen die
+  300-hPa-Linien die 500er (`contoursFor` — die Ebenenliste zeigt je Größe
+  nur die passenden Linienarten), denn dort weht der Wind entlang der
+  Linien. Abstand 8 gpdm statt 4: das 300-hPa-Feld ist steiler, mit 4 stünden
+  die Linien im Jet zu dicht. ECMWF `gh`/300, DWD `fi`/300 (live geprüft),
+  ~130–210 KB je Schritt. **Die Isobaren gehen beim Höhenwind AUS** (auf
+  Wunsch — zwei Liniennetze übereinander) und kommen beim Verlassen der
+  Größe zurück, aber nur, wenn sie dort automatisch abgeschaltet wurden.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-

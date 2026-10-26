@@ -10,9 +10,11 @@ Einheitliche Feldnamen und Einheiten:
   msl          Pa
   tp           mm SEIT INIT aufsummiert (ECMWF liefert m, DWD kg/m² = mm)
   u10, v10     m/s
+  u300, v300   m/s, Wind auf 300 hPa (Strahlstrom)
   gust         m/s, höchste Böe im Intervall `gust_hours` vor dem Termin
   gh500        geopotentielle Höhe in m (DWD liefert Geopotential m²/s²)
   gh1000       dasselbe auf 1000 hPa — nur für die Relative Topografie
+  gh300        dasselbe auf 300 hPa — Isolinien über dem Höhenwind
   tcc          %
   clch, clcm, clcl   % Bedeckung hoch/mittel/tief (nur ICON — ECMWF Open Data
                      führt nur `tcc`, im Index nachgesehen 2026-10-05)
@@ -37,6 +39,9 @@ wert = (code − 128) · 0,5 m/s, 0 = kein Wert, Bereich ±63,5 m/s (darüber
 geklemmt — die Animation zeigt Richtung und Tempo, die Zahl steht im Feld
 `wind10`). 8 statt 16 Bit, weil 0,5 m/s für eine Strömungsbewegung reichen
 und das Bild so klein bleibt.
+`uv300` ist dieselbe Kodierung für den Höhenwind, aber mit 1 m/s je Stufe
+(±127 m/s): im Strahlstrom über dem Atlantik stehen 90–100 m/s, mit 0,5 m/s
+wären die Kerne bei 63,5 geklemmt. Die Stufe steht als `step` in meta.json.
 """
 
 from __future__ import annotations
@@ -68,7 +73,11 @@ VARIABLES = {
     # 1 km/h: die Skalen stufen ab 5 km/h, mit 0,5 waren es die größten Bilder
     'wind10': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
     'gust': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
+    # Höhenwind 300 hPa (Strahlstrom, real bis ~400 km/h)
+    'wind300': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
     'gh500': {'lo': 400.0, 'step': 0.1, 'unit': 'gpdm'},
+    # 300 hPa liegt bei ~840–980 gpdm — derselbe Boden reicht (Code bis 6.900 gpdm)
+    'gh300': {'lo': 400.0, 'step': 0.1, 'unit': 'gpdm'},
     # Relative Topografie 500/1000 hPa = Schichtdicke, proportional zur
     # Mitteltemperatur der Schicht (1 gpdm ≈ 0,5 K); real ~470–600 gpdm
     'reltop': {'lo': 400.0, 'step': 0.1, 'unit': 'gpdm'},
@@ -77,6 +86,7 @@ VARIABLES = {
     'tcc': {'lo': 0.0, 'step': 5.0, 'unit': '%'},
     'clouds': {'lo': 0.0, 'step': 5.0, 'unit': '%', 'encoding': 'rgb3'},
     'uv10': {'lo': -63.5, 'step': 0.5, 'unit': 'm/s', 'encoding': 'uv8'},
+    'uv300': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
     # Meer (nur ECMWF): Wellenhöhe in 5 cm, Periode in 0,1 s, Wasser in 0,1 K
     'swh': {'lo': 0.0, 'step': 0.05, 'unit': 'm'},
     'pp1d': {'lo': 0.0, 'step': 0.1, 'unit': 's'},
@@ -86,9 +96,10 @@ VARIABLES = {
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
 NEEDS = {
     't2m': ('t2m',), 't850': ('t850',), 'msl': ('msl',), 'precip': ('tp',),
-    'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',),
+    'wind10': ('u10', 'v10'), 'gust': ('gust',), 'gh500': ('gh500',), 'gh300': ('gh300',),
     'reltop': ('gh500', 'gh1000'), 'tcc': ('tcc',),
     'clouds': ('clch', 'clcm', 'clcl'), 'uv10': ('u10', 'v10'),
+    'wind300': ('u300', 'v300'), 'uv300': ('u300', 'v300'),
     'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
@@ -200,6 +211,8 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         return None if f.get('gust_hours', 0) <= 0 else f['gust'] * 3.6
     if var == 'gh500':
         return f['gh500'] / 10.0
+    if var == 'gh300':
+        return f['gh300'] / 10.0
     if var == 'reltop':
         # Über Hochland liegt 1000 hPa unter dem Gelände und ist vom Modell
         # extrapoliert — so rechnet sie jeder Dienst, die Karte sagt es
@@ -211,6 +224,10 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         return np.stack([f['clcm'], f['clch'], f['clcl']], axis=-1)
     if var == 'uv10':
         return np.stack([f['u10'], f['v10']], axis=-1)
+    if var == 'wind300':
+        return np.hypot(f['u300'], f['v300']) * 3.6
+    if var == 'uv300':
+        return np.stack([f['u300'], f['v300']], axis=-1)
     if var == 'swh':
         return f['swh']
     if var == 'pp1d':
@@ -239,12 +256,12 @@ def encode_rgb3(values) -> bytes:
     return buf.getvalue()
 
 
-def encode_uv8(values) -> bytes:
-    """Windkomponenten (NJ×NI×2, m/s) → RGB-WebP, R = u, G = v, je (code − 128) · 0,5, 0 = kein Wert."""
+def encode_uv8(values, step: float = 0.5) -> bytes:
+    """Windkomponenten (NJ×NI×2, m/s) → RGB-WebP, R = u, G = v, je (code − 128) · step, 0 = kein Wert."""
     import numpy as np
     from PIL import Image
 
-    code = np.clip(np.round(values / 0.5) + 128, 1, 255)
+    code = np.clip(np.round(values / step) + 128, 1, 255)
     ok = np.isfinite(values).all(axis=-1, keepdims=True)
     code = np.where(ok, code, 0).astype(np.uint8)
     rgb = np.zeros(values.shape[:-1] + (3,), np.uint8)
@@ -317,7 +334,7 @@ def ingest(
         enc = spec.get('encoding')
         data = (
             encode_rgb3(values) if enc == 'rgb3'
-            else encode_uv8(values) if enc == 'uv8'
+            else encode_uv8(values, spec['step']) if enc == 'uv8'
             else encode(values, spec['lo'], spec['step'])
         )
         path = tmp / var / f'{step:03d}.webp'

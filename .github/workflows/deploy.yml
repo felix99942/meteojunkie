@@ -172,7 +172,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v5-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v6-${{ steps.ecmwf.outputs.run }}
 
       - name: ECMWF-Felder erzeugen (Open Data)
         id: ecmwf-ingest
@@ -186,7 +186,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v5-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v6-${{ steps.ecmwf.outputs.run }}
 
       # ICON JE LAUF im Cache, seit der Cron stündlich läuft: D2 rechnet alle
       # 3 h, EU alle 6 h — ohne Cache holte jeder Lauf dieselben ~190 MB neu
@@ -206,10 +206,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v2-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v3-${{ steps.icon.outputs.d2 }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-d2-v2-
+          restore-keys: nwp-icon-d2-v3-
 
       - name: ICON-D2-Felder erzeugen (DWD Open Data)
         id: icon-d2-ingest
@@ -225,7 +225,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v2-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v3-${{ steps.icon.outputs.d2 }}
 
       - name: ICON-EU-Felder aus dem Cache
         id: icon-eu-cache
@@ -233,10 +233,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-eu
-          key: nwp-icon-eu-v2-${{ steps.icon.outputs.eu }}
+          key: nwp-icon-eu-v3-${{ steps.icon.outputs.eu }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-eu-v2-
+          restore-keys: nwp-icon-eu-v3-
 
       - name: ICON-EU-Felder erzeugen (DWD Open Data)
         id: icon-eu-ingest
@@ -252,7 +252,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-eu
-          key: nwp-icon-eu-v2-${{ steps.icon.outputs.eu }}
+          key: nwp-icon-eu-v3-${{ steps.icon.outputs.eu }}
 
       # base-Pfad ableiten:
       #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)

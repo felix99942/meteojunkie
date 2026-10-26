@@ -20,11 +20,13 @@ import { THAILAND_ENABLED } from './features'
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
- * `uv10` ist keine wählbare Größe, sondern die Datenquelle der Windpartikel
- * (`encoding: 'uv8'`) — sie steht deshalb nicht in `GLOBE_VARIABLES`.
+ * `uv10` und `uv300` sind keine wählbaren Größen, sondern die Datenquellen
+ * der Windpartikel (`encoding: 'uv8'`) — sie stehen deshalb nicht in
+ * `GLOBE_VARIABLES`.
  */
 export type GlobeVarId =
-  | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'gh500' | 'reltop' | 'tcc' | 'clouds' | 'uv10'
+  | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'wind300' | 'gh500' | 'gh300' | 'reltop' | 'tcc' | 'clouds'
+  | 'uv10' | 'uv300'
   | 'swh' | 'pp1d' | 'sst'
 
 export interface GlobeVariable {
@@ -121,6 +123,24 @@ const SEA_TEMP: ColorScale = {
   stops: SEA_TEMP_STEPS.map((value, i) => ({ value, color: SEA_TEMP_COLORS[i] })),
 }
 
+/**
+ * Höhenwind 300 hPa (Strahlstrom) in km/h. Unter 70 km/h DURCHSICHTIG — in
+ * der Höhe ist das schwacher Wind, und eine durchgehend gefärbte Kugel
+ * verdeckte genau das Band, um das es geht. Eigene kühle Rampe (hellblau →
+ * violett → magenta → gelb im Kern), damit die Karte nicht mit dem 10-m-Wind
+ * verwechselt wird, dessen Skala bei 130 km/h schon endet.
+ */
+const JET_STEPS = [70, 90, 110, 130, 150, 170, 190, 210, 240, 270, 300, 340]
+const JET_COLORS = lerpRamp(
+  ['#9fd3ea', '#5aa7dd', '#3b6fd0', '#5a46c0', '#8a3bb5', '#b8379e', '#d8457a', '#ea7458', '#f2a646', '#f6d84c'],
+  JET_STEPS.length,
+)
+const JET: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'transparent',
+  stops: JET_STEPS.map((value, i) => ({ value, color: JET_COLORS[i] })),
+}
+
 const GH500: ColorScale = {
   kind: 'stepped',
   belowMin: 'clamp',
@@ -206,6 +226,15 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     scale: COLOR_SCALES.wind_gusts_10m,
     decimals: 0,
     legendEvery: 1,
+  },
+  {
+    id: 'wind300',
+    label: 'Höhenwind + Geopotential 300 hPa',
+    title:
+      'Windgeschwindigkeit auf 300 hPa (~9 km) in km/h — der Strahlstrom (Jetstream), darüber das Geopotential derselben Fläche als Linien (statt 500 hPa). Unter 70 km/h nicht eingefärbt. Die Windpartikel zeigen hier die Höhenströmung, nicht den Bodenwind.',
+    scale: JET,
+    decimals: 0,
+    legendEvery: 2,
   },
   {
     id: 'tcc',
@@ -321,7 +350,7 @@ export function getGlobeModel(id: string): GlobeModel {
 
 // --- Isolinien ---------------------------------------------------------------
 
-export type ContourId = 'msl' | 'gh500'
+export type ContourId = 'msl' | 'gh500' | 'gh300'
 
 export interface ContourDef {
   id: ContourId
@@ -361,7 +390,26 @@ export const CONTOURS: ContourDef[] = [
     interval: 4,
     smooth: { 'ecmwf-ifs': 1, 'icon-eu': 1, 'icon-d2': 3 },
   },
+  {
+    id: 'gh300',
+    label: '300 hPa',
+    title: 'Geopotential 300 hPa alle 8 gpdm, beschriftet — die Fläche des Höhenwinds',
+    // Das 300-hPa-Feld ist steiler als das 500er (Tröge reichen über ~120
+    // gpdm statt ~80); mit 4 gpdm stünden die Linien im Jet zu dicht
+    interval: 8,
+    smooth: { 'ecmwf-ifs': 1, 'icon-eu': 1, 'icon-d2': 3 },
+  },
 ]
+
+/**
+ * Welche Isolinien zur Größe gehören: über dem Höhenwind das Geopotential
+ * DERSELBEN Fläche (300 hPa) statt 500 hPa — Wind und Linien beschreiben dann
+ * dieselbe Höhe, der Wind weht entlang der Linien. Sonst Isobaren und 500 hPa.
+ */
+export function contoursFor(varId: GlobeVarId): ContourDef[] {
+  const upper: ContourId = varId === 'wind300' ? 'gh300' : 'gh500'
+  return CONTOURS.filter((c) => c.id === 'msl' || c.id === upper)
+}
 
 export type GlobeViewId = 'globe' | 'europe' | 'alps' | 'thailand'
 
@@ -424,7 +472,8 @@ export interface GlobeVarMeta {
   intervals?: number[]
   /**
    * 'rgb3' = Wolkenschichten, drei Kanäle in % statt eines Codes;
-   * 'uv8' = Windkomponenten, R = u, G = v, je (code − 128) · 0,5 m/s, 0 = kein Wert
+   * 'uv8' = Windkomponenten, R = u, G = v, je (code − 128) · step m/s, 0 = kein Wert
+   *   (`uv10` 0,5 m/s, `uv300` 1 m/s — der Strahlstrom reicht über 63,5 m/s)
    */
   encoding?: 'rgb3' | 'uv8'
 }
@@ -454,7 +503,7 @@ export interface GlobeField {
   codes: Uint16Array
   /** Nur Wolkenschichten: je Zelle [mittel, hoch, tief] in %, 255 = kein Wert. */
   rgb?: Uint8Array
-  /** Nur Windkomponenten: je Zelle [u, v] als Code, (code − 128) · 0,5 m/s, 0 = kein Wert. */
+  /** Nur Windkomponenten: je Zelle [u, v] als Code, (code − 128) · step m/s, 0 = kein Wert. */
   uv?: Uint8Array
 }
 
@@ -466,6 +515,18 @@ export function decodeUv8(rgba: ArrayLike<number>, count: number): Uint8Array {
     out[2 * i + 1] = rgba[4 * i + 1]
   }
   return out
+}
+
+/**
+ * Windpartikel: welches Komponentenfeld zur gewählten Größe gehört, und mit
+ * welchem Bezugstempo (m/s) es läuft. Über dem Höhenwind zeigen sie die
+ * Höhenströmung — mit dem Bezug 10 m/s rasten die Partikel im Strahlstrom
+ * (80 m/s) achtmal so schnell wie am Boden; mit 40 m/s laufen sie in beiden
+ * Fällen in einem ähnlichen, lesbaren Tempo.
+ */
+export function particleSource(varId: GlobeVarId, meta: GlobeMeta | null): { var: GlobeVarId; refSpeed: number } {
+  if (varId === 'wind300' && meta?.variables.uv300) return { var: 'uv300', refSpeed: 40 }
+  return { var: 'uv10', refSpeed: 10 }
 }
 
 /**
@@ -496,7 +557,7 @@ export function sampleWind(f: GlobeField, lat: number, lon: number): [number, nu
   const w11 = fx * fy
   const u = uv[i00] * w00 + uv[i01] * w01 + uv[i10] * w10 + uv[i11] * w11
   const v = uv[i00 + 1] * w00 + uv[i01 + 1] * w01 + uv[i10 + 1] * w10 + uv[i11 + 1] * w11
-  return [(u - 128) * 0.5, (v - 128) * 0.5]
+  return [(u - 128) * f.step, (v - 128) * f.step]
 }
 
 /** RGBA-Pixel eines Schichtenbilds → je Zelle drei Bedeckungen (R mittel, G hoch, B tief). */

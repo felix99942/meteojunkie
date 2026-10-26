@@ -95,6 +95,8 @@ export class WindParticles {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private sampler: WindSampler | null = null
+  /** Bezugstempo (m/s), das `pxPerSecondAt10` zurücklegt — 10 am Boden, mehr in der Höhe */
+  private refSpeed = 10
   private cols = 0
   private rows = 0
   /** je Zelle vx, vy (px/s), Tempo (m/s); NaN = kein Wind/außerhalb */
@@ -120,9 +122,14 @@ export class WindParticles {
     map.on('resize', this.rebuild)
   }
 
-  /** Neues Windfeld (oder null = aus). Die Partikel bleiben, wo sie sind. */
-  setSampler(s: WindSampler | null): void {
+  /**
+   * Neues Windfeld (oder null = aus). Die Partikel bleiben, wo sie sind.
+   * `refSpeed` ist das Tempo, das so schnell läuft wie sonst 10 m/s; die
+   * Tempostufen (Deckkraft, Breite) skalieren mit.
+   */
+  setSampler(s: WindSampler | null, refSpeed = 10): void {
     this.sampler = s
+    this.refSpeed = refSpeed
     this.rebuild()
   }
 
@@ -192,8 +199,9 @@ export class WindParticles {
     const pc = map.project(c)
     const pcn = map.project([c.lng, c.lat + D])
     const pxPerM = Math.hypot(pcn.x - pc.x, pcn.y - pc.y) / (D * M_PER_DEG)
-    const k = pxPerM > 0 ? pxPerSecondAt10(map.getZoom()) / (10 * pxPerM) : 0
-    // 70 m/s, gleiche Umrechnung wie die Partikel selbst
+    const ref = this.refSpeed
+    const k = pxPerM > 0 ? pxPerSecondAt10(map.getZoom()) / (ref * pxPerM) : 0
+    // das Siebenfache des Bezugs (am Boden 70 m/s), gleiche Umrechnung wie die Partikel selbst
     const maxPx = pxPerSecondAt10(map.getZoom()) * 7
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
@@ -234,7 +242,8 @@ export class WindParticles {
         const o = 3 * (j * cols + i)
         field[o] = vx
         field[o + 1] = vy
-        field[o + 2] = Math.hypot(wind[0], wind[1])
+        // Tempo auf den Bezug 10 m/s umgerechnet — die Stufen gelten so für beide Höhen
+        field[o + 2] = (Math.hypot(wind[0], wind[1]) * 10) / ref
         spawn.push(j * cols + i)
       }
     }

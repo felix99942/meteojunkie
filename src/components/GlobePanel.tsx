@@ -25,6 +25,7 @@ import { starTileDataUrl } from '../render/starfield'
 import { globeFieldSource, loadGlobeField, loadGlobeMeta, prefetchGlobeField, setGlobeMeta } from '../api/globeData'
 import {
   CONTOURS,
+  contoursFor,
   DEFAULT_GLOBE_MODEL,
   DEFAULT_GLOBE_VARIABLE,
   getGlobeModel,
@@ -38,6 +39,7 @@ import {
   runMs,
   sampleField,
   sampleRgb3,
+  particleSource,
   sampleWind,
   validMs,
   type ContourId,
@@ -129,7 +131,9 @@ export function GlobePanel() {
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ lat: number; lon: number } | null>(null)
   /** Isolinien als eigene Ebenen über JEDER Größe — Isobaren sind die Vorgabe. */
-  const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false })
+  const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false, gh300: true })
+  /** Die Linienarten, die zur gewählten Größe gehören (Höhenwind: 300 statt 500 hPa) */
+  const shownContours = useMemo(() => contoursFor(varId), [varId])
   /**
    * Windpartikel (10-m-Wind `uv10` als Bewegung) — eingeschaltet, sobald Wind
    * oder Böen gewählt werden. IMMER der Wind, auch über den Wellengrößen: ein
@@ -174,14 +178,32 @@ export function GlobePanel() {
   // Wechsel eingeschaltet, abschalten bleibt danach möglich. Die Relative
   // Topografie liest man klassisch mit den 500-hPa-Linien darüber.
   useEffect(() => {
-    const line = varId === 'reltop' ? 'gh500' : varId
-    if (line === 'msl' || line === 'gh500') setContours((c) => (c[line] ? c : { ...c, [line]: true }))
+    const line = varId === 'reltop' ? 'gh500' : varId === 'wind300' ? 'gh300' : varId
+    if (line === 'msl' || line === 'gh500' || line === 'gh300') setContours((c) => (c[line] ? c : { ...c, [line]: true }))
+  }, [varId])
+
+  // Beim Höhenwind die Isobaren AUS (auf Wunsch): Bodendruck und 300-hPa-Linien
+  // zusammen sind zwei Liniennetze übereinander, und gefragt ist die Höhe. Wer
+  // die Größe wieder verlässt, bekommt sie zurück — aber nur, wenn sie hier
+  // abgeschaltet wurden, nicht wenn man sie vorher selbst ausgemacht hatte.
+  const mslAutoOff = useRef(false)
+  useEffect(() => {
+    if (varId === 'wind300') {
+      setContours((c) => {
+        if (!c.msl) return c
+        mslAutoOff.current = true
+        return { ...c, msl: false }
+      })
+    } else if (mslAutoOff.current) {
+      mslAutoOff.current = false
+      setContours((c) => (c.msl ? c : { ...c, msl: true }))
+    }
   }, [varId])
 
   // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
   // eingeschaltet, abschalten bleibt danach möglich
   useEffect(() => {
-    if (varId === 'wind10' || varId === 'gust') setParticles(true)
+    if (varId === 'wind10' || varId === 'gust' || varId === 'wind300') setParticles(true)
   }, [varId])
 
   // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück — und
@@ -392,7 +414,7 @@ export function GlobePanel() {
     for (const c of CONTOURS) {
       const id = isoId(c.id)
       const cvm = meta?.variables[c.id]
-      const on = contours[c.id] && meta && cvm && cvm.steps.length > 0 && step != null
+      const on = contours[c.id] && shownContours.includes(c) && meta && cvm && cvm.steps.length > 0 && step != null
       const src = map.getSource(id) as maplibregl.RasterTileSource | undefined
       if (!on || rebuild) {
         if (map.getLayer(id)) map.removeLayer(id)
@@ -413,7 +435,7 @@ export function GlobePanel() {
       }
     }
     isoModelRef.current = modelId
-  }, [mapReady, meta, modelId, model.maxzoom, contours, step, run, queueTiles])
+  }, [mapReady, meta, modelId, model.maxzoom, contours, shownContours, step, run, queueTiles])
 
   // Windpartikel: eine Animation über der Karte, gespeist aus den
   // Windkomponenten (`uv10`) zur selben Gültigkeitszeit wie das Feld
@@ -428,7 +450,7 @@ export function GlobePanel() {
       particlesRef.current = null
     }
   }, [mapReady])
-  const particleVar: GlobeVarId = 'uv10'
+  const { var: particleVar, refSpeed } = particleSource(varId, meta)
   const uvMeta = meta?.variables[particleVar]
   const uvStep = meta && uvMeta && step != null ? uvMeta.steps[nearestStepIndex(uvMeta.steps, run, validMs(meta, step))] : undefined
   useEffect(() => {
@@ -440,12 +462,12 @@ export function GlobePanel() {
     }
     let cancelled = false
     loadGlobeField(modelId, meta.runId, particleVar, uvStep)
-      .then((f) => !cancelled && wp.setSampler((lat, lon) => sampleWind(f, lat, lon)))
+      .then((f) => !cancelled && wp.setSampler((lat, lon) => sampleWind(f, lat, lon), refSpeed))
       .catch(() => !cancelled && wp.setSampler(null))
     return () => {
       cancelled = true
     }
-  }, [mapReady, particles, meta, modelId, particleVar, uvStep])
+  }, [mapReady, particles, meta, modelId, particleVar, uvStep, refSpeed])
 
   // Aktuelles Feld für die Werteanzeige + Vorladen der nächsten Schritte
   useEffect(() => {
@@ -463,8 +485,9 @@ export function GlobePanel() {
     // Felder der eingeschalteten Isolinien gleich mit, die laden sonst erst,
     // wenn ihre Kacheln gefragt werden
     const ahead = [1, 2, 3, -1].slice(0, PREFETCH_AHEAD + 1)
-    const vars: GlobeVarId[] = [varId, ...CONTOURS.filter((c) => contours[c.id] && meta.variables[c.id]).map((c) => c.id)]
-    if (particles && meta.variables.uv10) vars.push('uv10')
+    const vars: GlobeVarId[] = [varId, ...shownContours.filter((c) => contours[c.id] && meta.variables[c.id]).map((c) => c.id)]
+    const pv = particleSource(varId, meta).var
+    if (particles && meta.variables[pv]) vars.push(pv)
     for (const v of vars) {
       const vsteps = meta.variables[v]?.steps ?? []
       const base = nearestStepIndex(vsteps, run, validMs(meta, step))
@@ -481,7 +504,7 @@ export function GlobePanel() {
     for (const k of TILE_PREFETCH_AHEAD) {
       const s = steps[idx + k]
       if (s != null) templates.push(strip(globeTileUrl(modelId, meta.runId, varId, s)))
-      for (const c of CONTOURS) {
+      for (const c of shownContours) {
         if (!contours[c.id] || !meta.variables[c.id]) continue
         const cs = meta.variables[c.id]!.steps
         const t = cs[nearestStepIndex(cs, run, validMs(meta, step)) + k]
@@ -493,7 +516,7 @@ export function GlobePanel() {
     return () => {
       cancelled = true
     }
-  }, [meta, modelId, varId, step, idx, steps, contours, particles, run])
+  }, [meta, modelId, varId, step, idx, steps, contours, shownContours, particles, run])
 
   // Abspielen: weiter, sobald das AKTUELLE Feld da ist — so überholt die
   // Schleife nie die Daten, und bei langsamem Netz wird sie langsamer statt leer.
@@ -733,7 +756,7 @@ export function GlobePanel() {
             umgeschaltet), darunter der Wert am Zeiger */}
         <div className="globe-corner">
           <div className="globe-layers" role="group" aria-label="Ebenen über der Karte">
-            {CONTOURS.map((c) => (
+            {shownContours.map((c) => (
               <label key={c.id} className="globe-layer" title={c.title}>
                 <input
                   type="checkbox"
@@ -749,7 +772,9 @@ export function GlobePanel() {
               title={
                 meta && !uvMeta
                   ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
-                  : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
+                  : particleVar === 'uv300'
+                    ? 'Höhenströmung auf 300 hPa als bewegte Spuren — beim Höhenwind zeigen die Partikel den Strahlstrom, nicht den Bodenwind. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm nicht (in der Höhe gegenüber dem Boden gebremst).'
+                    : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
               }
             >
               <input
@@ -758,7 +783,7 @@ export function GlobePanel() {
                 disabled={!uvMeta}
                 onChange={(e) => setParticles(e.target.checked)}
               />{' '}
-              Windpartikel
+              {particleVar === 'uv300' ? 'Windpartikel 300 hPa' : 'Windpartikel'}
             </label>
           </div>
           <div className="globe-readout" aria-live="polite">
