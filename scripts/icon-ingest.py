@@ -83,6 +83,13 @@ FIELDS = [
     ('clch', None, 'clch'),
     ('clcm', None, 'clcm'),
     ('clcl', None, 'clcl'),
+    # seit 2026-10-27, je Schritt im Verzeichnis geprüft (D2 und EU)
+    ('cape_ml', None, 'cape'),
+    ('td_2m', None, 'td2m'),
+    ('relhum', '700', 'rh700'),
+    ('tqv', None, 'tcwv'),
+    ('h_snow', None, 'hsnow'),
+    ('hzerocl', None, 'hzerocl'),
 ]
 
 G = 9.80665  # Geopotential (m²/s²) → geopotentielle Höhe (m)

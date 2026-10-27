@@ -28,6 +28,21 @@ export type GlobeVarId =
   | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'wind300' | 'gh500' | 'gh300' | 'reltop' | 'tcc' | 'clouds'
   | 'uv10' | 'uv300'
   | 'swh' | 'pp1d' | 'sst'
+  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl'
+
+/**
+ * Gruppen der Auswahlliste (`<optgroup>`) — bei über zwanzig Größen ist eine
+ * flache Liste eine, die man jedes Mal neu liest.
+ */
+export const GLOBE_GROUPS = [
+  'Temperatur & Luftmasse',
+  'Druck & Höhe',
+  'Niederschlag & Feuchte',
+  'Wind',
+  'Wolken & Gewitter',
+  'Meer',
+] as const
+export type GlobeGroup = (typeof GLOBE_GROUPS)[number]
 
 export interface GlobeVariable {
   id: GlobeVarId
@@ -39,6 +54,7 @@ export interface GlobeVariable {
   decimals: number
   /** Jede wievielte Stufe der Legende beschriftet wird. */
   legendEvery: number
+  group: GlobeGroup
   /**
    * 'rgb3': drei Größen in einem Bild (Wolkenschichten), eigene Einfärbung
    * und Legende — `scale` gilt dann nicht.
@@ -159,9 +175,73 @@ const RELTOP: ColorScale = {
   stops: bands(488, 4, lerpRamp(GLOBAL_TEMP_ANCHORS.slice(2), 27)),
 }
 
+/**
+ * Niederschlagssumme seit Laufbeginn (mm): dieselbe Leserichtung wie die
+ * Rate (blau → grün → gelb → rot → violett), aber Stufen für Summen über
+ * Tage. Unter 1 mm durchsichtig — sonst färbte jeder Nieselhauch der
+ * letzten zwei Wochen die ganze Kugel.
+ */
+const PRECIP_SUM_STEPS = [1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300, 500]
+const PRECIP_SUM_COLORS = lerpRamp(
+  ['#4f97dd', '#2f6fc0', '#2fa36a', '#8fcf4a', '#f2d24b', '#f39a35', '#e0532a', '#b9265a', '#7c1a7a', '#c9a3e6'],
+  PRECIP_SUM_STEPS.length,
+)
+const PRECIP_SUM: ColorScale = {
+  kind: 'stepped',
+  stops: PRECIP_SUM_STEPS.map((value, i) => ({ value, color: PRECIP_SUM_COLORS[i] })),
+}
+
+/**
+ * CAPE (J/kg): die Skala der Feld-Karte endet bei 3000, in den Tropen und
+ * im Mittleren Westen stehen 4000–6000 — dort oben zwei Stufen mehr. Unter
+ * 100 J/kg durchsichtig: das ist keine Labilität, über die man spricht.
+ */
+const CAPE: ColorScale = {
+  kind: 'stepped',
+  stops: [...COLOR_SCALES.cape.stops, { value: 4000, color: '#ffc8e2' }, { value: 5000, color: '#fff0f7' }],
+}
+
+/**
+ * Relative Feuchte 700 hPa in der Manier der Höhenwetterkarten: erst ab
+ * 50 % eingefärbt, ab 70 % kräftig — die feuchten Bänder sind Fronten und
+ * Aufgleitbewölkung, die trockenen (durchsichtig) Absinkzonen hinter dem Trog.
+ */
+const RH700_COLORS = ['#2b4a3a', '#2f6b4a', '#2f8f57', '#3fb36a', '#7fd37f', '#c4ecb0']
+const RH700: ColorScale = {
+  kind: 'stepped',
+  stops: [50, 60, 70, 80, 90, 95].map((value, i) => ({ value, color: RH700_COLORS[i] })),
+}
+
+/** Niederschlagbares Wasser (mm): trocken ocker → feucht blau → tropisch violett, 5-mm-Bänder. */
+const TCWV: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(
+    0,
+    5,
+    lerpRamp(['#5a4326', '#a07a3c', '#d6c27a', '#8fcf8a', '#3fb3a3', '#2f86c6', '#3a52b5', '#6a3aa8', '#a63aa0'], 15),
+  ),
+}
+
+/** Schneehöhe (cm): unter 1 cm durchsichtig, dann weiß-bläulich bis tiefblau — Atlas-Manier. */
+const SNOW_STEPS = [1, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500]
+const SNOW_COLORS = lerpRamp(['#eef4fb', '#c6dcf2', '#93bde6', '#5e98d6', '#3a6fc0', '#3a4aa0', '#5a2f8a'], SNOW_STEPS.length)
+const SNOW: ColorScale = {
+  kind: 'stepped',
+  stops: SNOW_STEPS.map((value, i) => ({ value, color: SNOW_COLORS[i] })),
+}
+
+/** Nullgradgrenze (m über NN): 0 … 5000 in 250-m-Bändern, tief = kalt (blau), hoch = warm (rot). */
+const HZEROCL: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(0, 250, lerpRamp(TEMP_ANCHORS.slice(1), 21)),
+}
+
 export const GLOBE_VARIABLES: GlobeVariable[] = [
   {
     id: 't2m',
+    group: 'Temperatur & Luftmasse',
     label: 'Temperatur 2 m',
     title: 'Lufttemperatur in 2 m Höhe (°C)',
     scale: GLOBAL_TEMP,
@@ -170,6 +250,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 't850',
+    group: 'Temperatur & Luftmasse',
     label: 'Temperatur 850 hPa',
     title:
       'Temperatur auf 850 hPa (~1500 m) — die Luftmasse ohne die bodennahe Grenzschicht. Über Hochland (Tibet, Anden, Antarktis) liegt die Fläche UNTER dem Gelände und ist vom Modell extrapoliert.',
@@ -179,6 +260,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'gh500',
+    group: 'Druck & Höhe',
     label: 'Geopotential 500 hPa',
     title: 'Höhe der 500-hPa-Fläche in geopotentiellen Dekametern — Tröge (niedrig) und Rücken (hoch) der Höhenströmung',
     scale: GH500,
@@ -187,6 +269,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'reltop',
+    group: 'Temperatur & Luftmasse',
     label: 'Relative Topografie 500/1000 hPa',
     title:
       'Schichtdicke zwischen 1000 und 500 hPa in gpdm — proportional zur Mitteltemperatur der unteren Troposphäre (1 gpdm ≈ 0,5 K): zeigt Kalt- und Warmluftmassen ohne die bodennahe Grenzschicht. Über Hochland liegt 1000 hPa unter dem Gelände und ist vom Modell extrapoliert.',
@@ -196,6 +279,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'msl',
+    group: 'Druck & Höhe',
     label: 'Luftdruck (MSL)',
     title: 'Auf Meereshöhe reduzierter Luftdruck (hPa)',
     scale: COLOR_SCALES.pressure_msl,
@@ -204,15 +288,17 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'precip',
+    group: 'Niederschlag & Feuchte',
     label: 'Niederschlag',
     title:
-      'Mittlere Niederschlagsrate im Intervall seit dem vorigen Zeitschritt (mm/h) — bis +144 h über 3 Stunden, danach über 6 Stunden. Bei +0 h gibt es kein Intervall.',
+      'Mittlere Niederschlagsrate im Intervall seit dem vorigen Zeitschritt (mm/h). ICON-D2: 1 Stunde; ICON-EU: 1 Stunde, ab +78 h 3 Stunden; IFS: 3 Stunden, ab +144 h 6 Stunden — das jeweilige Intervall steht in der Legende. Bei +0 h gibt es kein Intervall.',
     scale: COLOR_SCALES.precipitation,
     decimals: 1,
     legendEvery: 3,
   },
   {
     id: 'wind10',
+    group: 'Wind',
     label: 'Wind 10 m',
     title: 'Mittlere Windgeschwindigkeit in 10 m Höhe zum Termin (km/h)',
     scale: COLOR_SCALES.wind_speed_10m,
@@ -221,14 +307,17 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'gust',
+    group: 'Wind',
     label: 'Böen 10 m',
-    title: 'Höchste Böe in 10 m seit dem vorigen Zeitschritt (km/h) — bis +144 h über 3 Stunden, danach über 6 Stunden',
+    title:
+      'Spitzenböe in 10 m (km/h): der höchste 3-Sekunden-Mittelwert des Winds (WMO-Definition) im Intervall vor dem Termin. ICON-EU/-D2: immer die letzte Stunde. IFS: bis +90 h die letzte Stunde, bis +144 h die letzten 3 Stunden, danach 6 Stunden — das jeweilige Intervall steht in der Legende. Ein längeres Intervall fängt mehr Spitzen ein, die Werte fallen dort tendenziell höher aus.',
     scale: COLOR_SCALES.wind_gusts_10m,
     decimals: 0,
     legendEvery: 1,
   },
   {
     id: 'wind300',
+    group: 'Wind',
     label: 'Höhenwind + Geopotential 300 hPa',
     title:
       'Windgeschwindigkeit auf 300 hPa (~9 km) in km/h — der Strahlstrom (Jetstream), darüber das Geopotential derselben Fläche als Linien (statt 500 hPa). Unter 70 km/h nicht eingefärbt. Die Windpartikel zeigen hier die Höhenströmung, nicht den Bodenwind.',
@@ -238,6 +327,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'tcc',
+    group: 'Wolken & Gewitter',
     label: 'Bewölkung gesamt',
     title: 'Gesamtbedeckung (%) — hell = wolkenlos, dunkel = bedeckt',
     scale: TCC_GREY,
@@ -246,6 +336,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'clouds',
+    group: 'Wolken & Gewitter',
     label: 'Wolkenschichten (nur ICON)',
     title:
       'Bedeckung je Höhe in Achteln als drei halbtransparente Flächen: hoch = grün, mittel = rot, tief = blau — je mehr Achtel, desto heller und kräftiger. Übereinander gestapelt wie von oben gesehen (tief unten, hoch oben). ECMWF Open Data führt keine Schichten.',
@@ -255,7 +346,76 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     kind: 'rgb3',
   },
   {
+    id: 'td2m',
+    group: 'Temperatur & Luftmasse',
+    label: 'Taupunkt 2 m',
+    title: 'Taupunkt in 2 m (°C) — die Feuchte der Luft als Temperatur: ab ~16 °C schwül, Grundzutat für Gewitter',
+    scale: COLOR_SCALES.dew_point_2m,
+    decimals: 1,
+    legendEvery: 4,
+  },
+  {
+    id: 'hzerocl',
+    group: 'Temperatur & Luftmasse',
+    label: 'Nullgradgrenze (nur ICON)',
+    title:
+      'Höhe der 0-°C-Fläche in Metern über NN. Keine Schneefallgrenze — die liegt bei Niederschlag meist einige hundert Meter tiefer. ECMWF Open Data führt die Größe nicht.',
+    scale: HZEROCL,
+    decimals: 0,
+    legendEvery: 4,
+  },
+  {
+    id: 'precipsum',
+    group: 'Niederschlag & Feuchte',
+    label: 'Niederschlag Summe',
+    title: 'Aufsummierter Niederschlag seit Laufbeginn bis zum gewählten Termin (mm) — Regen und Schnee als Wasser; unter 1 mm als 0 gespeichert und nicht eingefärbt',
+    scale: PRECIP_SUM,
+    decimals: 1,
+    legendEvery: 2,
+  },
+  {
+    id: 'snow',
+    group: 'Niederschlag & Feuchte',
+    label: 'Schneehöhe',
+    title:
+      'Gesamtschneehöhe am Boden (cm). IFS: aus Wasseräquivalent und Schneedichte gerechnet — über Gletschern und Inlandeis führt das Modell eine Rechengröße, keine messbare Schneedecke.',
+    scale: SNOW,
+    decimals: 0,
+    legendEvery: 2,
+  },
+  {
+    id: 'rh700',
+    group: 'Niederschlag & Feuchte',
+    label: 'Relative Feuchte 700 hPa',
+    title:
+      'Relative Feuchte auf 700 hPa (~3 km), erst ab 50 % eingefärbt: feuchte Bänder zeigen Fronten und Aufgleitbewölkung, durchsichtige Flächen trockene Absinkluft',
+    scale: RH700,
+    decimals: 0,
+    legendEvery: 1,
+  },
+  {
+    id: 'tcwv',
+    group: 'Niederschlag & Feuchte',
+    label: 'Niederschlagbares Wasser',
+    title:
+      'Wasserdampf der ganzen Luftsäule (mm, = kg/m²) — so viel Wasser käme herunter, kondensierte alles. Zeigt feuchte Luftströme („atmosphärische Flüsse"); über ~40 mm ist Starkregen möglich.',
+    scale: TCWV,
+    decimals: 0,
+    legendEvery: 2,
+  },
+  {
+    id: 'cape',
+    group: 'Wolken & Gewitter',
+    label: 'CAPE',
+    title:
+      'Konvektiv verfügbare potentielle Energie (J/kg) — Labilität, kein Gewitter: ohne Auslösung bleibt es ruhig. IFS rechnet das labilste Paket (MU-CAPE), ICON ein Mischschichtpaket (ML-CAPE); IFS-Werte liegen deshalb höher. Unter 100 J/kg nicht eingefärbt, unter 50 J/kg als 0 gespeichert.',
+    scale: CAPE,
+    decimals: 0,
+    legendEvery: 2,
+  },
+  {
     id: 'swh',
+    group: 'Meer',
     label: 'Wellenhöhe (nur IFS)',
     title:
       'Signifikante Wellenhöhe (m) aus dem ECMWF-Wellenmodell — das Mittel des höchsten Drittels der Wellen, Windsee und Dünung zusammen. Einzelne Wellen werden bis etwa doppelt so hoch.',
@@ -265,6 +425,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'pp1d',
+    group: 'Meer',
     label: 'Wellenperiode (nur IFS)',
     title:
       'Peak-Periode (s): Abstand der energiereichsten Wellen. Unter ~8 s kurze, steile Windsee, über ~12 s lange Dünung aus fernen Sturmgebieten.',
@@ -274,6 +435,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   },
   {
     id: 'sst',
+    group: 'Meer',
     label: 'Wassertemperatur (nur IFS)',
     title:
       'Temperatur der Meeresoberfläche (°C) — die Hauttemperatur des Modells über dem Meer, also die oberste Schicht, nicht die Temperatur in Badetiefe. Über Meereis kein Wert.',
@@ -282,6 +444,18 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendEvery: 3,
   },
 ]
+
+/**
+ * Größen, bei denen Isobaren, 500-hPa-Linien und Windpartikel beim Wechsel
+ * AUSgehen (auf Wunsch): Temperatur-, Niederschlags- und Feuchtefelder sowie
+ * CAPE liest man als Fläche, die Liniennetze und die Bewegung darüber lenken
+ * nur ab. Wieder einschalten bleibt möglich. Die Relative Topografie bleibt
+ * ausgenommen — sie liest man klassisch MIT den 500-hPa-Linien.
+ */
+export function overlaysOffFor(v: GlobeVariable): boolean {
+  if (v.id === 'reltop') return false
+  return v.group === 'Temperatur & Luftmasse' || v.group === 'Niederschlag & Feuchte' || v.id === 'cape'
+}
 
 /** Vorgabe ist die Relative Topografie (auf Wunsch) — mit Isobaren und 500-hPa-Linien darüber. */
 export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'
@@ -483,6 +657,24 @@ export function intervalHours(vm: GlobeVarMeta | undefined, step: number): numbe
   if (!vm?.intervals) return undefined
   const i = vm.steps.indexOf(step)
   return i < 0 ? undefined : vm.intervals[i]
+}
+
+/**
+ * Abstand zum vorigen Schritt (h), wenn das Intervall des Werts KÜRZER ist —
+ * dann ist die Größe nur eine STICHPROBE, die Stunden dazwischen fehlen.
+ * Gemessen trifft das die Böe zweimal: IFS bis +90 h (Schritte alle 3 h, die
+ * Böe `10fg` gilt nur der letzten Stunde; stündliche Schritte und eine
+ * 3-h-Böe gibt es in Open Data dort nicht, geprüft 2026-10-27) und ICON-EU
+ * ab +78 h (Dateien alle 3 h, `vmax_10m` weiter nur die letzte Stunde).
+ * Sonst undefined.
+ */
+export function sampledGapHours(vm: GlobeVarMeta | undefined, step: number): number | undefined {
+  const hours = intervalHours(vm, step)
+  if (hours == null || !vm) return undefined
+  const i = vm.steps.indexOf(step)
+  if (i <= 0) return undefined
+  const gap = step - vm.steps[i - 1]
+  return hours < gap ? gap : undefined
 }
 
 export interface GlobeMeta {

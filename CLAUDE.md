@@ -3164,6 +3164,35 @@ npm run preview   # gebautes dist/ servieren
   ~130–210 KB je Schritt. **Die Isobaren gehen beim Höhenwind AUS** (auf
   Wunsch — zwei Liniennetze übereinander) und kommen beim Verlassen der
   Größe zurück, aber nur, wenn sie dort automatisch abgeschaltet wurden.
+  **SIEBEN FLÄCHENGRÖSSEN DAZU** (seit 2026-10-27, je Schritt live in Index
+  bzw. Verzeichnis geprüft): Taupunkt 2 m, Nullgradgrenze (nur ICON —
+  ECMWF Open Data führt sie nicht), Niederschlag Summe seit Laufbeginn (aus
+  `tp`, kein Abruf), Schneehöhe (IFS aus `sd` · 1000 / `rsn`, ICON `h_snow`),
+  relative Feuchte 700 hPa (erst ab 50 % eingefärbt), niederschlagbares
+  Wasser, CAPE (IFS MU-CAPE, ICON ML-CAPE — IFS liegt deshalb höher). Die
+  Auswahl ist seither in `GLOBE_GROUPS` gegliedert (`<optgroup>`).
+  **Beim Wechsel auf Temperatur-, Niederschlags-/Feuchtegrößen und CAPE
+  gehen Isobaren, 500 hPa und Partikel AUS** (`overlaysOffFor`, auf Wunsch;
+  die Relative Topografie bleibt ausgenommen, sie liest man mit 500 hPa).
+  **Kodierung bewusst GROB, und das ist Budget**: Pages erlaubt 1 GB, die
+  Seite liegt damit bei ~973 MB (IFS 429, ICON-EU 301, ICON-D2 118, Rest
+  ~125 MB). Summe 1 mm, CAPE 25 J/kg, Taupunkt 1 K; Werte, die die Skala
+  ohnehin nicht einfärbt (Summe < 1 mm, CAPE < 50 J/kg), werden als 0
+  gespeichert — das Rauschen darunter kostete ein Drittel der Bildgröße.
+  Im Sommer wächst CAPE, im Winter die Schneehöhe: wer eine Größe ergänzt,
+  muss erst Platz schaffen (IFS bis +10 Tage spart ~60 MB, oder die Daten
+  auf einen Objektspeicher umziehen). Cache-Schlüssel ECMWF `v7`, ICON `v4`.
+  **WINDSKALA an festen Ankern** (`colorscales.ts`, gilt auch für MOS- und
+  Feld-Karte): ab 100 km/h dunkelrot, ab 120 km/h lila (≈ Beaufort 12),
+  Wind und Böe teilen die Anker.
+  **DIE BÖE IST BEI 3-h-SCHRITTEN NUR EINE STICHPROBE** (`sampledGapHours`,
+  Hinweis in der Legende): IFS bis +90 h und ICON-EU ab +78 h liefern nur
+  die Böe der LETZTEN STUNDE, zwei von drei Stunden fehlen. Nicht
+  behebbar — Open Data hat keine Stundenschritte (+1/+2/+4 h → 404) und
+  `10fg3` erst ab +93 h (geprüft 2026-10-27). Lückenlos: ICON-D2, ICON-EU
+  bis +78, IFS ab +93. Die Böe ist die WMO-Spitzenböe (3-s-Mittel).
+  **IFS 0,1° gibt es offen** (`ifs/0p1/`, Boden/Druckflächen getrennt,
+  gemessen 2026-10-27), global aber ~1,7 GB — zurückgestellt.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-

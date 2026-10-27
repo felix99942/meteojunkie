@@ -64,6 +64,13 @@ FIELDS = {
     ('gh', '1000'): 'gh1000',
     ('tcc', None): 'tcc',
     ('skt', None): 'skt',
+    # seit 2026-10-27, im Index geprüft (alle Schritte +0 … +360)
+    ('mucape', None): 'cape',
+    ('2d', None): 'td2m',
+    ('r', '700'): 'rh700',
+    ('tcwv', None): 'tcwv',
+    ('sd', None): 'sd',
+    ('rsn', None): 'rsn',
 }
 
 # Wellenmodell (WAM): eigener Strom `wave` im selben Verzeichnis, gleiches
@@ -143,6 +150,13 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
             out[name] = vals.astype(np.float32)
         if name == 'gust':
             out['gust_hours'] = hours
+    # Schneehöhe: Open Data führt nur das WASSERÄQUIVALENT `sd` (m) und die
+    # Dichte `rsn` (kg/m³); Höhe = sd · 1000 / rsn. Ohne Schnee ist sd = 0,
+    # die Dichte dort ein Vorgabewert — das Ergebnis bleibt 0.
+    sd, rsn = out.pop('sd', None), out.pop('rsn', None)
+    if sd is not None and rsn is not None:
+        with np.errstate(divide='ignore', invalid='ignore'):
+            out['hsnow'] = np.where((sd > 0) & (rsn > 0), sd * 1000.0 / rsn, 0.0).astype(np.float32)
     return out
 
 

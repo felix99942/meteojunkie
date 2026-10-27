@@ -3,12 +3,15 @@ import {
   contoursFor,
   decodeCodes,
   decodeUv8,
+  GLOBE_GROUPS,
   GLOBE_VARIABLES,
   getGlobeModel,
   globeFreshness,
   GLOBE_MODELS,
   intervalHours,
   nearestStepIndex,
+  overlaysOffFor,
+  sampledGapHours,
   sampleField,
   particleSource,
   sampleWind,
@@ -229,6 +232,36 @@ describe('Registry', () => {
     const ids = GLOBE_VARIABLES.map((v) => v.id)
     expect(new Set(ids).size).toBe(ids.length)
     for (const v of GLOBE_VARIABLES) expect(v.scale?.stops.length).toBeGreaterThan(1)
+  })
+
+  it('ordnet jede Größe einer Gruppe zu, und keine Gruppe bleibt leer', () => {
+    for (const v of GLOBE_VARIABLES) expect(GLOBE_GROUPS).toContain(v.group)
+    for (const g of GLOBE_GROUPS) expect(GLOBE_VARIABLES.some((v) => v.group === g)).toBe(true)
+  })
+
+  it('schaltet Linien und Partikel nur bei Flächengrößen ab, nicht bei der Relativen Topografie', () => {
+    const off = GLOBE_VARIABLES.filter(overlaysOffFor).map((v) => v.id).sort()
+    expect(off).toEqual(['cape', 'hzerocl', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't850', 'tcwv', 'td2m'])
+  })
+
+  it('erkennt Böen, die nur eine Stichprobe des Schrittabstands sind', () => {
+    // IFS: Schritte alle 3 h, Böe bis +90 h nur die letzte Stunde, dann 3 h, ab +150 6 h
+    const vm = { lo: 0, step: 1, unit: 'km/h', steps: [3, 6, 90, 93, 144, 150], intervals: [1, 1, 1, 3, 3, 6] }
+    expect(sampledGapHours(vm, 3)).toBeUndefined() // erster Schritt: kein Vorgänger
+    expect(sampledGapHours(vm, 6)).toBe(3)
+    expect(sampledGapHours(vm, 93)).toBeUndefined()
+    expect(sampledGapHours(vm, 150)).toBeUndefined()
+    // ICON-D2: stündlich, lückenlos
+    expect(sampledGapHours({ ...vm, steps: [1, 2, 3], intervals: [1, 1, 1] }, 2)).toBeUndefined()
+    // Termingrößen ohne Intervall
+    expect(sampledGapHours({ lo: 0, step: 1, unit: '', steps: [0, 3] }, 3)).toBeUndefined()
+  })
+
+  it('stuft die Skalen streng aufsteigend', () => {
+    for (const v of GLOBE_VARIABLES) {
+      const vals = v.scale.stops.map((s) => s.value)
+      for (let i = 1; i < vals.length; i++) expect(vals[i], v.id).toBeGreaterThan(vals[i - 1])
+    }
   })
 
   it('reicht mit der Temperaturskala von −54 bis 50 °C (global, nicht europäisch)', () => {

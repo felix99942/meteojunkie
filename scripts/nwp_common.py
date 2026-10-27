@@ -22,6 +22,13 @@ Einheitliche Feldnamen und Einheiten:
                Land kein Wert)
   pp1d         s, Peak-Periode
   skt          K, Hauttemperatur — über dem Meer die Wassertemperatur
+  cape         J/kg — ECMWF `mucape` (most unstable), ICON `cape_ml` (mixed layer)
+  td2m         K, Taupunkt 2 m
+  rh700        %, relative Feuchte auf 700 hPa
+  tcwv         mm (kg/m²), niederschlagbares Wasser der Säule
+  hsnow        m, Schneehöhe (ECMWF: aus Wasseräquivalent `sd` und Dichte
+               `rsn` gerechnet, ICON `h_snow` direkt)
+  hzerocl      m über NN, Nullgradgrenze (nur ICON — ECMWF Open Data führt sie nicht)
 
 Ausgabe (`public/nwp/<modell>/`, gitignored):
   meta.json                       Lauf, Raster, je Größe lo/step/Schritte(/Intervalle)
@@ -91,6 +98,19 @@ VARIABLES = {
     'swh': {'lo': 0.0, 'step': 0.05, 'unit': 'm'},
     'pp1d': {'lo': 0.0, 'step': 0.1, 'unit': 's'},
     'sst': {'lo': -5.0, 'step': 0.1, 'unit': '°C'},
+    # Seit 2026-10-27. Die Stufen sind bewusst GROB (halbe Bandbreite der
+    # Skala oder gröber) — die Seite darf auf Pages höchstens 1 GB haben, vor
+    # diesen Größen lagen die drei Modelle schon bei ~690 MB, der Rest von
+    # public/ bei ~125 MB. Gemessen IFS mit feiner Kodierung (0,5 mm / 10 J/kg
+    # / 0,5 K): Summe 385, CAPE 283, Taupunkt 231 KB je Bild.
+    # Niederschlagssumme seit Laufbeginn — aus `tp`, kostet keinen Abruf
+    'precipsum': {'lo': 0.0, 'step': 1.0, 'unit': 'mm'},
+    'cape': {'lo': 0.0, 'step': 25.0, 'unit': 'J/kg'},
+    'td2m': {'lo': -90.0, 'step': 1.0, 'unit': '°C'},
+    'rh700': {'lo': 0.0, 'step': 5.0, 'unit': '%'},
+    'tcwv': {'lo': 0.0, 'step': 1.0, 'unit': 'mm'},
+    'snow': {'lo': 0.0, 'step': 1.0, 'unit': 'cm'},
+    'hzerocl': {'lo': -500.0, 'step': 50.0, 'unit': 'm'},
 }
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
@@ -101,9 +121,11 @@ NEEDS = {
     'clouds': ('clch', 'clcm', 'clcl'), 'uv10': ('u10', 'v10'),
     'wind300': ('u300', 'v300'), 'uv300': ('u300', 'v300'),
     'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'),
+    'precipsum': ('tp',), 'cape': ('cape',), 'td2m': ('td2m',), 'rh700': ('rh700',),
+    'tcwv': ('tcwv',), 'snow': ('hsnow',), 'hzerocl': ('hzerocl',),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
-OPTIONAL = {'gust', 'precip', 'clouds', 'swh', 'pp1d', 'sst'}
+OPTIONAL = {'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl'}
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
 # 8-MB-Bereich einmal mit 7,8 MB/s, einmal mit 90 KB/s = 88 s). Ein
@@ -241,6 +263,25 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         # in der Arktis — als „Wassertemperatur" wäre das falsch, also kein Wert.
         sst = np.where(np.isfinite(f['swh']), f['skt'] - 273.15, np.nan)
         return np.where(sst < -2.0, np.nan, sst)
+    if var == 'precipsum':
+        # bei +0 ist die Summe überall 0 — kein Bild, der Schritt fehlt wie beim Niederschlag
+        # Unter 1 mm (die Skala ist dort durchsichtig) auf 0: der Nieselhauch
+        # über halben Ozeanen ist Rauschen, das sich schlecht komprimiert
+        return None if step == 0 else np.where(f['tp'] < 1.0, 0.0, f['tp'])
+    if var == 'cape':
+        # dasselbe unter 50 J/kg (Skala ab 100) — MU-CAPE ist global fast
+        # überall ein paar J/kg, als Rauschen kostete das ein Drittel des Bilds
+        return np.where(f['cape'] < 50.0, 0.0, f['cape'])
+    if var == 'td2m':
+        return f['td2m'] - 273.15
+    if var == 'rh700':
+        return np.clip(f['rh700'], 0.0, 100.0)
+    if var == 'tcwv':
+        return np.maximum(0.0, f['tcwv'])
+    if var == 'snow':
+        return np.maximum(0.0, f['hsnow']) * 100.0
+    if var == 'hzerocl':
+        return f['hzerocl']
     raise KeyError(var)
 
 

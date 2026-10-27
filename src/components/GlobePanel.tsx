@@ -30,11 +30,14 @@ import {
   DEFAULT_GLOBE_VARIABLE,
   getGlobeModel,
   getGlobeVariable,
+  overlaysOffFor,
   globeFreshness,
   GLOBE_MODELS,
+  GLOBE_GROUPS,
   GLOBE_VARIABLES,
   GLOBE_VIEWS,
   intervalHours,
+  sampledGapHours,
   nearestStepIndex,
   runMs,
   sampleField,
@@ -198,6 +201,16 @@ export function GlobePanel() {
       mslAutoOff.current = false
       setContours((c) => (c.msl ? c : { ...c, msl: true }))
     }
+  }, [varId])
+
+  // Temperatur, Niederschlag, Feuchte und CAPE liest man als Fläche: beim
+  // Wechsel dorthin Linien und Partikel AUS (auf Wunsch). Steht NACH dem
+  // Zurückholen der Isobaren oben, sonst schaltete das sie gleich wieder an.
+  useEffect(() => {
+    if (!overlaysOffFor(getGlobeVariable(varId))) return
+    mslAutoOff.current = false
+    setContours((c) => (c.msl || c.gh500 ? { ...c, msl: false, gh500: false } : c))
+    setParticles(false)
   }, [varId])
 
   // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
@@ -606,11 +619,14 @@ export function GlobePanel() {
     }))
   }, [variable])
 
+  // Nur die letzte Stunde von mehreren: Spitzen dazwischen sind nicht in den Daten
+  const gapHours = step != null ? sampledGapHours(vm, step) : undefined
+
   const intervalText =
     interval == null
       ? null
       : varId === 'gust'
-        ? `höchste Böe der ${interval === 1 ? 'letzten Stunde' : `letzten ${interval} h`} vor dem Termin`
+        ? `Spitzenböe (3-s-Wert), höchste der ${interval === 1 ? 'letzten Stunde' : `letzten ${interval} h`} vor dem Termin`
         : `Mittel der ${interval === 1 ? 'letzten Stunde' : `letzten ${interval} h`} vor dem Termin`
 
   return (
@@ -657,10 +673,14 @@ export function GlobePanel() {
           }}
           title={variable.title}
         >
-          {GLOBE_VARIABLES.map((v) => (
-            <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
-              {v.label}
-            </option>
+          {GLOBE_GROUPS.map((g) => (
+            <optgroup key={g} label={g}>
+              {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
+                <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
+                  {v.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <button
@@ -815,6 +835,14 @@ export function GlobePanel() {
             {model.label} · {variable.label} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}
             {intervalText && ` · ${intervalText}`}
           </span>
+          {gapHours != null && interval != null && (
+            <span
+              className="globe-warn globe-gap"
+              title="Der Anbieter gibt diese Größe hier nur zu jedem Zeitschritt für die letzte Stunde heraus — was in den Stunden davor geschah, steht in keinem Bild. Lückenlos ist ICON-D2 (stündlich); IFS ab +93 h und ICON-EU bis +78 h decken das Intervall vollständig ab."
+            >
+              ⚠ Stichprobe: nur {interval === 1 ? 'die letzte Stunde' : `die letzten ${interval} h`} von {gapHours} h — Böen dazwischen fehlen
+            </span>
+          )}
           {variable.kind === 'rgb3' ? (
             <div className="globe-legend-octas">
               {([

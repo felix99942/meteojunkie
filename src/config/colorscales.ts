@@ -103,9 +103,16 @@ const PRECIP_ANCHORS = [
 const PRECIP_STEPS = [0.1, 0.2, 0.5, ...seq(1, 10, 1), ...seq(15, 50, 5), ...seq(60, 100, 10)]
 const PRECIP_COLORS = lerpRamp(PRECIP_ANCHORS, PRECIP_STEPS.length)
 
-// Grün → Gelb → Orange → Rot → Magenta (kein Blau — grenzt Wind optisch von
-// der Temperatur ab, die im Kalten violett/blau beginnt).
-const WIND_RAMP = ['#2f9e6a', '#5cc36a', '#8ed45a', '#c2dd52', '#f0d848', '#f6b23c', '#f28a30', '#e9612a', '#d93b2b', '#bd2947', '#8f1f5e']
+// Grün → Gelb → Orange → Rot → Dunkelrot → Lila (kein Blau — grenzt Wind
+// optisch von der Temperatur ab, die im Kalten violett/blau beginnt). Das
+// obere Ende ist an festen Werten verankert (auf Wunsch): ab 100 km/h
+// DUNKELROT, ab 120 km/h LILA — das Lila ist damit die Orkanklasse
+// (Beaufort 12 ab 118 km/h), und die Rottöne darunter Sturm bis schwerer
+// Sturm. Beide Skalen teilen sich diese Anker, damit 110 km/h als Wind und
+// als Böe dieselbe Farbe hat.
+const WIND_RAMP = ['#2f9e6a', '#5cc36a', '#8ed45a', '#c2dd52', '#f0d848', '#f6b23c', '#f28a30', '#e9612a', '#d93b2b', '#b8282c']
+const WIND_DARK_RED = '#8b1a1a'
+const WIND_PURPLE = ['#7a2a8c', '#5e2090', '#45177a']
 
 export const COLOR_SCALES: Record<string, ColorScale> = {
   temperature_2m: {
@@ -151,7 +158,10 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
       { value: 50, color: WIND_RAMP[7] },
       { value: 65, color: WIND_RAMP[8] },
       { value: 80, color: WIND_RAMP[9] },
-      { value: 100, color: WIND_RAMP[10] },
+      { value: 100, color: WIND_DARK_RED },
+      { value: 120, color: WIND_PURPLE[0] },
+      { value: 140, color: WIND_PURPLE[1] },
+      { value: 160, color: WIND_PURPLE[2] },
     ],
   },
   wind_gusts_10m: {
@@ -162,12 +172,15 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
       { value: 20, color: WIND_RAMP[2] },
       { value: 30, color: WIND_RAMP[3] },
       { value: 40, color: WIND_RAMP[4] },
-      { value: 55, color: WIND_RAMP[5] },
-      { value: 70, color: WIND_RAMP[6] },
-      { value: 90, color: WIND_RAMP[7] },
-      { value: 110, color: WIND_RAMP[8] },
-      { value: 130, color: WIND_RAMP[9] },
-      { value: 150, color: WIND_RAMP[10] },
+      { value: 50, color: WIND_RAMP[5] },
+      { value: 60, color: WIND_RAMP[6] },
+      { value: 70, color: WIND_RAMP[7] },
+      { value: 80, color: WIND_RAMP[8] },
+      { value: 90, color: WIND_RAMP[9] },
+      { value: 100, color: WIND_DARK_RED },
+      { value: 120, color: WIND_PURPLE[0] },
+      { value: 140, color: WIND_PURPLE[1] },
+      { value: 160, color: WIND_PURPLE[2] },
     ],
   },
   // klarer Himmel (< 10 %) transparent → Basiskarte sichtbar; dünne Wolken

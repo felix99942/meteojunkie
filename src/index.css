@@ -4442,6 +4442,14 @@ button:focus-visible {
   color: var(--warn);
 }
 
+/* Stichproben-Hinweis der Böe (`sampledGapHours`): eigene Zeile über der Skala */
+.globe-gap {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 2px 0;
+}
+
 /* Die Legende einer globalen Temperatur hat 53 Stufen — als gleich breite
    Kästchen mit Zahl wäre sie breiter als die Karte. Deshalb ein durchgehender
    Balken, beschriftet nur jede n-te Stufe (`legendEvery`). */
