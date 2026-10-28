@@ -1,10 +1,8 @@
 # Baut die Web-Version (Karte deaktiviert) und deployt sie auf Cloudflare
-# (Worker `meteojunkie`: App aus dist/, Daten aus R2 — worker/index.ts) UND,
-# solange die Domain noch dorthin zeigt, weiter auf GitHub Pages.
-# ÜBERGANG (seit 2026-10-28): Pages bekommt wie bisher alles in einem Paket;
-# Cloudflare die Daten getrennt nach R2 (scripts/upload-data.sh). Die
-# Cloudflare-Schritte laufen mit continue-on-error — scheitern sie, deployt
-# Pages trotzdem. Nach der Umstellung der Domain fällt der Pages-Teil weg.
+# (Worker `meteojunkie`: App aus dist/, Daten aus R2 — worker/index.ts).
+# Seit 2026-10-28; vorher GitHub Pages, das bei 1 GB deckelt (die Seite lag
+# bei ~980 MB). Die Daten gehen GETRENNT nach R2 (scripts/upload-data.sh),
+# die App als statische Dateien des Workers.
 # Cloudflare braucht: Secrets CLOUDFLARE_API_TOKEN, R2_ACCESS_KEY_ID,
 # R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID (Variable oder Secret — wie beim
 # Impressum werden beide gelesen, die Reiter liegen im UI nebeneinander).
@@ -14,7 +12,7 @@
 # des DWD), die MOS-Vorhersage (DWD MOSMIX rechnet ~4×/Tag), die Radiosonden (DWD)
 # und die Modellkarten (ECMWF 2 Läufe/Tag, ICON-EU 4, ICON-D2 8).
 # Die Daten werden im Build-Schritt erzeugt (nicht versioniert) und mit deployt.
-name: Deploy web version to GitHub Pages
+name: Deploy web version to Cloudflare
 
 on:
   push:
@@ -53,12 +51,10 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Nur ein Deploy gleichzeitig; laufende abbrechen, wenn neuer Push kommt.
 concurrency:
-  group: pages
+  group: deploy
   cancel-in-progress: true
 
 jobs:
@@ -264,20 +260,6 @@ jobs:
           path: public/nwp/icon-eu
           key: nwp-icon-eu-v4-${{ steps.icon.outputs.eu }}
 
-      # base-Pfad ableiten:
-      #  - eigene Domain (public/CNAME vorhanden) → '/' (Domain-Wurzel)
-      #  - <user>.github.io-Repo → '/'
-      #  - normale Project-Pages → '/<repo>/'
-      - name: Basispfad bestimmen
-        id: base
-        run: |
-          REPO="${{ github.event.repository.name }}"
-          if [[ -f public/CNAME || "$REPO" == *.github.io ]]; then
-            echo "base=/" >> "$GITHUB_OUTPUT"
-          else
-            echo "base=/$REPO/" >> "$GITHUB_OUTPUT"
-          fi
-
       # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
       # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE
       # Postadresse des Anbieters stehen — auch nicht die der
@@ -306,7 +288,7 @@ jobs:
       - name: Web-Version bauen (Karte aus)
         run: npm run build:web
         env:
-          VITE_BASE: ${{ steps.base.outputs.base }}
+          VITE_BASE: /
           VITE_IMPRESSUM_NAME: ${{ vars.IMPRESSUM_NAME || secrets.IMPRESSUM_NAME }}
           VITE_IMPRESSUM_CAREOF: ${{ vars.IMPRESSUM_CAREOF || secrets.IMPRESSUM_CAREOF }}
           VITE_IMPRESSUM_STREET: ${{ vars.IMPRESSUM_STREET || secrets.IMPRESSUM_STREET }}
@@ -317,19 +299,18 @@ jobs:
           # Besucherzähler (GoatCounter); fehlt der Code, wird nichts geladen.
           VITE_GOATCOUNTER_CODE: ${{ vars.GOATCOUNTER_CODE || secrets.GOATCOUNTER_CODE }}
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
       # ── Cloudflare ──────────────────────────────────────────────────────
       # Daten nach R2: nur, was in DIESEM Lauf gültig erzeugt bzw. aus dem
       # Cache geholt wurde — das Skript synchronisiert, und ein halbfertiges
       # Verzeichnis räumte sonst den letzten guten Stand in R2 weg. Die
       # Modellkarten zählen als gültig, wenn ihre meta.json dasteht (der
       # Ingest schreibt sie zuletzt), die übrigen am Erfolg ihres Schritts.
+      # KEIN continue-on-error: scheitert der Upload, soll der Lauf ROT sein
+      # (mit continue-on-error stand er am 2026-10-28 zweimal grün da, ohne
+      # dass ein Byte angekommen war). Der Worker wird dann nicht deployt —
+      # die Seite bleibt auf dem letzten Stand, der zu den Daten passt.
       - name: Cloudflare — Daten nach R2
         id: r2
-        continue-on-error: true
         timeout-minutes: 30
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -356,22 +337,10 @@ jobs:
 
       # Die App OHNE die Daten: die liegen jetzt in R2, und ein Worker-Deploy
       # erlaubt 20.000 Dateien (die Modellkarten allein sind ~5.000 je Lauf).
-      # Das Pages-Paket oben ist zu diesem Zeitpunkt schon geschnürt.
       - name: Cloudflare — Worker deployen
-        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           rm -rf dist/nwp dist/de dist/mos/forecast dist/sondes
           npx --yes wrangler@4.148.0 deploy
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4

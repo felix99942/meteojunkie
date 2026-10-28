@@ -403,20 +403,19 @@ export function Impressum() {
           <h3>Hosting und Zugriffsdaten</h3>
           <p>
             Ausgeliefert wird über{' '}
-            <a
-              href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub Pages
+            <a href="https://www.cloudflare.com/de-de/privacypolicy/" target="_blank" rel="noreferrer">
+              Cloudflare
             </a>{' '}
-            (GitHub, Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, USA). Beim
-            Abruf verarbeitet der Hoster technisch notwendige Zugriffsdaten einschließlich der
-            IP-Adresse; Rechtsgrundlage ist Art. 6 Abs 1 lit. f DSGVO (berechtigtes Interesse
-            an der sicheren und funktionsfähigen Bereitstellung). Auf diese Protokolldaten
-            besteht kein Zugriff durch den Anbieter — es werden keine Server-Logfiles
-            ausgewertet. Da der Dienst in den USA betrieben wird, kann eine Übermittlung in ein
-            Drittland stattfinden; GitHub stützt sie nach eigener Angabe auf den
+            (Cloudflare, Inc., 101 Townsend St., San Francisco, CA 94107, USA), das auch die
+            Namensauflösung der Domain übernimmt. Beim Abruf verarbeitet Cloudflare technisch
+            notwendige Zugriffsdaten einschließlich der IP-Adresse; Rechtsgrundlage ist Art. 6
+            Abs 1 lit. f DSGVO (berechtigtes Interesse an der sicheren und funktionsfähigen
+            Bereitstellung). Auf diese Protokolldaten besteht kein Zugriff durch den Anbieter —
+            die Protokollierung der Abrufe ist abgeschaltet, es werden keine Server-Logfiles
+            ausgewertet. Die von der Seite selbst bereitgestellten Wetter- und Klimadaten liegen
+            im Speicher von Cloudflare in Westeuropa; sie enthalten keine personenbezogenen
+            Daten. Da Cloudflare ein US-Unternehmen ist, kann eine Übermittlung in ein
+            Drittland stattfinden; Cloudflare stützt sie nach eigener Angabe auf den
             Angemessenheitsbeschluss zum EU-U.S. Data Privacy Framework bzw. auf
             Standardvertragsklauseln (Einzelheiten in der verlinkten Datenschutzerklärung).
           </p>
@@ -503,7 +502,7 @@ export function Impressum() {
             Datenübertragbarkeit (Art. 20) sowie Widerspruch gegen eine Verarbeitung auf
             Grundlage berechtigter Interessen (Art. 21). Da hier keine personenbezogenen Daten
             gespeichert werden, kann sich ein Auskunftsersuchen praktisch nur auf die
-            Protokolldaten des Hosters richten; Ansprechpartner ist dann GitHub.
+            Protokolldaten des Hosters richten; Ansprechpartner ist dann Cloudflare.
           </p>
           {/* KEINE einzelne Landesbehörde genannt, und das ist überlegt: Art. 77
               DSGVO eröffnet die Beschwerde bei der Aufsichtsbehörde des

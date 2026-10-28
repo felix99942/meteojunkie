@@ -30,6 +30,25 @@ npm run preview   # gebautes dist/ servieren
 
 ## Architektur
 
+- **Hosting: Cloudflare-Worker `meteojunkie`** (seit 2026-10-28, vorher GitHub
+  Pages — das deckelt bei 1 GB, die Seite lag bei ~980 MB; wo unten noch
+  „Pages" steht, ist der alte Stand gemeint). `worker/index.ts` +
+  `wrangler.jsonc`: die App kommt als statische Dateien aus `dist/`, die im
+  Deploy erzeugten Daten (`nwp/`, `de/`, `mos/forecast/`, `sondes/`) aus dem
+  R2-Bucket `meteojunkie-daten` — unter DENSELBEN Pfaden, das Frontend kennt
+  keinen zweiten Host. Hochgeladen wird per `scripts/upload-data.sh` (rclone
+  `--checksum`: nur Geändertes, R2-Schreibvorgänge sind das knappe
+  Freikontingent mit 1 Mio./Monat; `meta.json` erst nach den Bildern, auf die
+  sie verweist; synchronisiert wird nur, was im Lauf GÜLTIG erzeugt wurde —
+  sonst räumte ein halbfertiger Ingest den letzten Stand weg). Laufdateien
+  der Modellkarten sind `immutable`, `meta.json` 60 s, Rest 5 min.
+  **Abrufprotokolle des Workers sind AUS** (`observability`) — die
+  Datenschutzerklärung sagt „kein Zugriff auf Protokolldaten". `www`
+  leitet per Redirect Rule auf die Hauptdomain. Mail der Domain läuft weiter
+  über United Domains (MX/SPF im Cloudflare-DNS). Kosten: Workers Paid 5 $
+  im Monat (für die Rechenzeit der geplanten Radar-Komposite), alles andere
+  im Freikontingent. Lokal bleibt `npm run dev` mit Daten aus `public/`.
+
 - `src/config/` — statische Registries: `models.ts` (Modell-Metadaten inkl.
   `forecastHours`/`coverage`, filtert UI-Dropdowns; `modelHorizonEnd()` für
   Horizont-Logik), `variables.ts` (stündliche Variablen), `domains.ts`

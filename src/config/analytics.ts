@@ -1,7 +1,8 @@
 // Besucherzählung über GoatCounter (goatcounter.com) — nur für den Betreiber,
 // auf der Seite selbst erscheint keine Zahl.
 //
-// WARUM GOATCOUNTER: die Seite hat keinen eigenen Server (GitHub Pages), ein
+// WARUM GOATCOUNTER: die Seite hat keinen eigenen Server (statisch auf Cloudflare,
+// die Abrufprotokolle sind abgeschaltet — wrangler.jsonc), ein
 // Zähler braucht also einen fremden Dienst. GoatCounter setzt KEINE Cookies und
 // nichts im localStorage, speichert weder IP-Adresse noch User-Agent (nur
 // Summen je Tag/Stunde; ein Besuch wird über einen Schlüssel aus Seite + IP +

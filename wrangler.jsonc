@@ -12,5 +12,9 @@
   "r2_buckets": [
     { "binding": "DATA", "bucket_name": "meteojunkie-daten" }
   ],
-  "observability": { "enabled": true }
+  // Abrufprotokolle AUS: die Datenschutzerklärung sagt „kein Zugriff auf
+  // Protokolldaten" (Impressum.tsx) — eingeschaltet speicherte Cloudflare
+  // jede Anfrage einsehbar im Dashboard. Zur Fehlersuche kurz einschalten
+  // und den Text dann anpassen, nicht umgekehrt.
+  "observability": { "enabled": false }
 }

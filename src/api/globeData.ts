@@ -21,8 +21,8 @@ const FIELD_LRU = 6
 
 export async function loadGlobeMeta(model: GlobeModelId): Promise<GlobeMeta> {
   // `no-cache`: die Datei wechselt mit jedem Lauf unter derselben URL —
-  // revalidieren, sonst zeigt der Browser bis zu zehn Minuten den alten Lauf
-  // (GitHub Pages schickt max-age=600).
+  // revalidieren, sonst zeigt der Browser den alten Lauf, solange er die Datei
+  // für frisch hält (der Worker schickt max-age=60, GitHub Pages schickte 600).
   const r = await fetch(`${BASE}${model}/meta.json`, { cache: 'no-cache' })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return (await r.json()) as GlobeMeta
