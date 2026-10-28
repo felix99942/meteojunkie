@@ -43,3 +43,6 @@ public/de/
 
 # Python-Bytecode (scripts/ecmwf-ingest.py)
 __pycache__/
+
+# Wrangler (Cloudflare-Worker, lokaler Entwicklungszustand)
+.wrangler/

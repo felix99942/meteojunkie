@@ -1,0 +1,16 @@
+// Cloudflare-Worker der Seite (worker/index.ts): App aus dist/, Daten aus R2.
+// Deployt von .github/workflows/deploy.yml (`wrangler deploy`), die Daten
+// lädt scripts/upload-data.sh vorher in den Bucket.
+{
+  "name": "meteojunkie",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    { "binding": "DATA", "bucket_name": "meteojunkie-daten" }
+  ],
+  "observability": { "enabled": true }
+}
