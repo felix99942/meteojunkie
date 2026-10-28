@@ -32,6 +32,7 @@ import { fetchSatelliteExtent, loadSatelliteImage } from '../api/eumetsat'
 import { gibsReadout, type Readout } from '../api/gibsReadout'
 import { CITIES } from '../config/cities'
 import {
+  isMirrored,
   DEFAULT_SATELLITE_PRODUCT,
   HI_MAX,
   LOOP_SPAN_MS,
@@ -312,8 +313,8 @@ export function SatellitePanel() {
    * liefe eine Dauerschleife gegen einen fremden Dienst.
    */
   const plan = useMemo(
-    () => loadPlan(times, settledIdx < 0 ? -1 : settledIdx, playing),
-    [times, settledIdx, playing],
+    () => loadPlan(times, settledIdx < 0 ? -1 : settledIdx, playing, { sharpFirst: isMirrored(product) }),
+    [times, settledIdx, playing, product],
   )
   const planRef = useRef(plan)
   planRef.current = plan

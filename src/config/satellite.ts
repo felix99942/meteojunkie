@@ -969,7 +969,10 @@ export const GIBS_CONCURRENCY = 8
 
 /** Reguläre Plätze für dieses Produkt. */
 export function concurrencyFor(p: SatelliteProduct): number {
-  return p.source === 'gibs' ? GIBS_CONCURRENCY : SAT_CONCURRENCY
+  // Der Vorrat kommt von Cloudflare (HTTP/2, fertig gerechnet) wie GIBS;
+  // nur ein noch nicht gespiegelter Termin fällt auf EUMETView zurück, das
+  // sind beim Öffnen ein, zwei Bilder
+  return p.source === 'gibs' || isMirrored(p) ? GIBS_CONCURRENCY : SAT_CONCURRENCY
 }
 
 /** Die Schleife kreist über die letzten 3 Stunden (siehe `SatellitePanel`). */
@@ -1027,7 +1030,12 @@ export function retryAt(failures: number, now: number): number {
  * Dann gilt der NEUESTE Stand als Zeiger — ein Fenster um Index 0 wäre der
  * Stand von vor 24 Stunden, den in dem Moment niemand sehen will.
  */
-export function loadPlan(times: number[], idx: number, playing: boolean): LoadJob[] {
+export function loadPlan(
+  times: number[],
+  idx: number,
+  playing: boolean,
+  opts: { sharpFirst?: boolean } = {},
+): LoadJob[] {
   const n = times.length
   if (n === 0) return []
   const i = idx < 0 ? n - 1 : Math.min(idx, n - 1)
@@ -1041,6 +1049,11 @@ export function loadPlan(times: number[], idx: number, playing: boolean): LoadJo
     out.push({ time: times[k], tier })
   }
   const loopStart = times.findIndex((t) => t >= times[n - 1] - LOOP_SPAN_MS)
+
+  if (opts.sharpFirst) {
+    sharpFirstPlan(n, i, loopStart, playing, add)
+    return out
+  }
 
   if (!playing) add(i, 'hi')
   add(i, 'lo')
@@ -1065,6 +1078,50 @@ export function loadPlan(times: number[], idx: number, playing: boolean): LoadJo
     add(i - d, 'lo')
   }
   return out
+}
+
+/**
+ * Ladeplan für Produkte im VORRAT (`isMirrored`): die Vorschau war die
+ * Abkürzung um die Renderzeit von EUMETView (1–3 s, an schlechten Abenden
+ * gemessen 8–12 s je Bild) — aus R2 kommt das scharfe Bild in ~0,25 s
+ * (gemessen 2026-10-28: 20 scharfe Bilder in 0,8 s gegen 60 s direkt).
+ * Zeiger, Nachbarn und Schleife deshalb SOFORT scharf, ohne Vorschau davor;
+ * die Vorschau bleibt nur für den Rest des Tages — ein ganzer Tag scharf
+ * wären ~65 MB je Produkt, am Handy zu viel, und `HI_MAX` deckelt den
+ * Arbeitsspeicher. Beim Abspielen außerhalb der Schleife laufen weiter die
+ * Vorschauen vor dem Zeiger.
+ */
+function sharpFirstPlan(
+  n: number,
+  i: number,
+  loopStart: number,
+  playing: boolean,
+  add: (k: number, tier: ImageTier) => void,
+): void {
+  const sharp = new Set<number>()
+  const hi = (k: number) => {
+    if (k < 0 || k >= n) return
+    sharp.add(k)
+    add(k, 'hi')
+  }
+  const lo = (k: number) => {
+    if (!sharp.has(k)) add(k, 'lo')
+  }
+  if (!playing) {
+    hi(i)
+    for (let d = 1; d <= HI_NEIGHBOURS; d++) {
+      hi(i + d)
+      hi(i - d)
+    }
+  }
+  for (let k = n - 1; k >= loopStart; k--) hi(k)
+  lo(i)
+  for (let d = 1; d <= LOOKAHEAD; d++) lo(i + d)
+  for (let d = 1; d <= LOOKBEHIND; d++) lo(i - d)
+  for (let d = 1; d < n; d++) {
+    lo(i + d)
+    lo(i - d)
+  }
 }
 
 /**

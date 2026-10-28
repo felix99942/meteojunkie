@@ -2832,6 +2832,17 @@ npm run preview   # gebautes dist/ servieren
   höchstens 80 Abrufe, 4 parallel (beim ersten Lauf fehlt ein ganzer Tag,
   ~1.150 Bilder — ~2 h zum Auffüllen; gemessen 79 in 94 s). Älter als 26 h
   löscht der Worker selbst. Geschärftes HRV und GIBS bleiben direkt.
+  **Live gemessen (2026-10-28, gleiche 20 scharfe Geocolour-Bilder)**:
+  direkt bei EUMETView 60 s (Median 11,6 s je Bild, an diesem Abend
+  besonders langsam, eines gescheitert), aus dem Vorrat **0,8 s**. Deshalb
+  laden die Vorrat-Produkte jetzt SCHARF ZUERST (`loadPlan(…, {sharpFirst})`,
+  `sharpFirstPlan`): Zeiger, Nachbarn und Schleife ohne Vorschau davor, die
+  Vorschau nur noch für den Rest des Tages (ein Tag scharf wären ~65 MB je
+  Produkt, und `HI_MAX` deckelt den Speicher); 8 statt 4 parallel
+  (`concurrencyFor`). Lokal gemessen: nach 3 s Schleife + Zeiger scharf (19)
+  und 44 Vorschauen. Fehlt ein Termin noch im Vorrat, geht dieser eine
+  Abruf weiter an EUMETView — beim Auffüllen nach einem Deploy sind das
+  viele, danach nur der jüngste.
   **Die Verdrängung trifft nur SCHARFE Bilder und nie eines, das der Plan
   gerade will** — sonst Laden und Wegwerfen im Kreis; das war früher zweimal
   ein Fehler (Verdrängung im State-Updater, den React im Entwicklungsmodus

@@ -519,9 +519,12 @@ describe('slotLimit', () => {
 
   it('gibt GIBS (HTTP/2, CDN) mehr parallele Abrufe als EUMETView (HTTP/1.1)', () => {
     const him = SATELLITE_PRODUCTS.find((p) => p.id === 'him_ir')!
-    expect(concurrencyFor(him)).toBeGreaterThan(concurrencyFor(DEFAULT_SATELLITE_PRODUCT))
+    // ein Produkt OHNE Vorrat — die vier gespiegelten kommen von Cloudflare
+    const eumet = SATELLITE_PRODUCTS.find((p) => p.id === 'airmass')!
+    expect(isMirrored(eumet)).toBe(false)
+    expect(concurrencyFor(him)).toBeGreaterThan(concurrencyFor(eumet))
     // EUMETView: zusammen mit dem reservierten Platz unter den 6 Verbindungen je Host
-    expect(slotLimit(0, 'hi', concurrencyFor(DEFAULT_SATELLITE_PRODUCT))).toBeLessThanOrEqual(6)
+    expect(slotLimit(0, 'hi', concurrencyFor(eumet))).toBeLessThanOrEqual(6)
   })
 })
 
@@ -767,5 +770,46 @@ describe('Vorrat in R2', () => {
     const t = Date.UTC(2026, 9, 28, 20, 10)
     expect(mirrorSourceUrl(p, t, 'lo')).toBe(satelliteImageUrl(p, { time: t, ...previewImageSize(p) }))
     expect(mirrorSourceUrl(p, t, 'hi')).toBe(satelliteImageUrl(p, { time: t, ...productImageSize(p) }))
+  })
+})
+
+describe('loadPlan mit Vorrat (sharpFirst)', () => {
+  // Aus R2 kommt das scharfe Bild in ~0,25 s — die Vorschau als Abkürzung
+  // braucht es dort nur noch für den Rest des Tages
+  const times = Array.from({ length: 145 }, (_, i) => i * 10 * MIN)
+  const last = times.length - 1
+  const loop = times.filter((t) => t >= times[last] - LOOP_SPAN_MS)
+  const plan = loadPlan(times, 40, false, { sharpFirst: true })
+
+  it('lädt Zeiger, Nachbarn und Schleife zuerst und SCHARF', () => {
+    const firstLo = plan.findIndex((j) => j.tier === 'lo')
+    const hiFirst = plan.slice(0, firstLo)
+    expect(hiFirst.every((j) => j.tier === 'hi')).toBe(true)
+    expect(hiFirst[0]).toEqual({ time: times[40], tier: 'hi' })
+    expect(hiFirst.length).toBe(5 + loop.length)
+    expect(hiFirst.length).toBeLessThanOrEqual(HI_MAX)
+  })
+
+  it('holt für scharf geladene Termine KEINE Vorschau mehr', () => {
+    const sharp = new Set(plan.filter((j) => j.tier === 'hi').map((j) => j.time))
+    expect(plan.filter((j) => j.tier === 'lo' && sharp.has(j.time))).toEqual([])
+  })
+
+  it('deckt trotzdem jeden Termin des Tages ab', () => {
+    expect(new Set(plan.map((j) => j.time)).size).toBe(times.length)
+  })
+
+  it('spielt außerhalb der Schleife weiter auf Vorschauen vor dem Zeiger', () => {
+    const playing = loadPlan(times, 40, true, { sharpFirst: true })
+    expect(playing.some((j) => j.time === times[40] && j.tier === 'hi')).toBe(false)
+    const next = playing.findIndex((j) => j.time === times[41] && j.tier === 'lo')
+    expect(next).toBeGreaterThan(-1)
+    expect(next).toBeLessThan(loop.length + 3)
+  })
+
+  it('lädt den Vorrat mit 8 parallelen Abrufen, den Rest von EUMETView mit 4', () => {
+    const p = (id: string) => SATELLITE_PRODUCTS.find((x) => x.id === id)!
+    expect(concurrencyFor(p('vis06'))).toBe(8)
+    expect(concurrencyFor(p('airmass'))).toBe(4)
   })
 })
