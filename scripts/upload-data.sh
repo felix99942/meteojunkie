@@ -21,7 +21,13 @@
 # Umgebung: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID.
 set -euo pipefail
 
-: "${R2_ACCESS_KEY_ID:?fehlt}" "${R2_SECRET_ACCESS_KEY:?fehlt}" "${CLOUDFLARE_ACCOUNT_ID:?fehlt}"
+# Fehlende Zugangsdaten beim NAMEN nennen — ein nicht gesetztes GitHub-Secret
+# kommt als LEERER String an, und rclone meldete dann nur „access denied"
+missing=0
+for v in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY CLOUDFLARE_ACCOUNT_ID; do
+  [[ -n "${!v:-}" ]] || { echo "::error::$v ist leer — Secret bzw. Variable in GitHub prüfen"; missing=1; }
+done
+(( missing == 0 )) || exit 1
 
 export RCLONE_CONFIG_R2_TYPE=s3
 export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
@@ -29,7 +35,8 @@ export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 export RCLONE_CONFIG_R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
-BUCKET=r2:meteojunkie-daten
+# R2_TARGET übersteuert das Ziel (lokaler Test gegen ein Verzeichnis)
+BUCKET="${R2_TARGET:-r2:meteojunkie-daten}"
 OPTS=(--checksum --fast-list --transfers 32 --checkers 32 --stats-one-line --stats 30s)
 
 for dir in "$@"; do

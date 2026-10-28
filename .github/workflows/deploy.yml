@@ -335,7 +335,15 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          sudo apt-get install -y -qq rclone >/dev/null
+          # rclone als feste Version mit Prüfsumme statt aus apt: ohne
+          # `apt-get update` fand der Runner das Paket nicht (erster Lauf
+          # 2026-10-28 scheiterte genau hier), und so ist der Stand fest
+          V=v1.75.2
+          curl -fsSL -o /tmp/rclone.zip "https://downloads.rclone.org/$V/rclone-$V-linux-amd64.zip"
+          echo "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702  /tmp/rclone.zip" | sha256sum -c -
+          unzip -qj /tmp/rclone.zip "*/rclone" -d /tmp/rclone-bin
+          export PATH="/tmp/rclone-bin:$PATH"
+          rclone version | head -1
           dirs=()
           for m in ecmwf-ifs icon-d2 icon-eu; do
             [[ -f "public/nwp/$m/meta.json" ]] && dirs+=("nwp/$m")
