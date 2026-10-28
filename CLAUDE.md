@@ -3207,6 +3207,11 @@ npm run preview   # gebautes dist/ servieren
   **Niederschlag (mm/h): zuerst ACHT Blautöne bis 2 mm/h**, erst darüber
   Grün → Gelb → Rot → Magenta (`PRECIP_COLORS` in `colorscales.ts`, von Hand
   gesetzt) — vorher stand alles unter 1 mm/h in fast einem Hellblau.
+  **Kräftiger** (auf Wunsch): die Feldebene ist VOLL deckend (vorher 0,92 —
+  die dunkle Grundkarte graute jede Farbe ab), die Temperaturrampe hat
+  ×1,2 Sättigung (`saturate`, `TEMP_VIVID`). **Werteanzeige ganzzahlig**
+  (`formatReadout`, `decimals: 0`), außer Niederschlag und Wellenhöhe;
+  gerundet „−0" wird „0".
   **ISOLINIEN** (`render/globeContours.ts` mit Tests, Protokoll `globeiso://`,
   Schalter „Isobaren"/„500 hPa" in der Leiste, `CONTOURS` in `config/globe.ts`):
   Bodendruck alle 5 hPa, 500 hPa alle 4 gpdm, beschriftet, als EIGENE

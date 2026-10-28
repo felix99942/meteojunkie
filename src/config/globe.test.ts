@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   contoursFor,
+  formatReadout,
   decodeCodes,
   decodeUv8,
   GLOBE_GROUPS,
@@ -363,5 +364,19 @@ describe('Wassertemperatur-Skala', () => {
     expect(v[v.length - 1]).toBe(32)
     // zwischen 26 und 32 °C liegen mindestens zehn unterscheidbare Stufen
     expect(v.filter((x) => x >= 26 && x <= 32).length).toBeGreaterThanOrEqual(10)
+  })
+})
+
+describe('Werteanzeige', () => {
+  it('rundet auf ganze Zahlen, ohne „−0"', () => {
+    expect(formatReadout(12.34, 0)).toBe('12')
+    expect(formatReadout(-0.3, 0)).toBe('0')
+    expect(formatReadout(-0.6, 0)).toBe('-1')
+    expect(formatReadout(0.34, 1)).toBe('0,3')
+  })
+
+  it('zeigt Nachkommastellen nur bei Niederschlag und Wellenhöhe', () => {
+    const mit = GLOBE_VARIABLES.filter((v) => v.decimals > 0).map((v) => v.id)
+    expect(mit.sort()).toEqual(['precip', 'swh'])
   })
 })

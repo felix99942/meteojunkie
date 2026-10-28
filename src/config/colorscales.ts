@@ -60,6 +60,35 @@ export function alternateShade(colors: string[], amount: number): string[] {
   })
 }
 
+/**
+ * Sättigung je Farbe mit `factor` multiplizieren (HSL, auf 1 begrenzt) —
+ * Farbton und Helligkeit bleiben, die Reihenfolge der Stufen also auch.
+ */
+export function saturate(colors: string[], factor: number): string[] {
+  return colors.map((c) => {
+    const [r, g, b] = hexToRgb(c).map((v) => v / 255)
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    const l = (max + min) / 2
+    if (max === min) return c
+    const d = max - min
+    const s0 = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    let h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+    h /= 6
+    const s = Math.min(1, s0 * factor)
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+    const p = 2 * l - q
+    const ch = (t: number) => {
+      t = (t + 1) % 1
+      if (t < 1 / 6) return p + (q - p) * 6 * t
+      if (t < 1 / 2) return q
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+      return p
+    }
+    return `#${toHex(ch(h + 1 / 3) * 255)}${toHex(ch(h) * 255)}${toHex(ch(h - 1 / 3) * 255)}`
+  })
+}
+
 export function lerpRamp(anchors: string[], count: number): string[] {
   const rgb = anchors.map(hexToRgb)
   const seg = anchors.length - 1

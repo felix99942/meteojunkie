@@ -16,7 +16,7 @@
 // Kachelgeometrie, Laufalter) — getestet in `globe.test.ts`. Das Einfärben
 // der Kacheln steht in `render/globeTiles.ts`, das Laden in `api/globeData.ts`.
 
-import { alternateShade, bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
+import { alternateShade, bands, COLOR_SCALES, lerpRamp, saturate, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
  * `uv10` und `uv300` sind keine wählbaren Größen, sondern die Datenquellen
@@ -50,6 +50,12 @@ export interface GlobeVariable {
   title: string
   scale: ColorScale
   /** Nachkommastellen der Werteanzeige am Zeiger. */
+  /**
+   * Nachkommastellen der WERTEANZEIGE. Ganze Zahlen überall (auf Wunsch —
+   * 12,3 °C täuscht eine Genauigkeit vor, die ein Modellgitter nicht hat),
+   * außer Niederschlag (0,3 mm/h ist eine andere Aussage als „0") und
+   * Wellenhöhe (0,4 m gegen 1,4 m).
+   */
   decimals: number
   /** Jede wievielte Stufe der Legende beschriftet wird. */
   legendEvery: number
@@ -82,6 +88,8 @@ export interface GlobeVariable {
  */
 /** Abdunkeln jedes zweiten 1-K-Bands (siehe `alternateShade`). */
 const TEMP_SHADE = 0.1
+/** Sättigung der Temperaturrampe ×1,2 — „eine Spur knalliger" (auf Wunsch). */
+const TEMP_VIVID = 1.2
 const TEMP_FINE_ANCHORS = [
   '#fbf8fe', // −56
   '#f0e7f8', // −52
@@ -117,7 +125,7 @@ const GLOBAL_TEMP: ColorScale = {
   belowMin: 'clamp',
   // 28 Anker im 4-K-Abstand von −56 bis 52 → 109 Bänder à 1 K; jedes zweite
   // leicht abgedunkelt, damit jedes Grad als Stufe zu sehen ist
-  stops: bands(-56, 1, alternateShade(lerpRamp(TEMP_FINE_ANCHORS, 109), TEMP_SHADE)),
+  stops: bands(-56, 1, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS, 109), TEMP_VIVID), TEMP_SHADE)),
 }
 
 /** 500-hPa-Geopotential: 480 … 600 gpdm in 4-gpdm-Bändern, kalt (Trog) → warm (Rücken). */
@@ -217,7 +225,7 @@ const RELTOP: ColorScale = {
   // 2-gpdm-Bänder (≈ 1 K) auf der feinen Temperaturrampe, −24 … +28 °C-Anker:
   // dieselbe Begründung wie bei `GLOBAL_TEMP` — mit 4-gpdm-Bändern auf
   // 8-K-Ankern lag eine ganze Wetterlage in zwei, drei Farben
-  stops: bands(488, 2, alternateShade(lerpRamp(TEMP_FINE_ANCHORS.slice(8, 22), 53), TEMP_SHADE)),
+  stops: bands(488, 2, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS.slice(8, 22), 53), TEMP_VIVID), TEMP_SHADE)),
 }
 
 /**
@@ -290,7 +298,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     label: 'Temperatur 2 m',
     title: 'Lufttemperatur in 2 m Höhe (°C)',
     scale: GLOBAL_TEMP,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 5,
     legendMultiple: 10,
   },
@@ -301,7 +309,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title:
       'Temperatur auf 850 hPa (~1500 m) — die Luftmasse ohne die bodennahe Grenzschicht. Über Hochland (Tibet, Anden, Antarktis) liegt die Fläche UNTER dem Gelände und ist vom Modell extrapoliert.',
     scale: GLOBAL_TEMP,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 5,
     legendMultiple: 10,
   },
@@ -311,7 +319,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     label: 'Geopotential 500 hPa',
     title: 'Höhe der 500-hPa-Fläche in geopotentiellen Dekametern — Tröge (niedrig) und Rücken (hoch) der Höhenströmung',
     scale: GH500,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 5,
   },
   {
@@ -321,7 +329,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title:
       'Schichtdicke zwischen 1000 und 500 hPa in gpdm — proportional zur Mitteltemperatur der unteren Troposphäre (1 gpdm ≈ 0,5 K): zeigt Kalt- und Warmluftmassen ohne die bodennahe Grenzschicht. Über Hochland liegt 1000 hPa unter dem Gelände und ist vom Modell extrapoliert.',
     scale: RELTOP,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 4,
   },
   {
@@ -330,7 +338,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     label: 'Luftdruck (MSL)',
     title: 'Auf Meereshöhe reduzierter Luftdruck (hPa)',
     scale: COLOR_SCALES.pressure_msl,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 1,
   },
   {
@@ -398,7 +406,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     label: 'Taupunkt 2 m',
     title: 'Taupunkt in 2 m (°C) — die Feuchte der Luft als Temperatur: ab ~16 °C schwül, Grundzutat für Gewitter',
     scale: COLOR_SCALES.dew_point_2m,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 4,
   },
   {
@@ -417,7 +425,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     label: 'Niederschlag Summe',
     title: 'Aufsummierter Niederschlag seit Laufbeginn bis zum gewählten Termin (mm) — Regen und Schnee als Wasser; unter 1 mm als 0 gespeichert und nicht eingefärbt',
     scale: PRECIP_SUM,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 2,
   },
   {
@@ -477,7 +485,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title:
       'Peak-Periode (s): Abstand der energiereichsten Wellen. Unter ~8 s kurze, steile Windsee, über ~12 s lange Dünung aus fernen Sturmgebieten.',
     scale: WAVE_PERIOD,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 1,
   },
   {
@@ -487,7 +495,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title:
       'Temperatur der Meeresoberfläche (°C) — die Hauttemperatur des Modells über dem Meer, also die oberste Schicht, nicht die Temperatur in Badetiefe. Über Meereis kein Wert.',
     scale: SEA_TEMP,
-    decimals: 1,
+    decimals: 0,
     legendEvery: 3,
   },
 ]
@@ -958,4 +966,17 @@ export function globeFreshness(run: number, lastValid: number, now: number, stal
   if (Number.isFinite(lastValid) && lastValid < now) return 'spent'
   if (Number.isFinite(run) && now - run > staleHours * HOUR) return 'old'
   return 'ok'
+}
+
+/**
+ * Wert der Werteanzeige: auf `decimals` gerundet, deutsch formatiert. Eine
+ * gerundete Null hat KEIN Vorzeichen — aus −0,3 °C würde sonst „−0 °C".
+ */
+export function formatReadout(value: number, decimals: number): string {
+  const f = 10 ** decimals
+  const r = Math.round(value * f) / f
+  return (r === 0 ? 0 : r).toLocaleString('de-DE', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
 }

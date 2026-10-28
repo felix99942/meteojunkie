@@ -32,6 +32,7 @@ import {
   getGlobeVariable,
   overlaysOffFor,
   globeFreshness,
+  formatReadout,
   GLOBE_MODELS,
   GLOBE_GROUPS,
   GLOBE_VARIABLES,
@@ -407,7 +408,8 @@ export function GlobePanel() {
         id: FIELD_LAYER,
         type: 'raster',
         source: FIELD_SOURCE,
-        paint: { 'raster-fade-duration': 0, 'raster-opacity': 0.92 },
+        // Voll deckend: mit 0,92 graute die dunkle Grundkarte jede Farbe ab
+        paint: { 'raster-fade-duration': 0, 'raster-opacity': 1 },
       },
       OVERLAY_INSERT_BEFORE,
     )
@@ -827,7 +829,7 @@ export function GlobePanel() {
                       ? `hoch ${toOcta(readLayers.high)}/8 · mittel ${toOcta(readLayers.mid)}/8 · tief ${toOcta(readLayers.low)}/8`
                       : field ? `außerhalb ${model.label}` : '—'
                     : Number.isFinite(readValue)
-                    ? `${readValue.toLocaleString('de-DE', { minimumFractionDigits: variable.decimals, maximumFractionDigits: variable.decimals })} ${vm?.unit ?? ''}`
+                    ? `${formatReadout(readValue, variable.decimals)} ${vm?.unit ?? ''}`
                     : field && !field.grid.global
                       ? `außerhalb ${model.label}`
                       : '—'}
