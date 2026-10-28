@@ -6,7 +6,8 @@
 # Cloudflare-Schritte laufen mit continue-on-error — scheitern sie, deployt
 # Pages trotzdem. Nach der Umstellung der Domain fällt der Pages-Teil weg.
 # Cloudflare braucht: Secrets CLOUDFLARE_API_TOKEN, R2_ACCESS_KEY_ID,
-# R2_SECRET_ACCESS_KEY, Variable CLOUDFLARE_ACCOUNT_ID.
+# R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID (Variable oder Secret — wie beim
+# Impressum werden beide gelesen, die Reiter liegen im UI nebeneinander).
 # Läuft bei jedem Push auf main/master UND stündlich (Cron), dazu zehn Termine
 # passend zum Eingang der Radiosonden (s. schedule) — der Cron-Lauf
 # frischt den heutigen Tag des Klimamonitors Deutschland auf (10-Minuten-Werte
@@ -333,7 +334,7 @@ jobs:
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # rclone als feste Version mit Prüfsumme statt aus apt: ohne
           # `apt-get update` fand der Runner das Paket nicht (erster Lauf
@@ -360,7 +361,7 @@ jobs:
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           rm -rf dist/nwp dist/de dist/mos/forecast dist/sondes
           npx --yes wrangler@4.148.0 deploy
