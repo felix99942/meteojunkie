@@ -3212,6 +3212,16 @@ npm run preview   # gebautes dist/ servieren
   ×1,2 Sättigung (`saturate`, `TEMP_VIVID`). **Werteanzeige ganzzahlig**
   (`formatReadout`, `decimals: 0`), außer Niederschlag und Wellenhöhe;
   gerundet „−0" wird „0".
+  **Bandgrenzen kantengeglättet** (auf Wunsch „das Pixelige weg, aber nicht
+  überglätten", `colorizeTile`, `SUPERSAMPLE` = 2): je Pixel vier Teilpunkte
+  aus dem Gitter interpoliert und eingefärbt, Farben VORMULTIPLIZIERT
+  gemittelt — ein Box-Filter über genau ein Pixel; auch der Rand regionaler
+  Gitter wird so weich. **Nicht über das Gefälle zu den Nachbarn schätzen**
+  (die erste Fassung): das bilineare Feld knickt an jeder Gitterzelle, die
+  Schätzung fiel dort zu groß aus, und knapp über 0,1 mm/h standen dunkle
+  gerade Linien entlang der Zellgrenzen in Regenflächen. Kosten gemessen:
+  3,7 statt 0,8 ms je 256er-Kachel (im Worker-Pool), bei Zoom 6 werden
+  ~3 % der Pixel gemischt.
   **ISOLINIEN** (`render/globeContours.ts` mit Tests, Protokoll `globeiso://`,
   Schalter „Isobaren"/„500 hPa" in der Leiste, `CONTOURS` in `config/globe.ts`):
   Bodendruck alle 5 hPa, 500 hPa alle 4 gpdm, beschriftet, als EIGENE

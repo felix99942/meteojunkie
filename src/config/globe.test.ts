@@ -114,17 +114,18 @@ describe('Kachelgeometrie', () => {
 describe('colorizeTile', () => {
   const scale = GLOBE_VARIABLES[0].scale
 
-  it('färbt jedes Pixel in der Farbe seines interpolierten Werts', () => {
-    const f = makeField((lat) => lat * 0.6) // −54 … 54 °C über die Breite
-    const rgba = colorizeTile(f, scale, 2, 1, 1, 64)
+  // Zoom 6, Kachel über den Alpen: ein Pixel überdeckt ~0,05 K, die
+  // Kantenglättung mischt also nur Pixel, durch die eine 1-K-Grenze läuft
+  it('färbt jedes Pixel abseits einer Bandgrenze in der Farbe seines Werts', () => {
+    const f = makeField((lat) => lat * 0.6)
+    const rgba = colorizeTile(f, scale, 6, 34, 22, 64)
     let checked = 0
     for (let py = 0; py < 64; py++)
       for (let px = 0; px < 64; px++) {
-        const v = sampleField(f, tilePixelLat(2, 1, py, 64), tilePixelLon(2, 1, px, 64))
-        // Direkt an einer 2-K-Bandgrenze darf die LUT (4096 Zellen, 0,025 K)
-        // eine Zelle daneben liegen — das ist ihre Quantisierung, kein Fehler
-        const toEdge = Math.abs(v / 2 - Math.round(v / 2)) * 2
-        if (toEdge < 0.05) continue
+        const v = sampleField(f, tilePixelLat(6, 22, py, 64), tilePixelLon(6, 34, px, 64))
+        // Bandgrenzen liegen auf ganzen Grad; im Pixel um eine Grenze ist
+        // die Mischfarbe gewollt (Kantenglättung), daneben nicht
+        if (Math.abs(v - Math.round(v)) < 0.1) continue
         const want = colorForValue(scale, v)!.slice(0, 7)
         const o = 4 * (py * 64 + px)
         const got = `#${[rgba[o], rgba[o + 1], rgba[o + 2]].map((c) => c.toString(16).padStart(2, '0')).join('')}`
@@ -132,7 +133,33 @@ describe('colorizeTile', () => {
         expect(rgba[o + 3]).toBe(255)
         checked++
       }
-    expect(checked).toBeGreaterThan(3500)
+    expect(checked).toBeGreaterThan(3000)
+  })
+
+  // Auf Wunsch „das Pixelige weg, aber nicht überglätten": gemischt wird
+  // höchstens EIN Pixel an jeder Grenze — jedes Mischpixel liegt neben einem
+  // Pixel eines anderen Bands, und seine Farbe liegt zwischen den beiden
+  // Bandfarben, nicht irgendwo.
+  it('glättet Bandgrenzen über genau ein Pixel', () => {
+    const f = makeField((lat, lon) => 10 + 6 * Math.sin(lat / 3) + 4 * Math.cos(lon / 2))
+    const n = 64
+    const rgba = colorizeTile(f, scale, 6, 34, 22, n)
+    const bandColors = new Set(scale.stops.map((s) => s.color.slice(0, 7)))
+    const hex = (i: number) => `#${[rgba[i], rgba[i + 1], rgba[i + 2]].map((c) => c.toString(16).padStart(2, '0')).join('')}`
+    let mixed = 0
+    for (let py = 1; py < n - 1; py++)
+      for (let px = 1; px < n - 1; px++) {
+        const o = 4 * (py * n + px)
+        if (bandColors.has(hex(o))) continue
+        mixed++
+        const around = [o - 4, o + 4, o - 4 * n, o + 4 * n].map(hex)
+        expect(new Set(around).size, `Mischpixel ${px},${py} ohne Grenze daneben`).toBeGreaterThan(1)
+      }
+    expect(mixed).toBeGreaterThan(0)
+    // Das Feld hat hier alle ~5 Pixel eine 1-K-Grenze; ein Pixel je Grenze
+    // ergibt gut 15 % Mischpixel. Deutlich mehr hieße, dass über mehr als
+    // ein Pixel geglättet wird
+    expect(mixed).toBeLessThan(n * n * 0.25)
   })
 
   it('lässt Pixel ohne Wert durchsichtig', () => {
@@ -201,11 +228,17 @@ describe('regionales Gitter (ICON)', () => {
     const rgba = colorizeTile(f, scale, 5, 17, 11, size)
     let inside = 0
     let outside = 0
+    let edge = 0
     for (let py = 0; py < size; py++)
       for (let px = 0; px < size; px++) {
         const lat = tilePixelLat(5, 11, py, size)
         const lon = tilePixelLon(5, 17, px, size)
         const a = rgba[4 * (py * size + px) + 3]
+        if (a > 0 && a < 255) {
+          // Kantenglättung: halb deckend NUR auf der Randlinie selbst
+          edge++
+          continue
+        }
         if (Number.isNaN(sampleField(f, lat, lon))) {
           expect(a).toBe(0)
           outside++
@@ -217,6 +250,8 @@ describe('regionales Gitter (ICON)', () => {
     // beide Teile kommen wirklich vor — sonst prüfte der Test nichts
     expect(inside).toBeGreaterThan(500)
     expect(outside).toBeGreaterThan(500)
+    // zwei Ränder (Ost, Süd) durch eine 64er-Kachel: höchstens je eine Pixelreihe
+    expect(edge).toBeLessThanOrEqual(2 * size)
   })
 })
 

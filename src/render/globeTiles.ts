@@ -30,6 +30,13 @@ import {
 import type { ColorScale } from '../config/colorscales'
 
 export const GLOBE_TILE_SIZE = 256
+
+/**
+ * Teilpunkte je Pixel und Achse für die Kantenglättung (siehe
+ * `colorizeTile`): 2 × 2 — ein Box-Filter über genau EIN Pixel. Mehr würde
+ * die Kante nicht weicher machen, nur teurer.
+ */
+const SUPERSAMPLE = 2
 export const GLOBE_PROTOCOL = 'globe'
 
 /**
@@ -54,67 +61,104 @@ export function colorizeTile(
   const transparentBelow = scale.belowMin ? scale.belowMin === 'transparent' : scale.kind === 'stepped'
   const lutK = (LUT_SIZE - 1) / (sMax - sMin)
 
-  // Spalten und Zeilen einmal je Kachel; −1 = außerhalb eines regionalen
-  // Gitters (Pixel bleibt durchsichtig). `gridX`/`gridY` sind dieselben
-  // Regeln wie in `sampleField` — die Werteanzeige liest genau das, was
-  // gezeichnet wird.
-  const ix0 = new Int32Array(size)
-  const ix1 = new Int32Array(size)
-  const fxs = new Float32Array(size)
-  for (let px = 0; px < size; px++) {
-    const gx = gridX(f.grid, tilePixelLon(z, x, px, size))
+  // KANTENGLÄTTUNG durch ÜBERABTASTEN (auf Wunsch: „das Pixelige weg, aber
+  // nicht überglätten"): je Pixel vier Teilpunkte (2 × 2, Mitten bei ±¼ px),
+  // jeder aus dem Gitter interpoliert und eingefärbt, die Farben gemittelt —
+  // ein Box-Filter über GENAU die Pixelfläche. Mitten in einer Fläche bleibt
+  // die Farbe unverändert, nur wo eine Bandgrenze durch das Pixel läuft,
+  // entsteht die Mischfarbe. Ohne das bekam jedes Pixel EINE Bandfarbe, und
+  // an jeder Grenze stand eine Treppe, die bei Zwischenzoomstufen und hoher
+  // Pixeldichte noch vergrößert wurde.
+  //
+  // Bewusst KEINE Schätzung über das Gefälle zu den Nachbarpixeln (die erste
+  // Fassung): das bilinear interpolierte Feld KNICKT an jeder Gitterzelle,
+  // dort fiel die Schätzung zu groß aus, und knapp über der Darstellungs-
+  // schwelle (Niederschlag 0,1 mm/h) wurden Pixel entlang der Zellgrenzen
+  // halb durchsichtig — dunkle gerade Linien quer durch Regenflächen (im
+  // Bild gesehen). Überabtasten misst statt zu schätzen.
+  //
+  // Teilspalten und -zeilen einmal je Kachel; −1 = außerhalb eines
+  // regionalen Gitters (Teilpunkt bleibt durchsichtig). `gridX`/`gridY` sind
+  // dieselben Regeln wie in `sampleField` — die Werteanzeige liest genau
+  // das, was gezeichnet wird.
+  const sub = size * SUPERSAMPLE
+  const ix0 = new Int32Array(sub)
+  const ix1 = new Int32Array(sub)
+  const fxs = new Float32Array(sub)
+  for (let sx = 0; sx < sub; sx++) {
+    const gx = gridX(f.grid, tilePixelLon(z, x, sx, sub))
     if (gx == null) {
-      ix0[px] = -1
+      ix0[sx] = -1
       continue
     }
     const i0 = Math.min(f.grid.global ? ni - 1 : ni - 2, Math.floor(gx))
-    ix0[px] = i0
-    ix1[px] = i0 + 1 === ni ? 0 : i0 + 1
-    fxs[px] = gx - i0
+    ix0[sx] = i0
+    ix1[sx] = i0 + 1 === ni ? 0 : i0 + 1
+    fxs[sx] = gx - i0
   }
-  const iy0s = new Int32Array(size)
-  const fys = new Float32Array(size)
-  for (let py = 0; py < size; py++) {
-    const gy = gridY(f.grid, tilePixelLat(z, y, py, size))
+  const iy0s = new Int32Array(sub)
+  const fys = new Float32Array(sub)
+  for (let sy = 0; sy < sub; sy++) {
+    const gy = gridY(f.grid, tilePixelLat(z, y, sy, sub))
     if (gy == null) {
-      iy0s[py] = -1
+      iy0s[sy] = -1
       continue
     }
     const j0 = Math.min(nj - 2, Math.floor(gy))
-    iy0s[py] = j0
-    fys[py] = gy - j0
+    iy0s[sy] = j0
+    fys[sy] = gy - j0
   }
 
-  const out = new Uint8ClampedArray(size * size * 4)
   const c = f.codes
-  for (let py = 0; py < size; py++) {
-    const iy0 = iy0s[py]
-    if (iy0 < 0) continue
-    const fy = fys[py]
+  /** LUT-Index des Teilpunkts (sx, sy), −1 = durchsichtig. */
+  const sample = (sx: number, sy: number): number => {
+    const iy0 = iy0s[sy]
+    const a = ix0[sx]
+    if (iy0 < 0 || a < 0) return -1
+    const b = ix1[sx]
     const r0 = iy0 * ni
     const r1 = r0 + ni
-    let o = py * size * 4
-    for (let px = 0; px < size; px++, o += 4) {
-      if (ix0[px] < 0) continue
-      const a = ix0[px]
-      const b = ix1[px]
-      const c00 = c[r0 + a]
-      const c01 = c[r0 + b]
-      const c10 = c[r1 + a]
-      const c11 = c[r1 + b]
-      if (c00 === 0 || c01 === 0 || c10 === 0 || c11 === 0) continue
-      const fx = fxs[px]
-      const code = (c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy
-      const v = f.lo + (code - 1) * f.step
-      if (transparentBelow && v < sMin) continue
-      let li = Math.round((v - sMin) * lutK)
-      if (li < 0) li = 0
-      else if (li > LUT_SIZE - 1) li = LUT_SIZE - 1
-      const l = li * 4
-      out[o] = lut[l]
-      out[o + 1] = lut[l + 1]
-      out[o + 2] = lut[l + 2]
-      out[o + 3] = lut[l + 3]
+    const c00 = c[r0 + a]
+    const c01 = c[r0 + b]
+    const c10 = c[r1 + a]
+    const c11 = c[r1 + b]
+    if (c00 === 0 || c01 === 0 || c10 === 0 || c11 === 0) return -1
+    const fx = fxs[sx]
+    const fy = fys[sy]
+    const code = (c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy
+    const v = f.lo + (code - 1) * f.step
+    if (transparentBelow && v < sMin) return -1
+    const li = Math.round((v - sMin) * lutK)
+    return li < 0 ? 0 : li > LUT_SIZE - 1 ? LUT_SIZE - 1 : li
+  }
+
+  // Gemittelt VORMULTIPLIZIERT, sonst färbte ein durchsichtiger Teilpunkt
+  // (Niederschlag unter der Schwelle, kein Wert) die Kante dunkel
+  const n = SUPERSAMPLE * SUPERSAMPLE
+  const out = new Uint8ClampedArray(size * size * 4)
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      let sr = 0
+      let sg = 0
+      let sb = 0
+      let sa = 0
+      for (let dy = 0; dy < SUPERSAMPLE; dy++)
+        for (let dx = 0; dx < SUPERSAMPLE; dx++) {
+          const li = sample(px * SUPERSAMPLE + dx, py * SUPERSAMPLE + dy)
+          if (li < 0) continue
+          const q = li * 4
+          const al = lut[q + 3]
+          sr += lut[q] * al
+          sg += lut[q + 1] * al
+          sb += lut[q + 2] * al
+          sa += al
+        }
+      if (sa === 0) continue
+      const o = (py * size + px) * 4
+      out[o] = sr / sa
+      out[o + 1] = sg / sa
+      out[o + 2] = sb / sa
+      out[o + 3] = sa / n
     }
   }
   return out
