@@ -19,10 +19,13 @@ import { extractLightningCells, toPalette, type LightningCell } from '../render/
 import { maskRadarEdge } from '../render/radarImage'
 import {
   metaForSource,
+  ownRadarImageKey,
+  ownRadarMeta,
   parseRadarCapabilities,
   radarCapabilitiesUrl,
   radarImageUrl,
   type CellSymbols,
+  type OwnRadarIndex,
   type RadarMeta,
   type WmsImageSource,
 } from '../config/radar'
@@ -45,6 +48,20 @@ export async function fetchRadarMeta(
 ): Promise<RadarMeta> {
   const hit = metaCache.get(source.capsLayer)
   if (!opts.force && hit && Date.now() - hit.at < META_TTL_MS) return hit.meta
+
+  if (source.own) {
+    // Eigene Bilder aus R2: Zeiten und Fläche stehen im Index, den der
+    // Worker nach jedem neuen Bild schreibt (worker/radar.ts)
+    const r = await fetch(`${import.meta.env.BASE_URL}radar/${source.capsLayer}/index.json`, {
+      signal: opts.signal,
+      cache: 'no-cache',
+    })
+    if (!r.ok) throw new Error(`Radar-Index: HTTP ${r.status}`)
+    const own = ownRadarMeta((await r.json()) as OwnRadarIndex)
+    if (!own) throw new Error('Radar-Index: noch keine Bilder')
+    metaCache.set(source.capsLayer, { at: Date.now(), meta: own })
+    return own
+  }
 
   const res = await fetch(radarCapabilitiesUrl(source), { signal: opts.signal })
   if (!res.ok) throw new Error(`WMS: HTTP ${res.status}`)
@@ -151,11 +168,13 @@ export async function loadRadarImages(
       const slot = next++
       if (slot >= order.length) return
       const time = order[slot]
-      const url = radarImageUrl(source, meta, {
-        time,
-        width: opts.width,
-        height: opts.height,
-      })
+      const url = source.own
+        ? `${import.meta.env.BASE_URL}${ownRadarImageKey(source.capsLayer, time)}`
+        : radarImageUrl(source, meta, {
+            time,
+            width: opts.width,
+            height: opts.height,
+          })
       try {
         const res = await fetch(url, { signal: opts.signal })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)

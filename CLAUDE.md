@@ -48,6 +48,13 @@ npm run preview   # gebautes dist/ servieren
   über United Domains (MX/SPF im Cloudflare-DNS). Kosten: Workers Paid 5 $
   im Monat (für die Rechenzeit der geplanten Radar-Komposite), alles andere
   im Freikontingent. Lokal bleibt `npm run dev` mit Daten aus `public/`.
+  **Cron alle 5 Minuten** (`scheduled` in `worker/index.ts`,
+  `triggers.crons` in `wrangler.jsonc`): eigene Radarbilder
+  (`worker/radar.ts`, jedes Mal) und Satelliten-Vorrat
+  (`worker/satellite.ts`, jedes zweite Mal) — beschrieben bei Radar bzw.
+  Satellit. Lokal testen: `wrangler dev --test-scheduled`, dann
+  `curl localhost:<port>/__scheduled?cron=*/5+*+*+*+*` (wartet, bis der
+  Lauf durch ist; die R2-Ablage liegt im `--persist-to`-Verzeichnis).
 
 - `src/config/` — statische Registries: `models.ts` (Modell-Metadaten inkl.
   `forecastHours`/`coverage`, filtert UI-Dropdowns; `modelHorizonEnd()` für
@@ -2354,6 +2361,30 @@ npm run preview   # gebautes dist/ servieren
   Produkts und dem neuen Layer. Solange alles im 5-Minuten-Takt lief, fiel das
   nicht auf; zwischen 5 Minuten und einem Tag liegen Faktoren, und jede
   solche Zeit beantwortet der Dienst mit einer ServiceException.
+  **SÄULENMAXIMUM (DMax) UND VIL SIND SEIT 2026-10-28 DA — als EIGENE
+  Bilder** (`own: true` in `RADAR_PRODUCTS`, `OWN_RADAR`, Rechenkern
+  `worker/radar.ts`): der Worker holt alle 5 Minuten
+  `composite/dmax` und `composite/vii` von opendata.dwd.de (kein CORS — der
+  Browser käme nicht heran), rechnet sie auf ein Mercator-PNG in der
+  Produktskala und legt Bild + `radar/<id>/index.json` in R2; das Panel liest
+  den Index statt eines GetCapabilities (`fetchRadarMeta`), sonst läuft alles
+  wie bei den WMS-Produkten (Overlays, Schleife, Nachrücken). **HX ist
+  bewusst NICHT dabei**: laut Metadaten aus einem ~30-s-Teilscan, was es
+  genau ist, sagen sie nicht — DMax ist eindeutig das Maximum über das ganze
+  Volumen (Scan 4 min). **Gemessen**: DMax 4800×4400 uint16 (250 m), ein
+  einziger deflate-Block; **jsfive liefert die Werte als JS-Array (167 MB
+  Heap) und sprengt damit das 128-MB-Limit eines Workers** — jsfive (0.4.0,
+  fest gepinnt, privates `_dataobjects`) gibt deshalb nur Metadaten und die
+  Blockadresse, entpackt wird als Strom (`DecompressionStream`), behalten
+  nur jeder 4. Punkt (1 km = Bildauflösung): 0,1 s, 8 MB Heap, 0
+  Abweichungen gegen jsfive komplett. **h5wasm geht im Worker nicht** (übersetzt
+  WebAssembly zur Laufzeit aus Bytes, das erlaubt Cloudflare nicht). Lage
+  gegen das WN-Bild desselben Termins geprüft: beste Deckung bei 1 px
+  Versatz (~1 km). Die Ecken (`UL_lon` …) sind die AUSSENKANTEN des Gitters,
+  UL liegt auf (0, 0). VIL-Skala ist eine ANZEIGESKALA (`VIL_LEGEND`), der
+  DWD führt keine Klassen. Kosten je Lauf ~0,5 s CPU, ~6 R2-Schreibvorgänge.
+  Bei einem Produktwechsel rechnete das Panel eine Runde mit der ALTEN
+  Zeitdimension (fünf 404 je Umschaltung) — `metaOwnerRef` hält das ab.
   **WIE ANDERE AN DIE ELEVATIONEN KOMMEN — nachgemessen 2026-10-08**: über
   einen eigenen SERVER, nicht im Browser. Kachelmannwetter („3D-Radar-
   Analyse") rechnet nach eigener Angabe alle 5 Minuten die Volumendaten
@@ -2791,6 +2822,16 @@ npm run preview   # gebautes dist/ servieren
   ganze Tag 1,6 s. **Schneller beim ersten Besuch von EUMETView geht es nur
   serverseitig** — ein Zwischenserver, der jeden neuen Termin einmal holt und
   für alle ausliefert (Cloudflare-Plan).
+  **VORRAT IN R2 seit 2026-10-28** (`MIRRORED_SATELLITE_IDS` = Geocolour,
+  Sichtbar HRFI, Infrarot, Wasserdampf; `worker/satellite.ts`): der Cron
+  holt jedes neue Bild (Vorschau UND scharf) einmal bei EUMETView und legt es
+  als `sat/<id>/<lo|hi>/<Termin>.jpg` ab; der Browser fragt dort zuerst
+  (`fromMirror` in `api/eumetsat.ts`) und nur bei einer Lücke beim Dienst —
+  der jüngste Termin kommt oft vor dem nächsten Cron-Lauf. URL und Schlüssel
+  aus DENSELBEN Funktionen (`mirrorSourceUrl`), gemessen bytegleich. Je Lauf
+  höchstens 80 Abrufe, 4 parallel (beim ersten Lauf fehlt ein ganzer Tag,
+  ~1.150 Bilder — ~2 h zum Auffüllen; gemessen 79 in 94 s). Älter als 26 h
+  löscht der Worker selbst. Geschärftes HRV und GIBS bleiben direkt.
   **Die Verdrängung trifft nur SCHARFE Bilder und nie eines, das der Plan
   gerade will** — sonst Laden und Wegwerfen im Kreis; das war früher zweimal
   ein Fehler (Verdrängung im State-Updater, den React im Entwicklungsmodus

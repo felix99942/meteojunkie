@@ -135,6 +135,28 @@ export const WN_LEGEND: RadarLegendStep[] = [
   { color: '#000000', label: '85' },
 ]
 
+/**
+ * Vertikal integrierter Flüssigwassergehalt (VIL) in kg/m². ANZEIGESKALA,
+ * keine Klasseneinteilung des DWD (der Rohdatensatz führt keine): unten
+ * fein, weil die meisten Echos unter 5 kg/m² bleiben; ab ~20 kg/m² wird es
+ * in der Gewitterbeurteilung interessant (Hagel wahrscheinlicher), ab 40
+ * selten.
+ */
+export const VIL_LEGEND: RadarLegendStep[] = [
+  { color: '#99FFFF', label: '0,5' },
+  { color: '#00CACA', label: '1' },
+  { color: '#009934', label: '2' },
+  { color: '#99CC00', label: '4' },
+  { color: '#FFFF00', label: '7' },
+  { color: '#FFC400', label: '10' },
+  { color: '#FF8900', label: '15' },
+  { color: '#FF0000', label: '20' },
+  { color: '#B40000', label: '25' },
+  { color: '#4848FF', label: '30' },
+  { color: '#990099', label: '40' },
+  { color: '#FF33FF', label: '50' },
+]
+
 /** Niederschlagsrate in mm/h (Produkt RV). */
 export const RV_LEGEND: RadarLegendStep[] = [
   { color: '#33FFFF', label: '0,1' },
@@ -243,6 +265,13 @@ export const W4_LEGEND: RadarLegendStep[] = [
 export interface WmsImageSource {
   /** Layername für GetMap, mit Workspace-Präfix; KOMMAGETRENNT für mehrere. */
   layer: string
+  /**
+   * Kein WMS, sondern EIGENE Bilder aus R2 (`radar/<capsLayer>/…`), die der
+   * Worker aus den HDF5-Kompositen des DWD rechnet (worker/radar.ts) —
+   * Zeiten aus `index.json` statt aus einem GetCapabilities. Siehe
+   * `OWN_RADAR`.
+   */
+  own?: true
   /**
    * Stilname(n), leer = Vorgabestil des Dienstes. GeoServer führt für dieselben
    * Daten mehrere Stile — bei den KONRAD-Zellen ist genau das der Unterschied
@@ -403,6 +432,42 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
     edgeLine: true,
     legend: RV_LEGEND,
     note: 'Dasselbe Komposit als Niederschlagsrate (Produkt RV) — aus der Reflektivität über eine Z-R-Beziehung abgeleitet',
+  },
+  // --- 3D-Ableitungen (eigene Bilder, worker/radar.ts) ---------------------
+  //
+  // Aus dem VOLUMENSCAN statt aus der untersten Elevation: WN zeigt, was
+  // knapp über dem Boden ankommt, das Säulenmaximum den stärksten Kern in
+  // der ganzen Höhe — ein Gewitter, das gerade aufschießt, steht dort, bevor
+  // es unten regnet. Den DWD-WMS führt beides nicht (nur 2D-Komposite);
+  // die HDF5-Dateien auf opendata.dwd.de haben kein CORS, deshalb rechnet sie
+  // der Worker alle 5 Minuten zu Bildern in R2. Keine Vorhersage, keine
+  // Randlinie (die zeichnet nur der WMS); die graue Maske ist dieselbe
+  // „keine Daten"-Kennung des Rohdatensatzes.
+  {
+    id: 'dmax',
+    label: 'Säulenmaximum (dBZ)',
+    layer: '',
+    capsLayer: 'dmax',
+    own: true,
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    unit: 'dBZ',
+    maskOpacity: 0.5,
+    legend: WN_LEGEND,
+    note: 'DWD DMax: höchste Reflektivität in der ganzen Säule über allen Höhen des Volumenscans — zeigt Gewitterkerne in der Höhe, bevor sie unten ankommen. 250 m nativ, hier 1 km, alle 5 Minuten, ~5 Minuten Verzug',
+  },
+  {
+    id: 'vil',
+    label: 'VIL (kg/m²)',
+    layer: '',
+    capsLayer: 'vil',
+    own: true,
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    unit: 'kg/m²',
+    maskOpacity: 0.5,
+    legend: VIL_LEGEND,
+    note: 'DWD VIL: vertikal integrierter Flüssigwassergehalt — wie viel Wasser in der Säule steckt. Hohe Werte (ab ~20 kg/m²) kennzeichnen kräftige Gewitter, oft mit Hagel. 1 km, alle 5 Minuten. Skala ist eine Anzeigeskala, keine DWD-Einteilung',
   },
   // --- RADOLAN ------------------------------------------------------------
   //
@@ -988,4 +1053,61 @@ export function radarImageCoordinates(
   meta: RadarMeta,
 ): [[number, number], [number, number], [number, number], [number, number]] {
   return imageCoordinates(meta.geo)
+}
+
+// --- Eigene Radarbilder (R2) -------------------------------------------------
+
+/** Was der Worker je eigenem Produkt beim DWD holt (`OWN_RADAR`). */
+export interface OwnRadarSource {
+  /** = `capsLayer` des Produkts, Ordner in R2. */
+  id: string
+  /** Verzeichnis unter opendata.dwd.de/weather/radar/ */
+  dir: string
+  /** Dateiname ohne Zeit, z. B. `composite_dmax_` → `composite_dmax_20261028_1815-hd5`. */
+  prefix: string
+  /**
+   * Nur jeden n-ten Gitterpunkt lesen. DMax hat 250 m (4800×4400 = 42 MB
+   * roh) — das Bild hat 1.200 px, also ~1,1 km je Pixel, und ein Worker
+   * darf 128 MB belegen. Schritt 4 = 1 km, so fein wie das Bild.
+   */
+  stride: number
+  legend: RadarLegendStep[]
+}
+
+export const OWN_RADAR: OwnRadarSource[] = [
+  { id: 'dmax', dir: 'composite/dmax', prefix: 'composite_dmax_', stride: 4, legend: WN_LEGEND },
+  { id: 'vil', dir: 'composite/vii', prefix: 'composite_VII_', stride: 1, legend: VIL_LEGEND },
+]
+
+/** Index eines eigenen Produkts: `radar/<id>/index.json`. */
+export interface OwnRadarIndex {
+  stepMs: number
+  /** Vorhandene Termine, aufsteigend, ms. */
+  times: number[]
+  /** Fläche der Bilder (Mercator-Rechteck um das DWD-Gitter). */
+  geo: GeoBox
+}
+
+/** Zeitstempel wie in den Schlüsseln: `20261028T1815Z`. */
+export function radarStamp(time: number): string {
+  const t = new Date(time).toISOString()
+  return `${t.slice(0, 4)}${t.slice(5, 7)}${t.slice(8, 10)}T${t.slice(11, 13)}${t.slice(14, 16)}Z`
+}
+
+export function ownRadarImageKey(id: string, time: number): string {
+  return `radar/${id}/${radarStamp(time)}.png`
+}
+
+/** Index → Metadaten in der Form der WMS-Quellen (Lücken als `missing`). */
+export function ownRadarMeta(index: OwnRadarIndex): RadarMeta | null {
+  const times = [...index.times].sort((a, b) => a - b)
+  if (!times.length) return null
+  const have = new Set(times)
+  const missing: number[] = []
+  for (let t = times[0]; t <= times[times.length - 1]; t += index.stepMs) if (!have.has(t)) missing.push(t)
+  return {
+    extent: { start: times[0], end: times[times.length - 1], stepMs: index.stepMs, missing },
+    geo: index.geo,
+    merc: mercBox(index.geo),
+  }
 }

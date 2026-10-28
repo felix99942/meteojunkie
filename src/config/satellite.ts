@@ -1085,3 +1085,44 @@ export function hiEvictions(
     .sort((a, b) => Math.abs(b - anchor) - Math.abs(a - anchor))
     .slice(0, hiTimes.length - max)
 }
+
+// --- Vorrat in R2 ------------------------------------------------------------
+//
+// EUMETView rendert jedes Bild erst bei Anfrage (0,5–3 s) und spricht nur
+// HTTP/1.1 — beim ersten Besuch dauert ein Tag Vorschauen deshalb gut eine
+// Minute, egal wie schnell die Leitung ist. Für die meistbenutzten Produkte
+// holt der Worker (worker/satellite.ts, Cron alle 10 Minuten) jedes neue Bild
+// EINMAL ab und legt es in R2; der Browser fragt zuerst dort (same-origin,
+// HTTP/2, fertig gerechnet) und nur bei einer Lücke beim Dienst selbst.
+// Worker und Browser bauen die URL aus DENSELBEN Funktionen dieser Datei —
+// ein Bild in R2 ist also bytegleich mit dem, das der Browser sonst geholt
+// hätte, und das Wolkenkomposit läuft unverändert darüber.
+
+/** Produkte mit Vorrat (auf Wunsch die vier meistbenutzten). */
+export const MIRRORED_SATELLITE_IDS = ['geocolour', 'vis06', 'ir105', 'wv062'] as const
+
+/** Wie weit der Vorrat zurückreicht — die Ziehleiste zeigt 24 h. */
+export const MIRROR_SPAN_MS = 24 * 3_600_000
+
+export function isMirrored(p: SatelliteProduct): boolean {
+  return p.source !== 'gibs' && (MIRRORED_SATELLITE_IDS as readonly string[]).includes(p.id)
+}
+
+/** R2-Schlüssel eines Bilds, z. B. `sat/vis06/hi/20261028T2010Z.jpg`. */
+export function satelliteMirrorKey(p: SatelliteProduct, time: number, tier: ImageTier): string {
+  const t = new Date(time).toISOString()
+  const stamp = `${t.slice(0, 4)}${t.slice(5, 7)}${t.slice(8, 10)}T${t.slice(11, 13)}${t.slice(14, 16)}Z`
+  return `sat/${p.id}/${tier}/${stamp}.jpg`
+}
+
+/** Umkehrung von `satelliteMirrorKey` für die Zeit; null bei fremden Schlüsseln. */
+export function mirrorKeyTime(key: string): number | null {
+  const m = /\/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z\.jpg$/.exec(key)
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null
+}
+
+/** Die EUMETView-URL desselben Bilds — Vorschau oder scharf, ohne Schärfung. */
+export function mirrorSourceUrl(p: SatelliteProduct, time: number, tier: ImageTier): string {
+  const size = tier === 'lo' ? previewImageSize(p) : productImageSize(p)
+  return satelliteImageUrl(p, { time, ...size })
+}

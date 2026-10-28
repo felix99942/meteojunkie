@@ -37,6 +37,11 @@ import {
   SAT_CONCURRENCY,
   slotLimit,
   concurrencyFor,
+  MIRRORED_SATELLITE_IDS,
+  isMirrored,
+  mirrorKeyTime,
+  mirrorSourceUrl,
+  satelliteMirrorKey,
 } from './satellite'
 import { toMercator } from './wmsTime'
 
@@ -736,5 +741,31 @@ describe('Himawari (GIBS)', () => {
     expect(a.north).toBeGreaterThanOrEqual(20.6)
     expect(isAsia(ir)).toBe(true)
     expect(productCenter(ir).lon).toBeGreaterThan(95)
+  })
+})
+
+describe('Vorrat in R2', () => {
+  it('spiegelt genau die vier gewünschten Produkte, keines davon geschärft oder von GIBS', () => {
+    const mirrored = SATELLITE_PRODUCTS.filter(isMirrored).map((p) => p.id)
+    expect(mirrored.sort()).toEqual([...MIRRORED_SATELLITE_IDS].sort())
+    // Die Spiegel-URL kennt keine Schärfung — ein geschärftes Produkt käme
+    // sonst ungeschärft aus dem Vorrat
+    for (const p of SATELLITE_PRODUCTS.filter(isMirrored)) expect(p.sharpen, p.id).toBeUndefined()
+  })
+
+  it('kodiert den Termin im Schlüssel umkehrbar', () => {
+    const p = SATELLITE_PRODUCTS.find((x) => x.id === 'vis06')!
+    const t = Date.UTC(2026, 9, 28, 20, 10)
+    const key = satelliteMirrorKey(p, t, 'hi')
+    expect(key).toBe('sat/vis06/hi/20261028T2010Z.jpg')
+    expect(mirrorKeyTime(key)).toBe(t)
+    expect(mirrorKeyTime('sat/vis06/hi/kaputt.jpg')).toBeNull()
+  })
+
+  it('fragt beim Dienst dieselbe Größe an wie der Browser', () => {
+    const p = SATELLITE_PRODUCTS.find((x) => x.id === 'geocolour')!
+    const t = Date.UTC(2026, 9, 28, 20, 10)
+    expect(mirrorSourceUrl(p, t, 'lo')).toBe(satelliteImageUrl(p, { time: t, ...previewImageSize(p) }))
+    expect(mirrorSourceUrl(p, t, 'hi')).toBe(satelliteImageUrl(p, { time: t, ...productImageSize(p) }))
   })
 })

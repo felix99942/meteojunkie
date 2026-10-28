@@ -12,7 +12,10 @@ import {
   LIGHTNING_AGES,
   RADAR_IMAGE_WIDTH,
   RADAR_OVERLAYS,
+  OWN_RADAR,
   RADAR_PRODUCTS,
+  ownRadarImageKey,
+  ownRadarMeta,
   RV_LEGEND,
   RW_LEGEND,
   RY_LEGEND,
@@ -220,8 +223,8 @@ describe('Produkt-Registry', () => {
     expect(DEFAULT_RADAR_PRODUCT.legend).toBe(WN_LEGEND)
   })
 
-  it('führt die sechs Produkte in Registry-Reihenfolge', () => {
-    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'rw', 'ry', 'w4', 'sy'])
+  it('führt die acht Produkte in Registry-Reihenfolge', () => {
+    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'dmax', 'vil', 'rw', 'ry', 'w4', 'sy'])
     for (const p of RADAR_PRODUCTS) {
       expect(p.stepMs, p.id).toBeGreaterThan(0)
       expect(p.legend.length, p.id).toBeGreaterThan(8)
@@ -241,7 +244,7 @@ describe('Produkt-Registry', () => {
   // Nachbearbeitung färbt auf genau diese Deckkraft um.
   it('kennt die Maskendeckkraft je Produkt — und wo es keine gibt', () => {
     const mask = Object.fromEntries(RADAR_PRODUCTS.map((p) => [p.id, p.maskOpacity]))
-    expect(mask).toEqual({ wn: 0.5, rv: 0.3, rw: 0.3, ry: 0.3, w4: null, sy: null })
+    expect(mask).toEqual({ wn: 0.5, rv: 0.3, dmax: 0.5, vil: 0.5, rw: 0.3, ry: 0.3, w4: null, sy: null })
   })
 
   /**
@@ -428,5 +431,33 @@ describe('MTG-Blitz-Overlay', () => {
   it('ist neben den DWD-Blitzen die zweite Zellquelle', () => {
     expect(RADAR_OVERLAYS.filter((o) => o.cells).map((o) => o.id)).toEqual(['blitze', 'mtgli'])
     expect(RADAR_OVERLAYS.find((o) => o.id === 'blitze')!.cells?.symbol).toBe('crosses')
+  })
+})
+
+describe('Eigene Radarprodukte (R2)', () => {
+  it('hat zu jedem eigenen Produkt eine DWD-Quelle und umgekehrt', () => {
+    const own = RADAR_PRODUCTS.filter((p) => p.own).map((p) => p.capsLayer)
+    expect(own.sort()).toEqual(OWN_RADAR.map((s) => s.id).sort())
+    // Eigene Bilder haben keinen Vorhersageteil und keine Randlinie
+    for (const p of RADAR_PRODUCTS.filter((x) => x.own)) {
+      expect(p.forecastMs, p.id).toBe(0)
+      expect(p.edgeLine, p.id).toBeUndefined()
+    }
+  })
+
+  it('macht aus dem Index Metadaten mit Lücken als missing', () => {
+    const t0 = Date.UTC(2026, 9, 28, 20, 15)
+    const step = 5 * 60_000
+    const meta = ownRadarMeta({
+      stepMs: step,
+      times: [t0 + 3 * step, t0, t0 + step],
+      geo: { west: 1.46, east: 18.73, south: 45.68, north: 55.86 },
+    })!
+    expect(meta.extent).toEqual({ start: t0, end: t0 + 3 * step, stepMs: step, missing: [t0 + 2 * step] })
+    expect(ownRadarMeta({ stepMs: step, times: [], geo: meta.geo })).toBeNull()
+  })
+
+  it('schreibt Schlüssel mit dem Termin in UTC', () => {
+    expect(ownRadarImageKey('dmax', Date.UTC(2026, 9, 28, 8, 5))).toBe('radar/dmax/20261028T0805Z.png')
   })
 })

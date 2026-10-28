@@ -9,6 +9,9 @@
     "directory": "./dist",
     "binding": "ASSETS"
   },
+  // Satelliten-Vorrat (alle 10 min) und Radar-Komposite (alle 5 min) —
+  // worker/index.ts → scheduled()
+  "triggers": { "crons": ["*/5 * * * *"] },
   "r2_buckets": [
     { "binding": "DATA", "bucket_name": "meteojunkie-daten" }
   ],

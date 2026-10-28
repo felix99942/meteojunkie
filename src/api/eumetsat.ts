@@ -19,12 +19,14 @@
 // jedem Anzeigen.
 
 import {
+  isMirrored,
   parseSatelliteCapabilities,
   previewImageSize,
   productImageSize,
   productMerc,
   satelliteCapabilitiesUrl,
   satelliteImageUrl,
+  satelliteMirrorKey,
   sharpenLayer,
   sharpenPanTime,
   type ImageTier,
@@ -60,6 +62,29 @@ export async function fetchSatelliteExtent(
   if (!extent) throw new Error('EUMETSAT-WMS: Zeitdimension nicht lesbar')
   metaCache.set(key, { at: Date.now(), extent })
   return extent
+}
+
+/**
+ * Das Bild aus dem Vorrat in R2 (`satelliteMirrorKey`), oder null, wenn es dort
+ * (noch) nicht liegt — der jüngste Termin kommt oft vor dem nächsten
+ * Cron-Lauf. Auf `image/` geprüft, weil der Vite-Dev-Server unbekannte Pfade
+ * mit der Startseite beantworten kann.
+ */
+async function fromMirror(
+  product: SatelliteProduct,
+  time: number,
+  tier: ImageTier,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}${satelliteMirrorKey(product, time, tier)}`, { signal })
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return blob.type.startsWith('image/') ? blob : null
+  } catch (err) {
+    if (signal?.aborted) throw err
+    return null
+  }
 }
 
 /**
@@ -102,17 +127,20 @@ export async function loadSatelliteImage(
   const url = satelliteImageUrl(product, { time, ...size })
   // GIBS verbietet das Zwischenspeichern — dort die eigene Ablage
   // (`api/imageStore.ts`); EUMETView cacht der Browser selbst (7 Tage)
-  const raw =
+  // Vorrat in R2 zuerst (nur die gespiegelten Produkte), sonst beim Dienst
+  const mirrored = isMirrored(product) ? await fromMirror(product, time, tier, signal) : null
+  const raw: Blob =
     product.source === 'gibs'
       ? await storedFetch(
           url,
           (b) => b.type.startsWith('image/') && (!product.minBytes || b.size >= product.minBytes),
           signal,
         )
-      : await fetch(url, { signal }).then((res) => {
+      : (mirrored ??
+        (await fetch(url, { signal }).then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return res.blob()
-        })
+        })))
   // Eine ServiceException kommt als XML mit HTTP 200 — dieselbe Falle wie
   // beim DWD (SPEC §6), nur bei einem anderen Dienst.
   if (!raw.type.startsWith('image/')) {

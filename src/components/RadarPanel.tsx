@@ -294,6 +294,17 @@ export function RadarPanel() {
   const product = RADAR_PRODUCTS.find((p) => p.id === productId) ?? DEFAULT_RADAR_PRODUCT
 
   const [meta, setMeta] = useState<RadarMeta | null>(null)
+  /**
+   * Zu WELCHEM Produkt `meta` gehört. Nach einem Produktwechsel läuft eine
+   * Renderrunde mit der neuen Auswahl und der ALTEN Zeitdimension, bevor
+   * `setMeta(null)` greift — und in genau dieser Runde startete der
+   * Ladeeffekt Abrufe zu Zeiten, die das neue Produkt nicht hat (gesehen:
+   * fünf 404 je Umschaltung auf ein eigenes Produkt, bei WMS-Produkten zwei
+   * ServiceExceptions). Ein Ref reicht: er wird nur zusammen mit `setMeta`
+   * gesetzt, und die Renderrunde danach liest ihn.
+   */
+  const metaOwnerRef = useRef<string | null>(null)
+  const metaFits = meta !== null && metaOwnerRef.current === product.id
   const [error, setError] = useState<string | null>(null)
   /** Neuerer Stand, den der Nutzer noch nicht sehen wollte (er sieht Älteres an). */
   const [pending, setPending] = useState<RadarMeta | null>(null)
@@ -331,8 +342,8 @@ export function RadarPanel() {
   }, [product.id])
 
   const times = useMemo(
-    () => (meta ? radarTimes(meta, product, historyMin * 60_000) : []),
-    [meta, product, historyMin],
+    () => (meta && metaFits ? radarTimes(meta, product, historyMin * 60_000) : []),
+    [meta, metaFits, product, historyMin],
   )
   const latest = times.length ? times[times.length - 1] : 0
   const current = times[Math.min(idx, times.length - 1)]
@@ -347,6 +358,7 @@ export function RadarPanel() {
     fetchRadarMeta(product, { signal: ac.signal })
       .then((m) => {
         if (!alive) return
+        metaOwnerRef.current = product.id
         setMeta(m)
         setError(null)
       })
@@ -942,13 +954,21 @@ export function RadarPanel() {
           Deutscher Wetterdienst
         </a>
         {' '}— Radarkomposit {product.id.toUpperCase()} über{' '}
-        <a
-          href="https://maps.dwd.de/geoserver/dwd/wms?service=WMS&version=1.3.0&request=GetCapabilities"
-          target="_blank"
-          rel="noreferrer"
-        >
-          maps.dwd.de
-        </a>
+        {product.own ? (
+          // Eigene Bilder aus den HDF5-Dateien des Open-Data-Servers
+          // (worker/radar.ts), nicht aus dem WMS
+          <a href={`https://opendata.dwd.de/weather/radar/`} target="_blank" rel="noreferrer">
+            opendata.dwd.de
+          </a>
+        ) : (
+          <a
+            href="https://maps.dwd.de/geoserver/dwd/wms?service=WMS&version=1.3.0&request=GetCapabilities"
+            target="_blank"
+            rel="noreferrer"
+          >
+            maps.dwd.de
+          </a>
+        )}
         {/* NUR die DWD-Overlays hier — die GeoNutzV gilt für den DWD, nicht
             für einen fremden Dienst. */}
         {dwdOverlays.length > 0 && (

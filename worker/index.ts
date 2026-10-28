@@ -14,19 +14,10 @@
 // Bewusst ohne @cloudflare/workers-types: die paar Typen stehen unten, und
 // das Projekt bekommt keine zweite Typwelt neben DOM/Node.
 
-interface R2ObjectLike {
-  httpEtag: string
-  writeHttpMetadata(headers: Headers): void
-}
-interface R2ObjectBodyLike extends R2ObjectLike {
-  body: ReadableStream
-}
-interface R2BucketLike {
-  get(
-    key: string,
-    options?: { onlyIf?: Headers },
-  ): Promise<R2ObjectBodyLike | R2ObjectLike | null>
-}
+import { updateRadar } from './radar'
+import { mirrorSatellite } from './satellite'
+import type { R2BucketLike } from './r2'
+
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> }
   DATA: R2BucketLike
@@ -34,18 +25,23 @@ interface Env {
 interface Ctx {
   waitUntil(p: Promise<unknown>): void
 }
+interface ScheduledEvent {
+  scheduledTime: number
+  cron: string
+}
 
 /** Pfade, die aus R2 kommen — alles andere ist die App selbst. */
-const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/']
+const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/']
 
 // Ein Modelllauf liegt unter seiner Kennung und ändert sich nie mehr
 // (nwp/<modell>/<lauf>/<größe>/<schritt>.webp, Lauf = 10 Ziffern).
-const IMMUTABLE = /^nwp\/[^/]+\/\d{10}\//
+// Dasselbe gilt für Satelliten- und Radarbilder, die unter ihrem Termin liegen.
+const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/|radar\/[^/]+\/\d{8}T\d{4}Z)/
 
 /** Cache-Dauer je Pfad. Alles ausser den Laufdateien wechselt stündlich. */
 function cacheControl(key: string): string {
   if (IMMUTABLE.test(key)) return 'public, max-age=31536000, immutable'
-  if (key.endsWith('/meta.json')) return 'public, max-age=60'
+  if (key.endsWith('/meta.json') || key.startsWith('radar/')) return 'public, max-age=60'
   return 'public, max-age=300'
 }
 
@@ -90,5 +86,17 @@ export default {
     const res = new Response(obj.body, { headers })
     ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
     return res
+  },
+
+  // Cron (wrangler.jsonc, alle 5 Minuten): Radar jedes Mal, der Satellit
+  // jedes zweite Mal — EUMETView schiebt nur alle 10 bzw. 15 Minuten nach.
+  async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    const minute = new Date(event.scheduledTime).getUTCMinutes()
+    const jobs: Promise<string>[] = [updateRadar(env.DATA)]
+    if (minute % 10 < 5) jobs.push(mirrorSatellite(env.DATA))
+    // Abgewartet statt waitUntil: ein Cron-Lauf darf bis zu 15 Minuten
+    // dauern, solange sein Promise offen ist
+    const results = await Promise.allSettled(jobs)
+    for (const r of results) console.log(r.status === 'fulfilled' ? r.value : `Fehler: ${r.reason}`)
   },
 }
