@@ -139,18 +139,18 @@ class Missing(Exception):
     """Feld gibt es zu diesem Schritt nicht (HTTP 404)."""
 
 
-def http_get(url: str, rng: tuple[int, int] | None = None, tries: int = 8) -> bytes:
+def http_get(url: str, rng: tuple[int, int] | None = None, tries: int = 8, deadline: float = DEADLINE_S) -> bytes:
     headers = {'User-Agent': 'meteo-workbench ingest'}
     if rng:
         headers['Range'] = f'bytes={rng[0]}-{rng[0] + rng[1] - 1}'
     for attempt in range(tries):
         try:
             t0 = time.monotonic()
-            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=DEADLINE_S) as r:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=deadline) as r:
                 chunks = []
                 while chunk := r.read(1 << 16):
                     chunks.append(chunk)
-                    if time.monotonic() - t0 > DEADLINE_S:
+                    if time.monotonic() - t0 > deadline:
                         raise TimeoutError('Gesamtfrist überschritten')
                 return b''.join(chunks)
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
@@ -209,6 +209,33 @@ def decode_grib(raw: bytes):
         return vals, grid, hours
     finally:
         eccodes.codes_release(h)
+
+
+def crop(vals, grid: dict, box: tuple[float, float, float, float]):
+    """Ausschnitt lon_w, lat_s, lon_e, lat_n eines globalen Rasters (Nord → Süd).
+
+    Für IFS 0,1°: GRIB lässt sich nicht räumlich zuschneiden, geholt wird das
+    ganze Feld (~1,4 MB), gespeichert nur Europa — global wären es ~1,7 GB je
+    Lauf und im Browser ~1,2 MB je Bild.
+    """
+    if grid['dlat'] >= 0 or not grid['global']:
+        raise RuntimeError('crop erwartet ein globales Raster von Nord nach Süd')
+    w, s, e, n = box
+    i0 = round((w - grid['lon0']) / grid['dlon']) % grid['ni']
+    i1 = round((e - grid['lon0']) / grid['dlon']) % grid['ni']
+    j0 = round((grid['lat0'] - n) / -grid['dlat'])
+    j1 = round((grid['lat0'] - s) / -grid['dlat'])
+    if i1 < i0:
+        raise RuntimeError('Ausschnitt über die Datumsgrenze wird nicht unterstützt')
+    out = vals[j0:j1 + 1, i0:i1 + 1]
+    g = {
+        **grid,
+        'ni': i1 - i0 + 1, 'nj': j1 - j0 + 1,
+        'lon0': round(grid['lon0'] + i0 * grid['dlon'], 6),
+        'lat0': round(grid['lat0'] + j0 * grid['dlat'], 6),
+        'global': False,
+    }
+    return out, g
 
 
 def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):

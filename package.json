@@ -21,6 +21,7 @@
     "ingest:sondes": "python3 scripts/sonde-ingest.py",
     "ingest:de:climate": "node scripts/de-ingest-climate.mjs",
     "ingest:ecmwf": "python3 scripts/ecmwf-ingest.py",
+    "ingest:ecmwf-hres": "python3 scripts/ecmwf-ingest.py --res 0p1",
     "ingest:icon-d2": "python3 scripts/icon-ingest.py icon-d2",
     "ingest:icon-eu": "python3 scripts/icon-ingest.py icon-eu",
     "build:relief": "node scripts/build-relief.mjs",

@@ -462,7 +462,7 @@ export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'
 
 // --- Modelle und Ansichten -------------------------------------------------
 
-export type GlobeModelId = 'ecmwf-ifs' | 'icon-eu' | 'icon-d2'
+export type GlobeModelId = 'ecmwf-ifs' | 'ecmwf-hres' | 'icon-eu' | 'icon-d2'
 
 export interface GlobeModel {
   id: GlobeModelId
@@ -495,6 +495,19 @@ export const GLOBE_MODELS: GlobeModel[] = [
     staleHours: 30,
     maxzoom: 6,
     title: 'ECMWF IFS 0,25° — weltweit, bis +15 Tage (Läufe 00/12 UTC)',
+  },
+  {
+    // Dasselbe Modell mit 0,1° statt 0,25°, aber nur EUROPA (Fläche von
+    // ICON-EU) und nur bis +144 h — global wären es ~1,7 GB je Lauf, und
+    // jenseits von sechs Tagen trägt die feinere Auflösung nichts mehr
+    // (scripts/ecmwf-ingest.py --res 0p1). Erscheint ~2 h nach 0,25°.
+    id: 'ecmwf-hres',
+    label: 'ECMWF IFS Europa',
+    resolution: '9 km',
+    provider: 'ECMWF',
+    staleHours: 32,
+    maxzoom: 7,
+    title: 'ECMWF IFS 0,1° (natives Modell ~9 km) — Europa, bis +144 h (Läufe 00/12 UTC)',
   },
   {
     id: 'icon-eu',
@@ -555,14 +568,14 @@ export const CONTOURS: ContourDef[] = [
     label: 'Isobaren',
     title: 'Bodendruck (MSL) alle 5 hPa, beschriftet — geglättet, damit Gebirgsrauschen keine Kringel zieht',
     interval: 5,
-    smooth: { 'ecmwf-ifs': 1, 'icon-eu': 3, 'icon-d2': 12 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'icon-eu': 3, 'icon-d2': 12 },
   },
   {
     id: 'gh500',
     label: '500 hPa',
     title: 'Geopotential 500 hPa alle 4 gpdm, beschriftet',
     interval: 4,
-    smooth: { 'ecmwf-ifs': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'icon-eu': 1, 'icon-d2': 3 },
   },
   {
     id: 'gh300',
@@ -571,7 +584,7 @@ export const CONTOURS: ContourDef[] = [
     // Das 300-hPa-Feld ist steiler als das 500er (Tröge reichen über ~120
     // gpdm statt ~80); mit 4 gpdm stünden die Linien im Jet zu dicht
     interval: 8,
-    smooth: { 'ecmwf-ifs': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'icon-eu': 1, 'icon-d2': 3 },
   },
 ]
 

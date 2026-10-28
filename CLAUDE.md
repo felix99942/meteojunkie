@@ -3210,8 +3210,15 @@ npm run preview   # gebautes dist/ servieren
   behebbar — Open Data hat keine Stundenschritte (+1/+2/+4 h → 404) und
   `10fg3` erst ab +93 h (geprüft 2026-10-27). Lückenlos: ICON-D2, ICON-EU
   bis +78, IFS ab +93. Die Böe ist die WMO-Spitzenböe (3-s-Mittel).
-  **IFS 0,1° gibt es offen** (`ifs/0p1/`, Boden/Druckflächen getrennt,
-  gemessen 2026-10-27), global aber ~1,7 GB — zurückgestellt.
+  **IFS 0,1° ist seit 2026-10-28 ein EIGENES Modell `ecmwf-hres`**
+  („ECMWF IFS Europa · 9 km", `ecmwf-ingest.py --res 0p1`, npm
+  `ingest:ecmwf-hres`): Boden/Druckflächen in getrennten Dateien, je Feld das
+  GANZE globale Feld geholt (1,4 MB, GRIB lässt sich nicht räumlich
+  zuschneiden) und auf die ICON-EU-Fläche zugeschnitten (`crop` in
+  `nwp_common.py`, 861×411), nur bis +144 h. Gemessen: ~37 MB Abruf je
+  Schritt, ~1,2 MB Bilder je Schritt, ~60 MB je Lauf, lokal 3 Schritte in
+  13 s. Abrufe mit 25 s Frist statt 8 (größere Felder). IFS 0,25° bleibt
+  global bis +360 h daneben.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-

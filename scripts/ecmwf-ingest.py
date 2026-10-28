@@ -26,6 +26,17 @@ Gemessen 2026-10-05:
 
 Ausgabe, Kodierung und Pipeline: `nwp_common.py` → public/nwp/ecmwf-ifs/.
 
+`--res 0p1` (seit 2026-10-28) holt dasselbe Modell mit 0,1° → ecmwf-hres/,
+gemessen 2026-10-28:
+  * Boden- und Druckflächen in GETRENNTEN Dateien (`…-fc-sfc`, `…-fc-pl`),
+    Wellen unter `0p1/wave/…-wave-fc-sfc`, sonst dasselbe Index-Format.
+  * 3600×1801, ~37 MB je Schritt für die 20 Felder, ein Feld 1,4 MB in
+    0,6–3 s (die 8-s-Frist der 0,25°-Abrufe ist dafür zu knapp → 25 s).
+  * Gespeichert wird nur EUROPA (Fläche von ICON-EU, 861×411) und nur bis
+    +144 h (49 Schritte, ~1,8 GB Abruf je Lauf): global wären es ~1,7 GB
+    Bilder je Lauf, und jenseits von sechs Tagen trägt die feinere
+    Auflösung nichts mehr — dort bleibt IFS 0,25° bis +360 h.
+
 Aufruf (aus dem Repo-Wurzelverzeichnis):
   python3 scripts/ecmwf-ingest.py            neuesten vollständigen Lauf holen
   python3 scripts/ecmwf-ingest.py --latest   nur die Lauf-Kennung ausgeben (für den Actions-Cache)
@@ -42,11 +53,29 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from nwp_common import Missing, decode_grib, http_get, ingest, run_id, url_exists
+from nwp_common import Missing, crop, decode_grib, http_get, ingest, run_id, url_exists
 
-MODEL = 'ecmwf-ifs'
 BASE = 'https://data.ecmwf.int/forecasts'
-STEPS = list(range(0, 145, 3)) + list(range(150, 361, 6))
+
+
+class Res:
+    """Auflösungsvariante: Verzeichnis, Dateinamen, Schritte, Ausschnitt."""
+
+    def __init__(self, tag: str, model: str, label: str, steps: list[int],
+                 split: bool, box: tuple[float, float, float, float] | None, deadline: float):
+        self.tag, self.model, self.label, self.steps = tag, model, label, steps
+        self.split, self.box, self.deadline = split, box, deadline
+
+
+RES = {
+    '0p25': Res('0p25', 'ecmwf-ifs', 'ECMWF IFS', list(range(0, 145, 3)) + list(range(150, 361, 6)),
+                split=False, box=None, deadline=8),
+    # Fläche = ICON-EU (29,5–70,5° N / 23,5° W–62,5° O), damit beide Europa-Modelle
+    # denselben Ausschnitt zeigen
+    '0p1': Res('0p1', 'ecmwf-hres', 'ECMWF IFS 0,1°', list(range(0, 145, 3)),
+               split=True, box=(-23.5, 29.5, 62.5, 70.5), deadline=25),
+}
+R = RES['0p25']  # in main() gesetzt
 
 # GRIB-Felder (param, levelist) → einheitlicher Name aus nwp_common
 FIELDS = {
@@ -87,18 +116,17 @@ WAVE_FIELDS = {
 PARAM_ALIASES = {'10fg3': '10fg', '10fg6': '10fg'}
 
 
-def run_dir(run: datetime) -> str:
-    return f"{BASE}/{run:%Y%m%d}/{run:%H}z/ifs/0p25/oper/"
-
-
-def step_file(run: datetime, step: int, stream: str = 'oper') -> str:
-    base = run_dir(run).replace('/oper/', f'/{stream}/')
-    return f"{base}{run:%Y%m%d%H}0000-{step}h-{stream}-fc"
+def step_files(run: datetime, step: int, stream: str = 'oper') -> list[str]:
+    """Dateien (ohne Endung) eines Schritts — bei 0,1° Boden und Druckflächen getrennt."""
+    base = f"{BASE}/{run:%Y%m%d}/{run:%H}z/ifs/{R.tag}/{stream}/{run:%Y%m%d%H}0000-{step}h-{stream}-fc"
+    if not R.split:
+        return [base]
+    return [base + '-sfc'] if stream == 'wave' else [base + '-sfc', base + '-pl']
 
 
 def run_complete(run: datetime) -> bool:
     """Vollständig = der LETZTE Schritt ist da (die Dateien erscheinen der Reihe nach)."""
-    return url_exists(step_file(run, STEPS[-1]) + '.index')
+    return all(url_exists(f + '.index') for f in step_files(run, R.steps[-1]))
 
 
 def latest_run(now: datetime) -> datetime:
@@ -117,26 +145,29 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
 
     futures = {}
     for stream, fields in (('oper', FIELDS), ('wave', WAVE_FIELDS)):
-        url = step_file(run, step, stream)
-        try:
-            index = [json.loads(line) for line in http_get(url + '.index').decode().splitlines() if line.strip()]
-        except Missing:
-            if stream == 'oper':
-                raise
-            continue  # Wellen fehlen zu diesem Schritt — die übrigen Größen bleiben
-        rows = {}
-        for row in index:
-            key = (PARAM_ALIASES.get(row['param'], row['param']), row.get('levelist'))
-            if key in fields and key not in rows:
-                rows[key] = row
-        for key, row in rows.items():
-            futures[fields[key]] = pool.submit(http_get, url + '.grib2', (row['_offset'], row['_length']))
+        for url in step_files(run, step, stream):
+            try:
+                index = [json.loads(line) for line in http_get(url + '.index').decode().splitlines() if line.strip()]
+            except Missing:
+                if stream == 'oper':
+                    raise
+                continue  # Wellen fehlen zu diesem Schritt — die übrigen Größen bleiben
+            rows = {}
+            for row in index:
+                key = (PARAM_ALIASES.get(row['param'], row['param']), row.get('levelist'))
+                if key in fields and key not in rows and fields[key] not in futures:
+                    rows[key] = row
+            for key, row in rows.items():
+                futures[fields[key]] = pool.submit(
+                    http_get, url + '.grib2', (row['_offset'], row['_length']), deadline=R.deadline)
     out: dict = {}
     for name, fut in futures.items():
         try:
             vals, grid, hours = decode_grib(fut.result())
         except Missing:
             continue
+        if R.box:
+            vals, grid = crop(vals, grid, R.box)
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals * 1000.0  # m → mm, doppelt genau (wird differenziert)
@@ -164,8 +195,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('--latest', action='store_true', help='nur die Kennung des neuesten Laufs ausgeben')
     ap.add_argument('--run', help='Lauf YYYYMMDDHH statt des neuesten (der Deploy gibt die Kennung weiter, die er schon als Cache-Schlüssel benutzt)')
-    ap.add_argument('--steps', type=int, default=len(STEPS), help='nur die ersten N Schritte (Entwicklung)')
+    ap.add_argument('--steps', type=int, help='nur die ersten N Schritte (Entwicklung)')
+    ap.add_argument('--res', choices=sorted(RES), default='0p25', help='Auflösung: 0p25 global, 0p1 Europa')
     args = ap.parse_args()
+    global R
+    R = RES[args.res]
 
     if args.run:
         run = datetime.strptime(args.run, '%Y%m%d%H').replace(tzinfo=timezone.utc)
@@ -174,7 +208,7 @@ def main() -> None:
     if args.latest:
         print(run_id(run))
         return
-    ingest(MODEL, 'ECMWF IFS', run, STEPS[: args.steps], lambda s, pool: fetch_step(run, s, pool))
+    ingest(R.model, R.label, run, R.steps[: args.steps], lambda s, pool: fetch_step(run, s, pool))
 
 
 if __name__ == '__main__':

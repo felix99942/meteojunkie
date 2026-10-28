@@ -642,7 +642,7 @@ export function GlobePanel() {
               aria-pressed={v.id === viewId}
               onClick={() => {
                 setViewId(v.id)
-                // ICON-EU/-D2 sind europäisch — über Thailand bliebe die Karte leer
+                // ICON-EU/-D2 und IFS Europa sind europäisch — über Thailand bliebe die Karte leer
                 if (v.id === 'thailand' && modelId !== 'ecmwf-ifs') setModelId('ecmwf-ifs')
               }}
             >
@@ -884,7 +884,7 @@ export function GlobePanel() {
             <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noreferrer">
               ECMWF Open Data
             </a>{' '}
-            (IFS 0,25°,{' '}
+            (IFS {modelId === 'ecmwf-hres' ? '0,1°' : '0,25°'},{' '}
             <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
               CC BY 4.0
             </a>
