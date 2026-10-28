@@ -51,7 +51,11 @@ import {
   satelliteTimes,
   type ImageTier,
   type SatelliteProduct,
+  SAT_TILE_SIZE,
+  TILE_MIN_ZOOM,
+  satelliteTilePath,
 } from '../config/satellite'
+import { SAT_TILE_PROTOCOL, registerSatTileProtocol } from '../render/satTileProtocol'
 import { nearestFrame, type TimeExtent } from '../config/wmsTime'
 import { globalKeyAllowed } from '../lib/globalKeys'
 import { hasDaylight, solarElevationDeg } from '../lib/solar'
@@ -67,6 +71,8 @@ import { GroundAttribution } from './Attribution'
 
 const SAT_SOURCE_ID = 'satellite'
 const SAT_LAYER_ID = 'satellite'
+const DETAIL_SOURCE_ID = 'satellite-detail'
+const DETAIL_LAYER_ID = 'satellite-detail'
 
 interface View {
   id: string
@@ -638,6 +644,9 @@ export function SatellitePanel() {
       source.updateImage({ url: currentUrl, coordinates })
     } else {
       map.addSource(SAT_SOURCE_ID, { type: 'image', url: currentUrl, coordinates })
+      // Unter die Detailkacheln, falls die schon liegen (die Übersicht wird
+      // neu eingehängt, wenn ein Termin noch kein Bild hat)
+      const before = map.getLayer(DETAIL_LAYER_ID) ? DETAIL_LAYER_ID : OVERLAY_INSERT_BEFORE
       map.addLayer(
         {
           id: SAT_LAYER_ID,
@@ -670,10 +679,58 @@ export function SatellitePanel() {
             ],
           },
         },
-        OVERLAY_INSERT_BEFORE,
+        before,
       )
     }
   }, [currentUrl, product, mapReady])
+
+  // --- Detailkacheln (nur angehalten, nur hineingezoomt) --------------------
+  // Über dem Europabild (~4 km je Pixel) Kacheln im nativen Raster, sobald
+  // man anhält — beim Abspielen wechselt der Termin alle 320 ms, dafür
+  // Kacheln zu holen wäre ein Sturm auf den Dienst und sähe nichts. Der
+  // Termin ist der GEBREMSTE (`settledIdx`), sonst holte jedes Ziehen am
+  // Schieber Kacheln für jede Zwischenstellung.
+  const detailTime =
+    !playing && product.tileMaxZoom && settledIdx === idx && times.length
+      ? times[Math.min(idx, times.length - 1)]
+      : null
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const remove = () => {
+      if (map.getLayer(DETAIL_LAYER_ID)) map.removeLayer(DETAIL_LAYER_ID)
+      if (map.getSource(DETAIL_SOURCE_ID)) map.removeSource(DETAIL_SOURCE_ID)
+    }
+    if (detailTime === null || !product.tileMaxZoom) {
+      remove()
+      return
+    }
+    registerSatTileProtocol()
+    const tilePath = satelliteTilePath(product, detailTime, 0, 0, 0).replace(/\/0\/0\/0\.jpg$/, '')
+    const url = `${SAT_TILE_PROTOCOL}://${tilePath.replace(/^sat-tiles\//, '')}/{z}/{x}/{y}`
+    // Je Termin eine neue Quelle: `setTiles` behielte die Kacheln des vorigen
+    // Termins stehen, bis die neuen da sind — ein Detail zur falschen Zeit
+    remove()
+    const a = productArea(product)
+    map.addSource(DETAIL_SOURCE_ID, {
+      type: 'raster',
+      tiles: [url],
+      tileSize: SAT_TILE_SIZE,
+      minzoom: TILE_MIN_ZOOM,
+      maxzoom: product.tileMaxZoom,
+      bounds: [a.west, a.south, a.east, a.north],
+    })
+    map.addLayer(
+      {
+        id: DETAIL_LAYER_ID,
+        type: 'raster',
+        source: DETAIL_SOURCE_ID,
+        minzoom: TILE_MIN_ZOOM,
+        paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+      },
+      OVERLAY_INSERT_BEFORE,
+    )
+  }, [detailTime, product, mapReady])
 
   const applyPending = useCallback(() => {
     if (!pending) return

@@ -42,6 +42,11 @@ import {
   mirrorKeyTime,
   mirrorSourceUrl,
   satelliteMirrorKey,
+  TILE_MIN_ZOOM,
+  parseSatelliteTilePath,
+  satelliteTilePath,
+  satelliteTileSourceUrl,
+  tileMerc,
 } from './satellite'
 import { toMercator } from './wmsTime'
 
@@ -811,5 +816,51 @@ describe('loadPlan mit Vorrat (sharpFirst)', () => {
     const p = (id: string) => SATELLITE_PRODUCTS.find((x) => x.id === id)!
     expect(concurrencyFor(p('vis06'))).toBe(8)
     expect(concurrencyFor(p('airmass'))).toBe(4)
+  })
+})
+
+describe('Detailkacheln', () => {
+  const vis = SATELLITE_PRODUCTS.find((p) => p.id === 'vis06')!
+  const t = Date.UTC(2026, 9, 28, 12, 0)
+
+  it('rechnet die Kachelfläche wie MapLibre (z 0 = ganze Welt)', () => {
+    const w = tileMerc(0, 0, 0)
+    expect(w.minx).toBeCloseTo(-20037508.34, 1)
+    expect(w.maxy).toBeCloseTo(20037508.34, 1)
+    // Nachbarn teilen sich die Kante exakt — sonst gäbe es Nähte
+    expect(tileMerc(7, 68, 44).maxx).toBe(tileMerc(7, 69, 44).minx)
+  })
+
+  it('findet den eigenen Pfad wieder', () => {
+    const path = satelliteTilePath(vis, t, 7, 68, 44)
+    expect(path).toBe('sat-tiles/vis06/20261028T1200Z/7/68/44.jpg')
+    const back = parseSatelliteTilePath(path)!
+    expect([back.product.id, back.time, back.z, back.x, back.y]).toEqual(['vis06', t, 7, 68, 44])
+  })
+
+  it('nimmt nichts an, was kein erlaubter Kachelabruf ist (kein offener Proxy)', () => {
+    expect(parseSatelliteTilePath('sat-tiles/wv062/20261028T1200Z/6/34/22.jpg')).toBeNull() // ohne Kacheln
+    expect(parseSatelliteTilePath('sat-tiles/vis06/20261028T1200Z/9/272/176.jpg')).toBeNull() // zu tief
+    expect(parseSatelliteTilePath('sat-tiles/vis06/20261028T1200Z/3/4/2.jpg')).toBeNull() // zu grob
+    expect(parseSatelliteTilePath('sat-tiles/vis06/20261028T1205Z/7/68/44.jpg')).toBeNull() // neben dem Raster
+    expect(parseSatelliteTilePath('sat-tiles/vis06/20261028T1200Z/7/200/44.jpg')).toBeNull() // x > 2^z
+    expect(parseSatelliteTilePath('sat-tiles/him_ir/20261028T1200Z/6/50/28.jpg')).toBeNull() // GIBS
+    expect(parseSatelliteTilePath('sat-tiles/vis06/../../x/7/68/44.jpg')).toBeNull()
+  })
+
+  it('holt bei EUMETView genau die Kachel, 512 px, über ihre Mercatorfläche', () => {
+    const u = new URL(satelliteTileSourceUrl(vis, t, 7, 68, 44))
+    const m = tileMerc(7, 68, 44)
+    expect(u.searchParams.get('width')).toBe('512')
+    expect(u.searchParams.get('bbox')).toBe(
+      `${Math.round(m.minx)},${Math.round(m.miny)},${Math.round(m.maxx)},${Math.round(m.maxy)}`,
+    )
+  })
+
+  it('bietet Kacheln nur, wo sie feiner sind als das Europabild', () => {
+    for (const p of SATELLITE_PRODUCTS.filter((x) => x.tileMaxZoom)) {
+      expect(p.source, p.id).not.toBe('gibs')
+      expect(p.tileMaxZoom!, p.id).toBeGreaterThanOrEqual(TILE_MIN_ZOOM)
+    }
   })
 })

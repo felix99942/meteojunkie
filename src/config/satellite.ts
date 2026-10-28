@@ -325,6 +325,14 @@ export interface SatelliteProduct {
    */
   cloudMask?: CloudMaskSpec
   /**
+   * Höchste Zoomstufe der DETAILKACHELN (`/sat-tiles/…`, worker/index.ts),
+   * die sich beim Anhalten und Hineinzoomen über das Europabild legen. Das
+   * Europabild hat ~4 km je Pixel; HRFI liefert ~0,8–1,1 km, Geocolour
+   * ~1,6 km — eine 512-px-Kachel hat bei Stufe 6 1.223 m, bei 7 611 m. Ohne
+   * das Feld gibt es keine Kacheln (Wasserdampf ist schon nativ).
+   */
+  tileMaxZoom?: number
+  /**
    * Misst reflektiertes Sonnenlicht — nachts also schwarz. Das steht so in der
    * Legende: ein schwarzes Bild sieht sonst nach einem Fehler aus, und es ist
    * keiner. Gemessen: nachts 36 KB JPEG (fast nur Schwarz), tagsüber 372 KB.
@@ -516,6 +524,7 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // Lage im Grossen ansieht, und sein natives Raster (1577 m in Mercator)
     // ist dort bei 1600 px genau getroffen (1531 m/px). 302 KB je Bild.
     imageWidth: SATELLITE_MTG_WIDTH,
+    tileMaxZoom: 6,
     note: 'MTG/FCI Geocolour: tagsüber nahezu echte Farben, nachts Infrarot — die einzige Darstellung, die über den ganzen Tag trägt. 10 Minuten.',
   },
   {
@@ -534,6 +543,7 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // Geteilt durch sin(40°) = 0,64 ergibt das diese sonnenunabhängigen Werte.
     cloudMask: { min: 124, max: 218, solarScaled: true },
     dayOnly: true,
+    tileMaxZoom: 7,
     note: 'MTG/FCI HRFI VIS 0,6 µm: der schärfste Kanal des Dienstes (500 m am Subsatellitenpunkt, über Mitteleuropa ~1 km) — Nachfolger des MSG-HRV, das es hier ebenfalls gibt (Produkt „HRV-RGB Europa", gemessen gröber). Über der Europafläche wird er mit 4,1 km/px angefordert und ist damit nicht mehr pixelnativ. Misst reflektiertes Sonnenlicht, ist nachts also schwarz. 10 Minuten.',
   },
   {
@@ -553,6 +563,7 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     // Fest, denn Wärmestrahlung hängt nicht am Sonnenstand. Gemessen:
     // Boden 24–90, Wolke ab ~90, hohe Wolke über 140.
     cloudMask: { min: 78, max: 140 },
+    tileMaxZoom: 7,
     note: 'MTG/FCI Infrarotkanal 10,5 µm: Strahlungstemperatur der Wolkenoberseite — je kälter (heller), desto höher die Wolke. 10 Minuten.',
   },
   {
@@ -870,9 +881,9 @@ export function satelliteTimes(extent: TimeExtent, historyMs: number): number[] 
  */
 export function satelliteImageUrl(
   p: SatelliteProduct,
-  opts: { time: number; width: number; height: number; layer?: string },
+  opts: { time: number; width: number; height: number; layer?: string; merc?: MercBox },
 ): string {
-  const { minx, miny, maxx, maxy } = productMerc(p)
+  const { minx, miny, maxx, maxy } = opts.merc ?? productMerc(p)
   const q = new URLSearchParams({
     service: 'WMS',
     version: '1.3.0',
@@ -1182,4 +1193,62 @@ export function mirrorKeyTime(key: string): number | null {
 export function mirrorSourceUrl(p: SatelliteProduct, time: number, tier: ImageTier): string {
   const size = tier === 'lo' ? previewImageSize(p) : productImageSize(p)
   return satelliteImageUrl(p, { time, ...size })
+}
+
+// --- Detailkacheln -------------------------------------------------------------
+//
+// Das Europabild (eine Datei je Termin, ~4 km je Pixel) bleibt die Übersicht;
+// hält man an und zoomt hinein, legen sich Kacheln im nativen Raster darüber.
+// Geholt werden sie über den Worker (`/sat-tiles/…`): der fragt EUMETView EINMAL
+// je Kachel und legt sie in R2 ab, jeder weitere Abruf kommt von Cloudflare.
+// Gemessen (2026-10-28): eine 512-px-Kachel 0,3–0,6 s, einmal 4,2 s, 12–22 KB;
+// zwei einzeln geholte Nachbarkacheln sind Pixel für Pixel identisch mit
+// derselben Fläche in einem Stück — keine Nähte.
+
+/** Ab dieser Zoomstufe legen sich Kacheln über das Europabild. */
+export const TILE_MIN_ZOOM = 5
+export const SAT_TILE_SIZE = 512
+/** Kacheln nur für Termine, die EUMETView sicher schon hat — `nearestValue`! */
+export const TILE_MIN_AGE_MS = 12 * 60_000
+
+const WORLD_M = 2 * Math.PI * 6378137
+
+/** Mercator-Rechteck der Kachel z/x/y (Ursprung oben links, wie MapLibre). */
+export function tileMerc(z: number, x: number, y: number): MercBox {
+  // Jede Kante aus IHREM Index gerechnet, nicht als „Anfang + Größe" — sonst
+  // weichen die gemeinsamen Kanten zweier Nachbarn um eine Rundungsstelle ab
+  const size = WORLD_M / 2 ** z
+  const edgeX = (i: number) => -WORLD_M / 2 + i * size
+  const edgeY = (j: number) => WORLD_M / 2 - j * size
+  return { minx: edgeX(x), miny: edgeY(y + 1), maxx: edgeX(x + 1), maxy: edgeY(y) }
+}
+
+/** Pfad der Kachel beim Worker, z. B. `sat-tiles/vis06/20261028T1200Z/7/68/44.jpg`. */
+export function satelliteTilePath(p: SatelliteProduct, time: number, z: number, x: number, y: number): string {
+  const stamp = satelliteMirrorKey(p, time, 'hi').split('/').pop()!.replace('.jpg', '')
+  return `sat-tiles/${p.id}/${stamp}/${z}/${x}/${y}.jpg`
+}
+
+/** EUMETView-Abruf GENAU dieser Kachel. */
+export function satelliteTileSourceUrl(p: SatelliteProduct, time: number, z: number, x: number, y: number): string {
+  return satelliteImageUrl(p, { time, width: SAT_TILE_SIZE, height: SAT_TILE_SIZE, merc: tileMerc(z, x, y) })
+}
+
+/**
+ * Kachelpfad zerlegen und prüfen: nur Produkte mit Kacheln, Zoom im Bereich,
+ * Termin auf dem Raster des Produkts. Der Worker nimmt NICHTS anderes an —
+ * sonst wäre er ein offener Proxy auf einen fremden Dienst.
+ */
+export function parseSatelliteTilePath(
+  path: string,
+): { product: SatelliteProduct; time: number; z: number; x: number; y: number } | null {
+  const m = /^sat-tiles\/([a-z0-9_]+)\/(\d{8}T\d{4}Z)\/(\d+)\/(\d+)\/(\d+)\.jpg$/.exec(path)
+  if (!m) return null
+  const product = SATELLITE_PRODUCTS.find((p) => p.id === m[1])
+  if (!product?.tileMaxZoom || product.source === 'gibs') return null
+  const time = mirrorKeyTime(`/${m[2]}.jpg`)
+  const [z, x, y] = [Number(m[3]), Number(m[4]), Number(m[5])]
+  if (time === null || time % product.stepMs !== 0) return null
+  if (z < TILE_MIN_ZOOM || z > product.tileMaxZoom || x >= 2 ** z || y >= 2 ** z) return null
+  return { product, time, z, x, y }
 }

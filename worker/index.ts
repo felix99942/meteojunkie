@@ -16,6 +16,7 @@
 
 import { updateRadar } from './radar'
 import { mirrorSatellite } from './satellite'
+import { satelliteTile } from './satTiles'
 import type { R2BucketLike } from './r2'
 
 interface Env {
@@ -54,6 +55,15 @@ export default {
   async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(req.url)
     const key = decodeURIComponent(url.pathname.slice(1))
+    if (key.startsWith('sat-tiles/') && req.method === 'GET') {
+      // Detailkacheln: aus R2 oder einmal von EUMETView (worker/satTiles.ts)
+      const cacheKey = new Request(url.origin + url.pathname)
+      const cached = await caches.default.match(cacheKey)
+      if (cached) return cached
+      const res = await satelliteTile(key, env.DATA, (p) => ctx.waitUntil(p))
+      if (res.ok) ctx.waitUntil(caches.default.put(cacheKey, res.clone()))
+      return res
+    }
     if (!DATA_PREFIXES.some((p) => key.startsWith(p))) return env.ASSETS.fetch(req)
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } })

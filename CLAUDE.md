@@ -2822,6 +2822,26 @@ npm run preview   # gebautes dist/ servieren
   ganze Tag 1,6 s. **Schneller beim ersten Besuch von EUMETView geht es nur
   serverseitig** — ein Zwischenserver, der jeden neuen Termin einmal holt und
   für alle ausliefert (Cloudflare-Plan).
+  **DETAILKACHELN seit 2026-10-28 — die Antwort auf „sat24 ist schärfer"**
+  (`tileMaxZoom` in der Registry: Sichtbar und Infrarot bis z 7, Geocolour
+  bis z 6; `worker/satTiles.ts`, `render/satTileProtocol.ts`): hält man an
+  und zoomt ab Stufe 5 hinein, legt sich über das Europabild (~4 km je
+  Pixel) eine Kachelebene im nativen Raster. Der Worker holt jede Kachel
+  EINMAL bei EUMETView (512 px, gemessen 0,3–0,6 s, einmal 4,2 s, 12–22 KB)
+  und legt sie in R2 (`sattile/…`), jeder weitere Abruf kommt von Cloudflare.
+  **Nahtlos gemessen**: zwei einzeln geholte Nachbarkacheln sind Pixel für
+  Pixel identisch mit derselben Fläche in einem Stück. `tileMerc` rechnet
+  jede Kante aus IHREM Index (als „Anfang + Größe" wichen gemeinsame Kanten
+  um eine Rundungsstelle ab — ein Test hält das fest). Der Worker nimmt NUR
+  `parseSatelliteTilePath`-gültige Pfade (Produkt mit Kacheln, Zoombereich,
+  Termin auf dem Raster, 12 min bis 26 h alt) — sonst wäre er ein offener
+  Proxy, und ein zu junger Termin landete wegen `nearestValue` für immer
+  unter der falschen Zeit. Das Wolkenkomposit läuft je Kachel
+  (`compositeClouds(…, targetMerc)`, Sonnenstand des Produkts, damit die
+  Kante nicht springt). Beim Abspielen keine Kacheln, und der Termin ist der
+  gebremste (`settledIdx`). Je Termin eine neue Quelle statt `setTiles`,
+  sonst stünden kurz Kacheln des vorigen Termins da. Aufräumen über eine
+  Lifecycle-Regel `sattile/` im Bucket.
   **VORRAT IN R2 seit 2026-10-28** (`MIRRORED_SATELLITE_IDS` = Geocolour,
   Sichtbar HRFI, Infrarot, Wasserdampf; `worker/satellite.ts`): der Cron
   holt jedes neue Bild (Vorschau UND scharf) einmal bei EUMETView und legt es

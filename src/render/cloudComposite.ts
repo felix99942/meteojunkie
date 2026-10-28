@@ -174,6 +174,13 @@ export async function compositeClouds(
   mask: CloudMaskSpec,
   time: number,
   blob: Blob,
+  /**
+   * Fläche DIESES Bildes, falls es nicht das ganze Produkt ist — die
+   * Detailkacheln (`tileMerc`) nehmen sich ihren Ausschnitt des Bodenbilds.
+   * Der Sonnenstand bleibt der des Produkts, damit Kachel und Übersicht
+   * dieselben Schwellen haben und an der Kante nicht springen.
+   */
+  targetMerc?: MercBox,
 ): Promise<Blob> {
   const area = productArea(product)
   const elevation = solarElevationDeg(
@@ -209,7 +216,7 @@ export async function compositeClouds(
       south: GROUND_BOUNDS.latMin,
       north: GROUND_BOUNDS.latMax,
     }),
-    productMerc(product),
+    targetMerc ?? productMerc(product),
     ground.width,
     ground.height,
   )
