@@ -16,7 +16,7 @@
 // Kachelgeometrie, Laufalter) — getestet in `globe.test.ts`. Das Einfärben
 // der Kacheln steht in `render/globeTiles.ts`, das Laden in `api/globeData.ts`.
 
-import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
+import { alternateShade, bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
  * `uv10` und `uv300` sind keine wählbaren Größen, sondern die Datenquellen
@@ -53,6 +53,12 @@ export interface GlobeVariable {
   decimals: number
   /** Jede wievielte Stufe der Legende beschriftet wird. */
   legendEvery: number
+  /**
+   * Statt jedes n-ten Bands die WERTE beschriften, die ein Vielfaches davon
+   * sind — bei Bändern, die nicht auf einer runden Zahl beginnen (Temperatur
+   * ab −56 °C), stünde sonst −56, −51, −46 … in der Legende.
+   */
+  legendMultiple?: number
   group: GlobeGroup
   /**
    * 'rgb3': drei Größen in einem Bild (Wolkenschichten), eigene Einfärbung
@@ -62,19 +68,56 @@ export interface GlobeVariable {
 }
 
 /**
- * Temperatur GLOBAL: die Anker der Feld-Karte (`TEMP_ANCHORS`, −30 … 42 °C in
- * 8-K-Schritten) unverändert in der Mitte, nach unten um drei Anker bis −54
- * und nach oben um einen bis 50 °C verlängert. Mit der europäischen Skala
- * stand die ganze Antarktis und halb Sibirien im Winter in EINER Farbe
- * (unterste Stufe −30 °C, im Prototyp gesehen). Das kalte Ende wird HELLER —
- * Eis statt noch mehr Violett, und es bleibt vom −30-Violett unterscheidbar.
+ * Temperatur GLOBAL, in 1-K-BÄNDERN mit Ankerfarben alle 4 K (−56 … 52 °C).
+ *
+ * Vorher waren es 2-K-Bänder aus Ankern im 8-K-Abstand (die der Feld-Karte):
+ * zwei benachbarte Bänder unterschieden sich nur um ein Viertel zweier Anker,
+ * und eine normale europäische 850-hPa-Lage (−8 … +15 °C) stand fast
+ * vollständig in EINEM Türkis-Grün (gemeldet, im Bild nachgestellt). Jetzt
+ * wechselt der Farbton doppelt so schnell und die Bänder sind halb so
+ * breit. Am Nullpunkt kippt die Farbe von Cyan nach Grün. Das kalte Ende
+ * wird HELLER (Eis statt noch mehr Violett), das warme dunkler.
+ * Gilt für T2m UND T850 — dieselbe Farbe heißt in beiden dieselbe
+ * Temperatur.
  */
-const GLOBAL_TEMP_ANCHORS = ['#f1edf7', '#c9b6e0', '#9b77c3', ...TEMP_ANCHORS, '#4d0f33']
+/** Abdunkeln jedes zweiten 1-K-Bands (siehe `alternateShade`). */
+const TEMP_SHADE = 0.1
+const TEMP_FINE_ANCHORS = [
+  '#fbf8fe', // −56
+  '#f0e7f8', // −52
+  '#e2d2f0', // −48
+  '#d1bae6', // −44
+  '#bea0db', // −40
+  '#a985cf', // −36
+  '#936bc1', // −32
+  '#7c52b1', // −28
+  '#663e9f', // −24
+  '#4f3fae', // −20
+  '#3c54c6', // −16
+  '#2e71dc', // −12
+  '#2d92e7', // −8
+  '#39b4de', // −4
+  '#2fae80', //  0
+  '#5cc35a', //  4
+  '#9bd34e', //  8
+  '#d2de48', // 12
+  '#f5d840', // 16
+  '#f7b237', // 20
+  '#f38a2f', // 24
+  '#e85f29', // 28
+  '#d4332b', // 32
+  '#a8203c', // 36
+  '#7c1752', // 40
+  '#5a145e', // 44
+  '#3d1150', // 48
+  '#2a0a38', // 52
+]
 const GLOBAL_TEMP: ColorScale = {
   kind: 'stepped',
   belowMin: 'clamp',
-  // 14 Anker im 8-K-Abstand von −54 bis 50 → 53 Bänder à 2 K
-  stops: bands(-54, 2, lerpRamp(GLOBAL_TEMP_ANCHORS, 53)),
+  // 28 Anker im 4-K-Abstand von −56 bis 52 → 109 Bänder à 1 K; jedes zweite
+  // leicht abgedunkelt, damit jedes Grad als Stufe zu sehen ist
+  stops: bands(-56, 1, alternateShade(lerpRamp(TEMP_FINE_ANCHORS, 109), TEMP_SHADE)),
 }
 
 /** 500-hPa-Geopotential: 480 … 600 gpdm in 4-gpdm-Bändern, kalt (Trog) → warm (Rücken). */
@@ -171,7 +214,10 @@ const GH500: ColorScale = {
 const RELTOP: ColorScale = {
   kind: 'stepped',
   belowMin: 'clamp',
-  stops: bands(488, 4, lerpRamp(GLOBAL_TEMP_ANCHORS.slice(2), 27)),
+  // 2-gpdm-Bänder (≈ 1 K) auf der feinen Temperaturrampe, −24 … +28 °C-Anker:
+  // dieselbe Begründung wie bei `GLOBAL_TEMP` — mit 4-gpdm-Bändern auf
+  // 8-K-Ankern lag eine ganze Wetterlage in zwei, drei Farben
+  stops: bands(488, 2, alternateShade(lerpRamp(TEMP_FINE_ANCHORS.slice(8, 22), 53), TEMP_SHADE)),
 }
 
 /**
@@ -246,6 +292,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     scale: GLOBAL_TEMP,
     decimals: 1,
     legendEvery: 5,
+    legendMultiple: 10,
   },
   {
     id: 't850',
@@ -256,6 +303,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     scale: GLOBAL_TEMP,
     decimals: 1,
     legendEvery: 5,
+    legendMultiple: 10,
   },
   {
     id: 'gh500',

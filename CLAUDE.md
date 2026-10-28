@@ -3196,8 +3196,17 @@ npm run preview   # gebautes dist/ servieren
   trägt seinen Schlüssel, sonst rechnete die Werteanzeige beim Wechsel kurz
   mit dem Feld des vorigen Modells. Die Werte am Zeiger sind gegen Python
   nachgerechnet, für ICON-D2 auch gegen die Original-GRIB-Punkte.
-  **Globale Temperaturskala −54 … 50 °C**: dieselben Anker wie die Feld-Karte,
-  nach unten HELLER verlängert.
+  **Temperaturskala −56 … 52 °C in 1-K-BÄNDERN, jedes zweite abgedunkelt**
+  (seit 2026-10-28, `TEMP_FINE_ANCHORS`, `alternateShade`; gilt für T2m,
+  T850 und — auf 2-gpdm-Bändern — die Relative Topografie): vorher 2-K-Bänder
+  aus Ankern im 8-K-Abstand, und eine europäische 850-hPa-Lage (−8 … +15 °C)
+  stand in EINEM Türkis-Grün (gemeldet). Jetzt Anker alle 4 K, 1-K-Bänder,
+  und die abwechselnde Helligkeit macht jedes Grad als Stufe sichtbar, wie
+  dünne Isothermen. Ein Test hält den Mindestabstand benachbarter Bänder
+  über −20 … +30 °C fest. Legende über `legendMultiple` auf runden Werten.
+  **Niederschlag (mm/h): zuerst ACHT Blautöne bis 2 mm/h**, erst darüber
+  Grün → Gelb → Rot → Magenta (`PRECIP_COLORS` in `colorscales.ts`, von Hand
+  gesetzt) — vorher stand alles unter 1 mm/h in fast einem Hellblau.
   **ISOLINIEN** (`render/globeContours.ts` mit Tests, Protokoll `globeiso://`,
   Schalter „Isobaren"/„500 hPa" in der Leiste, `CONTOURS` in `config/globe.ts`):
   Bodendruck alle 5 hPa, 500 hPa alle 4 gpdm, beschriftet, als EIGENE

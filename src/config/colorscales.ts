@@ -45,6 +45,21 @@ function hexToRgb(h: string): [number, number, number] {
 function toHex(n: number): string {
   return Math.round(n).toString(16).padStart(2, '0')
 }
+/**
+ * Jede zweite Farbe um `amount` (0–1) zum Schwarz hin abdunkeln. Für fein
+ * gestufte Vollbereichsgrößen: der Farbton allein ändert sich von Band zu
+ * Band zu wenig, um jede Stufe zu sehen — die Helligkeit wechselt dagegen
+ * hart, und jedes Band steht als eigene Stufe da (wie dünne Isothermen),
+ * während der Farbton weiter den Bereich angibt.
+ */
+export function alternateShade(colors: string[], amount: number): string[] {
+  return colors.map((c, i) => {
+    if (i % 2 === 0) return c
+    const [r, g, b] = hexToRgb(c)
+    return `#${toHex(r * (1 - amount))}${toHex(g * (1 - amount))}${toHex(b * (1 - amount))}`
+  })
+}
+
 export function lerpRamp(anchors: string[], count: number): string[] {
   const rgb = anchors.map(hexToRgb)
   const seg = anchors.length - 1
@@ -56,13 +71,6 @@ export function lerpRamp(anchors: string[], count: number): string[] {
     const [br, bg, bb] = rgb[lo + 1]
     return `#${toHex(ar + (br - ar) * f)}${toHex(ag + (bg - ag) * f)}${toHex(ab + (bb - ab) * f)}`
   })
-}
-
-/** Aufsteigende Schwellenliste [from … to] mit fester Schrittweite (inklusive). */
-function seq(from: number, to: number, step: number): number[] {
-  const out: number[] = []
-  for (let v = from; v <= to + 1e-9; v += step) out.push(Math.round(v * 100) / 100)
-  return out
 }
 
 // Mehrfarbige Temperatur-Stützfarben (kalt → warm) in 8-°C-Abständen von -30
@@ -82,26 +90,37 @@ export const TEMP_ANCHORS = [
   '#8f1f5e', // 42
 ]
 
-// Niederschlags-Stützfarben, hell → dunkel: fahles Blau → Blau → Indigo →
-// Violett → Magenta → Rot (Extremwerte). lerpRamp verteilt sie auf die
-// gestaffelten Schwellen (dicht bei leichtem Regen, grob bei Starkregen).
-const PRECIP_ANCHORS = [
-  '#cfe3f7',
-  '#8fbdec',
-  '#4a93e8',
-  '#256abf',
-  '#1c5cab',
-  '#3f3f9e',
-  '#6a3d9a',
-  '#9c3990',
-  '#c23a6a',
-  '#d63a2b',
+// Niederschlag (mm/h): ZUERST ACHT klar getrennte BLAUTÖNE bis 2 mm/h, erst
+// darüber Grün → Gelb → Orange → Rot → Magenta → Weiß-Lila, wie man es von
+// Radarbildern kennt. Vorher waren zehn Ankerfarben (Blau → Indigo →
+// Violett → Rot) gleichmäßig über alle 26 Stufen verteilt: alles unter
+// 1 mm/h — der größte Teil jeder Regenfläche — stand in fast demselben
+// Hellblau, und schon ab 5 mm/h kam Indigo (gemeldet: „vorher schon mehr
+// Blauabstufungen"). Die Farben sind von Hand gesetzt statt interpoliert,
+// damit benachbarte Stufen sicher unterscheidbar bleiben.
+const PRECIP_STEPS = [0.1, 0.2, 0.3, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100]
+const PRECIP_COLORS = [
+  '#d4ecfb', // 0,1
+  '#aed9f7', // 0,2
+  '#86c3f1', // 0,3
+  '#5ea9ea', // 0,5
+  '#3f8ddf', // 0,7
+  '#2a6fcf', // 1
+  '#1f53b4', // 1,5
+  '#1a3a93', // 2
+  '#2f9a4b', // 3
+  '#57b947', // 4
+  '#93cf40', // 5
+  '#d6d93a', // 7
+  '#f5b335', // 10
+  '#f07a2c', // 15
+  '#e2452a', // 20
+  '#b81f3c', // 30
+  '#8e1d6b', // 40
+  '#b54fc0', // 50
+  '#d79be0', // 75
+  '#f2dcf5', // 100
 ]
-
-// Niederschlagsschwellen (mm/h): 0.1/0.2/0.5, dann 1er bis 10, 5er bis 50,
-// 10er bis 100 — so bildet die Legende die Modellauflösung ab.
-const PRECIP_STEPS = [0.1, 0.2, 0.5, ...seq(1, 10, 1), ...seq(15, 50, 5), ...seq(60, 100, 10)]
-const PRECIP_COLORS = lerpRamp(PRECIP_ANCHORS, PRECIP_STEPS.length)
 
 // Grün → Gelb → Orange → Rot → Dunkelrot → Lila (kein Blau — grenzt Wind
 // optisch von der Temperatur ab, die im Kalten violett/blau beginnt). Das
@@ -125,7 +144,7 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
     belowMin: 'clamp',
     stops: bands(-30, 2, lerpRamp(TEMP_ANCHORS.slice(0, 8), 29)), // -30 … 26 °C, 2-°C-Bänder
   },
-  // sequenziell blau→rot, gestaffelte Schwellen (mm/h); < 0,1 transparent
+  // Blau bis 2 mm/h, darüber Grün → Rot → Magenta (siehe PRECIP_COLORS); < 0,1 transparent
   precipitation: {
     kind: 'stepped',
     stops: PRECIP_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })),

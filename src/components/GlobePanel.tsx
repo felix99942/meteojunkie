@@ -615,7 +615,11 @@ export function GlobePanel() {
     const stops = variable.scale.stops
     return stops.map((s, i) => ({
       color: s.color,
-      label: i % variable.legendEvery === 0 ? String(s.value) : '',
+      label: (
+        variable.legendMultiple ? Math.abs(s.value % variable.legendMultiple) < 1e-9 : i % variable.legendEvery === 0
+      )
+        ? String(s.value)
+        : '',
     }))
   }, [variable])
 

@@ -264,10 +264,34 @@ describe('Registry', () => {
     }
   })
 
-  it('reicht mit der Temperaturskala von −54 bis 50 °C (global, nicht europäisch)', () => {
+  it('reicht mit der Temperaturskala von −56 bis 52 °C in 1-K-Bändern (global, nicht europäisch)', () => {
     const stops = GLOBE_VARIABLES.find((v) => v.id === 't2m')!.scale.stops
-    expect(stops[0].value).toBe(-54)
-    expect(stops[stops.length - 1].value).toBe(50)
+    expect(stops[0].value).toBe(-56)
+    expect(stops[stops.length - 1].value).toBe(52)
+    expect(stops[1].value - stops[0].value).toBe(1)
+  })
+
+  // Der gemeldete Fehler: eine europäische 850-hPa-Lage stand in EINER Farbe.
+  // Gemessen über −20 … +30 °C: vorher 5 Bänder je 10 K, Nachbarabstand im
+  // Mittel 19 (RGB) — aber benachbarte Bänder liefen weich ineinander. Jetzt
+  // 10 Bänder je 10 K, und jedes zweite ist abgedunkelt: kein Nachbarpaar
+  // darf mehr unter der Schwelle liegen, ab der man zwei Flächen trennt.
+  it('trennt jedes 1-K-Band sichtbar vom Nachbarn (−20 … +30 °C)', () => {
+    const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+    const dist = (a: string, b: string) => Math.hypot(...rgb(a).map((x, i) => x - rgb(b)[i]))
+    for (const id of ['t2m', 't850']) {
+      const s = GLOBE_VARIABLES.find((v) => v.id === id)!.scale.stops.filter((x) => x.value >= -20 && x.value <= 30)
+      expect(s.length, id).toBe(51)
+      const minD = Math.min(...s.slice(1).map((x, i) => dist(x.color, s[i].color)))
+      expect(minD, id).toBeGreaterThan(15)
+    }
+  })
+
+  it('beschriftet die Temperaturlegende auf runden Werten', () => {
+    const t = GLOBE_VARIABLES.find((v) => v.id === 't850')!
+    const labelled = t.scale.stops.filter((s) => s.value % t.legendMultiple! === 0).map((s) => s.value)
+    expect(labelled).toContain(0)
+    expect(labelled.every((v) => v % 10 === 0)).toBe(true)
   })
 })
 
