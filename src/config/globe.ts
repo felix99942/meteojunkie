@@ -16,7 +16,6 @@
 // Kachelgeometrie, Laufalter) — getestet in `globe.test.ts`. Das Einfärben
 // der Kacheln steht in `render/globeTiles.ts`, das Laden in `api/globeData.ts`.
 
-import { THAILAND_ENABLED } from './features'
 import { bands, COLOR_SCALES, lerpRamp, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
@@ -462,7 +461,7 @@ export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'
 
 // --- Modelle und Ansichten -------------------------------------------------
 
-export type GlobeModelId = 'ecmwf-ifs' | 'ecmwf-hres' | 'icon-eu' | 'icon-d2'
+export type GlobeModelId = 'ecmwf-ifs' | 'ecmwf-hres' | 'ecmwf-hres-asia' | 'icon-eu' | 'icon-d2'
 
 export interface GlobeModel {
   id: GlobeModelId
@@ -486,7 +485,7 @@ export interface GlobeModel {
   title: string
 }
 
-export const GLOBE_MODELS: GlobeModel[] = [
+const ALL_GLOBE_MODELS: GlobeModel[] = [
   {
     id: 'ecmwf-ifs',
     label: 'ECMWF IFS',
@@ -510,6 +509,18 @@ export const GLOBE_MODELS: GlobeModel[] = [
     title: 'ECMWF IFS 0,1° (natives Modell ~9 km) — Europa, bis +144 h (Läufe 00/12 UTC)',
   },
   {
+    // Derselbe Abruf wie `ecmwf-hres`, nur ein zweiter Ausschnitt: die
+    // Himawari-Fläche (84–125° O / 5° S–28° N) für die Thailand-Ansicht —
+    // kostet keinen Download, nur ~25 MB je Lauf.
+    id: 'ecmwf-hres-asia',
+    label: 'ECMWF IFS Asien',
+    resolution: '9 km',
+    provider: 'ECMWF',
+    staleHours: 32,
+    maxzoom: 7,
+    title: 'ECMWF IFS 0,1° (natives Modell ~9 km) — Südostasien, bis +144 h (Läufe 00/12 UTC)',
+  },
+  {
     id: 'icon-eu',
     label: 'ICON-EU',
     resolution: '7 km',
@@ -528,6 +539,11 @@ export const GLOBE_MODELS: GlobeModel[] = [
     title: 'DWD ICON-D2 0,02° — Deutschland, Alpen, Österreich, bis +48 h (Läufe alle 3 h)',
   },
 ]
+
+// Südostasien steht seit 2026-10-28 auch in der veröffentlichten Seite (auf
+// Wunsch, mit IFS 0,1° Asien) — nur die Thailand-Orte der Schnellwahl hängen
+// weiter an `THAILAND_ENABLED`.
+export const GLOBE_MODELS: GlobeModel[] = ALL_GLOBE_MODELS
 
 export const DEFAULT_GLOBE_MODEL: GlobeModelId = 'ecmwf-ifs'
 
@@ -568,14 +584,14 @@ export const CONTOURS: ContourDef[] = [
     label: 'Isobaren',
     title: 'Bodendruck (MSL) alle 5 hPa, beschriftet — geglättet, damit Gebirgsrauschen keine Kringel zieht',
     interval: 5,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'icon-eu': 3, 'icon-d2': 12 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'ecmwf-hres-asia': 2, 'icon-eu': 3, 'icon-d2': 12 },
   },
   {
     id: 'gh500',
     label: '500 hPa',
     title: 'Geopotential 500 hPa alle 4 gpdm, beschriftet',
     interval: 4,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3 },
   },
   {
     id: 'gh300',
@@ -584,7 +600,7 @@ export const CONTOURS: ContourDef[] = [
     // Das 300-hPa-Feld ist steiler als das 500er (Tröge reichen über ~120
     // gpdm statt ~80); mit 4 gpdm stünden die Linien im Jet zu dicht
     interval: 8,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3 },
   },
 ]
 
@@ -619,7 +635,7 @@ const ALL_GLOBE_VIEWS: GlobeView[] = [
   // deckt es ab (ICON-EU/-D2 sind europäisch).
   { id: 'thailand', label: 'Thailand', projection: 'mercator', bounds: [[96.3, 5.2], [106.2, 20.6]] },
 ]
-export const GLOBE_VIEWS: GlobeView[] = ALL_GLOBE_VIEWS.filter((v) => THAILAND_ENABLED || v.id !== 'thailand')
+export const GLOBE_VIEWS: GlobeView[] = ALL_GLOBE_VIEWS
 
 export function getGlobeVariable(id: string): GlobeVariable {
   return GLOBE_VARIABLES.find((v) => v.id === id) ?? GLOBE_VARIABLES[0]

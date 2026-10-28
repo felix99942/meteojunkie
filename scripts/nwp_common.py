@@ -377,27 +377,41 @@ def ingest(
     steps: list[int],
     fetch_step: Callable[[int, ThreadPoolExecutor], dict],
     *,
+    crops: dict[str, tuple[float, float, float, float]] | None = None,
     step_window: int = 6,
     field_workers: int = 12,
     encode_workers: int = 4,
 ) -> None:
-    """Einen Lauf holen, kodieren und atomar unter public/nwp/<model>/ ablegen."""
-    out = OUT_ROOT / model
+    """Einen Lauf holen, kodieren und atomar unter public/nwp/<model>/ ablegen.
+
+    `crops` {Modellname: Ausschnitt}: aus EINEM Abruf mehrere Ausschnitte
+    eines globalen Rasters schreiben (IFS 0,1°: Europa und Südostasien) —
+    GRIB lässt sich nicht räumlich zuschneiden, jedes Feld kommt ohnehin
+    global; ein zweiter Ausschnitt kostet nur Kodieren und Speicher, keinen
+    Download. Ohne `crops` eine Ausgabe `model` mit dem ganzen Raster.
+    """
     rid = run_id(run)
-    if already_done(model, rid, len(steps)):
+    outputs = crops or {model: None}
+    todo = {m: box for m, box in outputs.items() if not already_done(m, rid, len(steps))}
+    if not todo:
         print(f'{label} Lauf {rid} liegt schon vollständig vor — nichts zu tun', flush=True)
         return
 
     t0 = time.time()
-    print(f'{label} Lauf {rid}, {len(steps)} Schritte', flush=True)
-    tmp = out / f'.{rid}.tmp'
-    shutil.rmtree(tmp, ignore_errors=True)
-    have: dict[str, list[int]] = {v: [] for v in VARIABLES}
-    intervals: dict[str, list[int]] = {'precip': [], 'gust': []}
-    sizes: dict[str, int] = {v: 0 for v in VARIABLES}
-    grid = None
+    print(f'{label} Lauf {rid}, {len(steps)} Schritte → {", ".join(todo)}', flush=True)
+    state = {}
+    for m in todo:
+        out = OUT_ROOT / m
+        tmp = out / f'.{rid}.tmp'
+        shutil.rmtree(tmp, ignore_errors=True)
+        state[m] = {
+            'out': out, 'tmp': tmp, 'grid': None, 'prev_tp': None,
+            'have': {v: [] for v in VARIABLES},
+            'intervals': {'precip': [], 'gust': []},
+            'sizes': {v: 0 for v in VARIABLES},
+        }
 
-    def write(var: str, step: int, values) -> None:
+    def write(m: str, var: str, step: int, values) -> None:
         spec = VARIABLES[var]
         enc = spec.get('encoding')
         data = (
@@ -405,10 +419,10 @@ def ingest(
             else encode_uv8(values, spec['step']) if enc == 'uv8'
             else encode(values, spec['lo'], spec['step'])
         )
-        path = tmp / var / f'{step:03d}.webp'
+        path = state[m]['tmp'] / var / f'{step:03d}.webp'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-        sizes[var] += len(data)
+        state[m]['sizes'][var] += len(data)
 
     # Gleitendes Fenster: das Netz arbeitet parallel, verarbeitet wird in
     # Reihenfolge — der Niederschlag braucht den vorigen Schritt.
@@ -416,66 +430,83 @@ def ingest(
             ThreadPoolExecutor(encode_workers) as epool:
         pending = [spool.submit(fetch_step, s, fpool) for s in steps[:step_window]]
         writes = []
-        prev_tp, prev_step = None, None
+        prev_step = None
         for i, step in enumerate(steps):
-            f = pending[i].result()
+            full = pending[i].result()
             if i + step_window < len(steps):
                 pending.append(spool.submit(fetch_step, steps[i + step_window], fpool))
             pending[i] = None  # Speicher freigeben
-            g = f.pop('_grid')
-            if grid is None:
-                grid = g
-            elif g != grid:
-                raise RuntimeError(f'Raster wechselt bei +{step} h: {g} statt {grid}')
-            for var in VARIABLES:
-                if any(k not in f for k in NEEDS[var]):
-                    if var not in OPTIONAL:
-                        print(f'  ! {var} fehlt bei +{step} h', file=sys.stderr)
-                    continue
-                values = derive(var, f, prev_tp, step, prev_step)
-                if values is None:
-                    continue
-                have[var].append(step)
-                if var == 'precip':
-                    intervals['precip'].append(step - prev_step)
-                elif var == 'gust':
-                    intervals['gust'].append(f['gust_hours'])
-                writes.append(epool.submit(write, var, step, values))
-            prev_tp, prev_step = f.get('tp'), step
+            g_full = full.pop('_grid')
+            for m, box in todo.items():
+                st = state[m]
+                if box is None:
+                    f, g = full, g_full
+                else:
+                    # Ausschnitt je Ausgabe: alle Felder gleich zuschneiden
+                    f, g = {}, None
+                    for k, v in full.items():
+                        if hasattr(v, 'shape'):
+                            f[k], g = crop(v, g_full, box)
+                        else:
+                            f[k] = v
+                if st['grid'] is None:
+                    st['grid'] = g
+                elif g != st['grid']:
+                    raise RuntimeError(f'Raster wechselt bei +{step} h: {g} statt {st["grid"]}')
+                for var in VARIABLES:
+                    if any(k not in f for k in NEEDS[var]):
+                        if var not in OPTIONAL and m == next(iter(todo)):
+                            print(f'  ! {var} fehlt bei +{step} h', file=sys.stderr)
+                        continue
+                    values = derive(var, f, st['prev_tp'], step, prev_step)
+                    if values is None:
+                        continue
+                    st['have'][var].append(step)
+                    if var == 'precip':
+                        st['intervals']['precip'].append(step - prev_step)
+                    elif var == 'gust':
+                        st['intervals']['gust'].append(f['gust_hours'])
+                    writes.append(epool.submit(write, m, var, step, values))
+                st['prev_tp'] = f.get('tp')
+            prev_step = step
             if (i + 1) % 10 == 0:
                 print(f'  {i + 1}/{len(steps)} Schritte, {time.time() - t0:.0f} s', flush=True)
         for w in writes:
             w.result()
 
-    # Erst jetzt umhängen: ein abgebrochener Lauf hinterlässt nur das .tmp,
-    # der vorige Stand bleibt unangetastet.
-    final = out / rid
-    shutil.rmtree(final, ignore_errors=True)
-    tmp.rename(final)
-    meta = {
-        'model': model,
-        'runId': rid,
-        'run': run.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-        'stepCount': len(steps),
-        'grid': grid,
-        'variables': {
-            v: {
-                'lo': s['lo'], 'step': s['step'], 'unit': s['unit'], 'steps': have[v],
-                **({'intervals': intervals[v]} if v in intervals else {}),
-                **({'encoding': s['encoding']} if 'encoding' in s else {}),
-            }
-            for v, s in VARIABLES.items()
-            if have[v]  # was das Modell gar nicht führt, steht nicht in meta.json
-        },
-    }
-    (out / 'meta.json').write_text(json.dumps(meta, separators=(',', ':')))
-    for old in out.iterdir():
-        if old.is_dir() and old.name != rid:
-            shutil.rmtree(old, ignore_errors=True)
+    for m, st in state.items():
+        out, tmp = st['out'], st['tmp']
+        # Erst jetzt umhängen: ein abgebrochener Lauf hinterlässt nur das .tmp,
+        # der vorige Stand bleibt unangetastet.
+        final = out / rid
+        shutil.rmtree(final, ignore_errors=True)
+        tmp.rename(final)
+        have, intervals, sizes = st['have'], st['intervals'], st['sizes']
+        meta = {
+            'model': m,
+            'runId': rid,
+            'run': run.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'stepCount': len(steps),
+            'grid': st['grid'],
+            'variables': {
+                v: {
+                    'lo': s['lo'], 'step': s['step'], 'unit': s['unit'], 'steps': have[v],
+                    **({'intervals': intervals[v]} if v in intervals else {}),
+                    **({'encoding': s['encoding']} if 'encoding' in s else {}),
+                }
+                for v, s in VARIABLES.items()
+                if have[v]  # was das Modell gar nicht führt, steht nicht in meta.json
+            },
+        }
+        (out / 'meta.json').write_text(json.dumps(meta, separators=(',', ':')))
+        for old in out.iterdir():
+            if old.is_dir() and old.name != rid:
+                shutil.rmtree(old, ignore_errors=True)
 
-    total = sum(sizes.values())
-    for v in VARIABLES:
-        n = max(1, len(have[v]))
-        print(f'  {v:7s} {len(have[v]):3d} Schritte, {sizes[v] / 1e6:6.1f} MB ({sizes[v] / n / 1024:.0f} KB je Bild)')
-    print(f'  gesamt {total / 1e6:.1f} MB in {time.time() - t0:.0f} s', flush=True)
+        total = sum(sizes.values())
+        print(f'  [{m}]')
+        for v in VARIABLES:
+            n = max(1, len(have[v]))
+            print(f'  {v:7s} {len(have[v]):3d} Schritte, {sizes[v] / 1e6:6.1f} MB ({sizes[v] / n / 1024:.0f} KB je Bild)')
+        print(f'  gesamt {total / 1e6:.1f} MB in {time.time() - t0:.0f} s', flush=True)

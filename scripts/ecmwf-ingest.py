@@ -32,10 +32,11 @@ gemessen 2026-10-28:
     Wellen unter `0p1/wave/…-wave-fc-sfc`, sonst dasselbe Index-Format.
   * 3600×1801, ~37 MB je Schritt für die 20 Felder, ein Feld 1,4 MB in
     0,6–3 s (die 8-s-Frist der 0,25°-Abrufe ist dafür zu knapp → 25 s).
-  * Gespeichert wird nur EUROPA (Fläche von ICON-EU, 861×411) und nur bis
-    +144 h (49 Schritte, ~1,8 GB Abruf je Lauf): global wären es ~1,7 GB
-    Bilder je Lauf, und jenseits von sechs Tagen trägt die feinere
-    Auflösung nichts mehr — dort bleibt IFS 0,25° bis +360 h.
+  * Gespeichert werden nur EUROPA (Fläche von ICON-EU, 861×411 → ecmwf-hres)
+    und SÜDOSTASIEN (Himawari-Fläche, 411×331 → ecmwf-hres-asia), beide nur
+    bis +144 h (49 Schritte, ~1,8 GB Abruf je Lauf für beide zusammen):
+    global wären es ~1,7 GB Bilder je Lauf, und jenseits von sechs Tagen
+    trägt die feinere Auflösung nichts mehr — dort bleibt IFS 0,25° bis +360 h.
 
 Aufruf (aus dem Repo-Wurzelverzeichnis):
   python3 scripts/ecmwf-ingest.py            neuesten vollständigen Lauf holen
@@ -53,7 +54,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from nwp_common import Missing, crop, decode_grib, http_get, ingest, run_id, url_exists
+from nwp_common import Missing, decode_grib, http_get, ingest, run_id, url_exists
 
 BASE = 'https://data.ecmwf.int/forecasts'
 
@@ -62,18 +63,24 @@ class Res:
     """Auflösungsvariante: Verzeichnis, Dateinamen, Schritte, Ausschnitt."""
 
     def __init__(self, tag: str, model: str, label: str, steps: list[int],
-                 split: bool, box: tuple[float, float, float, float] | None, deadline: float):
+                 split: bool, crops: dict[str, tuple[float, float, float, float]] | None, deadline: float):
         self.tag, self.model, self.label, self.steps = tag, model, label, steps
-        self.split, self.box, self.deadline = split, box, deadline
+        self.split, self.crops, self.deadline = split, crops, deadline
 
 
 RES = {
     '0p25': Res('0p25', 'ecmwf-ifs', 'ECMWF IFS', list(range(0, 145, 3)) + list(range(150, 361, 6)),
-                split=False, box=None, deadline=8),
-    # Fläche = ICON-EU (29,5–70,5° N / 23,5° W–62,5° O), damit beide Europa-Modelle
-    # denselben Ausschnitt zeigen
+                split=False, crops=None, deadline=8),
+    # ZWEI Ausschnitte aus EINEM Abruf (das Feld kommt ohnehin global):
+    # Europa = Fläche von ICON-EU (29,5–70,5° N / 23,5° W–62,5° O), damit
+    # beide Europa-Modelle denselben Ausschnitt zeigen; Südostasien = Fläche
+    # der Himawari-Bilder (84–125° O / 5° S–28° N, `HIMAWARI_AREA`) für die
+    # Thailand-Ansicht. Der zweite kostet keinen Download, nur ~25 MB je Lauf.
     '0p1': Res('0p1', 'ecmwf-hres', 'ECMWF IFS 0,1°', list(range(0, 145, 3)),
-               split=True, box=(-23.5, 29.5, 62.5, 70.5), deadline=25),
+               split=True, deadline=25, crops={
+                   'ecmwf-hres': (-23.5, 29.5, 62.5, 70.5),
+                   'ecmwf-hres-asia': (84.0, -5.0, 125.0, 28.0),
+               }),
 }
 R = RES['0p25']  # in main() gesetzt
 
@@ -166,8 +173,6 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
             vals, grid, hours = decode_grib(fut.result())
         except Missing:
             continue
-        if R.box:
-            vals, grid = crop(vals, grid, R.box)
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals * 1000.0  # m → mm, doppelt genau (wird differenziert)
@@ -208,7 +213,7 @@ def main() -> None:
     if args.latest:
         print(run_id(run))
         return
-    ingest(R.model, R.label, run, R.steps[: args.steps], lambda s, pool: fetch_step(run, s, pool))
+    ingest(R.model, R.label, run, R.steps[: args.steps], lambda s, pool: fetch_step(run, s, pool), crops=R.crops)
 
 
 if __name__ == '__main__':

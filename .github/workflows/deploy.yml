@@ -194,7 +194,7 @@ jobs:
           path: public/nwp/ecmwf-ifs
           key: nwp-ecmwf-ifs-v7-${{ steps.ecmwf.outputs.run }}
 
-      # IFS 0,1° (Europa-Ausschnitt bis +144 h) — dasselbe Muster wie 0,25°,
+      # IFS 0,1° (Ausschnitte Europa + Südostasien bis +144 h) — dasselbe Muster wie 0,25°,
       # eigener Lauf (erscheint ~2 h später) und eigener Cache-Schlüssel. Je
       # Lauf ~1,8 GB Abruf bei ECMWF, ~3,5 min lokal gemessen; gespeichert
       # werden ~60 MB.
@@ -209,8 +209,11 @@ jobs:
         if: steps.hres.outputs.run != ''
         uses: actions/cache/restore@v4
         with:
-          path: public/nwp/ecmwf-hres
-          key: nwp-ecmwf-hres-v1-${{ steps.hres.outputs.run }}
+          # Europa UND Südostasien — zwei Ausschnitte aus EINEM Abruf
+          path: |
+            public/nwp/ecmwf-hres
+            public/nwp/ecmwf-hres-asia
+          key: nwp-ecmwf-hres-v2-${{ steps.hres.outputs.run }}
 
       - name: ECMWF-0,1°-Felder erzeugen (Open Data)
         id: hres-ingest
@@ -223,8 +226,10 @@ jobs:
         if: steps.hres-ingest.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: public/nwp/ecmwf-hres
-          key: nwp-ecmwf-hres-v1-${{ steps.hres.outputs.run }}
+          path: |
+            public/nwp/ecmwf-hres
+            public/nwp/ecmwf-hres-asia
+          key: nwp-ecmwf-hres-v2-${{ steps.hres.outputs.run }}
 
       # ICON JE LAUF im Cache, seit der Cron stündlich läuft: D2 rechnet alle
       # 3 h, EU alle 6 h — ohne Cache holte jeder Lauf dieselben ~190 MB neu
@@ -359,7 +364,7 @@ jobs:
           export PATH="/tmp/rclone-bin:$PATH"
           rclone version | head -1
           dirs=()
-          for m in ecmwf-ifs ecmwf-hres icon-d2 icon-eu; do
+          for m in ecmwf-ifs ecmwf-hres ecmwf-hres-asia icon-d2 icon-eu; do
             [[ -f "public/nwp/$m/meta.json" ]] && dirs+=("nwp/$m")
           done
           [[ "${{ steps.de.outcome }}" == success ]] && dirs+=(de)

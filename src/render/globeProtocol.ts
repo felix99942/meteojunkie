@@ -158,7 +158,21 @@ export function registerGlobeProtocol(source: GlobeFieldSourceFn): void {
   fieldSource = source
   if (registered) return
   registered = true
-  const handler = async (params: { url: string }, ac: AbortController) => {
+  // MapLibre-Fehler (5.24, `RasterTileSource.loadTile`): der AbortController
+  // der Kachel wird angelegt, dann wird auf `transformRequest` GEWARTET — wird
+  // die Kachel in dieser Lücke abgebrochen, ist er gelöscht, und `getImage`
+  // bekommt `undefined`. Wartet so ein Eintrag in MapLibres Bild-Warteschlange,
+  // wirft deren Abarbeitung (`abortController.signal` von undefined) und
+  // bleibt stehen: KEINE Kachel lädt mehr, die Karte bleibt leer. Gesehen
+  // 2026-10-28 in der Ansicht „Thailand" (68 Fehler, bei jedem Modell), in
+  // Europa/Alpen/Globus nie. Zwei Gegenmittel: die Warteschlange gar nicht
+  // erst füllen (unsere Kacheln rechnet der eigene Worker-Pool, MapLibres
+  // Netz-Drosselung bringt hier nichts), und ein solcher Eintrag, der dann
+  // sofort hierher kommt, wird als abgebrochen beantwortet statt zu werfen.
+  maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS = 256
+  maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS_PER_FRAME = 256
+  const handler = async (params: { url: string }, ac: AbortController | undefined) => {
+    if (!ac) throw new DOMException('Kachel bereits abgebrochen', 'AbortError')
     const p = parse(params.url)
     if (!p) throw new Error(`Modellkarten-Kachel: unbekannte URL ${params.url}`)
     noteVisible(p)

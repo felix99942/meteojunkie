@@ -642,8 +642,12 @@ export function GlobePanel() {
               aria-pressed={v.id === viewId}
               onClick={() => {
                 setViewId(v.id)
-                // ICON-EU/-D2 und IFS Europa sind europäisch — über Thailand bliebe die Karte leer
-                if (v.id === 'thailand' && modelId !== 'ecmwf-ifs') setModelId('ecmwf-ifs')
+                // Über Thailand IMMER mit IFS 0,1° Asien beginnen (auf Wunsch) —
+                // die feinste Wahl dort; ICON und IFS Europa blieben ohnehin leer.
+                // IFS 0,25° lässt sich danach von Hand wählen. Umgekehrt deckt
+                // der Asien-Ausschnitt Europa nicht ab.
+                if (v.id === 'thailand') setModelId('ecmwf-hres-asia')
+                if ((v.id === 'europe' || v.id === 'alps') && modelId === 'ecmwf-hres-asia') setModelId('ecmwf-hres')
               }}
             >
               {v.label}
@@ -745,7 +749,7 @@ export function GlobePanel() {
           <div className="globe-msg">
             {metaError
               ? import.meta.env.DEV
-                ? `Keine Daten für ${model.label} (${metaError}). Lokal erzeugen mit „npm run ingest:${modelId === 'ecmwf-ifs' ? 'ecmwf' : modelId}" (braucht Python mit scripts/requirements-nwp.txt).`
+                ? `Keine Daten für ${model.label} (${metaError}). Lokal erzeugen mit „npm run ingest:${modelId === 'ecmwf-ifs' ? 'ecmwf' : modelId.startsWith('ecmwf-hres') ? 'ecmwf-hres' : modelId}" (braucht Python mit scripts/requirements-nwp.txt).`
                 : `Die Daten für ${model.label} sind gerade nicht verfügbar.`
               : `Feld nicht ladbar: ${fieldError}`}
           </div>
@@ -884,7 +888,7 @@ export function GlobePanel() {
             <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noreferrer">
               ECMWF Open Data
             </a>{' '}
-            (IFS {modelId === 'ecmwf-hres' ? '0,1°' : '0,25°'},{' '}
+            (IFS {modelId.startsWith('ecmwf-hres') ? '0,1°' : '0,25°'},{' '}
             <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
               CC BY 4.0
             </a>

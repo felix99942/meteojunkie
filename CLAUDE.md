@@ -2887,11 +2887,15 @@ npm run preview   # gebautes dist/ servieren
   Radarfläche und tragen nur hier).
 - **Thailand-Tropendienst** (seit 2026-10-08, Quellen gemessen in den
   Projektnotizen): kein eigener Bereich, sondern Südostasien in DREI
-  vorhandenen. **In der VERÖFFENTLICHTEN Version nur der Satellit** (seit
-  2026-10-17, auf Wunsch, `THAILAND_ENABLED` in `config/features.ts`,
-  `VITE_ENABLE_THAILAND=false` in `build:web`): die Ansicht „Thailand" der
-  Modellkarten und die Region der Schnellwahl gibt es nur lokal; mit nur
-  einer Region verschwindet die Regionsauswahl ganz. Himawari bleibt überall. (1) **Satellit: Himawari-9 über NASA GIBS** (Gruppe
+  vorhandenen. **In der VERÖFFENTLICHTEN Version Satellit und Modellkarten**
+  (`THAILAND_ENABLED` in `config/features.ts`, `VITE_ENABLE_THAILAND=false`
+  in `build:web`, seit 2026-10-17 auf Wunsch): nur die Thailand-Region der
+  Schnellwahl gibt es lokal; mit nur einer Region verschwindet die
+  Regionsauswahl ganz. Die Modellkarten-Ansicht „Thailand" ist seit
+  2026-10-28 wieder öffentlich — mit **IFS 0,1° Asien** (`ecmwf-hres-asia`,
+  zweiter Ausschnitt desselben 0,1°-Abrufs, `crops` in `nwp_common.ingest`,
+  411×331 über der Himawari-Fläche, ~34 MB je Lauf); die Ansicht wählt es
+  von selbst, Europa/Alpen wechseln auf IFS Europa zurück. (1) **Satellit: Himawari-9 über NASA GIBS** (Gruppe
   „Himawari-9", `source: 'gibs'`, `HIMAWARI_AREA` 84–125° O / −5–28° N):
   Infrarot 10,4 µm, Sichtbar 0,64 µm (1 km, nur tagsüber) und Luftmassen-RGB.
   WMS wie EUMETView, CORS `*`, kein Key. **Die Zeitschritte kommen aus
@@ -3458,6 +3462,22 @@ npm run preview   # gebautes dist/ servieren
   samt Stilberechnung über alle Marker (gemessen beim Drehen, Pixeldichte 2:
   0,78 s → 0,02 s Stilberechnung). Dazu MapLibres Atmosphärenschein am Kugelrand
   (`sky['atmosphere-blend']`, beim Hineinzoomen ausgeblendet).
+  **MAPLIBRE-FEHLER IN DER BILD-WARTESCHLANGE — die Thailand-Ansicht blieb
+  dadurch LEER** (gesehen 2026-10-28, bei jedem Modell; Europa, Alpen und
+  Globus nie): `RasterTileSource.loadTile` legt den AbortController der
+  Kachel an und WARTET dann auf `transformRequest`; wird die Kachel in der
+  Lücke abgebrochen, ist er gelöscht, und `ImageRequest.getImage` bekommt
+  `undefined`. Wartet so ein Eintrag in der Warteschlange, wirft
+  `processQueue` (`abortController.signal`) und arbeitet nie wieder etwas
+  ab — es lädt KEINE Kachel mehr, während die Werteanzeige (Hauptthread)
+  weiter richtige Zahlen zeigt. Gegenmittel in `registerGlobeProtocol`:
+  `maplibregl.config.MAX_PARALLEL_IMAGE_REQUESTS(_PER_FRAME)` = 256, damit
+  die Warteschlange gar nicht erst volläuft (unsere Kacheln rechnet der
+  Worker-Pool, MapLibres Netz-Drosselung bringt hier nichts; die übrigen
+  Karten der Seite geben MapLibre nur Data-/Blob-URLs), und das Protokoll
+  beantwortet einen fehlenden Controller als Abbruch statt zu werfen.
+  Danach 0 Fehler in allen vier Ansichten. Bei einem MapLibre-Update
+  prüfen, ob `loadTile` das noch tut — dann lässt sich beides wieder streichen.
   **Vite-Dev-Server und neue Läufe**: Vite merkt sich beim Start, welche
   Dateien in `public/` liegen, und erfährt von Dateien in einem UMBENANNTEN
   Verzeichnis nichts — der Ingest legt jeden Lauf genau so ab. Nach einem

@@ -33,10 +33,10 @@ export const POINT_FORECASTS_ENABLED =
   import.meta.env.VITE_ENABLE_POINT_FORECASTS !== 'false'
 
 /**
- * THAILAND_ENABLED: Südostasien in Modellkarten (Ansicht „Thailand") und in
- * der Schnellwahl der Orte gibt es nur LOKAL — in der veröffentlichten
- * Version ausgeblendet (auf Wunsch). AUSGENOMMEN ist der Satellitenbereich:
- * die Himawari-Produkte bleiben überall.
+ * THAILAND_ENABLED: die Thailand-Orte in der Schnellwahl gibt es nur LOKAL —
+ * in der veröffentlichten Version ausgeblendet (auf Wunsch, 2026-10-17).
+ * AUSGENOMMEN sind der Satellitenbereich (Himawari) und seit 2026-10-28 die
+ * Modellkarten (Ansicht „Thailand" mit IFS 0,1° Asien) — beide überall.
  *
  * Wiedereinschalten: `VITE_ENABLE_THAILAND` aus `npm run build:web` entfernen.
  */
