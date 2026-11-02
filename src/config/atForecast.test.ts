@@ -3,7 +3,7 @@
 // ein sechs Wochen alter Lauf sah aus wie der von heute.
 
 import { describe, expect, it } from 'vitest'
-import { forecastFreshness, STALE_RUN_HOURS } from './atForecast'
+import { forecastFreshness, MOS_TIER_ZOOM, mosStationTier, STALE_RUN_HOURS } from './atForecast'
 
 const H = 3_600_000
 const NOW = Date.UTC(2026, 8, 30, 12)
@@ -35,5 +35,19 @@ describe('forecastFreshness', () => {
   // Fehlalarm bei jedem Ladefehler entwertet den Hinweis.
   it('hält sich bei unbekannten Zeiten heraus', () => {
     expect(forecastFreshness(Number.NaN, Number.NaN, NOW)).toBe('fresh')
+  })
+})
+
+describe('mosStationTier', () => {
+  it('in Deutschland das Stationsnetz in der Übersicht, Zusatzpunkte erst beim Zoomen', () => {
+    expect(mosStationTier({ id: '10655', country: 'DEU' })).toBe(0) // Würzburg
+    expect(mosStationTier({ id: 'A051', country: 'DEU' })).toBe(1)
+    expect(mosStationTier({ id: 'E123', country: null })).toBe(1) // Seepunkt
+    expect(MOS_TIER_ZOOM[1]).toBeGreaterThan(MOS_TIER_ZOOM[0])
+  })
+  it('Österreich, Schweiz und die übrigen Länder immer vollständig', () => {
+    expect(mosStationTier({ id: 'Z101', country: 'AUT' })).toBe(0)
+    expect(mosStationTier({ id: 'P123', country: 'CHE' })).toBe(0)
+    expect(mosStationTier({ id: 'P456', country: 'CZE' })).toBe(0)
   })
 })

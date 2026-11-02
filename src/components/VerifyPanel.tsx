@@ -140,8 +140,14 @@ const ROUGH_DAYS = 10
  */
 const MIN_EVENTS = 10
 
-/** Fehlerstufen der Temperatur, in Kelvin. */
-const TEMP_ERR_STEPS = [0.7, 1.2, 1.8, 2.6, 3.6]
+/**
+ * Stützpunkte des Farbverlaufs der Temperatur, in Kelvin; unter dem ersten
+ * ein Treffer. Am unteren Ende DICHT (auf Wunsch, 2026-11-02): mit
+ * 0,7/1,2/1,8 … lagen die kleinen Abweichungen in den zwei blassesten Tönen
+ * und sahen gleich aus — die Stützpunkte liegen im Verlauf gleich weit
+ * auseinander, wer dort enger setzt, bekommt dort mehr Farbe.
+ */
+const TEMP_ERR_STEPS = [0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.6, 5]
 
 /**
  * Was verglichen wird: Messgröße ↔ Vorhersagevariable ↔ Tagesreduktion ↔
@@ -222,7 +228,8 @@ const TARGETS: Record<string, Target> = {
     thresholds: [0.1, 1, 5, 10],
     // Ein Tagesniederschlag streut ganz anders als eine Temperatur: 1 mm
     // daneben ist gut, 10 mm daneben ist ein verpasstes Ereignis.
-    errSteps: [0.5, 1, 2, 5, 10],
+    // unten dicht wie bei der Temperatur — Treffer unter 0,3 mm
+    errSteps: [0.3, 0.6, 1, 1.5, 2.5, 4, 7, 12],
     errKind: 'precip',
   },
 }
@@ -369,7 +376,12 @@ function ErrColorKey({ spec }: { spec: Target }) {
           {d.label}
         </span>
       ))}
-      <span className="label-muted">stufenlos — je dunkler, desto größer die Abweichung</span>
+      <span
+        className="label-muted"
+        title="Die Farbe läuft stufenlos zwischen diesen Werten; unten liegen sie dichter, damit kleine Abweichungen unterscheidbar bleiben"
+      >
+        stufenlos über {spec.errSteps.map((v) => fmt1(v)).join(' · ')} {spec.errUnit} — je dunkler, desto größer die Abweichung
+      </span>
     </div>
   )
 }

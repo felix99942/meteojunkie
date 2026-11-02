@@ -8,6 +8,8 @@ import {
   FORECAST_PARAMS,
   forecastFreshness,
   getForecastSpec,
+  MOS_TIER_ZOOM,
+  mosStationTier,
   STALE_RUN_HOURS,
 } from '../config/atForecast'
 import { formatRunLong } from '../config/runs'
@@ -34,6 +36,9 @@ export function AtForecastPanel() {
   const [loading, setLoading] = useState(false)
   const [idx, setIdx] = useState(0)
   const [selected, setSelected] = useState<MosStation | null>(null)
+  // Übersicht nur mit den wichtigsten Stationen, beim Hineinzoomen mehr
+  // (`mosStationTier`) — 3.060 Punkte über D-A-CH waren ein Teppich
+  const minZoom = useMemo(() => stations?.map((s) => MOS_TIER_ZOOM[mosStationTier(s)]), [stations])
 
   const spec = getForecastSpec(paramKey)
 
@@ -229,6 +234,7 @@ export function AtForecastPanel() {
               view={DACH_VIEW}
               basemapUrl={europeBasemapUrl}
               labelMinGap={38}
+              minZoom={minZoom}
               onSelect={(i) => setSelected(stations[i])}
             />
             {selected && (

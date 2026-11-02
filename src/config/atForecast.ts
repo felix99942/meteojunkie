@@ -83,3 +83,27 @@ export function getForecastSpec(key: string): ForecastSpec {
   if (!s) throw new Error(`Unbekannter Vorhersageparameter: ${key}`)
   return s
 }
+
+// --- Ausdünnung der Stationen nach Zoom ----------------------------------------
+//
+// In DEUTSCHLAND sind die Stationen für die ÜBERSICHT zu dicht (auf Wunsch,
+// 2026-11-02): 2.614 der 3.060 MOSMIX-Punkte liegen dort. In der Übersicht
+// steht deshalb das STATIONSNETZ (WMO-Synopstationen, fünfstellige Kennung),
+// die deutschen Zusatzpunkte kommen erst beim Hineinzoomen. ÖSTERREICH, die
+// Schweiz und alle übrigen Länder zeigen IMMER alle Stationen — dort ist das
+// Netz nicht zu dicht. Das Land steht im Katalog (`country`, im Ingest aus den
+// Natural-Earth-Grenzen); Punkte auf See (null) zählen zu Deutschland, es
+// sind die Seewetterpunkte in Nord- und Ostsee.
+//
+// Eine erste Fassung zeigte in der Übersicht nur Flughäfen und Bergstationen
+// (195) — eine „komische Vorauswahl", Städte wie Würzburg fehlten.
+
+export type MosTier = 0 | 1
+
+/** Ab welchem Zoomfaktor der Karte eine Stufe erscheint */
+export const MOS_TIER_ZOOM: Record<MosTier, number> = { 0: 1, 1: 3 }
+
+export function mosStationTier(s: { id: string; country?: string | null }): MosTier {
+  if (/^\d{5}$/.test(s.id)) return 0
+  return s.country === 'DEU' || s.country == null ? 1 : 0
+}

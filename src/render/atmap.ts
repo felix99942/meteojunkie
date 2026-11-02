@@ -193,11 +193,14 @@ export function drawStationPoints(
     markStroke?: string
     colors?: (string | null)[]
     noDataFill?: string
+    /** Nur diese Stationen zeichnen (Ausdünnung nach Zoom); hervorgehobene und markierte immer */
+    show?: (i: number) => boolean
   },
 ): void {
   ctx.save()
   ctx.lineWidth = 1
   for (let i = 0; i < stations.length; i++) {
+    if (opts.show && !opts.show(i) && i !== opts.highlightIdx && i !== opts.markedIdx) continue
     const s = stations[i]
     const { x, y } = project(g, s.lon, s.lat)
     const hl = i === opts.highlightIdx
@@ -273,9 +276,16 @@ export function drawStationLabels(
     minGap?: number
     /** Schriftgröße der Werte (px) — größer, wenn es nur eine Handvoll gibt (Gebietsmittel). */
     fontPx?: number
+    /** Nur diese Stationen beschriften (wie bei den Punkten) */
+    show?: (i: number) => boolean
+    /**
+     * Reihenfolge der Beschriftung — bei der Ausdünnung gewinnt je Zelle die
+     * ZUERST genannte Station, also gehören die wichtigsten nach vorn
+     */
+    order?: number[]
   } = {},
 ): void {
-  const { colors, highlightIdx, markedIdx, minGap = 0, fontPx = 16 } = opts
+  const { colors, highlightIdx, markedIdx, minGap = 0, fontPx = 16, show, order } = opts
   const markColor = opts.markColor ?? '#ffd24a'
   ctx.save()
   ctx.font = `700 ${fontPx}px system-ui, sans-serif`
@@ -284,7 +294,9 @@ export function drawStationLabels(
   ctx.lineJoin = 'round'
   // Belegte Zellen (Raster in minGap-Auflösung) — schnelle Ausdünnung dichter Netze.
   const occupied = minGap > 0 ? new Set<string>() : null
-  for (let i = 0; i < stations.length; i++) {
+  for (let n = 0; n < stations.length; n++) {
+    const i = order ? order[n] : n
+    if (show && !show(i) && i !== highlightIdx) continue
     const v = values[i]
     if (v == null || !Number.isFinite(v)) continue
     // Die markierte Station kommt ZULETZT — ihr Kästchen soll über den
@@ -350,10 +362,12 @@ export function nearestStation(
   px: number,
   py: number,
   maxDist: number,
+  show?: (i: number) => boolean,
 ): number {
   let best = -1
   let bestD2 = maxDist * maxDist
   for (let i = 0; i < stations.length; i++) {
+    if (show && !show(i)) continue
     const { x, y } = project(g, stations[i].lon, stations[i].lat)
     const d2 = (x - px) ** 2 + (y - py) ** 2
     if (d2 <= bestD2) {

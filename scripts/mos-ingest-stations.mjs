@@ -11,6 +11,38 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+/**
+ * Ländergrenzen (Natural Earth 1:50m) für das LAND je Station: die Karte
+ * dünnt nur die deutschen Zusatzpunkte nach Zoom aus (auf Wunsch,
+ * 2026-11-02) — an der Kennung ist das Land nicht abzulesen (die P-Punkte
+ * reichen von Norditalien bis an die Ostsee, die Z-Punkte liegen in Tirol).
+ */
+const COUNTRIES = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson'
+
+function inRing(ring, lon, lat) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+function inPolygon(poly, lon, lat) {
+  if (!inRing(poly[0], lon, lat)) return false
+  return !poly.slice(1).some((hole) => inRing(hole, lon, lat))
+}
+
+/** ISO-Kürzel (3 Buchstaben) des Lands, in dem der Punkt liegt; ausserhalb (Küste, Meer) das nächste binnen ~10 km, sonst null */
+function countryOf(countries, lon, lat) {
+  for (const [code, polys] of countries) if (polys.some((p) => inPolygon(p, lon, lat))) return code
+  for (const d of [0.05, 0.1, 0.15])
+    for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]])
+      for (const [code, polys] of countries) if (polys.some((p) => inPolygon(p, lon + dx, lat + dy))) return code
+  return null
+}
+
 const CATALOG =
   'https://www.dwd.de/DE/leistungen/met_verfahren_mosmix/mosmix_stationskatalog.cfg?view=nasPublication&nn=16102'
 
@@ -58,6 +90,19 @@ async function main() {
     const icao = ln.slice(6, 10).trim()
     stations.push({ id, icao: icao || null, name, lat, lon, altitude: Number.isFinite(elev) ? elev : null })
   }
+
+  process.stdout.write(`Lade Ländergrenzen …\n`)
+  const geo = await (await fetch(COUNTRIES)).json()
+  const countries = geo.features.map((f) => [
+    f.properties.ADM0_A3,
+    f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates,
+  ])
+  const tally = {}
+  for (const s of stations) {
+    s.country = countryOf(countries, s.lon, s.lat)
+    tally[s.country] = (tally[s.country] ?? 0) + 1
+  }
+  process.stdout.write(`Länder: ${JSON.stringify(tally)}\n`)
 
   if (stations.length < 500) throw new Error(`Unerwartet wenige Stationen (${stations.length}) — Abbruch`)
   process.stdout.write(`DACH-MOSMIX-Stationen: ${stations.length}\n`)

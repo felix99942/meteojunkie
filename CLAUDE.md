@@ -1083,6 +1083,22 @@ npm run preview   # gebautes dist/ servieren
   modulweit). Die Reihen werden über ihre TERMINE ausgerichtet
   (`alignSeries`), nicht über den Index. Klimadaten bleiben davon unberührt
   (Österreich/TAWES).
+  **AUSGEDÜNNT NACH ZOOM — NUR IN DEUTSCHLAND** (seit 2026-11-02, auf
+  Wunsch; `mosStationTier`/`MOS_TIER_ZOOM` in `config/atForecast.ts` mit
+  Tests, `AtClimateMap.minZoom`): 2.614 der 3.060 Punkte liegen in
+  Deutschland, dort steht in der Ausgangsansicht nur das STATIONSNETZ
+  (WMO-Synopstationen, fünfstellige Kennung), ab 3-fachem Zoom kommen die
+  MOSMIX-Zusatzpunkte dazu. Österreich, die Schweiz und alle übrigen Länder
+  zeigen IMMER alle Stationen. Das LAND steht seither im Katalog
+  (`country`, ISO alpha-3, `mos-ingest-stations.mjs` per Punkt-in-Polygon
+  gegen Natural Earth 1:50m) — an der Kennung ist es nicht abzulesen (die
+  P-Punkte reichen von Norditalien bis an die Ostsee, die Z-Punkte liegen in
+  Tirol); 29 Seepunkte ohne Land zählen zu Deutschland. Eine erste Fassung
+  zeigte in der Übersicht nur Flughäfen und Bergstationen (195) — „komische
+  Vorauswahl", Würzburg fehlte. Bei der Label-Ausdünnung gewinnt je Zelle
+  die Netzstation (`drawStationLabels(…, { order })`), ausgeblendete sind
+  auch für Hover und Klick nicht da; hervorgehobene und markierte zeigt die
+  Karte immer.
   **LOKAL IST DIE VORHERSAGE SO ALT WIE DER LETZTE EIGENE INGEST** — die
   JSONs sind gitignored und entstehen beim Bauen: auf der Seite alle 3 h per
   Cron, im Arbeitsbaum nur durch `npm run ingest:mos:forecast`. Am
@@ -4000,7 +4016,10 @@ npm run preview   # gebautes dist/ servieren
   goldenem Rand, beim Niederschlag auch „trocken angesagt, trocken
   geblieben"), darüber Temperatur zu warm ROT / zu kalt BLAU, Niederschlag
   zu nass GRÜN → BLAU / zu trocken BRAUN, STUFENLOS mit dem Fehler (die
-  `errSteps` sind Stützpunkte des Verlaufs, `rampAt`), jedes Ende wird mit
+  `errSteps` sind Stützpunkte des Verlaufs, `rampAt`, und am unteren Ende
+  DICHT: Temperatur 0,5 · 0,8 · 1,1 · 1,5 · 2 · 2,6 · 3,6 · 5 K, Treffer unter
+  0,5 K; Niederschlag 0,3 · 0,6 · 1 · 1,5 · 2,5 · 4 · 7 · 12 mm — mit
+  0,7/1,2/1,8 … lagen die kleinen Abweichungen in zwei blassen Tönen), jedes Ende wird mit
   dem Fehler DUNKLER (dunkelblau = große Abweichung, auf Wunsch). Die FARBEN
   sind die des GeoSphere-Klimamonitors (`colorRamp` aus
   `api.zamg.ac.at/climon/v1/data/spartacus/raster`, `TMa…_IMG` = RdBu,

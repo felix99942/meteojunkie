@@ -9,7 +9,7 @@
 // OpenStreetMap-Daten): dunkel und farbarm, damit die farbigen Werte die
 // einzige Farbe in der Karte bleiben.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
 import {
   AT_VIEW,
@@ -92,6 +92,7 @@ export function AtClimateMap({
   labelPx = 16,
   highlightIdx = null,
   markedIdx = null,
+  minZoom,
 }: {
   stations: MapStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
@@ -123,6 +124,13 @@ export function AtClimateMap({
    * beim Hover bleibt ihre WERTFARBE erhalten.
    */
   markedIdx?: number | null
+  /**
+   * Ab welchem Zoomfaktor (1 = eingepasst, bis 20) eine Station erscheint —
+   * parallel zu `stations`. Ohne: alle immer. Für dichte Netze (MOS, 3.060
+   * Stationen), damit die Übersicht lesbar bleibt und beim Hineinzoomen mehr
+   * kommen; die wichtigeren beschriften zuerst.
+   */
+  minZoom?: number[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -130,6 +138,16 @@ export function AtClimateMap({
   const [basemap, setBasemap] = useState<Basemap | null>(null)
   const [hover, setHover] = useState<{ station: MapStation; idx: number; x: number; y: number } | null>(null)
   const hoverIdxRef = useRef<number>(-1)
+  // Beschriftungsreihenfolge: niedrigste Stufe zuerst, sonst Katalogreihenfolge
+  const labelOrder = useMemo(() => {
+    if (!minZoom) return undefined
+    return stations.map((_, i) => i).sort((a, b) => minZoom[a] - minZoom[b] || a - b)
+  }, [stations, minZoom])
+  // liest den Zoom erst beim Zeichnen — der steht in `tfRef`, nicht im Zustand
+  const show = useMemo(
+    () => (minZoom ? (i: number) => minZoom[i] <= tfRef.current.zoom + 1e-9 : undefined),
+    [minZoom],
+  )
   // Zoom/Pan-Transform im Bildschirmraum: screen = basisProjektion·zoom + offset.
   // Als Ref (kein Re-Render pro Rad/Zug); Neuzeichnen über drawRef.
   const tfRef = useRef({ zoom: 1, ox: 0, oy: 0 })
@@ -210,6 +228,7 @@ export function AtClimateMap({
         markStroke: COLORS.mark,
         colors,
         noDataFill: COLORS.noData,
+        show,
       })
       // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
       if (values) {
@@ -220,6 +239,8 @@ export function AtClimateMap({
           markColor: COLORS.mark,
           minGap: labelMinGap,
           fontPx: labelPx,
+          show,
+          order: labelOrder,
         })
       }
     }
@@ -229,7 +250,7 @@ export function AtClimateMap({
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover, view, labelMinGap, labelPx, highlightIdx, markedIdx])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap, labelPx, highlightIdx, markedIdx, show, labelOrder])
 
   // Nachgeladene Kacheln: gebündelt im nächsten Frame neu zeichnen — beim
   // Öffnen kommen ein paar Dutzend fast gleichzeitig.
@@ -304,7 +325,7 @@ export function AtClimateMap({
       drawRef.current()
       return
     }
-    const idx = nearestStation(g, stations, px, py, 10)
+    const idx = nearestStation(g, stations, px, py, 10, show)
     hoverIdxRef.current = idx
     setHover(idx >= 0 ? { station: stations[idx], idx, x: px, y: py } : null)
   }
@@ -325,7 +346,7 @@ export function AtClimateMap({
     if (!g || !canvas || !onSelect) return
     if (dragRef.current?.moved) return // war ein Pan, keine Auswahl
     const rect = canvas.getBoundingClientRect()
-    const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 10)
+    const idx = nearestStation(g, stations, e.clientX - rect.left, e.clientY - rect.top, 10, show)
     if (idx >= 0) onSelect(idx)
   }
 

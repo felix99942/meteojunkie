@@ -9,6 +9,8 @@ export interface MosStation {
   lat: number
   lon: number
   altitude: number | null
+  /** Land (ISO 3166 alpha-3, aus den Natural-Earth-Grenzen im Ingest); null = auf See */
+  country?: string | null
 }
 
 /** Vorhersage eines Parameters: stündlich (timeSteps) oder täglich (days). */
