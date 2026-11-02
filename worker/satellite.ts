@@ -39,9 +39,19 @@ interface Job {
   tier: ImageTier
 }
 
+/**
+ * Neuester Termin, von dem BEIDE Stufen im Vorrat liegen, als
+ * `sat/<id>/latest.json` — die Startseite liest ihn statt des Capabilities
+ * von EUMETView (seit 2026-11-02): das Capabilities nennt oft schon einen
+ * Termin, den der Vorrat (alle 10 Minuten) noch nicht hat, und dann rendert
+ * EUMETView das scharfe Bild auf Anfrage — gemessen 1 bis über 10 Sekunden.
+ */
+export const latestKey = (id: string) => `sat/${id}/latest.json`
+
 export async function mirrorSatellite(bucket: R2BucketLike, now = Date.now()): Promise<string> {
   const jobs: Job[] = []
   const stale: string[] = []
+  const present = new Map<string, Set<string>>()
   for (const id of MIRRORED_SATELLITE_IDS) {
     const product = SATELLITE_PRODUCTS.find((p) => p.id === id)
     if (!product) continue
@@ -50,6 +60,7 @@ export async function mirrorSatellite(bucket: R2BucketLike, now = Date.now()): P
     const extent = parseSatelliteCapabilities(await capsRes.text(), product)
     if (!extent) continue
     const have = await listKeys(bucket, `sat/${id}/`)
+    present.set(id, have)
     for (const key of have) {
       const t = mirrorKeyTime(key)
       if (t !== null && t < now - KEEP_MS) stale.push(key)
@@ -78,9 +89,9 @@ export async function mirrorSatellite(bucket: R2BucketLike, now = Date.now()): P
         const type = res.headers.get('content-type') ?? ''
         // Eine ServiceException kommt als XML mit HTTP 200 — nicht ablegen
         if (!res.ok || !type.startsWith('image/')) throw new Error(`HTTP ${res.status} ${type}`)
-        await bucket.put(satelliteMirrorKey(job.product, job.time, job.tier), await res.arrayBuffer(), {
-          httpMetadata: { contentType: type },
-        })
+        const key = satelliteMirrorKey(job.product, job.time, job.tier)
+        await bucket.put(key, await res.arrayBuffer(), { httpMetadata: { contentType: type } })
+        present.get(job.product.id)?.add(key)
         ok++
       } catch {
         // Beim nächsten Lauf erneut — der Dienst wirft vereinzelt 500er
@@ -90,5 +101,15 @@ export async function mirrorSatellite(bucket: R2BucketLike, now = Date.now()): P
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker))
   if (stale.length) await bucket.delete(stale.slice(0, 1000))
+  // Neuesten vollständigen Termin je Produkt ausweisen
+  for (const [id, keys] of present) {
+    const product = SATELLITE_PRODUCTS.find((p) => p.id === id)!
+    let newest = 0
+    for (const key of keys) {
+      const t = mirrorKeyTime(key)
+      if (t !== null && t > newest && key.includes('/hi/') && keys.has(satelliteMirrorKey(product, t, 'lo'))) newest = t
+    }
+    if (newest) await bucket.put(latestKey(id), JSON.stringify({ time: newest }), { httpMetadata: { contentType: 'application/json' } })
+  }
   return `Satellit: ${ok} geholt, ${failed} gescheitert, ${jobs.length - todo.length} offen, ${stale.length} gelöscht`
 }

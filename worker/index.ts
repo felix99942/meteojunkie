@@ -41,12 +41,12 @@ const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar
 // Ein Modelllauf liegt unter seiner Kennung und ändert sich nie mehr
 // (nwp/<modell>/<lauf>/<größe>/<schritt>.webp, Lauf = 10 Ziffern).
 // Dasselbe gilt für Satelliten- und Radarbilder, die unter ihrem Termin liegen.
-const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/|radar\/[^/]+\/\d{8}T\d{4}Z)/
+const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/[^/]+\/(lo|hi)\/|radar\/[^/]+\/\d{8}T\d{4}Z)/
 
 /** Cache-Dauer je Pfad. Alles ausser den Laufdateien wechselt stündlich. */
 function cacheControl(key: string): string {
   if (IMMUTABLE.test(key)) return 'public, max-age=31536000, immutable'
-  if (key.endsWith('/meta.json') || key.startsWith('radar/')) return 'public, max-age=60'
+  if (key.endsWith('/meta.json') || key.endsWith('/latest.json') || key.startsWith('radar/')) return 'public, max-age=60'
   return 'public, max-age=300'
 }
 

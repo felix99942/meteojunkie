@@ -4471,9 +4471,15 @@ npm run preview   # gebautes dist/ servieren
   Stromlinien.
   **UNTERGRUND: DAS AKTUELLE GEOCOLOUR-BILD** (seit 2026-11-02, auf
   Wunsch; `render/heroBase.ts` mit Tests): unter der Strömung das neueste
-  scharfe MTG-Geocolour aus dem R2-Vorrat (`loadSatelliteImage`, also
-  Vorrat zuerst, sonst EUMETView; jüngster Termin, sonst bis zu zwei ältere,
-  alle 10 min neu). Geocolour bringt Tag UND Nacht selbst mit — tags
+  MTG-Geocolour aus dem R2-Vorrat, alle 10 min neu. **Der Termin kommt aus
+  `sat/geocolour/latest.json`**, das der Satelliten-Cron schreibt (neuester
+  Termin mit BEIDEN Stufen im Vorrat), erst die Vorschau, dann das scharfe
+  Bild — gemessen ~0,5 s bei leerem Cache, drei Abrufe same-origin. Vorher
+  kam der Termin aus dem Capabilities von EUMETView: das nannte oft einen
+  Termin, den der Vorrat noch nicht hatte, und EUMETView renderte das
+  scharfe Bild dann auf Anfrage (1 bis über 10 s, „lädt manchmal sehr
+  langsam"). Nur ohne `latest.json` noch der alte Weg (`loadSatelliteImage`,
+  jüngster Termin, sonst bis zu zwei ältere). Geocolour bringt Tag UND Nacht selbst mit — tags
   Echtfarben samt Schnee, wo es wolkenfrei ist, nachts Infrarotwolken über
   den Stadtlichtern — und liegt auf genau dieser Fläche (`SATELLITE_AREA` =
   `GROUND_BOUNDS`). Abgedunkelt um 0,4, sonst stehen die weißen Partikel auf

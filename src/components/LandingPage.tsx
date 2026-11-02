@@ -12,7 +12,7 @@ import { loadBasemap } from '../render/basemap'
 import { FALLBACK_WIND, HeroWind, heroProjection } from '../render/heroWind'
 import { dayNightNeeds, drawDayNightBase, drawSatelliteBase } from '../render/heroBase'
 import { fetchSatelliteExtent, loadSatelliteImage } from '../api/eumetsat'
-import { SATELLITE_PRODUCTS, satelliteTimes } from '../config/satellite'
+import { SATELLITE_PRODUCTS, satelliteMirrorKey, satelliteTimes } from '../config/satellite'
 import { GROUND_BOUNDS, GROUND_URL, NIGHT_URL } from '../config/ground'
 import { nearestStepIndex, runMs, sampleWind, validMs, type GlobeMeta, type GlobeModelId } from '../config/globe'
 import { runLabel, validLabel } from '../config/globeFormat'
@@ -131,8 +131,37 @@ export function LandingPage() {
         im.src = url
       })
     const product = SATELLITE_PRODUCTS.find((p) => p.id === 'geocolour')!
+    const show = (img: HTMLImageElement, time: number) => {
+      if (cancelled) return
+      sat = { img, time }
+      setSatTime(time)
+      redraw()
+    }
+    // SCHNELL: der Worker nennt den neuesten Termin, der im Vorrat liegt
+    // (`sat/geocolour/latest.json`), und beide Stufen kommen same-origin aus
+    // R2 — zuerst die Vorschau, gleich danach das scharfe Bild. Über das
+    // Capabilities von EUMETView war es oft ein Termin, den der Vorrat noch
+    // nicht hatte, und EUMETView rendert ihn dann 1 bis über 10 Sekunden.
+    const fromMirror = async (): Promise<boolean> => {
+      const r = await fetch(`${import.meta.env.BASE_URL}sat/geocolour/latest.json`, { cache: 'no-cache' })
+      if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) return false
+      const { time } = (await r.json()) as { time: number }
+      if (sat && sat.time >= time) return true
+      const url = (tier: 'lo' | 'hi') => `${import.meta.env.BASE_URL}${satelliteMirrorKey(product, time, tier)}`
+      const lo = await loadImg(url('lo'))
+      if (!sat || sat.time < time) show(lo, time)
+      loadImg(url('hi'))
+        .then((hi) => show(hi, time))
+        .catch(() => {})
+      return true
+    }
     const loadSat = async () => {
       if (dev?.get('base') === 'fallback') return
+      try {
+        if (await fromMirror()) return
+      } catch {
+        /* weiter über EUMETView */
+      }
       try {
         const ext = await fetchSatelliteExtent(product)
         // jüngster Termin zuerst; fehlt er noch im Vorrat und beim Dienst,
@@ -143,10 +172,7 @@ export function LandingPage() {
             const url = await loadSatelliteImage(product, t, 'hi')
             const img = await loadImg(url)
             URL.revokeObjectURL(url)
-            if (cancelled) return
-            sat = { img, time: t }
-            setSatTime(t)
-            redraw()
+            show(img, t)
             return
           } catch {
             /* nächster Termin */
