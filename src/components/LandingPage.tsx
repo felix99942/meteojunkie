@@ -9,7 +9,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { FeatureCollection } from 'geojson'
 import { loadGlobeField, loadGlobeMeta, setGlobeMeta } from '../api/globeData'
 import { loadBasemap } from '../render/basemap'
-import { FALLBACK_WIND, HeroWind } from '../render/heroWind'
+import { FALLBACK_WIND, HeroWind, heroProjection } from '../render/heroWind'
+import { dayNightNeeds, drawDayNightBase, drawSatelliteBase } from '../render/heroBase'
+import { fetchSatelliteExtent, loadSatelliteImage } from '../api/eumetsat'
+import { SATELLITE_PRODUCTS, satelliteTimes } from '../config/satellite'
+import { GROUND_BOUNDS, GROUND_URL, NIGHT_URL } from '../config/ground'
 import { nearestStepIndex, runMs, sampleWind, validMs, type GlobeMeta, type GlobeModelId } from '../config/globe'
 import { runLabel, validLabel } from '../config/globeFormat'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
@@ -37,6 +41,7 @@ function lineStrings(fc: FeatureCollection | undefined): number[][][] {
 
 export function LandingPage() {
   const setView = useAppView((s) => s.setView)
+  const baseRef = useRef<HTMLCanvasElement>(null)
   const linesRef = useRef<HTMLCanvasElement>(null)
   const windRef = useRef<HTMLCanvasElement>(null)
   const heroRef = useRef<HeroWind | null>(null)
@@ -101,11 +106,128 @@ export function LandingPage() {
     }
   }, [])
 
+  // Untergrund (render/heroBase.ts): das AKTUELLE Geocolour-Bild — es bringt
+  // Tag und Nacht selbst mit, samt Schnee und Stadtlichtern. Erst wenn es
+  // nicht zu bekommen ist, der Rückfall aus Blue und Black Marble mit der
+  // Dämmerungslinie; der wartet einige Sekunden, damit er beim normalen
+  // Laden nicht kurz aufblitzt.
+  const [satTime, setSatTime] = useState<number | null>(null)
+  useEffect(() => {
+    const canvas = baseRef.current
+    if (!canvas) return
+    let cancelled = false
+    let sat: { img: HTMLImageElement; time: number } | null = null
+    let fallback = false
+    let night: HTMLImageElement | null = null
+    let day: HTMLImageElement | null = null
+    let loadingNight = false
+    let loadingDay = false
+    const dev = import.meta.env.DEV ? new URLSearchParams(location.search) : null
+    const loadImg = (url: string) =>
+      new Promise<HTMLImageElement>((ok, fail) => {
+        const im = new Image()
+        im.onload = () => ok(im)
+        im.onerror = fail
+        im.src = url
+      })
+    const product = SATELLITE_PRODUCTS.find((p) => p.id === 'geocolour')!
+    const loadSat = async () => {
+      if (dev?.get('base') === 'fallback') return
+      try {
+        const ext = await fetchSatelliteExtent(product)
+        // jüngster Termin zuerst; fehlt er noch im Vorrat und beim Dienst,
+        // tut es der davor
+        for (const t of satelliteTimes(ext, 30 * 60_000).reverse().slice(0, 3)) {
+          if (cancelled || (sat && sat.time >= t)) return
+          try {
+            const url = await loadSatelliteImage(product, t, 'hi')
+            const img = await loadImg(url)
+            URL.revokeObjectURL(url)
+            if (cancelled) return
+            sat = { img, time: t }
+            setSatTime(t)
+            redraw()
+            return
+          } catch {
+            /* nächster Termin */
+          }
+        }
+      } catch {
+        /* Rückfall greift */
+      }
+      fallback = true
+      redraw()
+    }
+    const redraw = () => {
+      if (cancelled) return
+      const w = canvas.clientWidth
+      const h = canvas.clientHeight
+      if (!w || !h) return
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr)
+        canvas.height = Math.round(h * dpr)
+      }
+      const p = heroProjection(w, h)
+      if (sat) {
+        drawSatelliteBase(canvas, p, w, h, dpr, GROUND_BOUNDS, sat.img)
+        canvas.style.opacity = '1'
+        return
+      }
+      if (!fallback) return
+      // nur im Dev-Build: `?t=2026-11-02T15:30Z` zeigt den Rückfall zu einer
+      // anderen Zeit, `?base=fallback` erzwingt ihn
+      const devT = dev?.get('t')
+      const now = devT ? Date.parse(devT) : Date.now()
+      const need = dayNightNeeds(p, w, h, now)
+      if (need.night && !night && !loadingNight) {
+        loadingNight = true
+        loadImg(NIGHT_URL)
+          .then((im) => {
+            night = im
+            redraw()
+          })
+          .catch(() => {})
+      }
+      if (need.day && !day && !loadingDay) {
+        loadingDay = true
+        loadImg(GROUND_URL)
+          .then((im) => {
+            day = im
+            redraw()
+          })
+          .catch(() => {})
+      }
+      drawDayNightBase(canvas, p, w, h, dpr, GROUND_BOUNDS, day, night, now)
+      if (day || night) canvas.style.opacity = '1'
+    }
+    void loadSat()
+    const fallbackTimer = setTimeout(() => {
+      fallback = true
+      redraw()
+    }, 6000)
+    const ro = new ResizeObserver(redraw)
+    ro.observe(canvas)
+    // neuer Satellitentermin alle 10 Minuten; im Rückfall wandert die
+    // Dämmerungslinie ~2,5° Länge in dieser Zeit
+    const id = setInterval(() => {
+      void loadSat()
+      redraw()
+    }, 10 * 60_000)
+    return () => {
+      cancelled = true
+      ro.disconnect()
+      clearInterval(id)
+      clearTimeout(fallbackTimer)
+    }
+  }, [])
+
   const tabs = POINT_FORECASTS_ENABLED ? NAV_TABS : NAV_TABS.filter((t) => t.id !== 'workbench')
 
   return (
     <div className="landing">
       <section className="landing-hero">
+        <canvas ref={baseRef} className="landing-canvas landing-base" aria-hidden="true" />
         <canvas ref={linesRef} className="landing-canvas" aria-hidden="true" />
         <canvas ref={windRef} className="landing-canvas" aria-hidden="true" />
         <div className="landing-hero-text">
@@ -157,6 +279,11 @@ export function LandingPage() {
       {/* Impressum MUSS von jeder Seite aus erreichbar sein (§ 18 MStV) —
           ohne Leiste steht es hier */}
       <footer className="landing-foot">
+        <span className="label-muted landing-credit">
+          {satTime != null
+            ? `Untergrund: EUMETSAT MTG Geocolour, ${new Date(satTime).toISOString().slice(11, 16)} UTC`
+            : 'Untergrund: NASA Blue Marble und Black Marble'}
+        </span>
         <span className="label-muted" title={buildTitle()}>
           {buildLabel()}
         </span>

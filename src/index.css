@@ -5772,3 +5772,15 @@ button:focus-visible {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7);
   pointer-events: none;
 }
+
+/* Untergrund der Startseite (render/heroBase.ts): blendet ein, sobald das
+   erste Bild da ist — vorher stehen nur Küsten und Grenzen */
+.landing-base {
+  opacity: 0;
+  transition: opacity 0.8s ease-out;
+}
+
+.landing-credit {
+  margin-right: auto;
+  font-size: 11px;
+}

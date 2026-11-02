@@ -4449,7 +4449,29 @@ npm run preview   # gebautes dist/ servieren
   Laden stehen nur Küsten und Grenzen da, die Partikel blenden danach ein
   (als Platzhalter zeigte die Liveseite erst ein Sturmtief, das dann in die
   echte Lage umsprang), bei `prefers-reduced-motion` ruhende
-  Stromlinien. **Auf der Startseite KEINE Navigationsleiste** (auf Wunsch):
+  Stromlinien.
+  **UNTERGRUND: DAS AKTUELLE GEOCOLOUR-BILD** (seit 2026-11-02, auf
+  Wunsch; `render/heroBase.ts` mit Tests): unter der Strömung das neueste
+  scharfe MTG-Geocolour aus dem R2-Vorrat (`loadSatelliteImage`, also
+  Vorrat zuerst, sonst EUMETView; jüngster Termin, sonst bis zu zwei ältere,
+  alle 10 min neu). Geocolour bringt Tag UND Nacht selbst mit — tags
+  Echtfarben samt Schnee, wo es wolkenfrei ist, nachts Infrarotwolken über
+  den Stadtlichtern — und liegt auf genau dieser Fläche (`SATELLITE_AREA` =
+  `GROUND_BOUNDS`). Abgedunkelt um 0,4, sonst stehen die weißen Partikel auf
+  weißen Wolken. Quellenzeile nennt EUMETSAT samt Termin.
+  **RÜCKFALL nach 6 s ohne Satellitenbild**: Blue Marble (Tag) und Black
+  Marble 2016 (Nacht, `src/mapdata/europe-night.jpg`, 449 KB,
+  `build:ground`, deckungsgleich) mit der Dämmerungslinie je Bildpunkt nach
+  dem Sonnenstand (−6° … +4°); Bilder nur, wenn die Ansicht sie braucht.
+  Die Wartezeit, damit er beim normalen Laden nicht kurz aufblitzt.
+  **Eine Vorstufe (verworfen) legte auf Blue Marble den aktuellen Schnee**:
+  Blue Marble gibt es in GIBS nur in EINER Fassung (Jänner/Juli/November
+  byte-gleich, Sommerstand), und MODIS-NDSI allein taugt nicht — Wolken sind
+  dort durchsichtig, über sechs Tage Terra + Aqua stand Anfang November ganz
+  Süd-Schweden weiß, wo IFS und ICON-EU 0 cm führten. Mit ICON-EU als Maske
+  ging es (IFS 0,25° nicht: Alpen 2,4 % gegen 26,7 % Schnee), mit Geocolour
+  vorn war es überflüssig. Im Dev-Build: `?base=fallback`, `?t=…`.
+  **Auf der Startseite KEINE Navigationsleiste** (auf Wunsch):
   darunter stehen DREI SÄULEN (Vorhersage · Beobachtung · Auswertung), deren
   Bereiche beim Überfahren/Antippen NACH OBEN über das Windbild aufpoppen
   (halbtransparent, zweispaltig) — eine erste Fassung klappte nach unten auf

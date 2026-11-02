@@ -40,8 +40,14 @@
 // und steht in der Quellenzeile des Bereichs (`GroundAttribution`).
 
 import groundUrl from '../mapdata/europe-ground.jpg?url'
+import nightUrl from '../mapdata/europe-night.jpg?url'
 
 export const GROUND_URL = groundUrl
+/**
+ * NACHTbild im selben Fenster (seit 2026-11-02, Startseite): NASA Black
+ * Marble 2016, die Lichter der Städte wolkenfrei, 2432 px, gemessen 449 KB.
+ */
+export const NIGHT_URL = nightUrl
 
 /**
  * Bildecken. Das Bild kommt in EPSG:3857 vom Dienst, und MapLibres

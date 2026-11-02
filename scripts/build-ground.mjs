@@ -68,8 +68,16 @@ const LAYER = 'BlueMarble_NextGeneration'
 // die beiden gegeneinander). In Mercator exakt quadratisch.
 const TILES = { zoom: 6, x0: 27, x1: 40, y0: 13, y1: 26 }
 
-/** Nur noch ein Bild; `bounds` werden aus dem Kachelfenster gerechnet. */
-const AREAS = [{ id: 'europe', tiles: TILES, width: 2432, out: 'europe-ground.jpg' }]
+/**
+ * `bounds` werden aus dem Kachelfenster gerechnet. Das NACHTbild (seit
+ * 2026-11-02, Startseite: Tag-Nacht-Untergrund unter der Windströmung) ist
+ * NASA Black Marble 2016 — die Lichter der Städte, wolkenfrei, im SELBEN
+ * Fenster, damit Tag- und Nachtbild deckungsgleich überblendet werden.
+ */
+const AREAS = [
+  { id: 'europe', layer: LAYER, tiles: TILES, width: 2432, out: 'europe-ground.jpg' },
+  { id: 'europe-night', layer: 'VIIRS_Black_Marble', time: '2016-01-01', tiles: TILES, width: 2432, out: 'europe-night.jpg' },
+]
 
 const args = process.argv.slice(2)
 const argVal = (name, fallback) => {
@@ -107,15 +115,16 @@ async function build(area) {
     service: 'WMS',
     version: '1.1.1',
     request: 'GetMap',
-    layers: LAYER,
+    layers: area.layer,
     styles: '',
     format: 'image/jpeg',
     srs: 'EPSG:3857',
     bbox: `${Math.round(minx)},${Math.round(miny)},${Math.round(maxx)},${Math.round(maxy)}`,
     width: String(width),
     height: String(height),
+    ...(area.time ? { time: area.time } : {}),
   })
-  console.log(`hole ${LAYER} für '${area.id}' ${width}×${height}`)
+  console.log(`hole ${area.layer} für '${area.id}' ${width}×${height}`)
   const res = await fetch(`${WMS}?${q}`)
   if (!res.ok) throw new Error(`GIBS: HTTP ${res.status}`)
   const type = res.headers.get('content-type') ?? ''
