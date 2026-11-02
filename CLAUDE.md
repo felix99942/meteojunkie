@@ -3457,7 +3457,9 @@ npm run preview   # gebautes dist/ servieren
   keine offizielle MeteoSwiss-Vorhersage". Laufalter-Warnung ab 18 h.
   **HÖCHSTWERTE ALS ZAHLEN IM NIEDERSCHLAGSFELD** (seit 2026-11-02, auf
   Wunsch, alle Modelle; Kern `config/globeMaxima.ts` mit Tests, Ebene
-  `render/fieldMaxima.ts`, Häkchen „Höchstwerte", Vorgabe an): grobe Mengen
+  `render/fieldMaxima.ts`; seit 2026-11-03 IMMER an, ohne Häkchen — auf
+  Wunsch; in der Legende beim Niederschlag kein „mm/h" mehr, die Einheit der
+  Farbskala steht im Tooltip): grobe Mengen
   auf einen Blick, ohne die Farbe gegen die Legende zu halten. Der Ausschnitt
   wird in Blöcke von 55 px geteilt, je Block das Gittermaximum EXAKT über alle
   Zellen (Stichproben verlören 1-km-Kerne), dann nach Abstand ausgedünnt

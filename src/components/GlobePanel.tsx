@@ -136,8 +136,6 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
    * eigener Wellenlauf (Gruppengeschwindigkeit) war auf Wunsch wieder raus.
    */
   const [particles, setParticles] = useState(false)
-  /** Örtliche Höchstwerte als Zahlen im Niederschlagsfeld (auf Wunsch, Vorgabe an). */
-  const [maxima, setMaxima] = useState(true)
   /** Windfiedern 300 hPa (Regionalmodelle) — Vorgabe beim Wechsel auf den Höhenwind */
   const [barbs, setBarbs] = useState(false)
 
@@ -659,7 +657,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   useEffect(() => {
     // Rate (mm/h) × Intervall = Menge im Intervall: „1,5" heißt 1,5 mm, nicht 1,5 mm/h
     maximaRef.current?.set(
-      maxima && maximaOpts && field ? field : null,
+      // IMMER an, ohne Haken (auf Wunsch, 2026-11-03)
+      maximaOpts && field ? field : null,
       maximaOpts && {
         min: maximaOpts.min,
         factor: maximaOpts.perInterval ? (interval ?? 1) : 1,
@@ -667,7 +666,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         fillMin: maximaOpts.fillMin,
       },
     )
-  }, [mapReady, maxima, maximaOpts, field, interval])
+  }, [mapReady, maximaOpts, field, interval])
 
   const readValue = readout && field && !field.rgb ? sampleField(field, readout.lat, readout.lon) : NaN
   const readLayers = readout && field?.rgb ? sampleRgb3(field, readout.lat, readout.lon) : null
@@ -887,14 +886,6 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 <input type="checkbox" checked={barbs} disabled={!uvMeta} onChange={(e) => setBarbs(e.target.checked)} /> Windfiedern
               </label>
             )}
-            {maximaOpts && (
-              <label
-                className="globe-layer"
-                title="Örtliche Höchstwerte als Zahlen im Feld (mm, beim Neuschnee cm) — je Kartenausschnitt der höchste Gitterwert einer Region; beim Hineinzoomen werden die Regionen kleiner."
-              >
-                <input type="checkbox" checked={maxima} onChange={(e) => setMaxima(e.target.checked)} /> Höchstwerte
-              </label>
-            )}
           </div>
         </div>
           <div className="globe-readout globe-readout-top" aria-live="polite">
@@ -922,11 +913,15 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
               <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
             )}
           </div>
-        <div className="radar-legend globe-legend" title={variable.title}>
+        <div className="radar-legend globe-legend" title={varId === 'precip' ? `${variable.title} Farbskala in mm/h.` : variable.title}>
           <span className="radar-legend-cap">
-            {model.label} · {variableLabel(variable, interval)} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}
-            {intervalText && ` · ${intervalText}`}
-            {maxima && maximaOpts && (
+            {model.label} · {variableLabel(variable, interval)}
+            {/* beim Niederschlag ohne „mm/h" und ohne „Mittel der letzten 3 h"
+                (auf Wunsch) — das Intervall steht im Namen, die Einheit der
+                Farbskala im Tooltip */}
+            {varId !== 'precip' && ` · ${variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}`}
+            {varId !== 'precip' && intervalText && ` · ${intervalText}`}
+            {maximaOpts && (
               <>
                 {' · '}
                 <b className="globe-legend-max">Zahlen = örtliche Höchstwerte in mm</b>
