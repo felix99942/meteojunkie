@@ -15,6 +15,7 @@
 // Zeit abseits des 5-Minuten-Rasters beantwortet der Dienst mit einer
 // ServiceException statt mit einem Bild.
 
+import { r3dLevelImage } from './radar3d'
 import { extractLightningCells, toPalette, type LightningCell } from '../render/lightning'
 import { maskRadarEdge } from '../render/radarImage'
 import {
@@ -140,6 +141,8 @@ export interface RadarImageLoadOptions {
   /** Wird je fertigem Bild gerufen, `time` ist der Zeitstempel des Bildes. */
   onLoaded: (time: number, imageUrl: string) => void
   onError?: (time: number, err: unknown) => void
+  /** 3D-Radar: Index der Höhenschicht (`RadarProduct.levels`) */
+  level?: number
 }
 
 /**
@@ -168,6 +171,18 @@ export async function loadRadarImages(
       const slot = next++
       if (slot >= order.length) return
       const time = order[slot]
+      if ('levels' in source && source.levels) {
+        // 3D-Radar: Bild aus dem Höhenstapel, gerechnet im Browser
+        try {
+          const imageUrl = await r3dLevelImage(time, opts.level ?? 0, opts.signal)
+          if (opts.signal?.aborted) return
+          opts.onLoaded(time, imageUrl)
+        } catch (err) {
+          if (opts.signal?.aborted) return
+          opts.onError?.(time, err)
+        }
+        continue
+      }
       const url = source.own
         ? `${import.meta.env.BASE_URL}${ownRadarImageKey(source.capsLayer, time)}`
         : radarImageUrl(source, meta, {

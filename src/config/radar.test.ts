@@ -224,8 +224,8 @@ describe('Produkt-Registry', () => {
     expect(DEFAULT_RADAR_PRODUCT.legend).toBe(WN_LEGEND)
   })
 
-  it('führt die acht Produkte in Registry-Reihenfolge', () => {
-    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'dmax', 'vil', 'rw', 'ry', 'w4', 'sy'])
+  it('führt die neun Produkte in Registry-Reihenfolge', () => {
+    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'dmax', 'vil', 'cappi', 'rw', 'ry', 'w4', 'sy'])
     for (const p of RADAR_PRODUCTS) {
       expect(p.stepMs, p.id).toBeGreaterThan(0)
       expect(p.legend.length, p.id).toBeGreaterThan(8)
@@ -245,7 +245,7 @@ describe('Produkt-Registry', () => {
   // Nachbearbeitung färbt auf genau diese Deckkraft um.
   it('kennt die Maskendeckkraft je Produkt — und wo es keine gibt', () => {
     const mask = Object.fromEntries(RADAR_PRODUCTS.map((p) => [p.id, p.maskOpacity]))
-    expect(mask).toEqual({ wn: 0.5, rv: 0.3, dmax: 0.5, vil: 0.5, rw: 0.3, ry: 0.3, w4: null, sy: null })
+    expect(mask).toEqual({ wn: 0.5, rv: 0.3, dmax: 0.5, vil: 0.5, cappi: 0.5, rw: 0.3, ry: 0.3, w4: null, sy: null })
   })
 
   /**
@@ -295,7 +295,7 @@ describe('Produkt-Registry', () => {
 
 describe('Overlays', () => {
   it('laufen im 5-Minuten-Takt und ohne Vorhersageteil', () => {
-    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'cluster', 'konrad', 'mtgli'])
+    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'mtgli'])
     for (const o of RADAR_OVERLAYS) {
       expect(o.stepMs, o.id).toBe(300_000)
       // Die `fcst_*`-Layer bleiben draußen, wie die Radarvorhersage auch.
@@ -324,24 +324,7 @@ describe('Overlays', () => {
     for (const o of RADAR_OVERLAYS) expect(o.maskOpacity, o.id).toBeNull()
   })
 
-  // Der Vorgabestil der KONRAD-Zellen füllt sie DECKEND und verdeckt damit
-  // das Radarecho — deshalb der Umriss-Stil, und deshalb zwei Layer in einem
-  // Bild (Zellen plus bisherige Spuren).
-  it('zeichnet die KONRAD-Zellen als Umriss samt Spur', () => {
-    const k = RADAR_OVERLAYS.find((o) => o.id === 'konrad')!
-    expect(k.layer.split(',')).toHaveLength(2)
-    expect(k.style).toContain('unfilled_polygons_colored_border')
-    expect(k.style!.split(',')).toHaveLength(2) // Stil je Layer, zweiter = Vorgabe
-    expect(k.capsLayer).toBe('K3D_EVAL_current_cells')
-  })
-
-  it('fordert die Symbol-Overlays GRÖSSER und das Blitzraster KLEINER an', () => {
-    // Kreise und Pfeile werden in Pixeln des BILDES gezeichnet; zu klein
-    // angefordert stehen sie hochskaliert und unscharf auf der Karte.
-    for (const id of ['cluster', 'konrad']) {
-      const o = RADAR_OVERLAYS.find((x) => x.id === id)!
-      expect(sourceImageWidth(o), id).toBeGreaterThan(RADAR_IMAGE_WIDTH)
-    }
+  it('fordert das Blitzraster KLEINER an', () => {
     // Die Blitzdichte dagegen wird bewusst grob geholt: gezeichnet werden
     // Kreuze je 10-km-Zelle, ein feineres Bild trägt keine Information.
     const blitze = RADAR_OVERLAYS.find((o) => o.id === 'blitze')!
@@ -437,8 +420,11 @@ describe('MTG-Blitz-Overlay', () => {
 
 describe('Eigene Radarprodukte (R2)', () => {
   it('hat zu jedem eigenen Produkt eine DWD-Quelle und umgekehrt', () => {
-    const own = RADAR_PRODUCTS.filter((p) => p.own).map((p) => p.capsLayer)
+    // das 3D-Radar rechnet der Worker selbst aus den Volumenscans
+    // (worker/radar3d.ts), es hat KEINE Kompositdatei in OWN_RADAR
+    const own = RADAR_PRODUCTS.filter((p) => p.own && !p.levels).map((p) => p.capsLayer)
     expect(own.sort()).toEqual(OWN_RADAR.map((s) => s.id).sort())
+    expect(RADAR_PRODUCTS.filter((p) => p.levels).map((p) => p.capsLayer)).toEqual(['r3d'])
     // Eigene Bilder haben keinen Vorhersageteil und keine Randlinie
     for (const p of RADAR_PRODUCTS.filter((x) => x.own)) {
       expect(p.forecastMs, p.id).toBe(0)

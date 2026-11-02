@@ -19,7 +19,7 @@
 // ansieht, wird nicht weggerissen (siehe `atLiveEdge`).
 //
 // AUFBAU der Karte (unten → oben): lokaler Kartenhintergrund → RADARBILD →
-// OVERLAYS (Blitze, Zellen, Cluster, KONRAD) → Gradnetz/Grenzen → Städte als
+// OVERLAYS (Blitze, MTG-Blitze) → Gradnetz/Grenzen → Städte als
 // DOM-Marker. Das Radarbild liegt also UNTER den Grenzlinien: ein Echo über
 // der Grenze soll die Grenze nicht verschlucken (dieselbe Reihenfolge wie beim
 // Feld in `MapPanel`).
@@ -42,6 +42,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchRadarMeta, loadLightningCells, loadRadarImages } from '../api/dwdRadar'
+import { loadR3dIndex, loadR3dStack, pruneR3d } from '../api/radar3d'
+import { R3D_DEFAULT_LEVEL_M, r3dLevelLabel, r3dSection, type R3dIndex, type R3dSection } from '../config/radar3d'
+import { RadarSection } from './RadarSection'
 import { CITIES } from '../config/cities'
 import {
   analysisTime,
@@ -312,6 +315,29 @@ export function RadarPanel() {
   const [pending, setPending] = useState<RadarMeta | null>(null)
 
   const [historyMin, setHistoryMin] = useState(60)
+
+  // --- 3D-Radar: Höhe und Querschnitt -----------------------------------------
+  const [r3dIndex, setR3dIndex] = useState<R3dIndex | null>(null)
+  const [levelIdx, setLevelIdx] = useState<number | null>(null)
+  useEffect(() => {
+    if (!product.levels) return
+    let alive = true
+    // mit dem Nachsehen (`meta`) neu holen — sonst kennte die Kennzeile die
+    // Radarzahl der neuen Termine nicht
+    loadR3dIndex(meta != null)
+      .then((ix) => {
+        if (!alive) return
+        setR3dIndex(ix)
+        setLevelIdx((cur) => cur ?? Math.max(0, ix.levels.indexOf(R3D_DEFAULT_LEVEL_M)))
+      })
+      .catch((err: unknown) => console.error('[radar 3d]', err))
+    return () => {
+      alive = false
+    }
+  }, [product, meta])
+  /** Querschnitt: Zeichnen läuft (Klicks in die Karte setzen A und B) */
+  const [sectionMode, setSectionMode] = useState(false)
+  const [sectionPts, setSectionPts] = useState<[number, number][]>([])
   const [overlayOn, setOverlayOn] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(RADAR_OVERLAYS.map((o) => [o.id, o.defaultOn])),
   )
@@ -461,9 +487,11 @@ export function RadarPanel() {
     const missing = times.filter((t) => imagesRef.current[t] === undefined)
     if (missing.length === 0) return
     const ac = new AbortController()
+    if (product.levels && levelIdx == null) return
     loadRadarImages(product, meta, missing, {
       width: RADAR_IMAGE_WIDTH,
       height: radarImageHeight(meta),
+      level: levelIdx ?? 0,
       signal: ac.signal,
       onLoaded: (time, url) => setImages((prev) => ({ ...prev, [time]: url })),
       onError: (time, err) => {
@@ -472,7 +500,20 @@ export function RadarPanel() {
       },
     }).catch((err: unknown) => console.error('[radar]', err))
     return () => ac.abort()
-  }, [meta, product, times])
+  }, [meta, product, times, levelIdx])
+
+  // Höhe wechseln: alle Bilder gehören zur alten Höhe. Hier im HANDLER und mit
+  // dem Ref zusammen geleert — über einen Effekt sähe der Ladeeffekt derselben
+  // Runde noch die alten Bilder, hielte nichts für fehlend und lüde nie nach
+  const changeLevel = (i: number) => {
+    imagesRef.current = {}
+    setImages({})
+    setLevelIdx(i)
+  }
+  // Stapel ausserhalb der Schleife freigeben (komprimiert ~0,5–3 MB je Termin)
+  useEffect(() => {
+    if (product.levels) pruneR3d(times)
+  }, [product, times])
 
   // Zeiger auf dem neuesten Bild halten, solange er dort war. Beim ersten
   // Laden und nach jedem Nachrücken springt er mit, sonst bleibt seine ZEIT.
@@ -542,6 +583,7 @@ export function RadarPanel() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => setMapReady(true))
     map.on('mousemove', (e) => setHover({ lat: e.lngLat.lat, lon: e.lngLat.lng }))
+    map.on('click', (e) => clickRef.current(e.lngLat.lng, e.lngLat.lat))
     map.getCanvas().addEventListener('mouseleave', () => setHover(null))
     mapRef.current = map
     return () => {
@@ -550,6 +592,64 @@ export function RadarPanel() {
       setMapReady(false)
     }
   }, [])
+
+  // --- Querschnitt: Linie A–B in der Karte -------------------------------------
+  const clickRef = useRef<(lon: number, lat: number) => void>(() => {})
+  clickRef.current = (lon, lat) => {
+    if (!sectionMode) return
+    setSectionPts((pts) => {
+      const next: [number, number][] = pts.length >= 2 ? [[lon, lat]] : [...pts, [lon, lat]]
+      if (next.length === 2) setSectionMode(false)
+      return next
+    })
+  }
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    map.getCanvas().style.cursor = sectionMode ? 'crosshair' : ''
+  }, [sectionMode, mapReady])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const data: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features:
+        sectionPts.length === 2 && product.levels
+          ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: sectionPts } }]
+          : [],
+    }
+    const src = map.getSource('r3d-section') as maplibregl.GeoJSONSource | undefined
+    if (src) src.setData(data)
+    else {
+      map.addSource('r3d-section', { type: 'geojson', data })
+      map.addLayer({ id: 'r3d-section-casing', type: 'line', source: 'r3d-section', paint: { 'line-color': '#000', 'line-width': 5, 'line-opacity': 0.7 } })
+      map.addLayer({ id: 'r3d-section-line', type: 'line', source: 'r3d-section', paint: { 'line-color': '#ffffff', 'line-width': 2.2 } })
+    }
+    // A und B als DOM-Marker — die Karte hat keine Glyphenquelle für Text
+    const markers = (product.levels ? sectionPts : []).map((p, i) => {
+      const el = document.createElement('div')
+      el.className = 'r3d-section-pt'
+      el.textContent = i === 0 ? 'A' : 'B'
+      return new maplibregl.Marker({ element: el }).setLngLat(p).addTo(map)
+    })
+    return () => markers.forEach((m) => m.remove())
+  }, [sectionPts, mapReady, product])
+
+  // Schnitt aus dem Stapel des GEZEIGTEN Termins — läuft beim Abspielen mit
+  const [section, setSection] = useState<{ time: number; data: R3dSection } | null>(null)
+  useEffect(() => {
+    if (!product.levels || sectionPts.length !== 2 || !current || !r3dIndex) {
+      setSection(null)
+      return
+    }
+    let alive = true
+    loadR3dStack(current)
+      .then((stack) => alive && setSection({ time: current, data: r3dSection(stack, r3dIndex, sectionPts[0], sectionPts[1]) }))
+      .catch((err: unknown) => console.error('[radar 3d]', err))
+    return () => {
+      alive = false
+    }
+  }, [product, sectionPts, current, r3dIndex])
 
   // Kartenhintergrund: Europa-Bündel plus Gradnetz über die Produktfläche
   useEffect(() => {
@@ -805,6 +905,35 @@ export function RadarPanel() {
             ))}
           </select>
         )}
+        {product.levels && r3dIndex && levelIdx != null && (
+          <>
+            <label
+              className="radar-opt radar-level"
+              title="Höhe über NN. Die Schichten liegen 500 m auseinander; zwischen den Elevationen der Radare wird in der Höhe interpoliert. Tief über dem Gebirge und weit weg von jedem Radar gibt es keine Werte — die Strahlen gehen dort über die Höhe hinweg."
+            >
+              Höhe{' '}
+              <input
+                type="range"
+                min={0}
+                max={r3dIndex.levels.length - 1}
+                value={levelIdx}
+                onChange={(e) => changeLevel(Number(e.target.value))}
+              />{' '}
+              <strong>{r3dLevelLabel(r3dIndex.levels[levelIdx])}</strong>
+            </label>
+            <button
+              type="button"
+              className={`radar-section-btn${sectionMode ? ' is-active' : ''}`}
+              onClick={() => {
+                setSectionMode((m) => !m)
+                if (!sectionMode) setSectionPts([])
+              }}
+              title="Senkrechter Schnitt durch das Radarvolumen: zwei Punkte in die Karte klicken (A und B)"
+            >
+              {sectionMode ? (sectionPts.length === 0 ? 'Punkt A klicken …' : 'Punkt B klicken …') : 'Querschnitt'}
+            </button>
+          </>
+        )}
         <label
           className="radar-opt"
           title="Wie weit die Schleife zurückreicht. Jedes Bild ist ein eigener Abruf beim DWD."
@@ -818,11 +947,9 @@ export function RadarPanel() {
             ))}
           </select>
         </label>
-        {/* Overlays: alles vom SELBEN Dienst, jedes mit eigener Fläche und
-            eigenem Takt. Blitze und Zellen sind an, Cluster und KONRAD auf
-            Wunsch — die drei Symbol-Overlays kosten als leeres PNG8 nur
-            ~1 KB je Bild, tragen aber bei Konvektion die eigentliche
-            Information. */}
+        {/* Overlays: jedes mit eigener Fläche und eigenem Takt. Die
+            DWD-Blitze sind an, die MTG-Blitze (Abdeckung Österreich) auf
+            Wunsch; Cluster und KONRAD sind seit 2026-11-02 raus (Registry). */}
         <span className="radar-overlays">
           {RADAR_OVERLAYS.map((o) => (
             <label
@@ -1012,6 +1139,18 @@ export function RadarPanel() {
         </div>
       </div>
 
+      {product.levels && section && (
+        <RadarSection
+          section={section.data}
+          title={`${fmtTime.format(new Date(section.time))} UTC${
+            r3dIndex ? ` · ${r3dIndex.stations[r3dIndex.times.indexOf(section.time)] ?? '?'} von 17 Radaren` : ''
+          }`}
+          onClose={() => {
+            setSectionPts([])
+            setSectionMode(false)
+          }}
+        />
+      )}
       <span className="attribution radar-attribution">
         Datenquelle:{' '}
         <a
@@ -1022,7 +1161,7 @@ export function RadarPanel() {
         >
           Deutscher Wetterdienst
         </a>
-        {' '}— Radarkomposit {product.id.toUpperCase()} über{' '}
+        {' '}— {product.levels ? 'Volumenscans der 17 Radare (eigene Höhenschichten)' : `Radarkomposit ${product.id.toUpperCase()}`} über{' '}
         {product.own ? (
           // Eigene Bilder aus den HDF5-Dateien des Open-Data-Servers
           // (worker/radar.ts), nicht aus dem WMS

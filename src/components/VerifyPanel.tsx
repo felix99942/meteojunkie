@@ -369,7 +369,7 @@ function ErrColorKey({ spec }: { spec: Target }) {
           {d.label}
         </span>
       ))}
-      <span className="label-muted">stufenlos — je dunkler, desto größer die Abweichung · Farben wie im GeoSphere-Klimamonitor</span>
+      <span className="label-muted">stufenlos — je dunkler, desto größer die Abweichung</span>
     </div>
   )
 }

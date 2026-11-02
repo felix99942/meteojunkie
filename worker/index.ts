@@ -15,6 +15,7 @@
 // das Projekt bekommt keine zweite Typwelt neben DOM/Node.
 
 import { updateRadar } from './radar'
+import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
 import { satelliteTile } from './satTiles'
 import type { R2BucketLike } from './r2'
@@ -30,6 +31,9 @@ interface ScheduledEvent {
   scheduledTime: number
   cron: string
 }
+
+/** Cron des 3D-Radars — muss mit wrangler.jsonc übereinstimmen */
+const R3D_CRON = '2-59/5 * * * *'
 
 /** Pfade, die aus R2 kommen — alles andere ist die App selbst. */
 const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/']
@@ -101,6 +105,13 @@ export default {
   // Cron (wrangler.jsonc, alle 5 Minuten): Radar jedes Mal, der Satellit
   // jedes zweite Mal — EUMETView schiebt nur alle 10 bzw. 15 Minuten nach.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    // 3D-Radar im EIGENEN Cron (2 min versetzt): eigenes CPU-Budget von 30 s,
+    // ein Fehler dort reisst Radar und Satellit nicht mit — und das Volumen
+    // ist beim DWD dann vollständig (letzte Elevation ~4 min nach dem Termin)
+    if (event.cron === R3D_CRON) {
+      console.log(await updateRadar3d(env.DATA).catch((err) => `3D-Radar: Fehler ${err}`))
+      return
+    }
     const minute = new Date(event.scheduledTime).getUTCMinutes()
     const jobs: Promise<string>[] = [updateRadar(env.DATA)]
     if (minute % 10 < 5) jobs.push(mirrorSatellite(env.DATA))

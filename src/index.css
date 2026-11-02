@@ -5695,3 +5695,80 @@ button:focus-visible {
 .legal-corner .appnav-legal {
   padding: 2px 8px;
 }
+
+/* --- 3D-Radar: Höhe und Querschnitt (RadarPanel, RadarSection) ----------- */
+.radar-level input[type='range'] {
+  width: 140px;
+  vertical-align: middle;
+}
+
+.radar-level strong {
+  display: inline-block;
+  min-width: 4.2em;
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-section-btn.is-active {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+/* Unter der Karte statt darüber: der Schnitt soll die Karte nicht verdecken,
+   auf der man die Linie gerade gezogen hat */
+.radar-section {
+  flex: 0 0 250px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.radar-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+.radar-section-head strong {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.radar-section-readout {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-section-head button {
+  margin-left: auto;
+  padding: 1px 8px;
+}
+
+.radar-section-plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  cursor: crosshair;
+}
+
+.radar-section-plot canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.r3d-section-pt {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #111;
+  font: 700 12px/20px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}

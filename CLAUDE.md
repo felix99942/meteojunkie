@@ -2093,10 +2093,12 @@ npm run preview   # gebautes dist/ servieren
   „● neuer Stand".
   **OVERLAYS, fast alle vom selben Dienst** (`RADAR_OVERLAYS`, Häkchen in der
   Leiste):
-  **Blitze** (`Blitzdichte`) sind voreingestellt an, **Cluster**
-  (`Gewittercluster`), **KONRAD** (`K3D_EVAL_current_cells` +
-  `K3D_EVAL_cur_track_lines`) und **MTG-Blitze** (s. u., der einzige
-  Nicht-DWD-Layer) auf Wunsch. Alles 5-Minuten-Takt, CORS offen,
+  **Blitze** (`Blitzdichte`) sind voreingestellt an, **MTG-Blitze** (s. u.,
+  der einzige Nicht-DWD-Layer) auf Wunsch. **Cluster** (`Gewittercluster`)
+  und **KONRAD** (`K3D_EVAL_current_cells` + `K3D_EVAL_cur_track_lines`)
+  sind seit 2026-11-02 RAUS (auf Wunsch, „eher nutzlos für die Seite"; wie
+  man sie zurückholt, steht in `config/radar.ts` über `RADAR_OVERLAYS`) —
+  die Beschreibung unten gilt für den früheren Stand. Alles 5-Minuten-Takt, CORS offen,
   die DWD-Layer nach GeoNutzV — und alles NUR Gegenwart: die `fcst_*`-Layer des
   KONRAD-Verfahrens (Prognosekegel, Vorhersagespuren) bleiben draußen wie die
   Radarvorhersage auch. **`Gewitterzellen` war dabei und ist auf Wunsch wieder
@@ -2399,9 +2401,53 @@ npm run preview   # gebautes dist/ servieren
   ~1,2 bzw. 2 MB), `composite/vii` (VIL, 1 km, 45 KB), `sites/pe`
   (Echotops je Standort, 1 km) und `konrad3d/` (Zellen als XML). Werkzeuge:
   wradlib/xradar (lesen ODIM-Volumen direkt), wetterdienst (Abruf).
-  Gangbar wäre damit ein Ingest im Deploy-Cron wie bei MOSMIX — aber der
-  läuft alle 3 h, ein Radar braucht 5 Minuten. Echtes 3D-Radar heißt
-  also: ein dauerhaft laufender Server (Cloudflare-Plan), nicht GitHub Pages.
+  Gangbar wurde das erst mit dem Worker-Cron (s. u., 3D-Radar).
+  **3D-RADAR STUFE 1 seit 2026-11-02: HÖHENSCHICHTEN UND QUERSCHNITT**
+  (auf Wunsch; Produkt `cappi` „Höhenschicht 3D (dBZ)", Rechenkern
+  `worker/radar3d.ts`, Browser `config/radar3d.ts` mit Tests +
+  `api/radar3d.ts` + `components/RadarSection.tsx`). Der Worker holt alle
+  5 Minuten die Volumenscans ALLER 17 Radare (`sweep_vol_z/<st>/hdf5/
+  filter_polarimetric`, 10 Elevationen 0,5–25°, 360 Strahlen × 250 m, 170
+  Dateien ~12 MB) und rechnet einen Stapel aus 23 Höhen über NN (1–12 km in
+  500 m) auf ~0,9 km (Mercator 1000×1178 über lon 3,4–17,2 / lat
+  45,8–56,0). Strahlausbreitung mit 4/3-Erdradius, LINEAR in der Höhe
+  zwischen den Elevationen darüber und darunter (in dBZ), ausserhalb der
+  gescannten Hülle nur innerhalb der halben Strahlbreite — sonst KEIN Wert;
+  mehrere Radare: das Maximum. Kodierung 1 Byte (0 = kein Echo, 1…254 =
+  (dBZ + 32) · 2, 255 = nicht abgedeckt), gzip, `radar/r3d/<termin>.bin`
+  + `index.json` (3 h).
+  **CPU gemessen, und das war die offene Frage**: ein Termin 2,3 s lokal
+  (Dekodieren 1,4 s mit jsfive, Einrechnen 0,65 s, gzip 0,2 s), Heap
+  höchstens 58 MB, Datei 0,46 MB bei ruhiger Lage. Die Grenze im
+  5-Minuten-Cron ist 30 s CPU (Paid-Plan, Cron < 1 h), 128 MB Speicher,
+  15 min Laufzeit. Der 3D-Lauf hat deshalb einen EIGENEN Cron
+  (`2-59/5 * * * *`, `R3D_CRON` in `worker/index.ts`): eigenes CPU-Budget,
+  ein Fehler reisst Radar und Satellit nicht mit, und das Volumen ist dann
+  vollständig (die letzte Elevation beginnt ~4 min nach dem Termin, rund
+  30 s später liegt sie beim DWD). Höchstens 2 Termine je Lauf. In
+  `wrangler dev --test-scheduled` mit echten Abrufen: 2 Termine in 7,2 s.
+  **Dateinamen werden GEBILDET, nicht aus der Liste gelesen**: jede
+  Verzeichnisliste ist ~1 MB und kommt ungzipped; die Scanzeiten liegen
+  aber je Standort und Elevation auf ±1 s fest (über zwei Tage gemessen),
+  zwei Scanpläne (`OFFSETS_A`/`OFFSETS_B`, Memmingen, Rostock, Ummendorf
+  takten die oberen Elevationen anders), probiert wird ±2 s. Ein Standort
+  mit weniger als 6 Elevationen fällt für den Termin weg (seine Fläche zeigt
+  dann „keine Daten").
+  Im Browser bleiben die Dateien KOMPRIMIERT im Speicher, entpackt (27 MB)
+  nur die letzten drei; eine Höhe wird je Termin als Bild gemalt
+  (`r3dLevelImage`, dieselbe WN-Skala und Maske wie die Reflektivität,
+  Wert am Zeiger über dieselbe Legende). Höhenwechsel leert die Bilder im
+  HANDLER samt Ref, nicht über einen Effekt (sonst hielte der Ladeeffekt
+  derselben Runde nichts für fehlend) — gemessen 12 Bilder in ~1 s.
+  **Querschnitt**: Knopf, dann zwei Klicks in die Karte (A, B als
+  DOM-Marker, keine Glyphenquelle); unter der Karte der Schnitt für den
+  GEZEIGTEN Termin (läuft beim Abspielen mit), alle 1 km eine Spalte,
+  Kennzeile mit Höchstwert, Echotop (18 dBZ) und Radarzahl, Wert am Zeiger.
+  Grenzen, sichtbar gelassen statt aufgefüllt: über jedem Radar fehlt ein
+  Kegel, in der Ferne die untersten Kilometer (1 km über NN deckt nur die
+  Umgebung der tief gelegenen Radare ab, 39 % der Fläche; ab 3 km 66 %),
+  Österreich nur im Westen. Offen (Stufe 2): echte 3D-Ansicht (WebGL2-
+  Volumen) aus demselben Stapel.
   **WERT AM ZEIGER seit 2026-11-02 — als KLASSE aus dem Bild**
   (`radarPixelAt`/`classifyRadarPixel` in `config/radar.ts`, Anzeige oben
   mittig): die Farbe des schon geladenen Bilds zurück auf die Legende,

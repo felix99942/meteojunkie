@@ -377,6 +377,12 @@ export interface RadarProduct extends WmsImageSource {
    * Funktion mehr. Erster Eintrag ist die Vorgabe.
    */
   historyOptions?: { min: number; label: string }[]
+  /**
+   * 3D-Radar: Höhenschichten aus den Volumenscans (worker/radar3d.ts). Das
+   * Bild eines Termins hängt dann zusätzlich an der gewählten HÖHE, und der
+   * Bereich bietet den Querschnitt an.
+   */
+  levels?: true
 }
 
 /**
@@ -469,6 +475,25 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
     maskOpacity: 0.5,
     legend: VIL_LEGEND,
     note: 'DWD VIL: vertikal integrierter Flüssigwassergehalt — wie viel Wasser in der Säule steckt. Hohe Werte (ab ~20 kg/m²) kennzeichnen kräftige Gewitter, oft mit Hagel. 1 km, alle 5 Minuten. Skala ist eine Anzeigeskala, keine DWD-Einteilung',
+  },
+  // 3D-Radar (seit 2026-11-02, auf Wunsch): eine wählbare HÖHE über NN statt
+  // der untersten Elevation, gerechnet im Worker aus den Volumenscans aller
+  // 17 Radare (worker/radar3d.ts), dazu der senkrechte Querschnitt. Dieselbe
+  // Farbskala wie die Reflektivität — eine Höhenschicht und das Bodenbild
+  // sollen nebeneinander lesbar sein.
+  {
+    id: 'cappi',
+    label: 'Höhenschicht 3D (dBZ)',
+    layer: '',
+    capsLayer: 'r3d',
+    own: true,
+    levels: true,
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    unit: 'dBZ',
+    maskOpacity: 0.5,
+    legend: WN_LEGEND,
+    note: 'Reflektivität in einer festen Höhe über NN (1–12 km), aus den Volumenscans aller 17 DWD-Radare (10 Elevationen 0,5–25°), zwischen den Elevationen in der Höhe interpoliert; mehrere Radare über einem Punkt: der höchste Wert. Lücken bleiben Lücken: über jedem Radar fehlt ein Kegel, in der Ferne die untersten Kilometer, hinter den Alpen ist abgeschattet. Alle 5 Minuten, ~7 Minuten Verzug',
   },
   // --- RADOLAN ------------------------------------------------------------
   //
@@ -746,13 +771,15 @@ export interface RadarOverlay extends WmsImageSource {
  * KONRAD-Umrissen nichts bei, was nicht schon dastand. Wieder einschalten
  * wäre ein Registry-Eintrag (`layer: 'dwd:Gewitterzellen'`, `capsLayer`
  * ebenso, Fläche lon 3,76–15,47 · lat 47,20–54,82 — Wien liegt draußen).
+ *
+ * **Gewittercluster und KONRAD sind seit 2026-11-02 ebenfalls raus** (auf
+ * Wunsch, „eher nutzlos für die Seite"). Zurückholen hieße zwei Einträge:
+ * `dwd:Gewittercluster` (Punktsymbole, Legende leicht/Gewitter/schwer/extrem
+ * in #FFEB3B/#FB8C00/#E53935/#880E4F, `imageWidth: 1600`) und
+ * `dwd:K3D_EVAL_current_cells,dwd:K3D_EVAL_cur_track_lines` mit dem Stil
+ * `k3d_eval_current_cells_unfilled_polygons_colored_border,` — der
+ * Vorgabestil füllt die Zellen deckend und verdeckt das Echo.
  */
-const STORM_CLASSES = [
-  { color: '#FFEB3B', label: 'leicht' },
-  { color: '#FB8C00', label: 'Gewitter' },
-  { color: '#E53935', label: 'schwer' },
-  { color: '#880E4F', label: 'extrem' },
-]
 
 export const RADAR_OVERLAYS: RadarOverlay[] = [
   {
@@ -783,49 +810,6 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
       items: LIGHTNING_AGES,
     },
     note: 'NowCastMIX-Blitzdichte als Kreuze: FARBE = Alter, GRÖSSE = Blitzrate. Der DWD veröffentlicht keine Einzelblitze — ein Kreuz steht für eine 10-km-Zelle mit Blitzen, und die Altersstufe ist produktbedingt auf 15 Minuten gerundet (jedes Bild fasst die Blitze der letzten 15 Minuten zusammen)',
-  },
-  {
-    id: 'cluster',
-    imageWidth: 1600,
-    label: 'Cluster',
-    layer: 'dwd:Gewittercluster',
-    capsLayer: 'Gewittercluster',
-    stepMs: 5 * 60_000,
-    forecastMs: 0,
-    maskOpacity: null,
-    opacity: 1,
-    defaultOn: false,
-    legend: { kind: 'dots', caption: 'Zellverbände', items: STORM_CLASSES },
-    note: 'NowCastMIX-Gewittercluster: Zentroide und Spuren erkannter Zellverbände samt Verlagerung',
-  },
-  {
-    id: 'konrad',
-    imageWidth: 1600,
-    // ZWEI Layer in EINEM Bild (kommagetrennt, mit passender Stilliste): die
-    // Zellumrisse und die bisherigen Spuren gehören zusammen und kosten so
-    // einen Abruf statt zwei.
-    label: 'KONRAD',
-    layer: 'dwd:K3D_EVAL_current_cells,dwd:K3D_EVAL_cur_track_lines',
-    // NICHT der Vorgabestil: der füllt die Zellen DECKEND (fill-opacity 1) und
-    // verdeckt damit genau das Radarecho, um das es geht.
-    style: 'k3d_eval_current_cells_unfilled_polygons_colored_border,',
-    capsLayer: 'K3D_EVAL_current_cells',
-    stepMs: 5 * 60_000,
-    forecastMs: 0,
-    maskOpacity: null,
-    opacity: 1,
-    defaultOn: false,
-    legend: {
-      kind: 'rings',
-      caption: 'KONRAD3D-Zellen (Umriss + bisherige Spur)',
-      items: [
-        { color: '#25A700', label: '0' },
-        { color: '#FDE333', label: '1' },
-        { color: '#F1393B', label: '2' },
-        { color: '#FE32D4', label: '3' },
-      ],
-    },
-    note: 'KONRAD3D: Umrisse der aktuell erkannten Gewitterzellen (Farbe = Schwerestufe 0–3) samt ihrer bisherigen Zugspuren. Prognosekegel und Vorhersagespuren des Verfahrens sind bewusst nicht dabei.',
   },
   // Der EINZIGE Eintrag, der nicht vom DWD kommt — und er ist wegen der
   // ABDECKUNG da. Die DWD-Blitzdichte endet im Süden bei 46,95 °N (Kärnten

@@ -46,3 +46,7 @@ __pycache__/
 
 # Wrangler (Cloudflare-Worker, lokaler Entwicklungszustand)
 .wrangler/
+
+# 3D-Radar und eigene Radarbilder: im Betrieb schreibt sie der Worker nach R2,
+# lokal nur zum Testen erzeugt
+public/radar/
