@@ -13,10 +13,17 @@
 // Blöcke über allen acht Nachbarn und ließ je Region genau eine Zahl. Neu
 // gerechnet nach jeder Kamerabewegung und jedem Feldwechsel; beim Hineinzoomen
 // werden die Blöcke kleiner und die Maxima damit örtlicher.
+//
+// Zweiter Modus `grid` (Panel-Ansicht, auf Wunsch statt Isolinien): WERTE in
+// gleichmäßigem Raster — die Temperatur steht als Zahl in ihrer Fläche. Das
+// Raster hängt an festen Gradvielfachen (`valueGrid`), die Zahlen bleiben
+// beim Verschieben stehen. Nur wo die Skala einfärbt (Höhenwind unter
+// 70 km/h, Feuchte unter 50 % … sind durchsichtig).
 
 import maplibregl from 'maplibre-gl'
-import type { GlobeField } from '../config/globe'
-import { formatMax, inFilledArea, maxInBox, spacedMaxima, type FieldMax } from '../config/globeMaxima'
+import { formatReadout, sampleField, type GlobeField } from '../config/globe'
+import { colorForValue, type ColorScale } from '../config/colorscales'
+import { formatMax, inFilledArea, maxInBox, spacedMaxima, valueGrid, type FieldMax } from '../config/globeMaxima'
 
 export interface MaximaOptions {
   /** Kleinster beschrifteter Wert (nach `factor`). */
@@ -27,7 +34,14 @@ export interface MaximaOptions {
   decimals: number
   /** Unterste eingefärbte Stufe (Feldeinheit) — Zahlen nur in einer Farbfläche. */
   fillMin: number
+  /** 'max' = örtliche Höchstwerte (Vorgabe), 'grid' = Werte im festen Raster */
+  mode?: 'max' | 'grid'
+  /** Nur `grid`: Skala der Größe — beschriftet wird nur, was sie einfärbt */
+  scale?: ColorScale
 }
+
+/** Abstand der Rasterwerte in Bildschirm-px (Modus `grid`) */
+const GRID_PX = 70
 
 // Je Block ein Kandidat, Zahlen mindestens MIN_DIST_PX auseinander
 const BLOCK_PX = 55
@@ -56,12 +70,9 @@ export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
     return Math.hypot(back.x - p.x, back.y - p.y) < 2 ? ll : null
   }
 
-  const update = () => {
-    clear()
-    if (!field) return
-    const canvas = map.getCanvas()
-    const W = canvas.clientWidth
-    const H = canvas.clientHeight
+  type Cand = { lat: number; lon: number; x: number; y: number; text: string }
+
+  const maxCandidates = (f: GlobeField, W: number, H: number): Cand[] => {
     const cols = Math.ceil(W / BLOCK_PX)
     const rows = Math.ceil(H / BLOCK_PX)
     const bw = W / cols
@@ -87,10 +98,43 @@ export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
           blocks.push(null)
           continue
         }
-        const m = maxInBox(field, w, Math.min(...lats), e, Math.max(...lats))
-        blocks.push(m && inFilledArea(field, m.idx, opts.fillMin) ? { ...m, value: m.value * opts.factor } : null)
+        const m = maxInBox(f, w, Math.min(...lats), e, Math.max(...lats))
+        blocks.push(m && inFilledArea(f, m.idx, opts.fillMin) ? { ...m, value: m.value * opts.factor } : null)
       }
     }
+    const cands = blocks
+      .filter((b): b is FieldMax => b != null)
+      .map((b) => {
+        const p = map.project([b.lon, b.lat])
+        return { ...b, x: p.x, y: p.y }
+      })
+    return spacedMaxima(cands, MIN_DIST_PX, opts.min).map((m) => ({ ...m, text: formatMax(m.value, opts.decimals) }))
+  }
+
+  const gridCandidates = (f: GlobeField, W: number, H: number): Cand[] => {
+    if (!opts.scale) return []
+    const b = map.getBounds()
+    const stepLon = GRID_PX / ((512 * 2 ** map.getZoom()) / 360)
+    // auf 5° gerundet, sonst wanderte das Raster beim Verschieben in der Breite
+    const latRef = Math.round(map.getCenter().lat / 5) * 5
+    const out: Cand[] = []
+    for (const q of valueGrid(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), stepLon, latRef)) {
+      const v = sampleField(f, q.lat, q.lon)
+      if (!Number.isFinite(v) || colorForValue(opts.scale, v) == null) continue
+      const p = map.project([q.lon, q.lat])
+      if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) continue
+      out.push({ ...q, x: p.x, y: p.y, text: formatReadout(v, opts.decimals) })
+    }
+    return out
+  }
+
+  const update = () => {
+    clear()
+    if (!field) return
+    const canvas = map.getCanvas()
+    const W = canvas.clientWidth
+    const H = canvas.clientHeight
+    const cands = opts.mode === 'grid' ? gridCandidates(field, W, H) : maxCandidates(field, W, H)
     const busy = overlayRects(map, avoid)
     // Ortsnamen: die Zahl rückt darüber oder darunter, statt den Namen zu
     // überdecken — fällt kein Platz, entfällt sie (der Name steht schon)
@@ -99,18 +143,12 @@ export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
       const r = el.getBoundingClientRect()
       return { x0: r.left - box.left, y0: r.top - box.top, x1: r.right - box.left, y1: r.bottom - box.top }
     })
-    const cands = blocks
-      .filter((b): b is FieldMax => b != null)
-      .map((b) => {
-        const p = map.project([b.lon, b.lat])
-        return { ...b, x: p.x, y: p.y }
-      })
-    for (const m of spacedMaxima(cands, MIN_DIST_PX, opts.min)) {
+    for (const m of cands) {
       const p = new maplibregl.Point(m.x, m.y)
       if (p.x < 12 || p.y < 10 || p.x > W - 12 || p.y > H - 10) continue
       if (busy.some((b) => p.x > b.x0 - 14 && p.x < b.x1 + 14 && p.y > b.y0 - 8 && p.y < b.y1 + 8)) continue
       if (!onMap(p)) continue
-      const text = formatMax(m.value, opts.decimals)
+      const text = m.text
       const hw = text.length * 4 + 3
       const dy = [0, 15, -15].find((d) =>
         !names.some((b) => p.x + hw > b.x0 && p.x - hw < b.x1 && p.y + d + 8 > b.y0 && p.y + d - 8 < b.y1),

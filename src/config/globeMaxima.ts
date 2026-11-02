@@ -138,3 +138,29 @@ export const MAXIMA_OPTIONS: Partial<
   // nicht gibt; eingefärbt ab 1 mm
   precipsum: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
 }
+
+/**
+ * Rasterpunkte für WERTE im Farbfeld (Panel-Ansicht: Temperatur, Wind,
+ * Relative Topografie …), im Kasten [W, S, O, N]. Das Raster hängt an
+ * VIELFACHEN des Abstands in Grad, nicht am Bildschirm — beim Verschieben
+ * bleiben die Zahlen an ihrem Ort, statt bei jeder Bewegung über die Karte
+ * zu springen (dieselbe Überlegung wie bei der Label-Ausdünnung der
+ * Klimakarte). `stepLon` in Grad; die Breite wird mit cos(`latRef`)
+ * gestaucht, damit die Punkte in Mercator ungefähr quadratisch stehen.
+ * `latRef` sollte gerundet übergeben werden, sonst wandert das Raster beim
+ * Verschieben in der Breite doch.
+ */
+export function valueGrid(w: number, s: number, e: number, n: number, stepLon: number, latRef: number): { lat: number; lon: number }[] {
+  if (!(stepLon > 0)) return []
+  const stepLat = stepLon * Math.cos((latRef * Math.PI) / 180)
+  const out: { lat: number; lon: number }[] = []
+  // halbe Schrittweite versetzt: nicht genau auf Gradnetzlinien
+  for (let lat = (Math.floor(s / stepLat) + 0.5) * stepLat; lat <= n; lat += stepLat) {
+    if (lat < s) continue
+    for (let lon = (Math.floor(w / stepLon) + 0.5) * stepLon; lon <= e; lon += stepLon) {
+      if (lon >= w) out.push({ lat, lon })
+    }
+    if (out.length > 2000) break
+  }
+  return out
+}

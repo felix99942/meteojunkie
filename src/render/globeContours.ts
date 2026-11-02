@@ -114,14 +114,37 @@ export interface ContourStyle {
   core: [number, number, number]
   /** Halo zur Abgrenzung gegen den Untergrund */
   halo: [number, number, number]
+  /** Halbe Kernbreite, Halo-Reichweite und -Deckkraft (Vorgaben: CORE_HW, HALO_HW, HALO_ALPHA) */
+  coreHW?: number
+  haloHW?: number
+  haloAlpha?: number
+  /** Schrift der Beschriftung, wenn sie anders sein soll als die Linie */
+  labelCore?: [number, number, number]
+  labelHalo?: [number, number, number]
 }
 
 /** Isobaren hell mit dunklem Halo, 500 hPa dunkel mit hellem — so bleiben beide gleichzeitig unterscheidbar und auf jeder Farbe lesbar. */
-export const CONTOUR_STYLES: Record<'msl' | 'gh500' | 'gh300', ContourStyle> = {
+export const CONTOUR_STYLES: Record<'msl' | 'gh500' | 'gh300' | 'wind300' | 'band', ContourStyle> = {
   msl: { core: [245, 246, 248], halo: [12, 13, 15] },
   gh500: { core: [14, 15, 17], halo: [235, 236, 238] },
   // wie 500 hPa — die beiden stehen nie gleichzeitig in der Karte
   gh300: { core: [14, 15, 17], halo: [235, 236, 238] },
+  // Isotachen hell auf der dunklen Strahlstromskala, wie die Isobaren
+  wind300: { core: [245, 246, 248], halo: [12, 13, 15] },
+  // Panel-Ansicht: GANZ DÜNNE, dezent graue Kanten zwischen den Farbstufen
+  // (auf Wunsch statt eines Zahlenrasters), ohne Halo — die Linie trennt
+  // Flächen, sie soll nicht wie eine Isobare über der Karte liegen. Die
+  // Zahl daran dunkel mit hellem Rand, damit sie auf jeder Farbe lesbar ist.
+  band: {
+    core: [44, 46, 52],
+    halo: [0, 0, 0],
+    // 0,35 war im Bild kaum zu sehen; 0,55 ist ~1 px, gerade noch dezent
+    coreHW: 0.55,
+    haloHW: 0.9,
+    haloAlpha: 0,
+    labelCore: [16, 17, 20],
+    labelHalo: [238, 239, 241],
+  },
 }
 
 export interface ContourLabel {
@@ -164,6 +187,7 @@ export function contourTile(
   x: number,
   y: number,
   size = 256,
+  min = -Infinity,
 ): { rgba: Uint8ClampedArray; labels: ContourLabel[] } {
   const step = interval * (z <= 2 ? 2 : 1)
   const shift = f.step / 2
@@ -201,6 +225,9 @@ export function contourTile(
     }
   }
 
+  const coreHW = style.coreHW ?? CORE_HW
+  const haloHW = style.haloHW ?? HALO_HW
+  const haloAlpha = style.haloAlpha ?? HALO_ALPHA
   const rgba = new Uint8ClampedArray(size * size * 4)
   const dist = new Float32Array(size * size).fill(Infinity)
   const level = new Float32Array(size * size)
@@ -218,9 +245,10 @@ export function contourTile(
       const g = Math.hypot((r - l) / 2, (d - u) / 2)
       if (g < 1e-9) continue
       const L = Math.round((v - shift) / step) * step
+      if (L < min) continue
       const e = v - shift - L
       const dpx = Math.abs(e) / g
-      if (dpx > HALO_HW + 0.5) continue
+      if (dpx > haloHW + 0.5) continue
       // Wird der Linienwert in Reichweite WIRKLICH durchschritten? Die
       // Abstandsschätzung extrapoliert linear und zeichnete sonst dort einen
       // blassen Geisterstrich, wo das Feld nur an den Wert HERANREICHT —
@@ -235,8 +263,8 @@ export function contourTile(
         }
       }
       if (!crossed) continue
-      const core = Math.min(1, Math.max(0, CORE_HW + 0.5 - dpx))
-      const halo = Math.min(1, Math.max(0, HALO_HW + 0.5 - dpx)) * HALO_ALPHA
+      const core = Math.min(1, Math.max(0, coreHW + 0.5 - dpx))
+      const halo = Math.min(1, Math.max(0, haloHW + 0.5 - dpx)) * haloAlpha
       const a = core + (1 - core) * halo
       const o = 4 * (py * size + px)
       // Kern über Halo, Farbe nach Deckungsanteil gemischt

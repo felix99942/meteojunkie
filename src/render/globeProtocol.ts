@@ -9,8 +9,9 @@
 
 import maplibregl from 'maplibre-gl'
 import { GLOBE_PROTOCOL, GLOBE_TILE_SIZE } from './globeTiles'
-import { requestTile, type FieldSource } from './globePool'
+import { requestTile, type ContourJob, type FieldSource } from './globePool'
 import { CONTOURS, type ContourId, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import { PANEL_BAND_LINES } from '../config/globePanels'
 
 /** Quelle eines Felds für den Worker — gesetzt vom Bereich, damit dieses Modul nichts von der Meta weiß. */
 export type GlobeFieldSourceFn = (model: GlobeModelId, runId: string, varId: GlobeVarId, step: number) => FieldSource | null
@@ -95,14 +96,14 @@ interface Parsed {
   y: number
 }
 
-const URL_RE = /^(globe|globeiso):\/\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/
+const URL_RE = /^(globe|globeiso|globeband):\/\/([^/]+)\/([^/]+)\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/
 
 function parse(url: string): Parsed | null {
   const m = URL_RE.exec(url)
   if (!m) return null
   const [, proto, model, runId, varId, step, z, x, y] = m
   return {
-    layer: proto === GLOBE_PROTOCOL ? 'field' : `iso:${varId}`,
+    layer: proto === GLOBE_PROTOCOL ? 'field' : proto === GLOBE_BAND_PROTOCOL ? `band:${varId}` : `iso:${varId}`,
     template: `${proto}://${model}/${runId}/${varId}/${step}`,
     model: model as GlobeModelId,
     runId,
@@ -129,11 +130,16 @@ function noteVisible(p: Parsed): void {
 
 // --- Kachel rechnen ----------------------------------------------------
 
-function contourFor(p: Parsed): { id: ContourId; interval: number; smooth: number } | undefined {
+function contourFor(p: Parsed): ContourJob | undefined {
   if (p.layer === 'field') return undefined
+  if (p.layer.startsWith('band:')) {
+    const band = PANEL_BAND_LINES[p.varId]
+    if (!band) throw new Error(`keine Kantenlinien für ${p.varId}`)
+    return { id: p.varId, interval: band.interval, smooth: band.smooth[p.model] ?? 0, min: band.min, style: 'band' }
+  }
   const def = CONTOURS.find((c) => c.id === p.varId)
   if (!def) throw new Error(`keine Isolinien für ${p.varId}`)
-  return { id: def.id as ContourId, interval: def.interval, smooth: def.smooth[p.model] ?? 0 }
+  return { id: def.id as ContourId, interval: def.interval, smooth: def.smooth[p.model] ?? 0, min: def.min }
 }
 
 /**
@@ -182,6 +188,8 @@ export function registerGlobeProtocol(source: GlobeFieldSourceFn): void {
   // Isolinien als eigene Ebene: globeiso://modell/lauf/größe/schritt/z/x/y,
   // die Größe ist zugleich die Linienart (msl → Isobaren, gh500 → 500 hPa, gh300 → 300 hPa)
   maplibregl.addProtocol(GLOBE_ISO_PROTOCOL, handler)
+  // Kantenlinien der Panel-Ansicht: globeband://modell/lauf/größe/schritt/z/x/y
+  maplibregl.addProtocol(GLOBE_BAND_PROTOCOL, handler)
 }
 
 // --- Vorladen ----------------------------------------------------------
@@ -229,6 +237,11 @@ export function prefetchVisibleTiles(templates: string[]): void {
 }
 
 export const GLOBE_ISO_PROTOCOL = 'globeiso'
+export const GLOBE_BAND_PROTOCOL = 'globeband'
+
+export function globeBandUrl(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): string {
+  return `${GLOBE_BAND_PROTOCOL}://${model}/${runId}/${varId}/${step}/{z}/{x}/{y}`
+}
 
 export function globeIsoUrl(model: GlobeModelId, runId: string, contour: ContourId, step: number): string {
   return `${GLOBE_ISO_PROTOCOL}://${model}/${runId}/${contour}/${step}/{z}/{x}/{y}`

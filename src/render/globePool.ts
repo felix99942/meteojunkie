@@ -20,6 +20,19 @@ export interface FieldSource {
   encoding?: 'rgb3' | 'uv8'
 }
 
+/**
+ * Isolinien einer Kachel: Linienart (`id` — für die Bandkanten der
+ * Panel-Ansicht die Größe selbst), Abstand, Glättung, Untergrenze und Stil.
+ */
+export interface ContourJob {
+  id: ContourId | GlobeVarId
+  interval: number
+  smooth: number
+  min?: number
+  /** Stil aus `CONTOUR_STYLES`, wenn er nicht `id` heißt (Bandkanten: 'band') */
+  style?: 'band'
+}
+
 export type WorkerRequest =
   | { type: 'field'; id: number; src: FieldSource; reply: boolean }
   | {
@@ -30,7 +43,7 @@ export type WorkerRequest =
       z: number
       x: number
       y: number
-      contour?: { id: ContourId; interval: number; smooth: number }
+      contour?: ContourJob
       /** Vorladen: erst rechnen, wenn nichts Sichtbares mehr wartet */
       low?: boolean
     }
@@ -116,7 +129,7 @@ export async function requestTile(
   x: number,
   y: number,
   signal: AbortSignal,
-  contour?: { id: ContourId; interval: number; smooth: number },
+  contour?: ContourJob,
   low = false,
 ): Promise<ImageBitmap> {
   const r = await send({ type: 'tile', id: nextId++, src, varId, z, x, y, contour, low }, signal)

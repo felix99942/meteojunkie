@@ -45,6 +45,7 @@ import { fetchRadarMeta, loadLightningCells, loadRadarImages } from '../api/dwdR
 import { CITIES } from '../config/cities'
 import {
   analysisTime,
+  classifyRadarPixel,
   DEFAULT_RADAR_PRODUCT,
   LIGHTNING_AGES,
   MASK_COLOR,
@@ -54,6 +55,7 @@ import {
   RADAR_PRODUCTS,
   radarImageCoordinates,
   radarImageHeight,
+  radarPixelAt,
   radarTimes,
   sourceImageWidth,
   supportsOverlays,
@@ -348,6 +350,47 @@ export function RadarPanel() {
   const latest = times.length ? times[times.length - 1] : 0
   const current = times[Math.min(idx, times.length - 1)]
   const currentUrl = current ? images[current] : undefined
+  // --- Wert am Zeiger: Klasse aus der Farbe des angezeigten Bilds -------------
+  // Kein Abruf beim DWD (GetFeatureInfo hieße einen je Zeigerbewegung); das
+  // Bild liegt ohnehin geladen vor. Dekodiert wird erst, wenn der Zeiger auf
+  // der Karte ist, und nur das gerade gezeigte Bild.
+  const [hover, setHover] = useState<{ lat: number; lon: number } | null>(null)
+  const [pixels, setPixels] = useState<{ url: string; data: ImageData } | null>(null)
+  // NUR daran hängen, OB der Zeiger auf der Karte ist — mit der Position als
+  // Abhängigkeit brach jede Mausbewegung das Dekodieren ab, und die Anzeige
+  // blieb bei „…" stehen, solange man die Maus bewegte (so war es zuerst)
+  const hovering = hover != null
+  useEffect(() => {
+    if (!hovering || !currentUrl || pixels?.url === currentUrl) return
+    let cancelled = false
+    const img = new Image()
+    // WMS-Bilder ohne Nachbearbeitung kommen direkt vom DWD (CORS offen) —
+    // ohne crossOrigin wäre die Leinwand danach gesperrt
+    if (!currentUrl.startsWith('data:') && !currentUrl.startsWith('blob:')) img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      if (cancelled) return
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      const ctx = c.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return
+      ctx.drawImage(img, 0, 0)
+      setPixels({ url: currentUrl, data: ctx.getImageData(0, 0, c.width, c.height) })
+    }
+    img.src = currentUrl
+    return () => {
+      cancelled = true
+    }
+  }, [hovering, currentUrl, pixels])
+  const reading = useMemo(() => {
+    if (!hover || !meta || !pixels || pixels.url !== currentUrl) return null
+    const { data } = pixels
+    const px = radarPixelAt(meta.geo, data.width, data.height, hover.lon, hover.lat)
+    if (!px) return { kind: 'outside' as const }
+    const o = 4 * (px.y * data.width + px.x)
+    return classifyRadarPixel(data.data[o], data.data[o + 1], data.data[o + 2], data.data[o + 3], product.legend)
+  }, [hover, meta, pixels, currentUrl, product.legend])
+
   /** Steht der Zeiger auf dem neuesten Bild? Dann darf automatisch nachgerückt werden. */
   const atLiveEdge = times.length === 0 || idx >= times.length - 1
 
@@ -498,6 +541,8 @@ export function RadarPanel() {
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => setMapReady(true))
+    map.on('mousemove', (e) => setHover({ lat: e.lngLat.lat, lon: e.lngLat.lng }))
+    map.getCanvas().addEventListener('mouseleave', () => setHover(null))
     mapRef.current = map
     return () => {
       map.remove()
@@ -850,6 +895,30 @@ export function RadarPanel() {
 
       <div className="radar-body">
         <div className="radar-container" ref={containerRef} />
+        <div className="globe-readout globe-readout-top" aria-live="polite">
+          {hover ? (
+            <>
+              <span className="globe-readout-pos">
+                {hover.lat.toFixed(2)}° N · {hover.lon.toFixed(2)}° O
+              </span>
+              <strong>
+                {!currentUrl
+                  ? 'kein Bild für diesen Zeitpunkt'
+                  : !reading
+                  ? '…'
+                  : reading.kind === 'echo'
+                    ? `${reading.from}${reading.to ? `–${reading.to}` : '+'} ${product.unit}`
+                    : reading.kind === 'nodata'
+                      ? 'keine Radardaten'
+                      : reading.kind === 'outside'
+                        ? 'außerhalb des Bilds'
+                        : 'kein Echo'}
+              </strong>
+            </>
+          ) : (
+            <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
+          )}
+        </div>
         <div className="radar-views">
           {VIEWS.map((v) => (
             <button key={v.id} type="button" onClick={() => jumpToView(v.bounds)}>

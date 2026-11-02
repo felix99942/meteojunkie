@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getGlobeVariable,
   contoursFor,
   formatReadout,
   decodeCodes,
@@ -414,5 +415,19 @@ describe('Werteanzeige', () => {
   it('zeigt Nachkommastellen nur bei Niederschlag und Wellenhöhe', () => {
     const mit = GLOBE_VARIABLES.filter((v) => v.decimals > 0).map((v) => v.id)
     expect(mit.sort()).toEqual(['precip', 'swh'])
+  })
+})
+
+describe('Farbtabellen Regensumme und Höhenwind', () => {
+  it('Regensumme: je Stufe eine Farbe, bis 15 mm sieben getrennte Stufen', () => {
+    const s = getGlobeVariable('precipsum').scale.stops
+    expect(new Set(s.map((x) => x.color)).size).toBe(s.length)
+    expect(s.filter((x) => x.value <= 15).map((x) => x.value)).toEqual([1, 2, 3, 5, 7, 10, 15])
+  })
+
+  it('Höhenwind wird ab 50 km/h eingefärbt, darunter durchsichtig', () => {
+    const scale = getGlobeVariable('wind300').scale
+    expect(scale.stops[0].value).toBe(50)
+    expect(scale.belowMin).toBe('transparent')
   })
 })

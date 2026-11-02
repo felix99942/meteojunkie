@@ -79,6 +79,7 @@ import {
   imageHeightFor,
   mercBox,
   parseTimeExtent,
+  toMercator,
   type GeoBox,
   type MercBox,
   type TimeExtent,
@@ -1110,4 +1111,64 @@ export function ownRadarMeta(index: OwnRadarIndex): RadarMeta | null {
     geo: index.geo,
     merc: mercBox(index.geo),
   }
+}
+
+// --- Wert am Zeiger ------------------------------------------------------------
+
+/**
+ * Bildpixel zu einem Ort, oder null außerhalb des Bilds. Das Bild liegt
+ * LINEAR im Web-Mercator-Raum über `geo` (so spannt MapLibre die
+ * image-Source auf) — Zeile 0 ist der Nordrand.
+ */
+export function radarPixelAt(geo: GeoBox, width: number, height: number, lon: number, lat: number): { x: number; y: number } | null {
+  const sw = toMercator(geo.west, geo.south)
+  const ne = toMercator(geo.east, geo.north)
+  const p = toMercator(lon, lat)
+  const fx = (p.x - sw.x) / (ne.x - sw.x)
+  const fy = (ne.y - p.y) / (ne.y - sw.y)
+  if (!(fx >= 0 && fx < 1 && fy >= 0 && fy < 1)) return null
+  return { x: Math.floor(fx * width), y: Math.floor(fy * height) }
+}
+
+/** Grau der „Keine Daten"-Maske im Produktstil (#7D7D7D, siehe `maskOpacity`). */
+const NODATA_RGB: [number, number, number] = [0x7d, 0x7d, 0x7d]
+/** Größter RGB-Abstand, bis zu dem eine Pixelfarbe als Legendenfarbe gilt (Kantenglättung des Renderers). */
+const CLASS_TOLERANCE = 40
+
+export type RadarReading =
+  | { kind: 'echo'; from: string; to: string | null }
+  | { kind: 'nodata' }
+  | { kind: 'none' }
+
+const hexRgb = (h: string): [number, number, number] => [
+  parseInt(h.slice(1, 3), 16),
+  parseInt(h.slice(3, 5), 16),
+  parseInt(h.slice(5, 7), 16),
+]
+
+/**
+ * Klasse eines Bildpixels (auf Wunsch statt eines GetFeatureInfo-Abrufs je
+ * Zeigerbewegung): aus der FARBE des schon geladenen Bilds, zurück auf die
+ * Legende — „32,5–37 dBZ". Feiner als die Klasse geht es aus dem Bild nicht,
+ * dafür kostet es keinen Abruf beim DWD. Durchsichtig = kein Echo, Maskengrau
+ * = keine Daten (das Radar sieht dort nicht hin), eine Farbe, die zu keiner
+ * Klasse passt (Mischpixel an einer Kante), ergibt ebenfalls „kein Echo"
+ * statt einer geratenen Klasse.
+ */
+export function classifyRadarPixel(r: number, g: number, b: number, a: number, legend: RadarLegendStep[]): RadarReading {
+  if (a < 8) return { kind: 'none' }
+  let best = -1
+  let bestD = Infinity
+  legend.forEach((step, i) => {
+    const [lr, lg, lb] = hexRgb(step.color)
+    const d = Math.hypot(r - lr, g - lg, b - lb)
+    if (d < bestD) {
+      bestD = d
+      best = i
+    }
+  })
+  const dMask = Math.hypot(r - NODATA_RGB[0], g - NODATA_RGB[1], b - NODATA_RGB[2])
+  if (dMask < bestD && dMask < CLASS_TOLERANCE) return { kind: 'nodata' }
+  if (best < 0 || bestD > CLASS_TOLERANCE) return { kind: 'none' }
+  return { kind: 'echo', from: legend[best].label, to: legend[best + 1]?.label ?? null }
 }

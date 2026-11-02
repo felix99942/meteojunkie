@@ -16,8 +16,9 @@ Einheitliche Feldnamen und Einheiten:
   gh1000       dasselbe auf 1000 hPa — nur für die Relative Topografie
   gh300        dasselbe auf 300 hPa — Isolinien über dem Höhenwind
   tcc          %
-  clch, clcm, clcl   % Bedeckung hoch/mittel/tief (nur ICON — ECMWF Open Data
-                     führt nur `tcc`, im Index nachgesehen 2026-10-05)
+  clch, clcm, clcl   % Bedeckung hoch/mittel/tief (ICON; ECMWF seit 2026-11-02
+                     aus `hcc`/`mcc`/`lcc` — am 2026-10-05 führte Open Data
+                     nur `tcc`)
   swh          m, signifikante Wellenhöhe (nur ECMWF, Wellenmodell WAM; über
                Land kein Wert)
   pp1d         s, Peak-Periode

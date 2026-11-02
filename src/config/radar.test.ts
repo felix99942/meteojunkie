@@ -35,6 +35,7 @@ import {
   radarImageUrl,
   type RadarMeta,
 } from './radar'
+import { classifyRadarPixel, radarPixelAt } from './radar'
 import { mercBox } from './wmsTime'
 
 const P = DEFAULT_RADAR_PRODUCT
@@ -459,5 +460,34 @@ describe('Eigene Radarprodukte (R2)', () => {
 
   it('schreibt Schlüssel mit dem Termin in UTC', () => {
     expect(ownRadarImageKey('dmax', Date.UTC(2026, 9, 28, 8, 5))).toBe('radar/dmax/20261028T0805Z.png')
+  })
+})
+
+describe('Wert am Zeiger (Radar)', () => {
+  const geo = { west: 2, east: 18, south: 46, north: 56 }
+
+  it('Ecken des Bilds: Nordwesten oben links, Südosten unten rechts', () => {
+    expect(radarPixelAt(geo, 1000, 800, 2.0001, 55.9999)).toEqual({ x: 0, y: 0 })
+    expect(radarPixelAt(geo, 1000, 800, 17.9999, 46.0001)).toEqual({ x: 999, y: 799 })
+    expect(radarPixelAt(geo, 1000, 800, 1, 50)).toBeNull()
+  })
+
+  it('in Mercator liegt die Bildmitte NÖRDLICH der mittleren Breite', () => {
+    // 51° N ist die arithmetische Mitte, in Mercator liegt sie unter der Bildmitte
+    expect(radarPixelAt(geo, 1000, 800, 10, 51)!.y).toBeGreaterThan(400)
+  })
+
+  it('Legendenfarbe → Klasse mit Ober- und Untergrenze, die letzte offen nach oben', () => {
+    const [r, g, b] = [0x99, 0xff, 0xff]
+    expect(classifyRadarPixel(r, g, b, 255, WN_LEGEND)).toEqual({ kind: 'echo', from: '7', to: '9,5' })
+    const last = WN_LEGEND[WN_LEGEND.length - 1].color
+    const rgb = [1, 3, 5].map((k) => parseInt(last.slice(k, k + 2), 16))
+    expect(classifyRadarPixel(rgb[0], rgb[1], rgb[2], 255, WN_LEGEND)).toMatchObject({ kind: 'echo', to: null })
+  })
+
+  it('durchsichtig = kein Echo, Maskengrau = keine Daten, Mischfarbe = keine geratene Klasse', () => {
+    expect(classifyRadarPixel(0, 0, 0, 0, WN_LEGEND)).toEqual({ kind: 'none' })
+    expect(classifyRadarPixel(0x7d, 0x7d, 0x7d, 128, WN_LEGEND)).toEqual({ kind: 'nodata' })
+    expect(classifyRadarPixel(20, 20, 160, 255, WN_LEGEND)).toEqual({ kind: 'none' })
   })
 })

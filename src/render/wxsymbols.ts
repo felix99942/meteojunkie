@@ -293,6 +293,7 @@ export function drawWindBarb(
   dirDeg: number,
   len: number,
   color: string,
+  lineWidth = 1.6,
 ) {
   const kt = speedKmh / 1.852
   ctx.save()
@@ -302,7 +303,7 @@ export function drawWindBarb(
   ctx.setLineDash([])
   ctx.strokeStyle = color
   ctx.fillStyle = color
-  ctx.lineWidth = 1.6
+  ctx.lineWidth = lineWidth
   ctx.lineCap = 'butt'
   ctx.lineJoin = 'miter'
   if (kt < 2.5) {

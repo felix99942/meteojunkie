@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GlobeField, GlobeGrid } from './globe'
-import { formatMax, inFilledArea, maxInBox, spacedMaxima } from './globeMaxima'
+import { formatMax, inFilledArea, maxInBox, spacedMaxima, valueGrid } from './globeMaxima'
 
 /** Feld aus Werten (Zeile 0 = lat0), Kodierung lo 0 / step 0,05 wie `precip`; NaN = kein Wert. */
 function field(values: number[][], grid: Partial<GlobeGrid> = {}): GlobeField {
@@ -105,5 +105,26 @@ describe('formatMax', () => {
     expect(formatMax(12.4)).toBe('12')
     expect(formatMax(9.97)).toBe('10')
     expect(formatMax(9, 0)).toBe('9')
+  })
+})
+
+describe('valueGrid', () => {
+  it('Punkte liegen auf festen Vielfachen — verschoben bleiben sie, wo sie waren', () => {
+    const a = valueGrid(10, 45, 14, 48, 1, 45)
+    const b = valueGrid(10.4, 45.3, 14.4, 48.3, 1, 45)
+    const key = (p: { lat: number; lon: number }) => `${p.lat.toFixed(4)}/${p.lon.toFixed(4)}`
+    const common = b.filter((p) => a.some((q) => key(q) === key(p)))
+    expect(common.length).toBeGreaterThan(b.length / 2)
+  })
+
+  it('alle Punkte liegen im Kasten, die Breite ist gestaucht', () => {
+    const g = valueGrid(0, 40, 10, 50, 2, 60)
+    expect(g.every((p) => p.lon >= 0 && p.lon <= 10 && p.lat >= 40 && p.lat <= 50)).toBe(true)
+    const lats = [...new Set(g.map((p) => p.lat.toFixed(4)))].map(Number).sort((x, y) => x - y)
+    expect(lats[1] - lats[0]).toBeCloseTo(1, 4) // 2° · cos 60°
+  })
+
+  it('ohne sinnvollen Abstand keine Punkte', () => {
+    expect(valueGrid(0, 0, 1, 1, 0, 0)).toEqual([])
   })
 })

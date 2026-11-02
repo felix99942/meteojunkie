@@ -90,7 +90,9 @@ const GLYPH_CHARS = '0123456789-'
 const glyphSets = new Map<string, Map<string, Glyph>>()
 
 function glyphsFor(style: (typeof CONTOUR_STYLES)[keyof typeof CONTOUR_STYLES]): Map<string, Glyph> {
-  const key = `${style.core}/${style.halo}`
+  const core = style.labelCore ?? style.core
+  const halo = style.labelHalo ?? style.halo
+  const key = `${core}/${halo}`
   const hit = glyphSets.get(key)
   if (hit) return hit
   const ctx = new OffscreenCanvas(32, GLYPH_H).getContext('2d', { willReadFrequently: true })!
@@ -104,9 +106,9 @@ function glyphsFor(style: (typeof CONTOUR_STYLES)[keyof typeof CONTOUR_STYLES]):
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.lineWidth = 3
-    ctx.strokeStyle = `rgba(${style.halo.join(',')},0.85)`
+    ctx.strokeStyle = `rgba(${halo.join(',')},0.85)`
     ctx.strokeText(ch, GLYPH_PAD, GLYPH_H / 2)
-    ctx.fillStyle = `rgb(${style.core.join(',')})`
+    ctx.fillStyle = `rgb(${core.join(',')})`
     ctx.fillText(ch, GLYPH_PAD, GLYPH_H / 2)
     set.set(ch, { w, h: GLYPH_H, adv, data: ctx.getImageData(0, 0, w, GLYPH_H).data })
   }
@@ -214,8 +216,8 @@ async function run(job: Extract<WorkerRequest, { type: 'tile' | 'field' }>): Pro
     if (job.contour) {
       const smooth = smoothField(f, job.contour.smooth)
       if (cancelled.delete(id)) return post({ id, aborted: true })
-      const style = CONTOUR_STYLES[job.contour.id]
-      const { rgba, labels } = contourTile(f, smooth, job.contour.interval, style, z, x, y, GLOBE_TILE_SIZE)
+      const style = CONTOUR_STYLES[job.contour.style ?? (job.contour.id as keyof typeof CONTOUR_STYLES)]
+      const { rgba, labels } = contourTile(f, smooth, job.contour.interval, style, z, x, y, GLOBE_TILE_SIZE, job.contour.min)
       bmp = await drawContourTile(rgba, labels, style)
     } else {
       const rgba = f.rgb ? colorizeRgbTile(f, z, x, y) : colorizeTile(f, getGlobeVariable(job.varId).scale, z, x, y)

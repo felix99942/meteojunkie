@@ -20,7 +20,7 @@ const RadarPanel = lazy(() => import('./components/RadarPanel').then((m) => ({ d
 const SatellitePanel = lazy(() =>
   import('./components/SatellitePanel').then((m) => ({ default: m.SatellitePanel })),
 )
-const GlobePanel = lazy(() => import('./components/GlobePanel').then((m) => ({ default: m.GlobePanel })))
+const ModelMapsSection = lazy(() => import('./components/ModelMapsSection').then((m) => ({ default: m.ModelMapsSection })))
 
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
@@ -74,7 +74,7 @@ export default function App() {
         </Suspense>
       ) : view === 'globe' ? (
         <Suspense fallback={<div className="panel-placeholder">Lade Modellkarten…</div>}>
-          <GlobePanel />
+          <ModelMapsSection />
         </Suspense>
       ) : view === 'impressum' ? (
         <Impressum />

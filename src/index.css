@@ -4076,7 +4076,7 @@ button:focus-visible {
    die Erklärung DES PRODUKTS: bei einem RGB entscheidet die Kombination der
    Kanäle, was Gelb oder Rot bedeutet, und das sieht man dem Bild nicht an. */
 .satellite-legend {
-  max-width: min(520px, 46vw);
+  max-width: min(600px, 50vw);
 }
 
 .satellite-dayonly {
@@ -4085,13 +4085,14 @@ button:focus-visible {
 
 .satellite-note {
   color: var(--ink-secondary);
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.35;
 }
 
 .radar-legend-cap {
   color: var(--ink-secondary);
-  font-size: 10px;
+  /* Legenden größer (auf Wunsch, alle Karten): 10 → 12,5 px */
+  font-size: 12.5px;
 }
 
 .radar-legend-scale {
@@ -4104,18 +4105,18 @@ button:focus-visible {
   flex-direction: column;
   align-items: center;
   /* Breit genug für die breiteste Klassengrenze der dBZ-Skala („50,5"). */
-  width: 30px;
+  width: 38px;
 }
 
 .radar-legend-step i {
   display: block;
   width: 100%;
-  height: 9px;
+  height: 13px;
 }
 
 .radar-legend-step em {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 11.5px;
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -4124,7 +4125,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--ink-secondary);
   pointer-events: auto;
   cursor: help;
@@ -4157,7 +4158,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--ink-secondary);
   pointer-events: auto;
   cursor: help;
@@ -4477,7 +4478,7 @@ button:focus-visible {
    Kästchen mit Zahl wäre sie breiter als die Karte. Deshalb ein durchgehender
    Balken, beschriftet nur jede n-te Stufe (`legendEvery`). */
 .globe-legend {
-  max-width: min(640px, calc(100% - 12px));
+  max-width: min(820px, calc(100% - 12px));
 }
 
 .globe-legend-bar {
@@ -4495,14 +4496,14 @@ button:focus-visible {
 .globe-legend-step i {
   display: block;
   width: 100%;
-  height: 9px;
+  height: 13px;
 }
 
 /* Die Zahl gehört an die UNTERKANTE der Stufe (Schwellenwert), steht also am
    linken Rand und darf über die Nachbarn hinausragen. */
 .globe-legend-step em {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 11.5px;
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -4584,12 +4585,17 @@ button:focus-visible {
   color: var(--ink);
 }
 
-/* Im Satellitenbereich unter den Sprungzielen (die stehen links oben) */
+/* Werteanzeige OBEN MITTIG (auf Wunsch, alle Karten): dort, wohin der Blick
+   beim Lesen der Karte zuerst geht, und weg von den Ebenen links oben */
+.globe-readout-top,
 .satellite-readout {
   position: absolute;
   z-index: 5;
-  top: 38px;
-  left: 6px;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  text-align: center;
 }
 
 .globe-readout-pos {
@@ -4618,25 +4624,25 @@ button:focus-visible {
 .globe-legend-octas {
   display: grid;
   gap: 2px;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--ink-secondary);
 }
 
 .globe-legend-octa-row {
   display: grid;
-  grid-template-columns: 44px repeat(8, 20px);
+  grid-template-columns: 52px repeat(8, 26px);
   align-items: center;
   gap: 1px;
 }
 
 .globe-legend-octa-row i {
   display: block;
-  height: 10px;
+  height: 13px;
 }
 
 .globe-legend-octa-scale em {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 11.5px;
   color: var(--ink-muted);
   text-align: center;
 }
@@ -5121,4 +5127,215 @@ button:focus-visible {
   .meteo .atclima-bar > .label-muted {
     font-size: 11px;
   }
+}
+
+/* --- Modellkarten: Panel-Ansicht (GlobeMultiPanel / GlobeMapPanel) -------- */
+
+.gmp-grid {
+  margin-top: 6px;
+}
+
+.gmp-header {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+/* ModSync steht direkt hinter ParSync — nur ParSync schiebt die Gruppe an den Rand */
+.sync-toggle.modsync {
+  margin-left: 0;
+}
+
+.gmp-localtime {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gmp-localtime button,
+.gmp-arrow {
+  padding: 1px 8px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.gmp-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Zwei Klassen Spezifität: MapLibre stempelt `.maplibregl-map { position: relative }` auf */
+.gmp-body .gmp-map {
+  position: absolute;
+  inset: 0;
+}
+
+.gmp-msg {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  padding: 6px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(20, 21, 24, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.gmp-readout {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 6px;
+  padding: 3px 8px;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(20, 21, 24, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.gmp-legend {
+  position: absolute;
+  z-index: 4;
+  left: 4px;
+  bottom: 4px;
+  max-width: calc(100% - 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 5px;
+  background: rgba(20, 21, 24, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.gmp-legend-cap {
+  font-size: 11.5px;
+  color: var(--ink-secondary);
+}
+
+.gmp-legend-bar {
+  display: flex;
+  /* Feste Breite: die Temperaturskala hat über 100 Stufen und lief sonst
+     über das ganze Panel */
+  width: min(300px, calc(100vw / 6));
+}
+
+.gmp-legend-step {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.gmp-legend-step i {
+  display: block;
+  height: 10px;
+}
+
+.gmp-legend-step em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink-secondary);
+  height: 13px;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+/* Meteogramm: der gewählte Ort groß und mittig über dem Stapel */
+.meteo-place {
+  margin: 2px 0 4px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+  flex: 0 0 auto;
+}
+
+.meteo-place-sub {
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Panel steht (3-h-Modell zwischen seinen Terminen): ausgegraut, damit klar
+   ist, dass hier nicht die gewählte Zeit zu sehen ist */
+.gmp-frozen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: rgba(24, 25, 28, 0.55);
+  backdrop-filter: grayscale(0.85);
+  pointer-events: none;
+}
+
+.gmp-frozen-badge {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f0c04a;
+  background: rgba(20, 21, 24, 0.9);
+  border: 1px solid #6b5a2a;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Presets der Panel-Ansicht: Auswahl, Name, Speichern/Löschen in einer Gruppe */
+.gmp-presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.gmp-presets input {
+  width: 120px;
+}
+
+/* Taktgeber-Panel: Akzentrand und Hinweis — die übrigen, die nicht mitkommen,
+   sind ausgegraut (`.gmp-frozen`) */
+.gmp-panel.is-pacing {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.gmp-pace-badge {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 35%, rgba(20, 21, 24, 0.92));
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
 }

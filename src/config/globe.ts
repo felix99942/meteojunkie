@@ -190,15 +190,17 @@ const SEA_TEMP: ColorScale = {
 }
 
 /**
- * Höhenwind 300 hPa (Strahlstrom) in km/h. Unter 70 km/h DURCHSICHTIG — in
+ * Höhenwind 300 hPa (Strahlstrom) in km/h. Unter 50 km/h DURCHSICHTIG — in
  * der Höhe ist das schwacher Wind, und eine durchgehend gefärbte Kugel
- * verdeckte genau das Band, um das es geht. Eigene kühle Rampe (hellblau →
+ * verdeckte genau das Band, um das es geht (bis 2026-11-02 ab 70 km/h, auf
+ * Wunsch tiefer: über Mitteleuropa liegen die Randbereiche des Strahlstroms
+ * oft zwischen 50 und 70). Eigene kühle Rampe (hellblau →
  * violett → magenta → gelb im Kern), damit die Karte nicht mit dem 10-m-Wind
  * verwechselt wird, dessen Skala bei 130 km/h schon endet.
  */
-const JET_STEPS = [70, 90, 110, 130, 150, 170, 190, 210, 240, 270, 300, 340]
+const JET_STEPS = [50, 70, 90, 110, 130, 150, 170, 190, 210, 240, 270, 300, 340]
 const JET_COLORS = lerpRamp(
-  ['#9fd3ea', '#5aa7dd', '#3b6fd0', '#5a46c0', '#8a3bb5', '#b8379e', '#d8457a', '#ea7458', '#f2a646', '#f6d84c'],
+  ['#cfe9f3', '#9fd3ea', '#5aa7dd', '#3b6fd0', '#5a46c0', '#8a3bb5', '#b8379e', '#d8457a', '#ea7458', '#f2a646', '#f6d84c'],
   JET_STEPS.length,
 )
 const JET: ColorScale = {
@@ -233,12 +235,19 @@ const RELTOP: ColorScale = {
  * Rate (blau → grün → gelb → rot → violett), aber Stufen für Summen über
  * Tage. Unter 1 mm durchsichtig — sonst färbte jeder Nieselhauch der
  * letzten zwei Wochen die ganze Kugel.
+ *
+ * DIE ERSTEN 15 mm IN SIEBEN DEUTLICH GETRENNTEN STUFEN, von Hand gesetzt
+ * (auf Wunsch): vorher lagen 1, 2 und 5 mm auf einer interpolierten Rampe in
+ * drei kaum unterscheidbaren Blautönen — genau der Bereich, in dem ein
+ * gewöhnlicher Regentag liegt. Jetzt hellblau → dunkelblau bis 7 mm, Grün ab
+ * 10, Gelb ab 20; darüber die bisherige Folge.
  */
-const PRECIP_SUM_STEPS = [1, 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300, 500]
-const PRECIP_SUM_COLORS = lerpRamp(
-  ['#4f97dd', '#2f6fc0', '#2fa36a', '#8fcf4a', '#f2d24b', '#f39a35', '#e0532a', '#b9265a', '#7c1a7a', '#c9a3e6'],
-  PRECIP_SUM_STEPS.length,
-)
+const PRECIP_SUM_STEPS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300, 500]
+const PRECIP_SUM_COLORS = [
+  '#c6e6fb', '#8ec9f2', '#57a6e6', '#2b7bd6', '#1d4fae',
+  '#2f9e5c', '#86c544',
+  '#ecd94a', '#f3a63b', '#e9682d', '#cf2f2c', '#a01d55', '#7c1a7a', '#a35ccc', '#c9a3e6', '#e3d0f4', '#ffffff',
+]
 const PRECIP_SUM: ColorScale = {
   kind: 'stepped',
   stops: PRECIP_SUM_STEPS.map((value, i) => ({ value, color: PRECIP_SUM_COLORS[i] })),
@@ -358,7 +367,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title: 'Mittlere Windgeschwindigkeit in 10 m Höhe zum Termin (km/h)',
     scale: COLOR_SCALES.wind_speed_10m,
     decimals: 0,
-    legendEvery: 1,
+    legendEvery: 2, // jede zweite Stufe: mit der größeren Legendenschrift liefen die Zahlen ineinander
   },
   {
     id: 'gust',
@@ -368,7 +377,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
       'Spitzenböe in 10 m (km/h): der höchste 3-Sekunden-Mittelwert des Winds (WMO-Definition) im Intervall vor dem Termin. ICON-EU/-D2: immer die letzte Stunde. IFS: bis +90 h die letzte Stunde, bis +144 h die letzten 3 Stunden, danach 6 Stunden — das jeweilige Intervall steht in der Legende. Ein längeres Intervall fängt mehr Spitzen ein, die Werte fallen dort tendenziell höher aus.',
     scale: COLOR_SCALES.wind_gusts_10m,
     decimals: 0,
-    legendEvery: 1,
+    legendEvery: 2,
   },
   {
     id: 'wind300',
@@ -392,9 +401,9 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   {
     id: 'clouds',
     group: 'Wolken & Gewitter',
-    label: 'Wolkenschichten (nur ICON)',
+    label: 'Wolkenschichten',
     title:
-      'Bedeckung je Höhe in Achteln als drei halbtransparente Flächen: hoch = grün, mittel = rot, tief = blau — je mehr Achtel, desto heller und kräftiger. Übereinander gestapelt wie von oben gesehen (tief unten, hoch oben). ECMWF Open Data führt keine Schichten.',
+      'Bedeckung je Höhe in Achteln als drei halbtransparente Flächen: hoch = grün, mittel = rot, tief = blau — je mehr Achtel, desto heller und kräftiger. Übereinander gestapelt wie von oben gesehen (tief unten, hoch oben); dünne Schichten bleiben durchscheinend, erst hohe Achtel decken.',
     scale: TCC_GREY,
     decimals: 0,
     legendEvery: 1,
@@ -426,7 +435,8 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     title: 'Aufsummierter Niederschlag seit Laufbeginn bis zum gewählten Termin (mm) — Regen und Schnee als Wasser; unter 1 mm als 0 gespeichert und nicht eingefärbt',
     scale: PRECIP_SUM,
     decimals: 0,
-    legendEvery: 2,
+    // jede Stufe beschriftet: die feinen unteren Stufen sind der Grund der Skala
+    legendEvery: 1,
   },
   {
     id: 'snow',
@@ -625,7 +635,7 @@ export function getGlobeModel(id: string): GlobeModel {
 
 // --- Isolinien ---------------------------------------------------------------
 
-export type ContourId = 'msl' | 'gh500' | 'gh300'
+export type ContourId = 'msl' | 'gh500' | 'gh300' | 'wind300'
 
 export interface ContourDef {
   id: ContourId
@@ -644,6 +654,8 @@ export interface ContourDef {
    * Kästchen erschienen. Die Farbfläche bleibt in jedem Fall ungeglättet.
    */
   smooth: Record<GlobeModelId, number>
+  /** Linien erst ab diesem Wert (Isotachen: nicht im schwachen Wind) */
+  min?: number
 }
 
 /**
@@ -674,6 +686,17 @@ export const CONTOURS: ContourDef[] = [
     interval: 8,
     smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3, varda: 6 },
   },
+  {
+    id: 'wind300',
+    label: 'Isotachen',
+    title: 'Isotachen 300 hPa: Linien gleicher Windgeschwindigkeit alle 20 km/h ab 60 km/h — der Kern des Strahlstroms',
+    // Linien gleicher Geschwindigkeit, auf Wunsch statt der 300-hPa-Höhenlinien
+    // bei den Regionalmodellen. Erst ab 60 km/h: darunter ist die Fläche
+    // durchsichtig, und Linien im schwachen Wind wären nur Rauschen.
+    interval: 20,
+    min: 60,
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'ecmwf-hres-asia': 2, 'icon-eu': 2, 'icon-d2': 4, varda: 8 },
+  },
 ]
 
 /**
@@ -681,8 +704,11 @@ export const CONTOURS: ContourDef[] = [
  * DERSELBEN Fläche (300 hPa) statt 500 hPa — Wind und Linien beschreiben dann
  * dieselbe Höhe, der Wind weht entlang der Linien. Sonst Isobaren und 500 hPa.
  */
-export function contoursFor(varId: GlobeVarId): ContourDef[] {
-  const upper: ContourId = varId === 'wind300' ? 'gh300' : 'gh500'
+export function contoursFor(varId: GlobeVarId, regional = false): ContourDef[] {
+  // Höhenwind der REGIONALmodelle: Isotachen statt 300-hPa-Höhenlinien (auf
+  // Wunsch, zusammen mit Windfiedern statt Partikeln) — über einem feinen
+  // Gitter will man die Stärke ablesen, die Strömungsrichtung tragen die Fiedern
+  const upper: ContourId = varId === 'wind300' ? (regional ? 'wind300' : 'gh300') : 'gh500'
   return CONTOURS.filter((c) => c.id === 'msl' || c.id === upper)
 }
 
@@ -817,6 +843,13 @@ export function decodeUv8(rgba: ArrayLike<number>, count: number): Uint8Array {
  * (80 m/s) achtmal so schnell wie am Boden; mit 40 m/s laufen sie in beiden
  * Fällen in einem ähnlichen, lesbaren Tempo.
  */
+/**
+ * Größen mit Windfiedern (auf Wunsch): Bodenwind, Böen, Höhenwind. Bei den
+ * Böen zeigen die Fiedern den MITTLEREN 10-m-Wind — Böenkomponenten führt
+ * kein Modell, die Böe ist die Farbfläche darunter.
+ */
+export const BARB_VARS: ReadonlySet<GlobeVarId> = new Set<GlobeVarId>(['wind10', 'gust', 'wind300'])
+
 export function particleSource(varId: GlobeVarId, meta: GlobeMeta | null): { var: GlobeVarId; refSpeed: number } {
   if (varId === 'wind300' && meta?.variables.uv300) return { var: 'uv300', refSpeed: 40 }
   return { var: 'uv10', refSpeed: 10 }

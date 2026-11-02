@@ -186,8 +186,14 @@ export const CLOUD_LAYER_RAMPS: Record<'high' | 'mid' | 'low', Rgb[]> = {
   low: ramp([24, 44, 104], [150, 185, 255]),
 }
 
-/** Deckkraft je Achtel: dünne Schichten lassen die darunter durchscheinen. */
-export const CLOUD_OCTA_ALPHA = Array.from({ length: 8 }, (_, i) => 0.5 + (0.38 * i) / 7)
+/**
+ * Deckkraft je Achtel (1/8 … 8/8): ÜBERPROPORTIONAL steigend, erst hohe
+ * Achtel decken (auf Wunsch, 2026-11-02) — 1/8 12 %, 4/8 ~39 %, 6/8 ~64 %,
+ * 8/8 92 %.
+ * Vorher linear von 50 % auf 88 %: schon eine dünne Schicht verdeckte die
+ * darunter fast zur Hälfte, und die Karte sah bei wenig Bewölkung zugemalt aus.
+ */
+export const CLOUD_OCTA_ALPHA = Array.from({ length: 8 }, (_, i) => 0.12 + 0.8 * (i / 7) ** 1.3)
 
 /** Bedeckung in % → Achtel (0…8), wie in der Synop-Meldung gerundet. */
 export function toOcta(percent: number): number {
@@ -215,13 +221,17 @@ export function toOcta(percent: number): number {
 const rgbSmoothCache = new WeakMap<GlobeField, Float32Array>()
 
 /**
- * Halbmesser der Glättung in Gitterzellen: ~4–5 km auf jeder Seite. Bilinear
- * allein ließ beim Hineinzoomen Treppen stehen — ICON springt von Zelle zu
- * Zelle oft von 0 auf 100 %, und eine Interpolation über EINE Zelle folgt
- * dann noch dem Gitter. ICON-D2 (0,02°) ±2 Zellen, ICON-EU (0,0625°) ±1.
+ * Halbmesser der Glättung in Gitterzellen: ~2 km auf jeder Seite — also nur
+ * bei ICON-D2 (0,02°) eine Zelle, bei allen gröberen Gittern KEINE.
+ * Bilinear allein ließ bei ICON-D2 beim Hineinzoomen Treppen stehen (es
+ * springt von Zelle zu Zelle oft von 0 auf 100 %). Bei groben Gittern war
+ * die Glättung dagegen falsch: früher mindestens EINE Zelle, bei IFS 0,25°
+ * also zwei Durchgänge à ±25 km — wolkenfreie Becken und Täler in Österreich
+ * verschwammen in der Fläche (gemeldet, GeoSphere zeigt dort im selben IFS
+ * sogar Hochnebel in den Tälern). Dort genügt die bilineare Interpolation.
  */
 export function cloudSmoothRadius(dlon: number): number {
-  return Math.max(1, Math.round(0.04 / dlon))
+  return Math.round(0.02 / dlon)
 }
 
 /**
@@ -284,7 +294,7 @@ export function smoothRgb3(f: GlobeField): Float32Array {
     }
     return dst
   }
-  for (let p = 0; p < 2; p++) cur = pass(pass(cur, 1, 0), 0, 1)
+  if (r > 0) for (let p = 0; p < 2; p++) cur = pass(pass(cur, 1, 0), 0, 1)
   rgbSmoothCache.set(f, cur)
   return cur
 }

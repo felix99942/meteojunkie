@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { contourTile, CONTOUR_STYLES, smoothField } from './globeContours'
-import { CLOUD_LAYER_RAMPS, CLOUD_OCTA_ALPHA, colorizeRgbTile, toOcta } from './globeTiles'
+import { CLOUD_LAYER_RAMPS, CLOUD_OCTA_ALPHA, cloudSmoothRadius, colorizeRgbTile, toOcta } from './globeTiles'
 import { sampleRgb3, tilePixelLat, tilePixelLon, type GlobeField, type GlobeGrid } from '../config/globe'
 
 const GRID: GlobeGrid = { ni: 1440, nj: 721, lon0: -180, lat0: 90, dlon: 0.25, dlat: -0.25, global: true }
@@ -201,7 +201,23 @@ describe('Wolkenschichten', () => {
   it('lässt eine einzelne Schicht genau in der Farbe ihrer Achtelstufe', () => {
     const [r, g, b, a] = pixel(fill(0, 0, 25)) // nur tief, genau 2/8
     expect([r, g, b]).toEqual([...CLOUD_LAYER_RAMPS.low[1]])
-    expect(a).toBe(Math.floor(CLOUD_OCTA_ALPHA[1] * 255))
+    // das Bild RUNDET (Uint8ClampedArray), daher ±1
+    expect(Math.abs(a - CLOUD_OCTA_ALPHA[1] * 255)).toBeLessThanOrEqual(1)
+  })
+
+  it('geglättet wird nur das feine ICON-D2-Gitter, grobe Gitter gar nicht', () => {
+    // IFS 0,25° · IFS 0,1° · ICON-EU — eine Zelle sind dort 7–25 km, geglättet
+    // verschwanden wolkenfreie Täler und Becken in der Fläche
+    expect([0.25, 0.1, 0.0625].map(cloudSmoothRadius)).toEqual([0, 0, 0])
+    expect(cloudSmoothRadius(0.02)).toBe(1)
+  })
+
+  it('dünne Schichten bleiben durchscheinend, erst hohe Achtel decken', () => {
+    expect(CLOUD_OCTA_ALPHA[0]).toBeLessThan(0.2) // 1/8
+    expect(CLOUD_OCTA_ALPHA[3]).toBeGreaterThan(0.3) // 4/8 ~39 %
+    expect(CLOUD_OCTA_ALPHA[3]).toBeLessThan(0.5)
+    expect(CLOUD_OCTA_ALPHA[7]).toBeGreaterThan(0.9) // 8/8
+    for (let i = 1; i < 8; i++) expect(CLOUD_OCTA_ALPHA[i]).toBeGreaterThan(CLOUD_OCTA_ALPHA[i - 1])
   })
 
   it('interpoliert zwischen den Achtelstufen stufenlos', () => {

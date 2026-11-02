@@ -15,9 +15,11 @@ const BASE = `${import.meta.env.BASE_URL}nwp/`
 
 /**
  * Höchstzahl Felder auf dem HAUPTTHREAD (~2 MB je Feld). Klein: hier liegen
- * nur noch Werteanzeige und Windpartikel, die Kachelfelder liegen im Worker.
+ * nur Werteanzeige, Höchstwerte und Windpartikel, die Kachelfelder liegen im
+ * Worker. 12 statt 6, seit die Panel-Ansicht sechs Felder GLEICHZEITIG zeigt —
+ * mit 6 verdrängte jeder Zeitschritt ein gerade gebrauchtes Feld.
  */
-const FIELD_LRU = 6
+const FIELD_LRU = 12
 
 export async function loadGlobeMeta(model: GlobeModelId): Promise<GlobeMeta> {
   // `no-cache`: die Datei wechselt mit jedem Lauf unter derselben URL —

@@ -99,6 +99,13 @@ FIELDS = {
     ('gh', '300'): 'gh300',
     ('gh', '1000'): 'gh1000',
     ('tcc', None): 'tcc',
+    # Wolkenschichten tief/mittel/hoch — seit 2026-11-02 im Index (0,25° UND
+    # 0,1°); am 2026-10-05 führte Open Data nur `tcc`. Wie `tcc` als ANTEIL
+    # 0–1 gemessen (lcc Mittel 0,44, mcc 0,26, hcc 0,32), unter den Namen der
+    # ICON-Schichten abgelegt — die Größe `clouds` entsteht daraus von selbst
+    ('lcc', None): 'clcl',
+    ('mcc', None): 'clcm',
+    ('hcc', None): 'clch',
     ('skt', None): 'skt',
     # seit 2026-10-27, im Index geprüft (alle Schritte +0 … +360)
     ('mucape', None): 'cape',
@@ -176,7 +183,7 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals * 1000.0  # m → mm, doppelt genau (wird differenziert)
-        elif name == 'tcc':
+        elif name in ('tcc', 'clcl', 'clcm', 'clch'):
             # ECMWF Open Data führt die Bedeckung als ANTEIL 0–1, nicht in %
             # (gemessen 2026-10-08: min 0, max 1, Mittel 0,66). Ohne den Faktor
             # rundete die 5-%-Kodierung alles auf 0 — die IFS-Bewölkung stand

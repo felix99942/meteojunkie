@@ -1372,7 +1372,8 @@ npm run preview   # gebautes dist/ servieren
   die Achse immer enthält). Die Stundenbeschriftung kommt aus
   `getUTCHours`: de-DE formatiert eine reine Stunde als „06 Uhr".
 - **Klassisches Meteogramm** (`ClassicMeteogram.tsx`, AppView `classic`) — der
-  „Meteogramm, wie man's kennt"-Bereich: EIN Ort (teilt sich `lockedLocation`
+  „Meteogramm, wie man's kennt"-Bereich: EIN Ort — GROSS und mittig als Überschrift über dem Stapel
+  (`.meteo-place`, auf Wunsch) — (teilt sich `lockedLocation`
   mit Punktprognosen/Ensemble/Profil), EIN wählbares Modell (Default
   `ecmwf_ifs025`), Aufbau nach dem **etablierten Schema der Wetterdienste**
   (DWD/ZAMG/ECMWF-Meteogramm), von oben nach unten: **Wettersymbole**
@@ -2401,7 +2402,15 @@ npm run preview   # gebautes dist/ servieren
   Gangbar wäre damit ein Ingest im Deploy-Cron wie bei MOSMIX — aber der
   läuft alle 3 h, ein Radar braucht 5 Minuten. Echtes 3D-Radar heißt
   also: ein dauerhaft laufender Server (Cloudflare-Plan), nicht GitHub Pages.
-  Offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
+  **WERT AM ZEIGER seit 2026-11-02 — als KLASSE aus dem Bild**
+  (`radarPixelAt`/`classifyRadarPixel` in `config/radar.ts`, Anzeige oben
+  mittig): die Farbe des schon geladenen Bilds zurück auf die Legende,
+  „19–23,5 dBZ", Maskengrau = „keine Radardaten", Mischfarbe an einer Kante
+  = keine geratene Klasse, kein Abruf beim DWD. Dekodiert wird abhängig
+  davon, OB der Zeiger auf der Karte ist — mit der Position als Abhängigkeit
+  brach jede Mausbewegung das Dekodieren ab (so war es zuerst). Den EXAKTEN
+  Wert gäbe nur GetFeatureInfo:
+  Früher offen und bewusst nicht gebaut: der Wert am Zeiger (`GetFeatureInfo` liefert
   `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
   kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
   Echo**, gemessen).
@@ -3372,6 +3381,85 @@ npm run preview   # gebautes dist/ servieren
   eingefärbt) — gemeldet waren Zahlen bei geringen Mengen ohne sichtbare
   Fläche, ein einzelner nasser Gitterpunkt. Zahlen weichen Ortsnamen eine
   Zeile aus, unter Bedienelemente kommen sie nicht.
+  **PANEL-ANSICHT: 4 oder 6 Karten nebeneinander** (seit 2026-11-02, auf
+  Wunsch; Umschalter „Globusansicht · 4 Panels · 6 Panels" vorn in der Leiste,
+  `ModelMapsSection.tsx` → `GlobeMultiPanel.tsx` + `GlobeMapPanel.tsx`, Kern
+  `config/globePanels.ts` mit Tests). Flache Karten, Region **Europa** oder
+  **Österreich**, bedient wie das Panel-Raster der Punktprognosen: je Panel
+  Modell und Größe plus **ParSync** (diese Größe für alle → Modellvergleich,
+  Vorgabe beim Öffnen mit Niederschlag), **ModSync** (dieses Modell für alle
+  → Synoptik, je Panel eine Größe) und **SYNC** (gemeinsame Zeit UND
+  gemeinsamer Ausschnitt; ohne SYNC eigene ‹ ›-Zeit im Kopf, Verschieben
+  bleibt im Panel). ParSync/ModSync sind EIN Quellpanel (Radio), höchstens
+  eine Kopplung. **Abschalten friert den gespiegelten Wert ein, ein WECHSEL
+  der Kopplung nicht** — von ParSync auf ModSync stand sonst in allen Panels
+  dieselbe Größe UND dasselbe Modell (so war es zuerst). **KEINE
+  Isobaren/500-hPa-Linien in den Panels** (eine erste Fassung legte sie nach
+  Konvention darüber, auf Wunsch wieder raus) und **kein Zahlenraster über
+  Temperaturflächen** (die zweite Fassung — „schaut nicht gut aus").
+  Stattdessen **KANTENLINIEN**, Schalter „Zahlen": ganz dünne, dezent graue
+  Linien auf den Grenzen der Farbstufen, beschriftet mit ihrem Wert
+  (`PANEL_BAND_LINES` in `config/globePanels.ts`, eigenes Protokoll
+  `globeband://`, Stil `band` in `CONTOUR_STYLES` — dieselbe Isolinien-
+  rechnung wie die Isobaren, Linie ~1 px ohne Halo, dunkle Schrift mit
+  hellem Rand). Abstand je Größe auf Stufengrenzen (Temperatur 2 K bei
+  1-K-Bändern), nur leicht geglättet, damit die Linie auf der KANTE der
+  ungeglätteten Fläche liegt. Niederschlag behält die Höchstwerte, Größen
+  ohne Kantenlinien fallen auf ein Werteraster zurück (`valueGrid`, an
+  Gradvielfachen verankert). **Ein Panel zeigt den LETZTEN Termin BIS zur
+  gewählten Zeit, nie einen späteren** (`frozenStepIndex`, auf Wunsch): ein
+  3-h-Modell bleibt um 13 UTC bei 12 UTC STEHEN und wird ausgegraut („steht
+  bei … · 3-h-Schritte"), Varda/ICON-D2 laufen stündlich weiter; mehr als
+  6 h dahinter (`PANEL_FREEZE_MAX_MS`) heißt „reicht nur bis …". Die
+  gemeinsame Zeitachse folgt dem GRÖBSTEN Takt der offenen SYNC-Panels
+  (`coarsestTimes`: nur Zeiten, zu denen jedes Modell — soweit es reicht —
+  einen eigenen Termin hat; vorher lief der Regler stündlich und IFS kam nur
+  jeden dritten Schritt mit). **TAKTGEBER**: ein Klick (ohne Ziehen) in ein
+  Panel mit FEINEREN Schritten (Varda, ICON-D2, ICON-EU bis +78 h) lässt den
+  Regler in dessen Takt laufen. Gröbere Modelle sind nur ZWISCHEN ihren
+  Terminen grau („steht bei …"), zu ihren eigenen Terminen erscheinen sie
+  normal — eine erste Fassung graute sie im Taktgeber-Modus durchgehend aus,
+  auch zu 18 UTC (auf Wunsch wieder raus). Beim Umschalten bleibt die gezeigte Zeit
+  stehen — sonst rechnete der feinere Takt von der Uhrzeit aus neu und die
+  Anzeige sprang zurück (so war es zuerst). Zweiter Klick oder Esc: zurück.
+  **PRESETS** (auf Wunsch, bewusst simpel):
+  Panels mit Modell/Größe/SYNC, Kopplung, Panelzahl und Region unter einem
+  Namen im `localStorage` (`meteo-workbench:map-panel-presets`, getrennt von
+  den Presets der Punktprognosen), ohne Zeit; beim Lesen fällt Unbekanntes
+  auf die Vorgabe zurück (`parsePresets`). **Seit 2026-11-02 mit dem
+  AUSSCHNITT je Panel** (Mittelpunkt + Zoom, `PanelView`; auf Wunsch —
+  vorher fuhr jedes Panel beim Laden den Standardausschnitt der Region an).
+  Er gilt auch für Panels, die erst durch den Wechsel auf 6 entstehen, und
+  bis die Region von Hand gewechselt wird; ältere Presets ohne Ausschnitt
+  fahren die Region an.
+  Den Wert am Zeiger
+  zeigen ALLE Panels für denselben Ort. Gleiches Kachelprotokoll wie die
+  Globusansicht (Kacheln aus dem gemeinsamen Speicher); das Vorrechnen
+  sichtbarer Kacheln (`prefetchVisibleTiles`) bleibt der Globusansicht
+  vorbehalten — es ist ein Singleton und bestellte sich zwischen sechs
+  Karten gegenseitig ab, die Panels wärmen nur die Felder vor.
+  **WINDFIEDERN bei Wind 10 m, Böen und Höhenwind** (`BARB_VARS`, auf
+  Wunsch, Einzelkarte UND Panels): beim Wechsel auf eine dieser Größen an;
+  bei den Regionalmodellen statt der Partikel, beim globalen IFS zusätzlich.
+  Bei den Böen zeigen sie den MITTLEREN 10-m-Wind (Böenkomponenten führt kein
+  Modell). Auf der Kugel nicht — gedreht wären sie verzerrt und dicht wie ein
+  Teppich, dort tragen die Partikel die Richtung.
+  **HÖHENWIND DER REGIONALMODELLE: Windfiedern und Isotachen** (seit
+  2026-11-02, auf Wunsch; „regional" = `!meta.grid.global`, also IFS 9 km,
+  ICON-EU, ICON-D2, Varda): beim Wechsel auf den Höhenwind Fiedern statt
+  Partikeln (`render/windBarbs.ts`, Raster an Gradvielfachen, breiter
+  dunkler Rand unter der hellen Fieder — sonst unsichtbar auf dem hellblauen
+  Strahlstromrand) und ISOTACHEN statt 300-hPa-Höhenlinien (Linienart
+  `wind300`, alle 20 km/h ab 60, `ContourDef.min`). IFS global bleibt bei
+  Partikeln und Höhenlinien. Die Strahlstromskala färbt seit demselben Tag
+  ab **50 statt 70 km/h**.
+  **REGENSUMMEN-SKALA: die ersten 15 mm in sieben getrennten Stufen**
+  (1/2/3/5/7/10/15, von Hand gesetzt, jede Stufe beschriftet) — vorher lagen
+  1, 2 und 5 mm in drei kaum unterscheidbaren Blautönen.
+  **LEGENDEN GRÖSSER in allen Karten** (Modellkarten, Panels, Radar,
+  Satellit: Schrift 11,5–12,5 statt 9,5–10 px, Farbfelder 13 statt 9 px)
+  und die **WERTEANZEIGE OBEN MITTIG** (`.globe-readout-top`, auch im
+  Satellit, im Radar und je Panel) — links oben stehen die Ebenen.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-
@@ -3380,13 +3468,23 @@ npm run preview   # gebautes dist/ servieren
   **GESAMTBEWÖLKUNG IN GRAUSTUFEN, wolkenlos hell, bedeckt dunkel** — dieselbe
   Leserichtung wie im klassischen Meteogramm; das dunkle Ende bleibt über der
   Kartenfarbe, sonst wäre „bedeckt" nicht von „außerhalb des Modells" zu trennen.
-  **WOLKENSCHICHTEN nur bei ICON** (`clch`/`clcm`/`clcl`; ECMWF Open Data führt
-  nur `tcc`, im Index nachgesehen): EIN Bild je Schritt mit drei Kanälen in %
+  **WOLKENSCHICHTEN bei ICON UND seit 2026-11-02 bei ECMWF** (`clch`/`clcm`/
+  `clcl`; ECMWF aus `hcc`/`mcc`/`lcc`, als Anteil 0–1 gemessen und ×100 —
+  am 2026-10-05 führte Open Data nur `tcc`, im Index 2026-11-02 bei 0,25°
+  UND 0,1° vorhanden; GeoSphere zeigt sie, weil sie IFS ohnehin voll
+  bezieht): EIN Bild je Schritt mit drei Kanälen in %
   (`encoding: 'rgb3'`, R = mittel, G = hoch, B = tief, 255 = kein Wert),
   angezeigt als DREI HALBTRANSPARENTE FLÄCHEN, je Schicht EIN Farbton (hoch
   grün, mittel rot, tief blau), die STÄRKE in ACHTELN als Leiter von dunkel
   und blass (1/8) bis hell und kräftig (8/8) (`CLOUD_LAYER_RAMPS`,
-  `CLOUD_OCTA_ALPHA` 0,50 … 0,88, `toOcta` rundet wie die Synop-Meldung).
+  `CLOUD_OCTA_ALPHA` überproportional 0,12 … 0,92 — 1/8 12 %, 4/8 ~39 %,
+  6/8 ~64 %: dünne Schichten bleiben durchscheinend, erst hohe Achtel decken
+  (auf Wunsch; vorher linear 0,50 … 0,88), `toOcta` rundet wie die
+  Synop-Meldung). Geglättet seit demselben Tag NUR NOCH ICON-D2 (±1 Zelle,
+  `cloudSmoothRadius` ~2 km), alle gröberen Gitter gar nicht — die alte
+  Untergrenze von einer Zelle hieß bei IFS 0,25° zwei Durchgänge à ±25 km,
+  und wolkenfreie Täler/Becken in Österreich verschwanden (gemeldet;
+  GeoSphere zeigt im selben IFS Hochnebel in Tälern).
   Übermalt wie von oben gesehen: tief unten, hoch oben. Zwei Vorstufen sind
   auf Rückmeldung verworfen: **additive Mischung** (hoch + mittel = gelb, alle
   drei = weiß — sieben Farben für drei Größen) und **eine Farbe mit

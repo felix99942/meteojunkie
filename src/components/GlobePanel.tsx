@@ -13,7 +13,7 @@
 // nicht aus der Farbe. Gewählt wird eine GÜLTIGKEITSZEIT, kein Index — beim
 // Wechsel auf ein Modell mit anderen Schritten bleibt der Termin stehen.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
@@ -22,10 +22,13 @@ import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../ren
 import { addWorldLabels } from '../render/worldLabels'
 import { addFieldMaxima } from '../render/fieldMaxima'
 import { MAXIMA_OPTIONS } from '../config/globeMaxima'
+import { runLabel, validLabel } from '../config/globeFormat'
 import { WindParticles } from '../render/windParticles'
+import { WindBarbs } from '../render/windBarbs'
 import { starTileDataUrl } from '../render/starfield'
 import { globeFieldSource, loadGlobeField, loadGlobeMeta, prefetchGlobeField, setGlobeMeta } from '../api/globeData'
 import {
+  BARB_VARS,
   CONTOURS,
   contoursFor,
   DEFAULT_GLOBE_MODEL,
@@ -95,23 +98,9 @@ const STAR_TILE = 768
  */
 const GLOBE_MAX_PIXEL_RATIO = 1.5
 
-const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
-const pad = (n: number) => String(n).padStart(2, '0')
-
-/** „Mo 05.10. 12 UTC" — von Hand statt über Intl: de-DE schreibt eine reine Stunde als „12 Uhr". */
-function validLabel(ms: number): string {
-  const d = new Date(ms)
-  return `${WEEKDAYS[d.getUTCDay()]} ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}. ${pad(d.getUTCHours())} UTC`
-}
-
-function runLabel(ms: number): string {
-  const d = new Date(ms)
-  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}. ${pad(d.getUTCHours())} UTC`
-}
-
 type MetaState = { meta: GlobeMeta } | { error: string }
 
-export function GlobePanel() {
+export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const starsRef = useRef<HTMLDivElement>(null)
   const tilePrefetchRef = useRef<() => void>(() => {})
@@ -137,9 +126,8 @@ export function GlobePanel() {
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [readout, setReadout] = useState<{ lat: number; lon: number } | null>(null)
   /** Isolinien als eigene Ebenen über JEDER Größe — Isobaren sind die Vorgabe. */
-  const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false, gh300: true })
+  const [contours, setContours] = useState<Record<ContourId, boolean>>({ msl: true, gh500: false, gh300: true, wind300: true })
   /** Die Linienarten, die zur gewählten Größe gehören (Höhenwind: 300 statt 500 hPa) */
-  const shownContours = useMemo(() => contoursFor(varId), [varId])
   /**
    * Windpartikel (10-m-Wind `uv10` als Bewegung) — eingeschaltet, sobald Wind
    * oder Böen gewählt werden. IMMER der Wind, auch über den Wellengrößen: ein
@@ -148,12 +136,17 @@ export function GlobePanel() {
   const [particles, setParticles] = useState(false)
   /** Örtliche Höchstwerte als Zahlen im Niederschlagsfeld (auf Wunsch, Vorgabe an). */
   const [maxima, setMaxima] = useState(true)
+  /** Windfiedern 300 hPa (Regionalmodelle) — Vorgabe beim Wechsel auf den Höhenwind */
+  const [barbs, setBarbs] = useState(false)
 
   const model = getGlobeModel(modelId)
   const view = GLOBE_VIEWS.find((v) => v.id === viewId) ?? GLOBE_VIEWS[0]
   const metaState = metas[modelId]
   const meta = metaState && 'meta' in metaState ? metaState.meta : null
   const metaError = metaState && 'error' in metaState ? metaState.error : null
+  /** Regionalmodell (ICON-D2/-EU, IFS 9 km, Varda): beim Höhenwind Fiedern und Isotachen */
+  const regional = meta ? !meta.grid.global : false
+  const shownContours = useMemo(() => contoursFor(varId, regional), [varId, regional])
   const variable = getGlobeVariable(varId)
   const vm = meta?.variables[varId]
   const steps = useMemo(() => vm?.steps ?? [], [vm])
@@ -186,9 +179,10 @@ export function GlobePanel() {
   // Wechsel eingeschaltet, abschalten bleibt danach möglich. Die Relative
   // Topografie liest man klassisch mit den 500-hPa-Linien darüber.
   useEffect(() => {
-    const line = varId === 'reltop' ? 'gh500' : varId === 'wind300' ? 'gh300' : varId
-    if (line === 'msl' || line === 'gh500' || line === 'gh300') setContours((c) => (c[line] ? c : { ...c, [line]: true }))
-  }, [varId])
+    const line = varId === 'reltop' ? 'gh500' : varId === 'wind300' ? (regional ? 'wind300' : 'gh300') : varId
+    if (line === 'msl' || line === 'gh500' || line === 'gh300' || line === 'wind300')
+      setContours((c) => (c[line] ? c : { ...c, [line]: true }))
+  }, [varId, regional])
 
   // Beim Höhenwind die Isobaren AUS (auf Wunsch): Bodendruck und 300-hPa-Linien
   // zusammen sind zwei Liniennetze übereinander, und gefragt ist die Höhe. Wer
@@ -218,11 +212,16 @@ export function GlobePanel() {
     setParticles(false)
   }, [varId])
 
-  // Wer Wind oder Böen wählt, will die Strömung sehen — einmal beim Wechsel
-  // eingeschaltet, abschalten bleibt danach möglich
+  // Wer Wind oder Böen wählt, will Richtung und Stärke sehen — einmal beim
+  // Wechsel eingeschaltet, abschalten bleibt danach möglich. WINDFIEDERN bei
+  // allen drei Windgrößen (auf Wunsch); bei den REGIONALmodellen statt der
+  // Partikel (über einem feinen Gitter will man die Stärke ablesen), beim
+  // globalen IFS zusätzlich zu ihnen
   useEffect(() => {
-    if (varId === 'wind10' || varId === 'gust' || varId === 'wind300') setParticles(true)
-  }, [varId])
+    if (!BARB_VARS.has(varId)) return
+    setBarbs(true)
+    setParticles(!regional)
+  }, [varId, regional])
 
   // Hat das Modell die gewählte Größe nicht, auf die Vorgabe zurück — und
   // fehlt AUCH die (ein Lauf von vor der Relativen Topografie), auf T2m,
@@ -339,7 +338,7 @@ export function GlobePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-corner, .maplibregl-ctrl-top-right')
+    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .maplibregl-ctrl-top-right')
   }, [mapReady])
 
   // NEUESTER STAND GEWINNT: solange die Kacheln eines Schritts noch laden,
@@ -488,6 +487,37 @@ export function GlobePanel() {
     }
   }, [mapReady, particles, meta, modelId, particleVar, uvStep, refSpeed])
 
+  // Windfiedern aus denselben Windkomponenten — nur beim Höhenwind
+  const barbsRef = useRef<WindBarbs | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const wb = new WindBarbs(map)
+    barbsRef.current = wb
+    return () => {
+      wb.destroy()
+      barbsRef.current = null
+    }
+  }, [mapReady])
+  // Auf der Kugel keine Fiedern: auf einer gedrehten Kugel wären sie verzerrt
+  // und dicht wie ein Teppich — dort tragen die Partikel die Richtung
+  const showBarbs = barbs && BARB_VARS.has(varId) && view.projection === 'mercator'
+  useEffect(() => {
+    const wb = barbsRef.current
+    if (!wb) return
+    if (!showBarbs || !meta || uvStep == null) {
+      wb.set(null)
+      return
+    }
+    let cancelled = false
+    loadGlobeField(modelId, meta.runId, particleVar, uvStep)
+      .then((f) => !cancelled && wb.set((lat, lon) => sampleWind(f, lat, lon)))
+      .catch(() => !cancelled && wb.set(null))
+    return () => {
+      cancelled = true
+    }
+  }, [mapReady, showBarbs, meta, modelId, particleVar, uvStep])
+
   // Aktuelles Feld für die Werteanzeige + Vorladen der nächsten Schritte
   useEffect(() => {
     if (!meta || step == null) return
@@ -615,7 +645,7 @@ export function GlobePanel() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    const mx = addFieldMaxima(map, '.globe-arrows, .globe-legend, .globe-corner, .maplibregl-ctrl-top-right')
+    const mx = addFieldMaxima(map, '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .maplibregl-ctrl-top-right')
     maximaRef.current = mx
     return () => {
       mx.destroy()
@@ -670,6 +700,7 @@ export function GlobePanel() {
     <div className="radar globe">
       <div className="radar-bar">
         <span className="radar-title">Modellkarten</span>
+        {modeSwitch}
         <span className="globe-seg" role="group" aria-label="Ansicht">
           {GLOBE_VIEWS.map((v) => (
             <button
@@ -846,6 +877,14 @@ export function GlobePanel() {
               />{' '}
               {particleVar === 'uv300' ? 'Windpartikel 300 hPa' : 'Windpartikel'}
             </label>
+            {BARB_VARS.has(varId) && (
+              <label
+                className="globe-layer"
+                title={`Windfiedern ${varId === 'wind300' ? '300 hPa' : '10 m (bei den Böen der mittlere Wind)'}: Richtung und Stärke je Rasterpunkt (Wimpel 50 kt, ganze Fieder 10 kt, halbe 5 kt)${view.projection === 'globe' ? ' — auf der Kugel ausgeblendet' : ''}`}
+              >
+                <input type="checkbox" checked={barbs} disabled={!uvMeta} onChange={(e) => setBarbs(e.target.checked)} /> Windfiedern
+              </label>
+            )}
             {maximaOpts && (
               <label
                 className="globe-layer"
@@ -855,7 +894,8 @@ export function GlobePanel() {
               </label>
             )}
           </div>
-          <div className="globe-readout" aria-live="polite">
+        </div>
+          <div className="globe-readout globe-readout-top" aria-live="polite">
             {readout ? (
               <>
                 <span className="globe-readout-pos">
@@ -878,7 +918,6 @@ export function GlobePanel() {
               <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
             )}
           </div>
-        </div>
         <div className="radar-legend globe-legend" title={variable.title}>
           <span className="radar-legend-cap">
             {model.label} · {variable.label} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}

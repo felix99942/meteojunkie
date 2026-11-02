@@ -561,6 +561,18 @@ export function ClassicMeteogram() {
         </span>
       </div>
 
+      {/* Der gewählte Ort GROSS und mittig über dem Stapel (auf Wunsch): in der
+          Leiste stand er nur im Suchfeld, und beim Durchklicken der
+          Schnellwahl war nicht auf einen Blick zu sehen, welcher Ort gilt. */}
+      {location && (
+        <h2 className="meteo-place">
+          {location.label ?? 'Gewählter Punkt'}
+          <span className="meteo-place-sub">
+            {Math.abs(location.lat).toFixed(2)}° {location.lat >= 0 ? 'N' : 'S'} · {Math.abs(location.lon).toFixed(2)}°{' '}
+            {location.lon >= 0 ? 'O' : 'W'} · {model.label}
+          </span>
+        </h2>
+      )}
       {!location && <div className="panel-placeholder">Ort wählen, um das Meteogramm zu laden</div>}
       {outsideCoverage && (
         <div className="atdetail-note">
