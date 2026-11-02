@@ -1065,7 +1065,19 @@ npm run preview   # gebautes dist/ servieren
   mos-ingest-forecast.mjs`, KMZ→KML-Parser `scripts/lib/mosmix.mjs`, kein externes
   Paket) zu kompakten Pro-Parameter-JSONs (`public/mos/forecast/*.json`, **gitignored**,
   im Build erzeugt) verarbeitet; der Browser lädt sie same-origin (`api/mosApi.ts`).
-  `deploy.yml` läuft dafür zusätzlich per Cron (seit 2026-10-09 stündlich). T2m/Niederschlag/Sonne/
+  `deploy.yml` läuft dafür zusätzlich per Cron (seit 2026-10-09 stündlich). **Seit 2026-11-02 JE LAUF im
+  Actions-Cache** (`mos-forecast-v1-<lauf>`): MOSMIX_L erscheint nur
+  viermal am Tag (03/09/15/21 UTC), der Ingest holt aber 3.060
+  Einzeldateien und brauchte ~16 der ~22 Minuten eines stündlichen Laufs —
+  20 von 24 Läufen holten denselben Stand erneut (der größte Posten der
+  Actions-Minuten, wichtig für ein privates Repo). Der Lauf kommt aus der
+  Sammelliste `MOSMIX_L/all_stations/kml/` (~1 KB; die Dateien erscheinen
+  dort und bei den Einzelstationen in derselben Minute, gemessen). In den
+  Cache nur, wenn der erste Termin = Lauf + 1 h ist (sonst war es ein
+  halber Wechsel, und der nächste Lauf holt neu); bei einem Treffer wird
+  trotzdem nach R2 synchronisiert, `--checksum` schreibt dann nichts, holt
+  aber einen gescheiterten Upload nach. Ist die Liste nicht erreichbar,
+  läuft der Ingest wie früher. T2m/Niederschlag/Sonne/
   Bewölkung/Wind/**Gefühlte Temperatur** stündlich (+72 h, Zeitschieber),
   Tmin/Tmax täglich. Gefühlte Temperatur wird BEIM INGEST berechnet (dieselbe
   AU-BOM-Formel wie bei den Klimastationen, dupliziert in reinem JS im Skript
@@ -3222,6 +3234,12 @@ npm run preview   # gebautes dist/ servieren
   D2 17 s / 54 MB, EU 38 s / 136 MB je Lauf. Vorhaltung beim DWD nur ~24 h.
   Das gültige D2-Gebiet ist KEIN Rechteck (ca. 150.000 Randpunkte fehlen, nach
   Süden schmaler) — die gezackte Kante in der Karte ist der Modellrand.
+  **Der Niederschlag trägt sein Intervall im NAMEN** (seit 2026-11-03, auf
+  Wunsch, `variableLabel`/`precipReadout` in `config/globe.ts`): Auswahl in
+  Globusansicht und Panels „Niederschlag 3 h" bzw. „1 h" für den gezeigten
+  Schritt, Legende „mm/h · Mittel über 3 h", Wert am Zeiger mit der Menge
+  („0,8 mm/h · 2,4 mm in 3 h", bei 1 h nur „… mm in 1 h"). MOS heißt schon
+  „Niederschlag (1 h)", die Radarprodukte nennen ihren Zeitraum im Namen.
   **Böen- und Niederschlagsintervall stehen je Schritt in `meta.json`**
   (`intervals`, aus dem GRIB-`stepRange`) und in der Legende, weil sie
   WECHSELN: der Niederschlag gilt bis zum vorigen Schritt (1/3/6 h), die Böe

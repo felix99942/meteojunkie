@@ -16,9 +16,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type maplibregl from 'maplibre-gl'
 import { GlobeMapPanel } from './GlobeMapPanel'
 import { loadGlobeMeta, setGlobeMeta } from '../api/globeData'
-import { GLOBE_GROUPS, GLOBE_MODELS, GLOBE_VARIABLES, getGlobeModel, runMs, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import { GLOBE_GROUPS, GLOBE_MODELS, GLOBE_VARIABLES, getGlobeModel, intervalHours, runMs, variableLabel, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
 import {
   defaultSetup,
+  frozenStepIndex,
   effectivePanel,
   makePreset,
   PANEL_PRESET_KEY,
@@ -291,6 +292,12 @@ export function GlobeMultiPanel({
     const isModelSrc = coupling?.kind === 'model' && coupling.source === i
     const ownTimes = p.sync ? [] : validTimes(meta, p.varId)
     const localMs = p.localMs ?? shownMs
+    // Intervall des GEZEIGTEN Schritts — dieselbe Regel wie im Kartenpanel
+    // (`frozenStepIndex`), damit „Niederschlag 3 h" zum Bild passt
+    const vTimes = validTimes(meta, p.varId)
+    const vIdx = frozenStepIndex(vTimes, p.sync ? shownMs : localMs)
+    const vm = meta?.variables[p.varId]
+    const interval = vIdx >= 0 && vm ? intervalHours(vm, vm.steps[vIdx]) : undefined
     return (
       <div className="panel-header gmp-header">
         <select
@@ -328,7 +335,7 @@ export function GlobeMultiPanel({
             <optgroup key={g} label={g}>
               {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
                 <option key={v.id} value={v.id} disabled={!!meta && !meta.variables[v.id]}>
-                  {v.label}
+                  {variableLabel(v, v.id === p.varId ? interval : undefined)}
                 </option>
               ))}
             </optgroup>

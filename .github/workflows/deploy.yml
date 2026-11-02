@@ -75,10 +75,55 @@ jobs:
       # bäckt sie ein. Ein DWD-Ausfall darf das Deployment nicht blockieren →
       # continue-on-error (dann wird der letzte deployte Stand weiter ausgeliefert
       # bzw. der Vorhersage-Tab zeigt „nicht ladbar", der Rest deployt normal).
+      #
+      # JE LAUF IM CACHE (seit 2026-11-02): MOSMIX_L erscheint nur viermal am
+      # Tag (03/09/15/21 UTC, ~1 h 15 min später beim DWD), der Ingest holt
+      # aber 3.060 Einzeldateien und brauchte ~16 der ~22 Minuten eines
+      # stündlichen Laufs — 20 von 24 Läufen holten denselben Stand ein
+      # weiteres Mal. Der Lauf kommt aus der Sammelliste (all_stations, ~1 KB);
+      # gemessen erscheinen dort und bei den Einzelstationen die Dateien in
+      # derselben Minute, eine Verzögerung entsteht also nicht. Gespeichert
+      # wird nur, wenn der Ingest WIRKLICH diesen Lauf erwischt hat (erster
+      # Termin = Lauf + 1 h) — sonst holt der nächste Lauf neu.
+      - name: MOSMIX-Lauf feststellen
+        id: mosrun
+        continue-on-error: true
+        run: |
+          run=$(curl -fsS --max-time 30 --retry 2 --retry-delay 5 https://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_L/all_stations/kml/ \
+            | grep -oE 'MOSMIX_L_[0-9]{10}\.kmz' | grep -oE '[0-9]{10}' | sort | tail -1)
+          echo "MOSMIX_L-Lauf: ${run:-unbekannt}"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: MOS-Vorhersage aus dem Cache
+        id: moscache
+        if: steps.mosrun.outputs.run != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/mos/forecast
+          key: mos-forecast-v1-${{ steps.mosrun.outputs.run }}
+
       - name: MOS-Vorhersage erzeugen
         id: mos
+        if: steps.moscache.outputs.cache-hit != 'true'
         continue-on-error: true
         run: npm run ingest:mos:forecast
+
+      - name: MOS-Lauf prüfen
+        id: moscheck
+        if: steps.mos.outcome == 'success' && steps.mosrun.outputs.run != ''
+        continue-on-error: true
+        run: |
+          first=$(node -e "console.log(JSON.parse(require('fs').readFileSync('public/mos/forecast/t2m.json')).meta.run)")
+          want=$(date -u -d "$(echo ${{ steps.mosrun.outputs.run }} | sed -E 's/(....)(..)(..)(..)/\1-\2-\3 \4:00/') +1 hour" +%Y-%m-%dT%H:00:00.000Z)
+          echo "erster Termin $first, erwartet $want"
+          test "$first" = "$want"
+
+      - name: MOS-Vorhersage in den Cache
+        if: steps.moscheck.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: public/mos/forecast
+          key: mos-forecast-v1-${{ steps.mosrun.outputs.run }}
 
       # Klimamonitor Deutschland: DWD Climate Data Center → public/de/. Kein
       # CORS beim DWD, deshalb hier. Die HISTORISCHEN Archive (~400 MB, Monat
@@ -368,7 +413,9 @@ jobs:
             [[ -f "public/nwp/$m/meta.json" ]] && dirs+=("nwp/$m")
           done
           [[ "${{ steps.de.outcome }}" == success ]] && dirs+=(de)
-          [[ "${{ steps.mos.outcome }}" == success ]] && dirs+=(mos/forecast)
+          # auch beim Cache-Treffer: rclone --checksum schreibt dann nichts,
+          # holt aber einen früher gescheiterten Upload nach
+          [[ "${{ steps.mos.outcome }}" == success || "${{ steps.moscache.outputs.cache-hit }}" == true ]] && dirs+=(mos/forecast)
           [[ "${{ steps.sondes.outcome }}" == success ]] && dirs+=(sondes)
           scripts/upload-data.sh "${dirs[@]}"
 

@@ -19,6 +19,7 @@ import { globeFieldSource, loadGlobeField, prefetchGlobeField } from '../api/glo
 import {
   BARB_VARS,
   formatReadout,
+  precipReadout,
   nearestStepIndex,
   particleSource,
   runMs,
@@ -358,7 +359,9 @@ export function GlobeMapPanel(props: Props) {
         {hover && (
           <div className="gmp-readout">
             {Number.isFinite(readValue)
-              ? `${formatReadout(readValue, variable.decimals)} ${vm?.unit ?? ''}`
+              ? cfg.varId === 'precip'
+                ? precipReadout(readValue, interval, (v) => formatReadout(v, variable.decimals))
+                : `${formatReadout(readValue, variable.decimals)} ${vm?.unit ?? ''}`
               : field && !field.grid.global
                 ? 'außerhalb'
                 : '—'}
@@ -368,7 +371,10 @@ export function GlobeMapPanel(props: Props) {
           <div className="gmp-legend" title={variable.title}>
             <span className="gmp-legend-cap">
               {vm?.unit ?? ''}
-              {interval != null && cfg.varId !== 'precipsum' && cfg.varId !== 'newsnow' && ` · ${interval} h`}
+              {interval != null &&
+                cfg.varId !== 'precipsum' &&
+                cfg.varId !== 'newsnow' &&
+                (cfg.varId === 'precip' ? ` · Mittel über ${interval} h` : ` · ${interval} h`)}
               {numbersOn && maximaOpts && ` · Zahlen: Höchstwerte ${cfg.varId === 'newsnow' ? 'cm' : 'mm'}`}
             </span>
             <span className="gmp-legend-bar">

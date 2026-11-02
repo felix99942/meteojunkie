@@ -810,6 +810,25 @@ export function intervalHours(vm: GlobeVarMeta | undefined, step: number): numbe
 }
 
 /**
+ * Name einer Größe in Auswahl und Legende — beim Niederschlag MIT dem
+ * Intervall des gezeigten Schritts (auf Wunsch, 2026-11-03): „Niederschlag
+ * 3 h" bei IFS, „1 h" bei ICON-D2 und Varda. Das Intervall wechselt je Modell
+ * und Vorhersagestunde (IFS ab +144 h 6 h, ICON-EU ab +78 h 3 h); klein in der
+ * Legende wurde es übersehen.
+ */
+export function variableLabel(v: Pick<GlobeVariable, 'id' | 'label'>, interval?: number): string {
+  return v.id === 'precip' && interval ? `${v.label} ${interval} h` : v.label
+}
+
+/** Wert am Zeiger beim Niederschlag: Rate UND Menge im Intervall („0,8 mm/h · 2,4 mm in 3 h") */
+export function precipReadout(rate: number, interval: number | undefined, fmt: (v: number) => string): string {
+  // bei einer Stunde sind Rate und Menge dieselbe Zahl
+  if (!interval) return `${fmt(rate)} mm/h`
+  if (interval === 1) return `${fmt(rate)} mm in 1 h`
+  return `${fmt(rate)} mm/h · ${fmt(rate * interval)} mm in ${interval} h`
+}
+
+/**
  * Abstand zum vorigen Schritt (h), wenn das Intervall des Werts KÜRZER ist —
  * dann ist die Größe nur eine STICHPROBE, die Stunden dazwischen fehlen.
  * Gemessen trifft das die Böe zweimal: IFS bis +90 h (Schritte alle 3 h, die

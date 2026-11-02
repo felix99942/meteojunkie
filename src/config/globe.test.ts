@@ -21,8 +21,7 @@ import {
   tilePixelLon,
   type GlobeField,
   type GlobeGrid,
-  type GlobeMeta,
-} from './globe'
+  type GlobeMeta, precipReadout, variableLabel } from './globe'
 import { colorizeTile } from '../render/globeTiles'
 import { colorForValue } from './colorscales'
 
@@ -429,5 +428,21 @@ describe('Farbtabellen Regensumme und Höhenwind', () => {
     const scale = getGlobeVariable('wind300').scale
     expect(scale.stops[0].value).toBe(50)
     expect(scale.belowMin).toBe('transparent')
+  })
+})
+
+describe('Niederschlag mit Intervall', () => {
+  const precip = { id: 'precip' as const, label: 'Niederschlag' }
+  it('nennt das Intervall im Namen, andere Größen bleiben', () => {
+    expect(variableLabel(precip, 3)).toBe('Niederschlag 3 h')
+    expect(variableLabel(precip, 1)).toBe('Niederschlag 1 h')
+    expect(variableLabel(precip, undefined)).toBe('Niederschlag')
+    expect(variableLabel({ id: 'gust', label: 'Böen 10 m' }, 3)).toBe('Böen 10 m')
+  })
+  it('zeigt am Zeiger Rate und Menge im Intervall', () => {
+    const f = (v: number) => v.toFixed(1)
+    expect(precipReadout(0.8, 3, f)).toBe('0.8 mm/h · 2.4 mm in 3 h')
+    expect(precipReadout(1.5, 1, f)).toBe('1.5 mm in 1 h')
+    expect(precipReadout(1.5, undefined, f)).toBe('1.5 mm/h')
   })
 })

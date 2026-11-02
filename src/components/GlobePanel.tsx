@@ -38,6 +38,8 @@ import {
   overlaysOffFor,
   globeFreshness,
   formatReadout,
+  precipReadout,
+  variableLabel,
   GLOBE_MODELS,
   GLOBE_GROUPS,
   GLOBE_VARIABLES,
@@ -749,7 +751,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             <optgroup key={g} label={g}>
               {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
                 <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
-                  {v.label}
+                  {variableLabel(v, v.id === varId ? interval : undefined)}
                 </option>
               ))}
             </optgroup>
@@ -908,7 +910,9 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                       ? `hoch ${toOcta(readLayers.high)}/8 · mittel ${toOcta(readLayers.mid)}/8 · tief ${toOcta(readLayers.low)}/8`
                       : field ? `außerhalb ${model.label}` : '—'
                     : Number.isFinite(readValue)
-                    ? `${formatReadout(readValue, variable.decimals)} ${vm?.unit ?? ''}`
+                    ? varId === 'precip'
+                      ? precipReadout(readValue, interval, (v) => formatReadout(v, variable.decimals))
+                      : `${formatReadout(readValue, variable.decimals)} ${vm?.unit ?? ''}`
                     : field && !field.grid.global
                       ? `außerhalb ${model.label}`
                       : '—'}
@@ -920,7 +924,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
           </div>
         <div className="radar-legend globe-legend" title={variable.title}>
           <span className="radar-legend-cap">
-            {model.label} · {variable.label} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}
+            {model.label} · {variableLabel(variable, interval)} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}
             {intervalText && ` · ${intervalText}`}
             {maxima && maximaOpts && (
               <>
