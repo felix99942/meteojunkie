@@ -111,6 +111,9 @@ VARIABLES = {
     'rh700': {'lo': 0.0, 'step': 5.0, 'unit': '%'},
     'tcwv': {'lo': 0.0, 'step': 1.0, 'unit': 'mm'},
     'snow': {'lo': 0.0, 'step': 1.0, 'unit': 'cm'},
+    # Neuschnee seit Laufbeginn (seit 2026-11-02): Schneefall als Wasserwert
+    # (mm), mit der Faustregel 10:1 als cm — 1 mm Wasser ≈ 1 cm Neuschnee
+    'newsnow': {'lo': 0.0, 'step': 1.0, 'unit': 'cm'},
     'hzerocl': {'lo': -500.0, 'step': 50.0, 'unit': 'm'},
 }
 
@@ -124,9 +127,10 @@ NEEDS = {
     'swh': ('swh',), 'pp1d': ('pp1d',), 'sst': ('skt', 'swh'),
     'precipsum': ('tp',), 'cape': ('cape',), 'td2m': ('td2m',), 'rh700': ('rh700',),
     'tcwv': ('tcwv',), 'snow': ('hsnow',), 'hzerocl': ('hzerocl',),
+    'newsnow': ('sf',),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
-OPTIONAL = {'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl'}
+OPTIONAL = {'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow'}
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
 # 8-MB-Bereich einmal mit 7,8 MB/s, einmal mit 90 KB/s = 88 s). Ein
@@ -296,6 +300,10 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         # Unter 1 mm (die Skala ist dort durchsichtig) auf 0: der Nieselhauch
         # über halben Ozeanen ist Rauschen, das sich schlecht komprimiert
         return None if step == 0 else np.where(f['tp'] < 1.0, 0.0, f['tp'])
+    if var == 'newsnow':
+        # wie die Niederschlagssumme: bei +0 überall 0, unter 1 cm als 0
+        # (die Skala ist dort durchsichtig, das Rauschen kostete Bildgröße)
+        return None if step == 0 else np.where(f['sf'] < 1.0, 0.0, f['sf'])
     if var == 'cape':
         # dasselbe unter 50 J/kg (Skala ab 100) — MU-CAPE ist global fast
         # überall ein paar J/kg, als Rauschen kostete das ein Drittel des Bilds

@@ -137,6 +137,8 @@ export const MAXIMA_OPTIONS: Partial<
   // in ganzen mm gespeichert — „9,0" täuschte eine Genauigkeit vor, die es
   // nicht gibt; eingefärbt ab 1 mm
   precipsum: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
+  // Neuschnee in ganzen cm, wie die Summe
+  newsnow: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
 }
 
 /**

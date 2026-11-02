@@ -592,3 +592,31 @@ export function dayRange(start: string, end: string): string[] {
   }
   return out
 }
+
+/**
+ * Richtung und Stärke einer Tagesabweichung (Vorhersage − Messung) für die
+ * Zellfarbe der Tabelle. Unter der feinsten Stufe ein TREFFER, darüber je
+ * nach Größe zu warm/zu kalt bzw. zu nass/zu trocken. `t` läuft STUFENLOS
+ * von 0 (an der Trefferschwelle) bis 1 (an der letzten Stufe und darüber),
+ * stückweise linear zwischen den Stufen — die Stufen sind also Stützpunkte,
+ * gleich weit auseinander im Farbverlauf, auch wenn sie es in der Einheit
+ * nicht sind (auf Wunsch kontinuierlich statt in fünf Klassen). Beim
+ * Niederschlag zählt auch „trocken angesagt, trocken geblieben" als Treffer.
+ */
+export type ErrTone = { tone: 'match' } | { tone: 'warm' | 'cold' | 'wet' | 'dry'; t: number }
+
+export function errTone(err: number, steps: number[], kind: 'temp' | 'precip'): ErrTone | null {
+  if (!Number.isFinite(err) || !steps.length) return null
+  const a = Math.abs(err)
+  if (a < steps[0]) return { tone: 'match' }
+  const n = steps.length
+  let t = 1
+  for (let i = 0; i < n - 1; i++) {
+    if (a < steps[i + 1]) {
+      t = (i + (a - steps[i]) / (steps[i + 1] - steps[i])) / (n - 1)
+      break
+    }
+  }
+  const tone = kind === 'temp' ? (err > 0 ? 'warm' : 'cold') : err > 0 ? 'wet' : 'dry'
+  return { tone, t }
+}

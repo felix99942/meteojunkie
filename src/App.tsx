@@ -3,7 +3,7 @@ import { TopBar } from './components/TopBar'
 import { PanelGrid } from './components/PanelGrid'
 import { ProfileSplit } from './components/ProfileSplit'
 import { TimeScrubber } from './components/TimeScrubber'
-import { AppNav } from './components/AppNav'
+import { AppNav, LegalCorner } from './components/AppNav'
 import { AtSection } from './components/AtSection'
 import { ClassicMeteogram } from './components/ClassicMeteogram'
 import { AirQualityPanel } from './components/AirQualityPanel'
@@ -92,6 +92,7 @@ export default function App() {
       ) : (
         <AtSection mode="klima" />
       )}
+      {view !== 'home' && <LegalCorner />}
     </div>
   )
 }

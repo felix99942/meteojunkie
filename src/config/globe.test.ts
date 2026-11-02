@@ -279,7 +279,7 @@ describe('Registry', () => {
 
   it('schaltet Linien und Partikel nur bei Flächengrößen ab, nicht bei der Relativen Topografie', () => {
     const off = GLOBE_VARIABLES.filter(overlaysOffFor).map((v) => v.id).sort()
-    expect(off).toEqual(['cape', 'hzerocl', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't850', 'tcwv', 'td2m'])
+    expect(off).toEqual(['cape', 'hzerocl', 'newsnow', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't850', 'tcwv', 'td2m'])
   })
 
   it('erkennt Böen, die nur eine Stichprobe des Schrittabstands sind', () => {

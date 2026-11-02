@@ -25,7 +25,7 @@
 // 00–24 UTC auf der Vorhersageseite stand nach jedem heißen Tag mit
 // Frontdurchgang ein „Fehler" in der Tabelle, den kein Modell gemacht hat.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { fetchPastRuns, MAX_LEAD_DAYS, type PastRunSeries } from '../api/openmeteo'
 import { activeStations, DATASET_DAILY, fetchStationSeries, loadStations, type AtStation } from '../api/geosphere'
 import { clean } from '../api/atValues'
@@ -65,6 +65,7 @@ import {
   type Paired,
   type Scores,
   type Skill,
+  errTone,
 } from './verify'
 
 /**
@@ -172,6 +173,12 @@ interface Target {
    * mit einer gemeinsamen Skala stünde die halbe Niederschlagstabelle rot da.
    */
   errSteps: number[]
+  /**
+   * Was das VORZEICHEN der Abweichung heißt (Vorhersage − Messung): bei der
+   * Temperatur zu warm/zu kalt, beim Niederschlag zu nass/zu trocken — die
+   * Zelle färbt danach (`errStyle`).
+   */
+  errKind: 'temp' | 'precip'
 }
 
 const TARGETS: Record<string, Target> = {
@@ -185,6 +192,7 @@ const TARGETS: Record<string, Target> = {
     errUnit: 'K',
     thresholds: [],
     errSteps: TEMP_ERR_STEPS,
+    errKind: 'temp',
   },
   tlmin: {
     label: 'Tagestiefsttemperatur',
@@ -196,6 +204,7 @@ const TARGETS: Record<string, Target> = {
     errUnit: 'K',
     thresholds: [],
     errSteps: TEMP_ERR_STEPS,
+    errKind: 'temp',
   },
   rr: {
     label: 'Niederschlagssumme',
@@ -214,6 +223,7 @@ const TARGETS: Record<string, Target> = {
     // Ein Tagesniederschlag streut ganz anders als eine Temperatur: 1 mm
     // daneben ist gut, 10 mm daneben ist ein verpasstes Ereignis.
     errSteps: [0.5, 1, 2, 5, 10],
+    errKind: 'precip',
   },
 }
 type TargetId = keyof typeof TARGETS
@@ -281,19 +291,87 @@ const fmtShort = new Intl.DateTimeFormat('de-AT', {
 const leadLabel = (n: number) => `Stand ${n * 24} h vorher`
 const leadDays = (n: number) => (n === 1 ? '1 Tag' : `${n} Tage`)
 
-/** Fünf Stufen von ruhig nach warnend, dazu die Farbe jenseits der letzten. */
-const ERR_COLORS = ['#1d4b3a', '#37613a', '#6b6033', '#7c4a24', '#7a3020']
-const ERR_COLOR_OVER = '#5c1f1a'
+/**
+ * Zellfarben nach RICHTUNG der Abweichung, in den Farben des
+ * GeoSphere-KLIMAMONITORS (auf Wunsch, 2026-11-02; klimaportal.geosphere.at,
+ * Klassenfarben aus `colorRamp` der API `climon/v1/data/spartacus/raster`):
+ * Temperaturabweichung `TMa…_IMG` (ColorBrewer RdBu — #f7f7f7 in der Mitte,
+ * #67000d bzw. #08306b an den Enden), Niederschlag `RRa…_IMG` (Braun für
+ * trocken, Grün → Blau für nass). Übernommen sind die FARBEN, nicht die
+ * Klassengrenzen: die gelten dort für Monatsabweichungen, hier für einzelne
+ * Tage (`Target.errSteps`). STUFENLOS mit dem Fehler (`errTone`), jedes Ende
+ * wird mit dem Fehler dunkler — dunkelblau ist die große Abweichung.
+ * Die Schrift wechselt am hellen Anfang der Verläufe auf dunkel (`inkOn`).
+ */
+const ERR_RAMPS = {
+  warm: ['#fee0d2', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15', '#67000d'],
+  cold: ['#d8e7f5', '#aed1e4', '#6baed6', '#3182bd', '#08519c', '#08306b'],
+  wet: ['#e0f3db', '#b6e3bc', '#7accc4', '#43a8cc', '#1975b3', '#084182'],
+  dry: ['#fff7bc', '#ffcf66', '#ff9b29', '#e3670e', '#ab3b03', '#662406'],
+} as const
+
+const hexRgb = (h: string) => [0, 1, 2].map((k) => parseInt(h.slice(1 + 2 * k, 3 + 2 * k), 16))
+
+/** Farbe an der Stelle t ∈ [0, 1] eines Verlaufs aus gleichabständigen Hex-Farben */
+function rampAt(ramp: readonly string[], t: number): [number, number, number] {
+  const x = Math.max(0, Math.min(1, t)) * (ramp.length - 1)
+  const i = Math.min(ramp.length - 2, Math.floor(x))
+  const f = x - i
+  const a = hexRgb(ramp[i])
+  const b = hexRgb(ramp[i + 1])
+  return [0, 1, 2].map((k) => Math.round(a[k] + (b[k] - a[k]) * f)) as [number, number, number]
+}
+
+/** Schriftfarbe auf einem Hintergrund: dunkel auf hell, hell auf dunkel (relative Leuchtdichte) */
+function inkOn([r, g, b]: number[]): string {
+  const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  return L > 0.18 ? '#1b1c1f' : '#f4f5f7'
+}
+
+/** Treffer: weiß mit goldenem Rand — der Fall, um den es geht, soll leuchten */
+const MATCH_STYLE = { background: '#f7f7f7', color: '#1b1c1f', boxShadow: 'inset 0 0 0 2px #d4a72c' }
 
 /**
- * Einfärbung nach Fehlerbetrag: klein = ruhig, groß = warnend. Die Stufen
- * kommen aus der Zielgröße — sie sind in deren Einheit angegeben und dürfen
- * nicht geteilt werden (siehe `Target.errSteps`).
+ * Stil einer Tageszelle aus der Abweichung (Vorhersage − Messung). Unter der
+ * feinsten Stufe gilt sie als TREFFER — beim Niederschlag also auch „trocken
+ * angesagt, trocken geblieben". Darüber färbt die Richtung: Temperatur zu
+ * warm rot, zu kalt blau; Niederschlag zu nass grün → blau, zu trocken braun.
  */
-function errColor(err: number, steps: number[]): string {
-  if (!Number.isFinite(err)) return 'transparent'
-  for (let i = 0; i < steps.length; i++) if (err < steps[i]) return ERR_COLORS[i]
-  return ERR_COLOR_OVER
+function errStyle(err: number, spec: Target): CSSProperties | undefined {
+  const t = errTone(err, spec.errSteps, spec.errKind)
+  if (!t) return undefined
+  if (t.tone === 'match') return MATCH_STYLE
+  const rgb = rampAt(ERR_RAMPS[t.tone], t.t)
+  return { background: `rgb(${rgb.join(', ')})`, color: inkOn(rgb) }
+}
+
+/** Erklärung der Zellfarben über der Tabelle — Richtung je Größe */
+function ErrColorKey({ spec }: { spec: Target }) {
+  const dirs: { label: string; ramp: readonly string[] }[] =
+    spec.errKind === 'temp'
+      ? [
+          { label: 'zu warm', ramp: ERR_RAMPS.warm },
+          { label: 'zu kalt', ramp: ERR_RAMPS.cold },
+        ]
+      : [
+          { label: 'zu nass', ramp: ERR_RAMPS.wet },
+          { label: 'zu trocken', ramp: ERR_RAMPS.dry },
+        ]
+  return (
+    <div className="verify-colorkey">
+      <span>
+        <i style={MATCH_STYLE} /> Treffer (unter {fmt1(spec.errSteps[0])} {spec.errUnit})
+      </span>
+      {dirs.map((d) => (
+        <span key={d.label}>
+          <i className="verify-colorkey-ramp" style={{ background: `linear-gradient(to right, ${d.ramp.join(', ')})` }} />{' '}
+          {d.label}
+        </span>
+      ))}
+      <span className="label-muted">stufenlos — je dunkler, desto größer die Abweichung · Farben wie im GeoSphere-Klimamonitor</span>
+    </div>
+  )
 }
 
 interface RankRow {
@@ -1206,6 +1284,7 @@ export function VerifyPanel() {
                 ehrliche Detailansicht — hier steht die Antwort auf „welches
                 Modell taugt hier", dort die auf „wie lief es diese Woche". */}
             <RankingBlock rows={ranking} spec={spec} lead={lead} leadIsClear={leadIsClear} />
+            <ErrColorKey spec={spec} />
             <div className="verify-main">
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die
                 Frage, die man an fünf Tagen stellt — eine Matrix aus
@@ -1258,9 +1337,7 @@ export function VerifyPanel() {
                         return (
                           <td
                             key={row.model.id}
-                            style={{
-                              background: err != null ? errColor(Math.abs(err), spec.errSteps) : undefined,
-                            }}
+                            style={err != null ? errStyle(err, spec) : undefined}
                             title={
                               fc == null
                                 ? row.model.forecastHours < lead * 24 + 24

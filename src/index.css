@@ -2090,7 +2090,6 @@ button:focus-visible {
 /* Build-Kennung schiebt sich mit dem Impressum-Link nach rechts; sie tragt
    jetzt den auto-Rand, damit beide als Block am Ende stehen. */
 .appnav-build {
-  margin-left: auto;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   cursor: help;
@@ -5647,4 +5646,52 @@ button:focus-visible {
   .landing-column.is-open .landing-column-items {
     display: block;
   }
+}
+
+/* Farberklärung der Verifikationstabelle: Treffer, beide Richtungen */
+.verify-colorkey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin: 2px 0 8px;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+.verify-colorkey span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.verify-colorkey i {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.verify-colorkey i.verify-colorkey-ramp {
+  width: 70px;
+}
+
+/* Impressum + Build-Kennung fest unten rechts (`LegalCorner`) — klein und
+   halbtransparent hinterlegt, damit es über Karten lesbar bleibt, ohne sie
+   zuzustellen */
+.legal-corner {
+  position: fixed;
+  right: 6px;
+  bottom: 4px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 0 8px;
+  border-radius: 4px;
+  background: rgba(17, 18, 20, 0.72);
+}
+
+.legal-corner .appnav-legal {
+  padding: 2px 8px;
 }

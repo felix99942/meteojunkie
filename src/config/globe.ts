@@ -27,7 +27,7 @@ export type GlobeVarId =
   | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'wind300' | 'gh500' | 'gh300' | 'reltop' | 'tcc' | 'clouds'
   | 'uv10' | 'uv300'
   | 'swh' | 'pp1d' | 'sst'
-  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl'
+  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow'
 
 /**
  * Gruppen der Auswahlliste (`<optgroup>`) — bei über zwanzig Größen ist eine
@@ -293,6 +293,19 @@ const SNOW: ColorScale = {
   stops: SNOW_STEPS.map((value, i) => ({ value, color: SNOW_COLORS[i] })),
 }
 
+/**
+ * Neuschnee seit Laufbeginn (cm): unter 1 cm durchsichtig, die ersten 20 cm
+ * in getrennten Stufen (dort fällt die Entscheidung „liegen bleiben,
+ * Räumdienst, Verkehr"), darüber gröber bis 150 cm. Eigene Rampe von Weiß
+ * über Hellblau nach Violett, damit sie sich von der Schneehöhe absetzt.
+ */
+const NEWSNOW_STEPS = [1, 2, 5, 10, 15, 20, 30, 50, 75, 100, 150]
+const NEWSNOW_COLORS = lerpRamp(['#f4f8fd', '#bfe0f5', '#7cc0ec', '#3d8fdb', '#4f5fc8', '#7a3fb4', '#a8329a'], NEWSNOW_STEPS.length)
+const NEWSNOW: ColorScale = {
+  kind: 'stepped',
+  stops: NEWSNOW_STEPS.map((value, i) => ({ value, color: NEWSNOW_COLORS[i] })),
+}
+
 /** Nullgradgrenze (m über NN): 0 … 5000 in 250-m-Bändern, tief = kalt (blau), hoch = warm (rot). */
 const HZEROCL: ColorScale = {
   kind: 'stepped',
@@ -447,6 +460,16 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     scale: SNOW,
     decimals: 0,
     legendEvery: 2,
+  },
+  {
+    id: 'newsnow',
+    group: 'Niederschlag & Feuchte',
+    label: 'Neuschnee Summe',
+    title:
+      'Neuschnee seit Laufbeginn bis zum gewählten Termin (cm) — aus dem Schneefall des Modells als Wasserwert, mit der Faustregel 1 mm Wasser ≈ 1 cm Schnee. Bei nassem Schnee liegt real weniger, bei trockenem Pulver mehr; Setzen und Schmelzen am Boden sind nicht abgezogen. Varda führt die Größe nicht.',
+    scale: NEWSNOW,
+    decimals: 0,
+    legendEvery: 1,
   },
   {
     id: 'rh700',

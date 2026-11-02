@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FeatureCollection } from 'geojson'
 import { loadGlobeField, loadGlobeMeta, setGlobeMeta } from '../api/globeData'
 import { loadBasemap } from '../render/basemap'
-import { HeroWind } from '../render/heroWind'
+import { FALLBACK_WIND, HeroWind } from '../render/heroWind'
 import { nearestStepIndex, runMs, sampleWind, validMs, type GlobeMeta, type GlobeModelId } from '../config/globe'
 import { runLabel, validLabel } from '../config/globeFormat'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
@@ -75,7 +75,10 @@ export function LandingPage() {
         if (cancelled) return
         setGlobeMeta(meta)
         const steps = meta.variables.uv10?.steps ?? []
-        if (!steps.length) return
+        if (!steps.length) {
+          hero.setSampler(FALLBACK_WIND)
+          return
+        }
         const step = steps[nearestStepIndex(steps, runMs(meta), Date.now())]
         return loadGlobeField('ecmwf-ifs', meta.runId, 'uv10', step).then((f) => {
           if (cancelled) return
@@ -83,9 +86,9 @@ export function LandingPage() {
           setCaption(`Wind 10 m · ECMWF IFS · Lauf ${runLabel(runMs(meta))} · gültig ${validLabel(validMs(meta, step))}`)
         })
       })
-      // Ohne Lauf bleibt das Ersatzfeld stehen — und die Bildunterschrift leer,
-      // denn es ist KEINE Vorhersage
-      .catch(() => {})
+      // Ohne Lauf das Ersatzfeld — und die Bildunterschrift bleibt leer, denn
+      // es ist KEINE Vorhersage
+      .catch(() => !cancelled && hero.setSampler(FALLBACK_WIND))
     for (const m of RUN_MODELS) {
       loadGlobeMeta(m.id)
         .then((meta) => !cancelled && setRuns((r) => ({ ...r, [m.id]: meta })))

@@ -18,8 +18,7 @@ import { GlobeMapPanel } from './GlobeMapPanel'
 import { loadGlobeMeta, setGlobeMeta } from '../api/globeData'
 import { GLOBE_GROUPS, GLOBE_MODELS, GLOBE_VARIABLES, getGlobeModel, runMs, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
 import {
-  defaultPanels,
-  DEFAULT_COUPLING,
+  defaultSetup,
   effectivePanel,
   makePreset,
   PANEL_PRESET_KEY,
@@ -67,14 +66,31 @@ export function GlobeMultiPanel({
   modeSwitch: ReactNode
   onCount: (n: PanelCount) => void
 }) {
-  const [regionId, setRegionId] = useState<PanelRegionId>('europe')
+  // Vorgabe je Panelzahl; beim Umschalten 4 ↔ 6 gilt die der neuen Zahl,
+  // SOLANGE man nichts selbst eingestellt hat (`pristine`) — wer schon
+  // umgebaut hat, behält seinen Stand
+  const [initial] = useState(() => defaultSetup(count))
+  const pristine = useRef<PanelCount | null>(count)
+  const touch = () => {
+    pristine.current = null
+  }
+  const [regionId, setRegionId] = useState<PanelRegionId>(initial.region)
   const region = PANEL_REGIONS.find((r) => r.id === regionId) ?? PANEL_REGIONS[0]
-  const [panels, setPanels] = useState<MapPanelConfig[]>(defaultPanels)
-  const [coupling, setCoupling] = useState<Coupling>(DEFAULT_COUPLING)
+  const [panels, setPanels] = useState<MapPanelConfig[]>(initial.panels)
+  const [coupling, setCoupling] = useState<Coupling>(initial.coupling)
   const [sharedMs, setSharedMs] = useState(() => Date.now())
   const [numbersOn, setNumbersOn] = useState(true)
   const [hover, setHover] = useState<{ lat: number; lon: number } | null>(null)
   const [fitKey, setFitKey] = useState(0)
+  useEffect(() => {
+    if (pristine.current == null || pristine.current === count) return
+    const d = defaultSetup(count)
+    pristine.current = count
+    setPanels(d.panels)
+    setCoupling(d.coupling)
+    setRegionId(d.region)
+    setFitKey((k) => k + 1)
+  }, [count])
   const [metas, setMetas] = useState<Partial<Record<GlobeModelId, MetaState>>>({})
 
   // --- Presets: Panels, Kopplung, Panelzahl, Region unter einem Namen ---------
@@ -108,6 +124,7 @@ export function GlobeMultiPanel({
   const loadPreset = (name: string) => {
     const p = presets.find((q) => q.name === name)
     if (!p) return
+    touch()
     setPanels(p.panels.map((q) => ({ ...q, localMs: null })))
     setCoupling(p.coupling)
     setRegionId(p.region)
@@ -235,14 +252,17 @@ export function GlobeMultiPanel({
   }, [])
 
   // --- Panel bearbeiten ---------------------------------------------------------
-  const update = (i: number, patch: Partial<MapPanelConfig>) =>
+  const update = (i: number, patch: Partial<MapPanelConfig>) => {
+    touch()
     setPanels((ps) => ps.map((p, k) => (k === i ? { ...p, ...patch } : p)))
+  }
 
   // ABSCHALTEN friert den gespiegelten Wert ein (wie parsync), ein WECHSEL
   // dagegen nicht: von ParSync auf ModSync stünde sonst in allen Panels
   // dieselbe Größe UND dasselbe Modell — sechs gleiche Karten (so war es
   // zuerst). Beim Wechsel gilt wieder, was jedes Panel selbst eingestellt hat.
   const toggleCoupling = (kind: 'var' | 'model', i: number) => {
+    touch()
     const off = coupling?.kind === kind && coupling.source === i
     if (off) {
       setPanels((ps) => releaseCoupling(ps, coupling))
@@ -374,6 +394,7 @@ export function GlobeMultiPanel({
               className={r.id === regionId ? 'is-active' : ''}
               aria-pressed={r.id === regionId}
               onClick={() => {
+                touch()
                 setRegionId(r.id)
                 setPresetViews(null)
                 setFitKey((k) => k + 1)

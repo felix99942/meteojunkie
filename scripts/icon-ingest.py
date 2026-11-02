@@ -89,6 +89,10 @@ FIELDS = [
     ('relhum', '700', 'rh700'),
     ('tqv', None, 'tcwv'),
     ('h_snow', None, 'hsnow'),
+    # Schneefall seit Laufbeginn (kg/m² = mm Wasserwert), skalig + konvektiv
+    # getrennt geführt — beide im Verzeichnis geprüft 2026-11-02 (D2 und EU)
+    ('snow_gsp', None, 'snow_gsp'),
+    ('snow_con', None, 'snow_con'),
     ('hzerocl', None, 'hzerocl'),
 ]
 
@@ -141,6 +145,10 @@ def fetch_step(model: str, run: datetime, step: int, pool: ThreadPoolExecutor) -
             out[name] = vals.astype(np.float32)
         if name == 'gust':
             out['gust_hours'] = hours
+    # Neuschnee = skaliger + konvektiver Schneefall (fehlt einer, zählt der andere)
+    gsp, con = out.pop('snow_gsp', None), out.pop('snow_con', None)
+    if gsp is not None or con is not None:
+        out['sf'] = (gsp if gsp is not None else 0) + (con if con is not None else 0)
     return out
 
 

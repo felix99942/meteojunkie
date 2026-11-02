@@ -43,7 +43,9 @@ export function heroProjection(w: number, h: number, bounds = HERO_BOUNDS): Hero
 /**
  * Ersatzfeld, falls kein Modelllauf zu holen ist: Westwind mit einem Tief
  * über der Nordsee — damit die Startseite nie leer dasteht. Wird als solches
- * NICHT beschriftet (die Bildunterschrift nennt dann keinen Lauf).
+ * NICHT beschriftet (die Bildunterschrift nennt dann keinen Lauf). NUR beim
+ * Ladefehler, nicht als Platzhalter bis zum Laden: auf der Liveseite stand
+ * sonst erst ein Sturmtief da, das dann in die echte Lage umsprang (gemeldet).
  */
 export const FALLBACK_WIND: HeroSampler = (lat, lon) => {
   const dx = (lon - 2) * Math.cos((56 * Math.PI) / 180)
@@ -72,7 +74,8 @@ export class HeroWind {
   private readonly wind: HTMLCanvasElement
   private readonly lctx: CanvasRenderingContext2D
   private readonly wctx: CanvasRenderingContext2D
-  private sampler: HeroSampler = FALLBACK_WIND
+  /** null = noch keine Daten: keine Partikel, nur Küsten und Grenzen */
+  private sampler: HeroSampler | null = null
   private geo: number[][][] = []
   private proj: HeroProjection | null = null
   private w = 0
@@ -90,6 +93,9 @@ export class HeroWind {
     this.wind = wind
     this.lctx = lines.getContext('2d')!
     this.wctx = wind.getContext('2d')!
+    // bis Daten da sind unsichtbar, dann eingeblendet
+    wind.style.opacity = '0'
+    wind.style.transition = 'opacity 0.8s ease-out'
     this.reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
     this.ro = new ResizeObserver(() => this.resize())
     this.ro.observe(wind)
@@ -104,6 +110,7 @@ export class HeroWind {
 
   setSampler(s: HeroSampler): void {
     this.sampler = s
+    this.wind.style.opacity = '1'
     this.seed()
     if (this.reduced) this.drawStatic()
   }
@@ -173,6 +180,7 @@ export class HeroWind {
   private velocity(x: number, y: number): [number, number, number] | null {
     const p = this.proj!
     const [lon, lat] = p.unproject(x, y)
+    if (!this.sampler) return null
     const uv = this.sampler(lat, lon)
     if (!uv) return null
     const scale = (PX_PER_MS * Math.max(600, this.w)) / 1000
@@ -219,7 +227,7 @@ export class HeroWind {
 
   /** Bewegung reduziert: ruhende Stromlinien statt einer Animation. */
   private drawStatic(): void {
-    if (!this.proj) return
+    if (!this.proj || !this.sampler) return
     const ctx = this.wctx
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.wind.width, this.wind.height)

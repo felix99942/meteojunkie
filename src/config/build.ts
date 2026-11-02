@@ -26,16 +26,9 @@ export const BUILD: BuildInfo = {
  * gegen `git log` halten.
  */
 export function buildLabel(b: BuildInfo = BUILD): string {
-  const d = new Date(b.date)
-  const date = Number.isNaN(d.getTime())
-    ? '—'
-    : new Intl.DateTimeFormat('de-AT', {
-        timeZone: 'UTC',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      }).format(d)
-  return `${b.commit}${b.dirty ? '+' : ''} · ${date}`
+  // nur die Kennung (auf Wunsch, 2026-11-02) — das Datum steht im Tooltip
+  // (`buildTitle`) und im Impressum
+  return `${b.commit}${b.dirty ? '+' : ''}`
 }
 
 /** Langform für den Tooltip — nennt die Uhrzeit und erklärt das `+`. */

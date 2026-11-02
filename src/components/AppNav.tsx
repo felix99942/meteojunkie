@@ -144,17 +144,28 @@ export function AppNav() {
           </span>
         ),
       )}
-      {/* Impressum gehört NICHT in die Tab-Reihe: es beantwortet keine
-          Wetterfrage und stünde gleichrangig neben Werkzeugen, die man
-          täglich benutzt. Es muss aber aus jedem Bereich mit einem Klick
-          erreichbar sein (§ 18 MStV: „leicht erkennbar, unmittelbar
-          erreichbar und ständig verfügbar") —
-          deshalb abgesetzt am rechten Rand, unauffällig, aber immer da. */}
-      {/* BUILD-KENNUNG neben dem Impressum. Beantwortet „ist das schon der
-          neue Stand?" — an diesem Projekt war das mehrfach nicht zu sagen,
-          ohne das ausgelieferte Bundle zu durchsuchen (Re-Run eines alten
-          Laufs, gecachte index.html). Kommt aus GIT, ist also keine
-          gepflegte Nummer, die driften kann. */}
+    </nav>
+  )
+}
+
+/**
+ * Impressum und Build-Kennung, FEST in der Ecke unten rechts jedes Bereichs
+ * (auf Wunsch, 2026-11-02 — vorher rechts in der Navigationsleiste; die
+ * gehört jetzt nur der Navigation). Das Impressum gehört nicht in die
+ * Tab-Reihe, es beantwortet keine Wetterfrage, muss aber aus jedem Bereich
+ * mit einem Klick erreichbar sein (§ 18 MStV: „leicht erkennbar, unmittelbar
+ * erreichbar und ständig verfügbar"). Die Startseite hat es in ihrer Fußzeile.
+ *
+ * Die BUILD-KENNUNG beantwortet „ist das schon der neue Stand?" — an diesem
+ * Projekt war das mehrfach nicht zu sagen, ohne das ausgelieferte Bundle zu
+ * durchsuchen. Kommt aus GIT, ist also keine gepflegte Nummer, die driften
+ * kann; das Datum steht im Tooltip.
+ */
+export function LegalCorner() {
+  const view = useAppView((s) => s.view)
+  const setView = useAppView((s) => s.setView)
+  return (
+    <div className="legal-corner">
       <span className="appnav-build label-muted" title={buildTitle()}>
         {buildLabel()}
       </span>
@@ -167,6 +178,6 @@ export function AppNav() {
       >
         Impressum
       </button>
-    </nav>
+    </div>
   )
 }

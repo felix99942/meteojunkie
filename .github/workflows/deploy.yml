@@ -178,7 +178,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v8-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v9-${{ steps.ecmwf.outputs.run }}
 
       - name: ECMWF-Felder erzeugen (Open Data)
         id: ecmwf-ingest
@@ -192,7 +192,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/ecmwf-ifs
-          key: nwp-ecmwf-ifs-v8-${{ steps.ecmwf.outputs.run }}
+          key: nwp-ecmwf-ifs-v9-${{ steps.ecmwf.outputs.run }}
 
       # IFS 0,1° (Ausschnitte Europa + Südostasien bis +144 h) — dasselbe Muster wie 0,25°,
       # eigener Lauf (erscheint ~2 h später) und eigener Cache-Schlüssel. Je
@@ -213,7 +213,7 @@ jobs:
           path: |
             public/nwp/ecmwf-hres
             public/nwp/ecmwf-hres-asia
-          key: nwp-ecmwf-hres-v3-${{ steps.hres.outputs.run }}
+          key: nwp-ecmwf-hres-v4-${{ steps.hres.outputs.run }}
 
       - name: ECMWF-0,1°-Felder erzeugen (Open Data)
         id: hres-ingest
@@ -229,7 +229,7 @@ jobs:
           path: |
             public/nwp/ecmwf-hres
             public/nwp/ecmwf-hres-asia
-          key: nwp-ecmwf-hres-v3-${{ steps.hres.outputs.run }}
+          key: nwp-ecmwf-hres-v4-${{ steps.hres.outputs.run }}
 
       # ICON JE LAUF im Cache, seit der Cron stündlich läuft: D2 rechnet alle
       # 3 h, EU alle 6 h — ohne Cache holte jeder Lauf dieselben ~190 MB neu
@@ -249,10 +249,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v4-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v5-${{ steps.icon.outputs.d2 }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-d2-v4-
+          restore-keys: nwp-icon-d2-v5-
 
       - name: ICON-D2-Felder erzeugen (DWD Open Data)
         id: icon-d2-ingest
@@ -268,7 +268,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v4-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v5-${{ steps.icon.outputs.d2 }}
 
       - name: ICON-EU-Felder aus dem Cache
         id: icon-eu-cache
@@ -276,10 +276,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-eu
-          key: nwp-icon-eu-v4-${{ steps.icon.outputs.eu }}
+          key: nwp-icon-eu-v5-${{ steps.icon.outputs.eu }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-eu-v4-
+          restore-keys: nwp-icon-eu-v5-
 
       - name: ICON-EU-Felder erzeugen (DWD Open Data)
         id: icon-eu-ingest
@@ -295,7 +295,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-eu
-          key: nwp-icon-eu-v4-${{ steps.icon.outputs.eu }}
+          key: nwp-icon-eu-v5-${{ steps.icon.outputs.eu }}
 
       # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
       # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE

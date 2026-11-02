@@ -888,7 +888,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             {maximaOpts && (
               <label
                 className="globe-layer"
-                title="Örtliche Höchstwerte als Zahlen im Feld (mm) — je Kartenausschnitt der höchste Gitterwert einer Region; beim Hineinzoomen werden die Regionen kleiner."
+                title="Örtliche Höchstwerte als Zahlen im Feld (mm, beim Neuschnee cm) — je Kartenausschnitt der höchste Gitterwert einer Region; beim Hineinzoomen werden die Regionen kleiner."
               >
                 <input type="checkbox" checked={maxima} onChange={(e) => setMaxima(e.target.checked)} /> Höchstwerte
               </label>

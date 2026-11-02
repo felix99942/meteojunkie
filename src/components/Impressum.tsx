@@ -536,8 +536,7 @@ export function Impressum() {
           <h2>Stand dieser Seite</h2>
           <p>
             Diese Seite wird automatisch aus dem Quellcode gebaut. Ausgeliefert wird der
-            Stand <strong title={buildTitle()}>{buildLabel()}</strong> (Commit-Kennung und
-            Datum) — damit ist nachprüfbar, welche Fassung man gerade vor sich hat. Die
+            Stand <strong title={buildTitle()}>{buildLabel()}</strong> (Commit-Kennung) — damit ist nachprüfbar, welche Fassung man gerade vor sich hat. Die
             Wetter- und Klimadaten darin sind dagegen tagesaktuell; ihr jeweiliger
             Modelllauf steht in den Vorhersagebereichen.
           </p>

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  errTone,
   climateDay,
   contingency,
   dailyValues,
@@ -533,5 +534,38 @@ describe('pairedMae', () => {
 
   it('hält die Schwelle als Konstante fest', () => {
     expect(PAIRED_Z).toBe(2)
+  })
+})
+
+describe('errTone', () => {
+  const T = [0.7, 1.2, 1.8, 2.6, 3.6]
+  const P = [0.5, 1, 2, 5, 10]
+
+  it('unter der feinsten Stufe ist es ein Treffer — beim Niederschlag auch trocken/trocken', () => {
+    expect(errTone(0.3, T, 'temp')).toEqual({ tone: 'match' })
+    expect(errTone(-0.69, T, 'temp')).toEqual({ tone: 'match' })
+    expect(errTone(0, P, 'precip')).toEqual({ tone: 'match' })
+  })
+
+  it('Temperatur: zu warm bei positivem, zu kalt bei negativem Fehler', () => {
+    expect(errTone(1.0, T, 'temp')).toMatchObject({ tone: 'warm' })
+    expect(errTone(-2.0, T, 'temp')).toMatchObject({ tone: 'cold' })
+  })
+
+  it('Niederschlag: zu nass bei positivem, zu trocken bei negativem Fehler', () => {
+    expect(errTone(6, P, 'precip')).toMatchObject({ tone: 'wet' })
+    expect(errTone(-0.8, P, 'precip')).toMatchObject({ tone: 'dry' })
+  })
+
+  it('stufenlos: 0 an der Trefferschwelle, 1 an der letzten Stufe, die Stufen als Stützpunkte', () => {
+    const t = (e: number) => (errTone(e, T, 'temp') as { t: number }).t
+    expect(t(0.7)).toBeCloseTo(0)
+    expect(t(1.2)).toBeCloseTo(0.25) // zweite Stufe = ein Viertel des Verlaufs
+    expect(t(1.5)).toBeCloseTo(0.375) // halb zwischen 1,2 und 1,8
+    expect(t(3.6)).toBeCloseTo(1)
+    expect(t(9)).toBe(1)
+    // streng steigend über den ganzen Bereich
+    for (let e = 0.7; e < 3.6; e += 0.1) expect(t(e + 0.1)).toBeGreaterThan(t(e))
+    expect(errTone(Number.NaN, P, 'precip')).toBeNull()
   })
 })

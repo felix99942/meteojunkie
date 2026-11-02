@@ -3310,6 +3310,15 @@ npm run preview   # gebautes dist/ servieren
   Im Sommer wächst CAPE, im Winter die Schneehöhe: wer eine Größe ergänzt,
   muss erst Platz schaffen (IFS bis +10 Tage spart ~60 MB, oder die Daten
   auf einen Objektspeicher umziehen). Cache-Schlüssel ECMWF `v7`, ICON `v4`.
+  **NEUSCHNEE** (`newsnow`, seit 2026-11-02, auf Wunsch): Summe seit
+  Laufbeginn in cm aus dem SCHNEEFALL der Modelle als Wasserwert — ECMWF
+  `sf` (m, im Index 0,25° und 0,1° geprüft), ICON `snow_gsp` + `snow_con`
+  (kg/m², im Verzeichnis D2 und EU geprüft) — mit der Faustregel 1 mm
+  Wasser ≈ 1 cm Schnee (10:1). Bei nassem Schnee liegt real weniger, bei
+  Pulver mehr; Setzen und Schmelzen sind nicht abgezogen, die SCHNEEHÖHE
+  ist die andere Größe. Varda führt ihn nicht. Unter 1 cm als 0 gespeichert,
+  Höchstwerte als Zahlen wie bei der Regensumme. Cache-Schlüssel dafür
+  gesprungen (ECMWF `v9`, IFS 9 km `v4`, ICON `v5`).
   **WINDSKALA an festen Ankern** (`colorscales.ts`, gilt auch für MOS- und
   Feld-Karte): ab 100 km/h dunkelrot, ab 120 km/h lila (≈ Beaufort 12),
   Wind und Böe teilen die Anker.
@@ -3387,7 +3396,12 @@ npm run preview   # gebautes dist/ servieren
   `config/globePanels.ts` mit Tests). Flache Karten, Region **Europa** oder
   **Österreich**, bedient wie das Panel-Raster der Punktprognosen: je Panel
   Modell und Größe plus **ParSync** (diese Größe für alle → Modellvergleich,
-  Vorgabe beim Öffnen mit Niederschlag), **ModSync** (dieses Modell für alle
+  Vorgabe beim Öffnen mit Niederschlag — auf Wunsch über ÖSTERREICH mit IFS
+  9 km · ICON-EU · ICON-D2 · Varda, auch ohne gespeichertes Preset;
+  die VORGABE HÄNGT AN DER PANELZAHL, `defaultSetup`: im 6er EUROPA in IFS
+  9 km per ModSync, oben T 850 · T 2 m · 500 hPa, unten Böen · Niederschlag
+  · Neuschnee; beim Umschalten 4 ↔ 6 gilt die neue Vorgabe nur, solange man
+  nichts selbst eingestellt hat), **ModSync** (dieses Modell für alle
   → Synoptik, je Panel eine Größe) und **SYNC** (gemeinsame Zeit UND
   gemeinsamer Ausschnitt; ohne SYNC eigene ‹ ›-Zeit im Kopf, Verschieben
   bleibt im Panel). ParSync/ModSync sind EIN Quellpanel (Radio), höchstens
@@ -3934,7 +3948,19 @@ npm run preview   # gebautes dist/ servieren
   (10) eingetretenen Ereignissen warnt der Block sichtbar — dafür gibt es jetzt
   auch einen **60-Tage-Zeitraum** (rund 25 Regentage statt 8 bei 20 Tagen).
   Die Zelleinfärbung hat Stufen JE GRÖSSE (`Target.errSteps`): 2,6 K sind ein
-  grober Fehlgriff, 2,6 mm Tagesniederschlag sind Alltag.
+  grober Fehlgriff, 2,6 mm Tagesniederschlag sind Alltag. **Seit 2026-11-02
+  färbt sie nach RICHTUNG** (`errTone` in `verify.ts`, auf Wunsch; vorher
+  nur nach Betrag grün → rot): unter der feinsten Stufe TREFFER (weiß mit
+  goldenem Rand, beim Niederschlag auch „trocken angesagt, trocken
+  geblieben"), darüber Temperatur zu warm ROT / zu kalt BLAU, Niederschlag
+  zu nass GRÜN → BLAU / zu trocken BRAUN, STUFENLOS mit dem Fehler (die
+  `errSteps` sind Stützpunkte des Verlaufs, `rampAt`), jedes Ende wird mit
+  dem Fehler DUNKLER (dunkelblau = große Abweichung, auf Wunsch). Die FARBEN
+  sind die des GeoSphere-Klimamonitors (`colorRamp` aus
+  `api.zamg.ac.at/climon/v1/data/spartacus/raster`, `TMa…_IMG` = RdBu,
+  `RRa…_IMG`), die KLASSENGRENZEN nicht — die gelten dort für Monate. Auf
+  den hellen Anfängen schaltet die Schrift auf dunkel (`inkOn`);
+  eine Farberklärung steht über der Tabelle.
   **Geladene Daten hängen an Zielgröße UND Station** (`dataKey`, siehe
   `VerifyPanel`): sonst deutet die Tabelle für die Dauer des Nachladens die
   ALTEN Daten nach der NEUEN Regel. Beim Sprung Temperatur → Niederschlag war
@@ -4204,9 +4230,10 @@ npm run preview   # gebautes dist/ servieren
   Komponenten dürfen nicht direkt `panels[i]` rendern. Beim Aussteigen wird
   der gemeinsame Stand in die lokale Config eingefroren. Kamera-Sync läuft
   über `sharedView` mit `applyingViewRef`-Guard gegen Echo-Schleifen.
-- **Die BUILD-KENNUNG steht in der Navigation neben dem Impressum**
+- **Die BUILD-KENNUNG steht unten rechts neben dem Impressum**
   (`config/build.ts`, Werte aus `vite.config.ts` über `define`): kurzer
-  Commit-Hash und Commit-Datum, im Tooltip mit Uhrzeit. Der Zweck ist
+  Commit-Hash, das Commit-Datum mit Uhrzeit nur im Tooltip (seit 2026-11-02
+  auf Wunsch, sichtbar war vorher auch das Datum). Der Zweck ist
   Vergleichbarkeit — „ist das schon der neue Stand?" war an diesem Projekt
   mehrfach nicht zu beantworten, ohne das ausgelieferte Bundle zu durchsuchen:
   beim Re-Run eines ALTEN Laufs (#287 baute den Stand von gestern), beim leeren
@@ -4304,8 +4331,10 @@ npm run preview   # gebautes dist/ servieren
   gewählte Behörde wäre die falsche, und die richtige hätte das Bundesland
   verraten, das die Vertretung gerade verdeckt. Verlinkt ist die Liste des
   BfDI. **Kein Werkzeug-Tab**, sondern ein
-  stiller Link am rechten Rand der `AppNav` (`.appnav-legal`,
-  `margin-left: auto`): gleichrangig neben Meteogramm und Klimakarte wäre
+  stiller Link, seit 2026-11-02 FEST UNTEN RECHTS in jedem Bereich
+  (`LegalCorner` in `AppNav.tsx`, `.legal-corner`, auf Wunsch — vorher am
+  rechten Rand der Navigationsleiste; die Startseite hat ihn in der
+  Fußzeile): gleichrangig neben Meteogramm und Klimakarte wäre
   falsch, schwer erreichbar wäre rechtswidrig („leicht erkennbar, unmittelbar
   erreichbar und ständig verfügbar").
   Inhaltlich ist der PFLICHTBLOCK der uninteressante Teil — der wichtige ist
@@ -4370,7 +4399,10 @@ npm run preview   # gebautes dist/ servieren
   Canvas ohne MapLibre (die Seite soll sofort stehen), Mercator füllend,
   Bewegung über die Zeit, eingefärbt nach Tempo; ein Windfeld (~0,3 MB) über
   denselben Lader wie die Modellkarten. Ohne Lauf ein Ersatzfeld OHNE
-  Laufangabe (es ist keine Vorhersage), bei `prefers-reduced-motion` ruhende
+  Laufangabe (es ist keine Vorhersage) — NUR beim Ladefehler, bis zum
+  Laden stehen nur Küsten und Grenzen da, die Partikel blenden danach ein
+  (als Platzhalter zeigte die Liveseite erst ein Sturmtief, das dann in die
+  echte Lage umsprang), bei `prefers-reduced-motion` ruhende
   Stromlinien. **Auf der Startseite KEINE Navigationsleiste** (auf Wunsch):
   darunter stehen DREI SÄULEN (Vorhersage · Beobachtung · Auswertung), deren
   Bereiche beim Überfahren/Antippen NACH OBEN über das Windbild aufpoppen

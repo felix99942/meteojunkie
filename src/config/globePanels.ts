@@ -42,15 +42,46 @@ export type Coupling = { kind: 'var' | 'model'; source: number } | null
 /**
  * Vorgaben: je Panel ein anderes Modell (für den Modellvergleich) UND eine
  * andere Größe (für die Synoptik) — welche davon gilt, entscheidet die
- * Kopplung. Das sechste Modell wiederholt IFS: es gibt fünf europäische.
+ * Kopplung. Beim Öffnen (auf Wunsch, 2026-11-02): ÖSTERREICH, Niederschlag,
+ * die vier hochaufgelösten Modelle — IFS 9 km, ICON-EU, ICON-D2, Varda —
+ * im 4er-Raster; im 6er kommen IFS 0,25° und (Wiederholung, es gibt nur
+ * fünf) noch einmal IFS 9 km dazu.
  */
-export const DEFAULT_PANEL_MODELS: GlobeModelId[] = ['ecmwf-ifs', 'ecmwf-hres', 'icon-eu', 'icon-d2', 'varda', 'ecmwf-ifs']
+export const DEFAULT_PANEL_MODELS: GlobeModelId[] = ['ecmwf-hres', 'icon-eu', 'icon-d2', 'varda', 'ecmwf-ifs', 'ecmwf-hres']
 export const DEFAULT_PANEL_VARS: GlobeVarId[] = ['precip', 't850', 'reltop', 'wind10', 'tcc', 'wind300']
 /** Vorgabe beim Öffnen: Modellvergleich mit der Größe aus Panel 1 */
 export const DEFAULT_COUPLING: Coupling = { kind: 'var', source: 0 }
 
+export const DEFAULT_PANEL_REGION: PanelRegionId = 'austria'
+
 export function defaultPanels(): MapPanelConfig[] {
   return DEFAULT_PANEL_MODELS.map((model, i) => ({ model, varId: DEFAULT_PANEL_VARS[i], sync: true, localMs: null }))
+}
+
+/**
+ * Vorgabe JE PANELZAHL (auf Wunsch, 2026-11-02), auch ohne gespeichertes
+ * Preset:
+ *   4er  Modellvergleich über ÖSTERREICH — Niederschlag in IFS 9 km,
+ *        ICON-EU, ICON-D2 und Varda (ParSync auf Panel 1)
+ *   6er  Synoptik über EUROPA in IFS 9 km (ModSync auf Panel 1):
+ *        oben T 850 · T 2 m · 500 hPa, unten Böen · Niederschlag · Neuschnee
+ */
+export interface PanelSetup {
+  region: PanelRegionId
+  coupling: Coupling
+  panels: MapPanelConfig[]
+}
+
+export const SIX_PANEL_VARS: GlobeVarId[] = ['t850', 't2m', 'gh500', 'gust', 'precip', 'newsnow']
+
+export function defaultSetup(count: PanelCount): PanelSetup {
+  if (count === 6)
+    return {
+      region: 'europe',
+      coupling: { kind: 'model', source: 0 },
+      panels: SIX_PANEL_VARS.map((varId) => ({ model: 'ecmwf-hres', varId, sync: true, localMs: null })),
+    }
+  return { region: DEFAULT_PANEL_REGION, coupling: DEFAULT_COUPLING, panels: defaultPanels() }
 }
 
 /** Was ein Panel tatsächlich zeigt — die gekoppelte Hälfte kommt vom Quellpanel. */

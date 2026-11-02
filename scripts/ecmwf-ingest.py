@@ -113,6 +113,9 @@ FIELDS = {
     ('r', '700'): 'rh700',
     ('tcwv', None): 'tcwv',
     ('sd', None): 'sd',
+    # Schneefall seit Laufbeginn, Wasserwert in m (im Index geprüft 2026-11-02,
+    # 0,25° und 0,1°)
+    ('sf', None): 'sf',
     ('rsn', None): 'rsn',
 }
 
@@ -183,6 +186,8 @@ def fetch_step(run: datetime, step: int, pool: ThreadPoolExecutor) -> dict:
         out['_grid'] = grid
         if name == 'tp':
             out[name] = vals * 1000.0  # m → mm, doppelt genau (wird differenziert)
+        elif name == 'sf':
+            out[name] = (vals * 1000.0).astype(np.float32)  # m Wasserwert → mm
         elif name in ('tcc', 'clcl', 'clcm', 'clch'):
             # ECMWF Open Data führt die Bedeckung als ANTEIL 0–1, nicht in %
             # (gemessen 2026-10-08: min 0, max 1, Mittel 0,66). Ohne den Faktor

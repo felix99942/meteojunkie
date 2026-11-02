@@ -368,8 +368,8 @@ export function GlobeMapPanel(props: Props) {
           <div className="gmp-legend" title={variable.title}>
             <span className="gmp-legend-cap">
               {vm?.unit ?? ''}
-              {interval != null && cfg.varId !== 'precipsum' && ` · ${interval} h`}
-              {numbersOn && maximaOpts && ' · Zahlen: Höchstwerte mm'}
+              {interval != null && cfg.varId !== 'precipsum' && cfg.varId !== 'newsnow' && ` · ${interval} h`}
+              {numbersOn && maximaOpts && ` · Zahlen: Höchstwerte ${cfg.varId === 'newsnow' ? 'cm' : 'mm'}`}
             </span>
             <span className="gmp-legend-bar">
               {legend.map((s, i) => (

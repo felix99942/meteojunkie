@@ -13,19 +13,19 @@ const info = (over: Partial<BuildInfo> = {}): BuildInfo => ({
 })
 
 describe('buildLabel', () => {
-  it('nennt Commit und Datum', () => {
-    expect(buildLabel(info())).toBe('4a5b4ea · 16.09.2026')
+  it('nennt nur den Commit, das Datum steht im Tooltip', () => {
+    expect(buildLabel(info())).toBe('4a5b4ea')
   })
 
   // Der Marker muss auffallen: ein solcher Build gehört zu keinem Commit und
   // ist gegen `git log` nicht prüfbar.
   it('markiert einen Build aus geändertem Baum mit +', () => {
-    expect(buildLabel(info({ dirty: true }))).toBe('4a5b4ea+ · 16.09.2026')
+    expect(buildLabel(info({ dirty: true }))).toBe('4a5b4ea+')
   })
 
   // Tarball ohne .git: lieber „unbekannt" als eine erfundene Nummer.
   it('kommt ohne Git-Angaben klar', () => {
-    expect(buildLabel(info({ commit: 'unbekannt', date: 'kaputt' }))).toBe('unbekannt · —')
+    expect(buildLabel(info({ commit: 'unbekannt', date: 'kaputt' }))).toBe('unbekannt')
   })
 })
 
