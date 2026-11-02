@@ -517,14 +517,14 @@ export const DEFAULT_GLOBE_VARIABLE: GlobeVarId = 'reltop'
 
 // --- Modelle und Ansichten -------------------------------------------------
 
-export type GlobeModelId = 'ecmwf-ifs' | 'ecmwf-hres' | 'ecmwf-hres-asia' | 'icon-eu' | 'icon-d2'
+export type GlobeModelId = 'ecmwf-ifs' | 'ecmwf-hres' | 'ecmwf-hres-asia' | 'icon-eu' | 'icon-d2' | 'varda'
 
 export interface GlobeModel {
   id: GlobeModelId
   label: string
   resolution: string
   /** Wer die Daten liefert — steht in der Quellenzeile (Lizenzbedingung). */
-  provider: 'ECMWF' | 'DWD'
+  provider: 'ECMWF' | 'DWD' | 'MeteoSwiss'
   /**
    * Ab diesem Alter des Laufs warnt die Leiste. Normalalter = Takt +
    * Bereitstellung + Abstand des Deploy-Crons (3 h), gemessen 2026-10-05:
@@ -594,6 +594,22 @@ const ALL_GLOBE_MODELS: GlobeModel[] = [
     maxzoom: 8,
     title: 'DWD ICON-D2 0,02° — Deutschland, Alpen, Österreich, bis +48 h (Läufe alle 3 h)',
   },
+  {
+    // Das einzige Modell, das hier GERECHNET statt geholt wird: MeteoSwiss'
+    // datengetriebenes Varda-single-1.0 (Anemoi, Stretched Grid, 1 km über
+    // dem ICON-CH1-Gebiet), lokal auf einer GPU per Timer, nicht im Deploy
+    // (scripts/varda-ingest.py). Läufe 06/18 UTC, ~3,5 h nach dem Termin auf
+    // der Seite; 12 + 3,5 + Reserve, weil der Laptop nicht immer läuft.
+    // Keine Bewölkung, Böen, CAPE, Schnee — die Auswahl sperrt sie über meta.json.
+    id: 'varda',
+    label: 'Varda (KI)',
+    resolution: '1 km',
+    provider: 'MeteoSwiss',
+    staleHours: 18,
+    maxzoom: 9,
+    title:
+      'MeteoSwiss Varda-single-1.0 — datengetriebenes Modell (KI, Anemoi), 1 km über Alpen, Schweiz und Österreich, bis +120 h, stündlich. Gerechnet auf eigener Hardware aus MeteoSwiss- und ECMWF-Startwerten.',
+  },
 ]
 
 // Südostasien steht seit 2026-10-28 auch in der veröffentlichten Seite (auf
@@ -640,14 +656,14 @@ export const CONTOURS: ContourDef[] = [
     label: 'Isobaren',
     title: 'Bodendruck (MSL) alle 5 hPa, beschriftet — geglättet, damit Gebirgsrauschen keine Kringel zieht',
     interval: 5,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'ecmwf-hres-asia': 2, 'icon-eu': 3, 'icon-d2': 12 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 2, 'ecmwf-hres-asia': 2, 'icon-eu': 3, 'icon-d2': 12, varda: 24 },
   },
   {
     id: 'gh500',
     label: '500 hPa',
     title: 'Geopotential 500 hPa alle 4 gpdm, beschriftet',
     interval: 4,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3, varda: 6 },
   },
   {
     id: 'gh300',
@@ -656,7 +672,7 @@ export const CONTOURS: ContourDef[] = [
     // Das 300-hPa-Feld ist steiler als das 500er (Tröge reichen über ~120
     // gpdm statt ~80); mit 4 gpdm stünden die Linien im Jet zu dicht
     interval: 8,
-    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3 },
+    smooth: { 'ecmwf-ifs': 1, 'ecmwf-hres': 1, 'ecmwf-hres-asia': 1, 'icon-eu': 1, 'icon-d2': 3, varda: 6 },
   },
 ]
 

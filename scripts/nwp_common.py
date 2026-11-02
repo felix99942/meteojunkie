@@ -358,7 +358,7 @@ def run_id(run: datetime) -> str:
     return f'{run:%Y%m%d%H}'
 
 
-def already_done(model: str, rid: str, step_count: int) -> bool:
+def already_done(model: str, rid: str, step_count: int, required: list[str] | None = None) -> bool:
     meta = OUT_ROOT / model / 'meta.json'
     if not meta.exists():
         return False
@@ -366,7 +366,9 @@ def already_done(model: str, rid: str, step_count: int) -> bool:
     # Eine neu hinzugekommene Größe (z. B. `uv10`) fehlt einem schon
     # abgelegten Lauf — dann muss er neu erzeugt werden, sonst bliebe sie bis
     # zum nächsten Lauf weg
-    complete = all(v in old.get('variables', {}) for v in VARIABLES if v not in OPTIONAL)
+    if required is None:
+        required = [v for v in VARIABLES if v not in OPTIONAL]
+    complete = all(v in old.get('variables', {}) for v in required)
     return complete and old.get('runId') == rid and old.get('stepCount') == step_count and (OUT_ROOT / model / rid).is_dir()
 
 
@@ -381,6 +383,8 @@ def ingest(
     step_window: int = 6,
     field_workers: int = 12,
     encode_workers: int = 4,
+    only: set[str] | None = None,
+    optional: set[str] | None = None,
 ) -> None:
     """Einen Lauf holen, kodieren und atomar unter public/nwp/<model>/ ablegen.
 
@@ -389,10 +393,17 @@ def ingest(
     GRIB lässt sich nicht räumlich zuschneiden, jedes Feld kommt ohnehin
     global; ein zweiter Ausschnitt kostet nur Kodieren und Speicher, keinen
     Download. Ohne `crops` eine Ausgabe `model` mit dem ganzen Raster.
+
+    `only`/`optional`: für ein Modell, das nur einen Teil der Größen führt
+    (Varda: keine Bewölkung, kein CAPE …) — `only` grenzt die Größen ein,
+    `optional` ersetzt die Liste derer, deren Fehlen keine Warnung wert ist.
     """
     rid = run_id(run)
+    names = [v for v in VARIABLES if only is None or v in only]
+    opt = OPTIONAL if optional is None else optional
+    required = [v for v in names if v not in opt]
     outputs = crops or {model: None}
-    todo = {m: box for m, box in outputs.items() if not already_done(m, rid, len(steps))}
+    todo = {m: box for m, box in outputs.items() if not already_done(m, rid, len(steps), required)}
     if not todo:
         print(f'{label} Lauf {rid} liegt schon vollständig vor — nichts zu tun', flush=True)
         return
@@ -453,9 +464,9 @@ def ingest(
                     st['grid'] = g
                 elif g != st['grid']:
                     raise RuntimeError(f'Raster wechselt bei +{step} h: {g} statt {st["grid"]}')
-                for var in VARIABLES:
+                for var in names:
                     if any(k not in f for k in NEEDS[var]):
-                        if var not in OPTIONAL and m == next(iter(todo)):
+                        if var not in opt and m == next(iter(todo)):
                             print(f'  ! {var} fehlt bei +{step} h', file=sys.stderr)
                         continue
                     values = derive(var, f, st['prev_tp'], step, prev_step)

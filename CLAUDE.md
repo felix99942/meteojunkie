@@ -3319,6 +3319,56 @@ npm run preview   # gebautes dist/ servieren
   Schritt, ~1,2 MB Bilder je Schritt, ~60 MB je Lauf, lokal 3 Schritte in
   13 s. Abrufe mit 25 s Frist statt 8 (größere Felder). IFS 0,25° bleibt
   global bis +360 h daneben.
+  **VARDA (KI, 1 km) ist seit 2026-11-02 das fünfte Modell — und das einzige,
+  das hier GERECHNET statt geholt wird** (`scripts/varda-ingest.py`, npm
+  `ingest:varda`, Modell `varda`): MeteoSwiss' Varda-single-1.0 (Anemoi,
+  Graph Transformer auf Stretched Grid, global 31 km, 1 km über dem
+  ICON-CH1/KENDA-Gebiet 42,0–50,5° N / 0,8° W–17,7° O — ganz Österreich, Wien
+  ~1° vor dem Ostrand; Gewichte CC BY 4.0 auf Hugging Face). Startwerte
+  MeteoSwiss KENDA-CH1 (STAC data.geo.admin.ch, erscheint 2–2¾ h nach dem
+  Termin) plus ECMWF Open Data. **Gerechnet auf der Laptop-GPU per
+  systemd-Benutzertimer** (`scripts/systemd/varda-ingest.*`, eingerichtet
+  über `install-varda.sh`, Linger an, Läufe 06/18 UTC um 09:15/21:15 UTC,
+  `Persistent` holt nach) und von dort SELBST nach R2 geladen
+  (`scripts/varda-cron.sh` → `upload-data.sh nwp/varda`, Zugangsdaten in
+  `~/.config/meteojunkie/varda.env`) — GitHub Actions hat keine GPU, und der
+  Deploy fasst `nwp/varda` nicht an (seine Liste nennt die Modelle einzeln).
+  Modell-Repository samt zwei uv-Umgebungen liegt in `~/varda-test`
+  (`VARDA_HOME`), Zwischendateien in `/var/tmp/varda-run` auf `/`.
+  **Drei Abweichungen von den Vorgaben des Modell-Repositorys, alle gemessen
+  nötig**: PyTorch cu128 statt cu124 (RTX 5090 = sm_120), Ein-GPU-Runner statt
+  `runner.parallel` (sonst „Default process group has not been initialized"),
+  `libgfortran5` für ECMWFs MIR. Gemessen (RTX 5090 Laptop 24 GB): Vorhersager
+  +120 h 3,6 min (davon ~1 min GPU, 3 s je 6-h-Schritt, Spitze 18,5 GB),
+  Downscaler stündlich, KENDA-Download bei leerem Cache ~2,5 GB.
+  **Das 1-km-Gitter ist unstrukturiert (ICON), die Koordinaten stehen NICHT im
+  GRIB**, sondern im Checkpoint (`load_metadata(…, supporting_arrays=True)`,
+  `source0/latitudes` unter `lam_0/cutout_mask`). Umgerechnet wird linear über
+  eine Delaunay-Triangulierung auf 0,01° (1851×844, Gewichte einmal gerechnet
+  und in `VARDA_HOME` gecacht), > 1,5 km vom nächsten Modellpunkt = außerhalb.
+  **Der Downscaler schreibt nur die Kartenfelder** (`variables` in der
+  erzeugten `downscaler.yaml`): ungefiltert sind es 67 Felder, ~160 MB GRIB je
+  Stunde, ~20 GB über 120 h; jede Datei wird nach dem Lesen gelöscht. Bei +0
+  fehlt die Niederschlagssumme in der Ausgabe und wird als 0 gesetzt.
+  Größen: T2m, T850, Bodendruck, Niederschlag (Rate/Summe), Wind 10 m und
+  300 hPa (+Partikel), 500/300 hPa, Relative Topografie, Taupunkt, rF 700 hPa
+  (aus q und T gerechnet). **KEINE Bewölkung, Böen, CAPE, Schnee** — die
+  Auswahl sperrt sie über meta.json. ~2,9 MB Bilder je Stunde, ~350 MB je
+  Lauf. `nwp_common.ingest` kennt dafür `only`/`optional` (ein Modell mit nur
+  einem Teil der Größen). Quellenzeile sagt „gerechnet auf eigener Hardware —
+  keine offizielle MeteoSwiss-Vorhersage". Laufalter-Warnung ab 18 h.
+  **HÖCHSTWERTE ALS ZAHLEN IM NIEDERSCHLAGSFELD** (seit 2026-11-02, auf
+  Wunsch, alle Modelle; Kern `config/globeMaxima.ts` mit Tests, Ebene
+  `render/fieldMaxima.ts`, Häkchen „Höchstwerte", Vorgabe an): grobe Mengen
+  auf einen Blick, ohne die Farbe gegen die Legende zu halten. Der Ausschnitt
+  wird in Blöcke von 55 px geteilt, je Block das Gittermaximum EXAKT über alle
+  Zellen (Stichproben verlören 1-km-Kerne), dann nach Abstand ausgedünnt
+  (40 px, der höhere Wert gewinnt). **Nicht zurück auf „nur über allen acht
+  Nachbarn"**: die erste Fassung ließ je Region genau eine Zahl — gewünscht
+  sind mehrere rund um die Kerne. Aus dem schon geladenen Feld, kein Abruf.
+  `precip` zeigt die MENGE im Intervall (Rate × 1/3/6 h — „1,5" = 1,5 mm),
+  `precipsum` ganze mm (so gespeichert). Zahlen weichen Ortsnamen eine Zeile
+  aus, unter Bedienelemente kommen sie nicht.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-

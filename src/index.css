@@ -1715,6 +1715,29 @@ button:focus-visible {
   font-weight: 700;
 }
 
+/* Örtliche Höchstwerte im Niederschlagsfeld (render/fieldMaxima.ts): Zahl
+   auf dem Kern, weiß mit dunklem Halo wie die Ortsnamen, aber fetter und
+   ohne Punkt — sie markiert einen Wert, keinen Ort */
+.globe-max {
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow:
+    0 0 2px #000,
+    0 1px 3px #000,
+    0 -1px 3px #000,
+    1px 0 3px #000,
+    -1px 0 3px #000;
+}
+
+.globe-legend-max {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .world-label {
   pointer-events: none;
   white-space: nowrap;

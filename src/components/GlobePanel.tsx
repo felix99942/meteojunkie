@@ -20,6 +20,8 @@ import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BE
 import { CLOUD_LAYER_RAMPS, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
 import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
+import { addFieldMaxima } from '../render/fieldMaxima'
+import { MAXIMA_OPTIONS } from '../config/globeMaxima'
 import { WindParticles } from '../render/windParticles'
 import { starTileDataUrl } from '../render/starfield'
 import { globeFieldSource, loadGlobeField, loadGlobeMeta, prefetchGlobeField, setGlobeMeta } from '../api/globeData'
@@ -144,6 +146,8 @@ export function GlobePanel() {
    * eigener Wellenlauf (Gruppengeschwindigkeit) war auf Wunsch wieder raus.
    */
   const [particles, setParticles] = useState(false)
+  /** Örtliche Höchstwerte als Zahlen im Niederschlagsfeld (auf Wunsch, Vorgabe an). */
+  const [maxima, setMaxima] = useState(true)
 
   const model = getGlobeModel(modelId)
   const view = GLOBE_VIEWS.find((v) => v.id === viewId) ?? GLOBE_VIEWS[0]
@@ -605,11 +609,37 @@ export function GlobePanel() {
     }
   }, [mapReady])
 
+  // Örtliche Höchstwerte als Zahlen im Niederschlagsfeld — dieselben
+  // Bedienelemente wie bei der Beschriftung sind tabu
+  const maximaRef = useRef<ReturnType<typeof addFieldMaxima> | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const mx = addFieldMaxima(map, '.globe-arrows, .globe-legend, .globe-corner, .maplibregl-ctrl-top-right')
+    maximaRef.current = mx
+    return () => {
+      mx.destroy()
+      maximaRef.current = null
+    }
+  }, [mapReady])
+  const maximaOpts = MAXIMA_OPTIONS[varId]
+  const interval = step != null ? intervalHours(vm, step) : undefined
+  useEffect(() => {
+    // Rate (mm/h) × Intervall = Menge im Intervall: „1,5" heißt 1,5 mm, nicht 1,5 mm/h
+    maximaRef.current?.set(
+      maxima && maximaOpts && field ? field : null,
+      maximaOpts && {
+        min: maximaOpts.min,
+        factor: maximaOpts.perInterval ? (interval ?? 1) : 1,
+        decimals: maximaOpts.decimals,
+      },
+    )
+  }, [mapReady, maxima, maximaOpts, field, interval])
+
   const readValue = readout && field && !field.rgb ? sampleField(field, readout.lat, readout.lon) : NaN
   const readLayers = readout && field?.rgb ? sampleRgb3(field, readout.lat, readout.lon) : null
   const lastValid = meta && steps.length ? validMs(meta, steps[steps.length - 1]) : NaN
   const freshness = meta ? globeFreshness(run, lastValid, Date.now(), model.staleHours) : 'ok'
-  const interval = step != null ? intervalHours(vm, step) : undefined
   // Termin weicht deutlich von der Wahl ab — das Modell reicht nicht so weit
   const offTarget = meta && step != null && Math.abs(validMs(meta, step) - targetMs) > 3 * 3_600_000
 
@@ -815,6 +845,14 @@ export function GlobePanel() {
               />{' '}
               {particleVar === 'uv300' ? 'Windpartikel 300 hPa' : 'Windpartikel'}
             </label>
+            {maximaOpts && (
+              <label
+                className="globe-layer"
+                title="Örtliche Höchstwerte als Zahlen im Feld (mm) — je Kartenausschnitt der höchste Gitterwert einer Region; beim Hineinzoomen werden die Regionen kleiner."
+              >
+                <input type="checkbox" checked={maxima} onChange={(e) => setMaxima(e.target.checked)} /> Höchstwerte
+              </label>
+            )}
           </div>
           <div className="globe-readout" aria-live="polite">
             {readout ? (
@@ -844,6 +882,13 @@ export function GlobePanel() {
           <span className="radar-legend-cap">
             {model.label} · {variable.label} · {variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}
             {intervalText && ` · ${intervalText}`}
+            {maxima && maximaOpts && (
+              <>
+                {' · '}
+                <b className="globe-legend-max">Zahlen = örtliche Höchstwerte in mm</b>
+                {maximaOpts.perInterval && interval != null && ` (Menge der ${interval === 1 ? 'letzten Stunde' : `letzten ${interval} h`})`}
+              </>
+            )}
           </span>
           {gapHours != null && interval != null && (
             <span
@@ -900,6 +945,26 @@ export function GlobePanel() {
             </a>
             )
           </>
+        ) : model.provider === 'MeteoSwiss' ? (
+          <>
+            Modell{' '}
+            <a href="https://huggingface.co/MeteoSwiss/Varda-single-1.0" target="_blank" rel="noreferrer">
+              MeteoSwiss Varda-single-1.0
+            </a>{' '}
+            (
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+              CC BY 4.0
+            </a>
+            ), Startwerte{' '}
+            <a href="https://opendatadocs.meteoswiss.ch/" target="_blank" rel="noreferrer">
+              MeteoSwiss Open Data
+            </a>{' '}
+            (KENDA-CH1) und{' '}
+            <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data" target="_blank" rel="noreferrer">
+              ECMWF Open Data
+            </a>
+            , gerechnet auf eigener Hardware — keine offizielle MeteoSwiss-Vorhersage
+          </>
         ) : (
           <>
             <a href="https://www.dwd.de/DE/leistungen/opendata/opendata.html" target="_blank" rel="noreferrer">
@@ -916,7 +981,7 @@ export function GlobePanel() {
             )
           </>
         )}
-        , beim Bauen der Seite übernommen · Küsten, Grenzen und Namen: Natural Earth. Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
+        {model.provider !== 'MeteoSwiss' && ', beim Bauen der Seite übernommen'} · Küsten, Grenzen und Namen: Natural Earth. Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
       </span>
     </div>
   )

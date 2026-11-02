@@ -1,0 +1,14 @@
+# Varda-Lauf (MeteoSwiss Varda-single-1.0) auf der lokalen GPU, danach Upload
+# nach R2. Installieren: scripts/systemd/install-varda.sh
+[Unit]
+Description=Varda-Modellkarten rechnen und hochladen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/meteowebsite/scripts/varda-cron.sh
+# GPU-Lauf darf den Laptop nicht lahmlegen, während man daran arbeitet
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=90min

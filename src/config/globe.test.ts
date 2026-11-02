@@ -262,6 +262,7 @@ describe('Registry', () => {
     const z = (id: string) => getGlobeModel(id).maxzoom
     expect(z('ecmwf-ifs')).toBeLessThan(z('icon-eu'))
     expect(z('icon-eu')).toBeLessThan(z('icon-d2'))
+    expect(z('icon-d2')).toBeLessThan(z('varda'))
   })
 
   it('führt jede Größe genau einmal und mit Skala', () => {
