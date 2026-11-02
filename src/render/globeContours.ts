@@ -6,8 +6,8 @@
 //
 // WARUM RASTER und nicht Vektorlinien (GeoJSON-Layer): die Beschriftung. Ein
 // MapLibre-Symbol-Layer braucht eine Glyphs-Quelle, und die Basemap ist
-// bewusst komplett lokal (siehe `render/basemap.ts`). In der Kachel zeichnet
-// ein 2D-Canvas die Zahl selbst.
+// bewusst komplett lokal (siehe `render/basemap.ts`). Die Zahl setzt der
+// Worker selbst in die Kachel, aus einmal gerasterten Ziffern (`globeWorker.ts`).
 //
 // DIE LINIE KOMMT AUS DEM ABSTAND ZUR ISOLINIE, nicht aus einem Vergleich
 // benachbarter Pixel: d = |v − L| / |∇v| ist der Abstand des Pixels zur
@@ -41,46 +41,63 @@ export function smoothField(f: GlobeField, r: number): Float32Array {
     const c = f.codes[i]
     raw[i] = c === 0 ? NaN : f.lo + (c - 1) * f.step
   }
+  // LAUFENDE SUMMEN statt (2r+1) Additionen je Zelle: gemessen (2026-11-02,
+  // Varda 1851×844, r = 24) ~200 ms je Feld, und das lag beim Weiterblättern
+  // mit Isobaren direkt auf dem Weg zur ersten Kachel. Gleiches Ergebnis,
+  // Aufwand unabhängig von r. Summiert wird doppelt genau, sonst liefe der
+  // Rundungsfehler über eine Zeile von 1440 Werten um 1000 hPa sichtbar auf.
   let out = raw
   if (r > 0) {
     const tmp = new Float32Array(n)
+    const ps = new Float64Array(ni + 1)
+    const pc = new Int32Array(ni + 1)
+    // Summe und Anzahl über die Spalten a…b (einschließlich), global gewickelt
+    const win = (a: number, b: number): [number, number] => {
+      if (a >= 0 && b < ni) return [ps[b + 1] - ps[a], pc[b + 1] - pc[a]]
+      if (!global) {
+        const aa = Math.max(0, a)
+        const bb = Math.min(ni - 1, b)
+        return [ps[bb + 1] - ps[aa], pc[bb + 1] - pc[aa]]
+      }
+      // über die Datumsgrenze: zwei Stücke (r < ni)
+      if (a < 0) return [ps[ni] - ps[ni + a] + ps[b + 1], pc[ni] - pc[ni + a] + pc[b + 1]]
+      return [ps[ni] - ps[a] + ps[b + 1 - ni], pc[ni] - pc[a] + pc[b + 1 - ni]]
+    }
     // x-Richtung
     for (let j = 0; j < nj; j++) {
       const row = j * ni
       for (let i = 0; i < ni; i++) {
-        let s = 0
-        let k = 0
-        for (let d = -r; d <= r; d++) {
-          let ii = i + d
-          if (ii < 0 || ii >= ni) {
-            if (!global) continue
-            ii = (ii + ni) % ni
-          }
-          const v = raw[row + ii]
-          if (v === v) {
-            s += v
-            k++
-          }
-        }
-        tmp[row + i] = raw[row + i] === raw[row + i] && k ? s / k : NaN
+        const v = raw[row + i]
+        const ok = v === v
+        ps[i + 1] = ps[i] + (ok ? v : 0)
+        pc[i + 1] = pc[i] + (ok ? 1 : 0)
+      }
+      for (let i = 0; i < ni; i++) {
+        const [sum, k] = win(i - r, i + r)
+        tmp[row + i] = raw[row + i] === raw[row + i] && k ? sum / k : NaN
       }
     }
-    // y-Richtung
+    // y-Richtung (am Pol nicht gewickelt), spaltenweise laufend
     out = new Float32Array(n)
-    for (let j = 0; j < nj; j++) {
+    const cs = new Float64Array(ni)
+    const cc = new Int32Array(ni)
+    const add = (jj: number, sign: 1 | -1) => {
+      const row = jj * ni
       for (let i = 0; i < ni; i++) {
-        let s = 0
-        let k = 0
-        for (let d = -r; d <= r; d++) {
-          const jj = j + d
-          if (jj < 0 || jj >= nj) continue
-          const v = tmp[jj * ni + i]
-          if (v === v) {
-            s += v
-            k++
-          }
+        const v = tmp[row + i]
+        if (v === v) {
+          cs[i] += sign * v
+          cc[i] += sign
         }
-        out[j * ni + i] = tmp[j * ni + i] === tmp[j * ni + i] && k ? s / k : NaN
+      }
+    }
+    for (let jj = 0; jj < Math.min(nj, r); jj++) add(jj, 1)
+    for (let j = 0; j < nj; j++) {
+      if (j + r < nj) add(j + r, 1)
+      if (j - r - 1 >= 0) add(j - r - 1, -1)
+      const row = j * ni
+      for (let i = 0; i < ni; i++) {
+        out[row + i] = tmp[row + i] === tmp[row + i] && cc[i] ? cs[i] / cc[i] : NaN
       }
     }
   }

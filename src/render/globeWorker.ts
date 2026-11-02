@@ -63,31 +63,99 @@ function loadField(src: FieldSource): Promise<GlobeField> {
   return p
 }
 
+/**
+ * Beschriftung OHNE Canvas je Kachel. Gemessen (2026-11-02, IFS-Globus mit
+ * Isobaren): das Zeichnen einer Linienkachel über ein OffscreenCanvas
+ * (Pixel einsetzen, Zahlen, `transferToImageBitmap`) kostete immer wieder
+ * ~90–100 ms, im Takt von ~100 ms — das beschleunigte Canvas im Worker wartet
+ * auf den GPU-Prozess. Die Linien selbst kosten 3–7 ms. 34 Kacheln je
+ * Zeitschritt dauerten so 2,6 s, und daran hing das Weiterblättern.
+ * Ein wiederverwendetes Canvas änderte nichts (gemessen).
+ *
+ * Deshalb wie bei den Farbkacheln: die Pixel werden selbst geschrieben. Die
+ * Ziffern samt Halo werden EINMAL je Worker und Linienart auf einem
+ * CPU-Canvas (`willReadFrequently`) gerastert und als RGBA gemerkt, danach
+ * nur noch kopiert. Ziffern sind gleich breit, Kerning entfällt.
+ */
+interface Glyph {
+  w: number
+  h: number
+  /** Vorschub ohne Rand */
+  adv: number
+  data: Uint8ClampedArray
+}
+const GLYPH_PAD = 3
+const GLYPH_H = 16
+const GLYPH_CHARS = '0123456789-'
+const glyphSets = new Map<string, Map<string, Glyph>>()
+
+function glyphsFor(style: (typeof CONTOUR_STYLES)[keyof typeof CONTOUR_STYLES]): Map<string, Glyph> {
+  const key = `${style.core}/${style.halo}`
+  const hit = glyphSets.get(key)
+  if (hit) return hit
+  const ctx = new OffscreenCanvas(32, GLYPH_H).getContext('2d', { willReadFrequently: true })!
+  const set = new Map<string, Glyph>()
+  for (const ch of GLYPH_CHARS) {
+    ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif'
+    const adv = ctx.measureText(ch).width
+    const w = Math.ceil(adv) + 2 * GLYPH_PAD
+    ctx.canvas.width = w // setzt den Zustand zurück — Schrift danach neu
+    ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.lineWidth = 3
+    ctx.strokeStyle = `rgba(${style.halo.join(',')},0.85)`
+    ctx.strokeText(ch, GLYPH_PAD, GLYPH_H / 2)
+    ctx.fillStyle = `rgb(${style.core.join(',')})`
+    ctx.fillText(ch, GLYPH_PAD, GLYPH_H / 2)
+    set.set(ch, { w, h: GLYPH_H, adv, data: ctx.getImageData(0, 0, w, GLYPH_H).data })
+  }
+  glyphSets.set(key, set)
+  return set
+}
+
 /** Linien plus Beschriftung; unter der Zahl wird die Linie AUSGESPART, wie in jeder gedruckten Wetterkarte. */
 function drawContourTile(
   rgba: Uint8ClampedArray,
   labels: { x: number; y: number; text: string }[],
   style: (typeof CONTOUR_STYLES)[keyof typeof CONTOUR_STYLES],
-): ImageBitmap {
+): Promise<ImageBitmap> {
   const size = GLOBE_TILE_SIZE
-  const canvas = new OffscreenCanvas(size, size)
-  const ctx = canvas.getContext('2d')!
-  ctx.putImageData(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, size, size), 0, 0)
-  ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
+  const glyphs = glyphsFor(style)
   for (const l of labels) {
-    const w = ctx.measureText(l.text).width
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.fillRect(l.x - w / 2 - 3, l.y - 7, w + 6, 14)
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.lineWidth = 3
-    ctx.strokeStyle = `rgba(${style.halo.join(',')},0.85)`
-    ctx.strokeText(l.text, l.x, l.y)
-    ctx.fillStyle = `rgb(${style.core.join(',')})`
-    ctx.fillText(l.text, l.x, l.y)
+    const chars = [...l.text].map((c) => glyphs.get(c)).filter((g): g is Glyph => g != null)
+    const width = chars.reduce((s, g) => s + g.adv, 0)
+    // Aussparung unter der Zahl
+    const x0 = Math.max(0, Math.round(l.x - width / 2 - 3))
+    const x1 = Math.min(size, Math.round(l.x + width / 2 + 3))
+    const y0 = Math.max(0, Math.round(l.y - 7))
+    const y1 = Math.min(size, Math.round(l.y + 7))
+    for (let yy = y0; yy < y1; yy++) rgba.fill(0, 4 * (yy * size + x0), 4 * (yy * size + x1))
+    // Ziffern darüber, „source-over" nicht vormultipliziert
+    let pen = l.x - width / 2
+    for (const g of chars) {
+      const gx = Math.round(pen) - GLYPH_PAD
+      const gy = Math.round(l.y - GLYPH_H / 2)
+      for (let j = 0; j < g.h; j++) {
+        const ty = gy + j
+        if (ty < 0 || ty >= size) continue
+        for (let i = 0; i < g.w; i++) {
+          const tx = gx + i
+          if (tx < 0 || tx >= size) continue
+          const s = 4 * (j * g.w + i)
+          const sa = g.data[s + 3] / 255
+          if (sa === 0) continue
+          const d = 4 * (ty * size + tx)
+          const da = rgba[d + 3] / 255
+          const oa = sa + da * (1 - sa)
+          for (let k = 0; k < 3; k++) rgba[d + k] = (g.data[s + k] * sa + rgba[d + k] * da * (1 - sa)) / oa
+          rgba[d + 3] = oa * 255
+        }
+      }
+      pen += g.adv
+    }
   }
-  return canvas.transferToImageBitmap()
+  return createImageBitmap(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, size, size))
 }
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) => self.postMessage(msg, { transfer })
@@ -148,7 +216,7 @@ async function run(job: Extract<WorkerRequest, { type: 'tile' | 'field' }>): Pro
       if (cancelled.delete(id)) return post({ id, aborted: true })
       const style = CONTOUR_STYLES[job.contour.id]
       const { rgba, labels } = contourTile(f, smooth, job.contour.interval, style, z, x, y, GLOBE_TILE_SIZE)
-      bmp = drawContourTile(rgba, labels, style)
+      bmp = await drawContourTile(rgba, labels, style)
     } else {
       const rgba = f.rgb ? colorizeRgbTile(f, z, x, y) : colorizeTile(f, getGlobeVariable(job.varId).scale, z, x, y)
       bmp = await createImageBitmap(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, GLOBE_TILE_SIZE, GLOBE_TILE_SIZE))

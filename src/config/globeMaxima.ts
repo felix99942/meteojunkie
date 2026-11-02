@@ -7,6 +7,8 @@ export interface FieldMax {
   value: number
   lat: number
   lon: number
+  /** Zellindex im Gitter */
+  idx: number
 }
 
 /** Mehr Zellen je Block werden ausgedünnt (gröbste Sicht auf der Kugel). */
@@ -62,7 +64,41 @@ function toMax(f: GlobeField, idx: number, code: number): FieldMax {
     value: f.lo + (code - 1) * f.step,
     lat: g.lat0 + j * g.dlat,
     lon: lon > 180 ? lon - 360 : lon,
+    idx,
   }
+}
+
+/** Von den acht Nachbarn einer Zelle mindestens so viele mit Farbe … */
+const FILL_NEIGHBOURS = 5
+
+/**
+ * Steht die Zelle in einer FARBFLÄCHE? Sie selbst und mindestens
+ * FILL_NEIGHBOURS ihrer acht Nachbarn liegen bei `fillMin` (Feldeinheit, die
+ * unterste eingefärbte Stufe der Skala) oder darüber. Ein einzelner nasser
+ * Gitterpunkt ist in der Karte nicht zu sehen — eine Zahl darauf stünde im
+ * Leeren (gemeldet: bei geringen Mengen Zahlen ohne Farbfläche).
+ */
+export function inFilledArea(f: GlobeField, idx: number, fillMin: number): boolean {
+  const g = f.grid
+  const minCode = Math.ceil((fillMin - f.lo) / f.step - 1e-9) + 1
+  if (f.codes[idx] < minCode) return false
+  const j = Math.floor(idx / g.ni)
+  const i = idx - j * g.ni
+  let n = 0
+  for (let dj = -1; dj <= 1; dj++) {
+    const jj = j + dj
+    if (jj < 0 || jj >= g.nj) continue
+    for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue
+      let ii = i + di
+      if (ii < 0 || ii >= g.ni) {
+        if (!g.global) continue
+        ii = (ii + g.ni) % g.ni
+      }
+      if (f.codes[jj * g.ni + ii] >= minCode) n++
+    }
+  }
+  return n >= FILL_NEIGHBOURS
 }
 
 /**
@@ -87,13 +123,18 @@ export function formatMax(v: number, decimals = 1): string {
 }
 
 /**
- * Welche Größen Höchstwerte als Zahlen bekommen, ab welchem Wert, und ob der
- * Feldwert eine RATE ist, die mit dem Intervall zur MENGE wird (`precip`:
- * mm/h × 1/3/6 h — „1,5" soll 1,5 mm heißen, nicht 1,5 mm/h). Schwellen: die
- * unterste eingefärbte Stufe der jeweiligen Skala.
+ * Welche Größen Höchstwerte als Zahlen bekommen, ab welcher MENGE (`min`, mm),
+ * ab welchem FELDwert die Skala einfärbt (`fillMin`, für `inFilledArea`), und
+ * ob der Feldwert eine RATE ist, die mit dem Intervall zur Menge wird
+ * (`precip`: mm/h × 1/3/6 h — „1,5" soll 1,5 mm heißen, nicht 1,5 mm/h).
  */
-export const MAXIMA_OPTIONS: Partial<Record<GlobeVarId, { min: number; perInterval: boolean; decimals: number }>> = {
-  precip: { min: 0.1, perInterval: true, decimals: 1 },
-  // in ganzen mm gespeichert — „9,0" täuschte eine Genauigkeit vor, die es nicht gibt
-  precipsum: { min: 1, perInterval: false, decimals: 0 },
+export const MAXIMA_OPTIONS: Partial<
+  Record<GlobeVarId, { min: number; perInterval: boolean; decimals: number; fillMin: number }>
+> = {
+  // ab 0,5 mm (auf Wunsch — geringere Mengen sind als Zahl nur Rauschen);
+  // eingefärbt ist die Rate ab 0,1 mm/h
+  precip: { min: 0.5, perInterval: true, decimals: 1, fillMin: 0.1 },
+  // in ganzen mm gespeichert — „9,0" täuschte eine Genauigkeit vor, die es
+  // nicht gibt; eingefärbt ab 1 mm
+  precipsum: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
 }

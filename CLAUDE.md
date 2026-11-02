@@ -3367,8 +3367,11 @@ npm run preview   # gebautes dist/ servieren
   Nachbarn"**: die erste Fassung ließ je Region genau eine Zahl — gewünscht
   sind mehrere rund um die Kerne. Aus dem schon geladenen Feld, kein Abruf.
   `precip` zeigt die MENGE im Intervall (Rate × 1/3/6 h — „1,5" = 1,5 mm),
-  `precipsum` ganze mm (so gespeichert). Zahlen weichen Ortsnamen eine Zeile
-  aus, unter Bedienelemente kommen sie nicht.
+  `precipsum` ganze mm (so gespeichert). Zahlen erst ab 0,5 mm und NUR IN
+  EINER FARBFLÄCHE (`inFilledArea`: die Zelle und ≥ 5 ihrer 8 Nachbarn
+  eingefärbt) — gemeldet waren Zahlen bei geringen Mengen ohne sichtbare
+  Fläche, ein einzelner nasser Gitterpunkt. Zahlen weichen Ortsnamen eine
+  Zeile aus, unter Bedienelemente kommen sie nicht.
   **EBENEN OBEN LINKS IN DER KARTE, nicht in der Kopfleiste**
   (`.globe-corner` → `.globe-layers`, darunter `.globe-readout`): Isobaren,
   500 hPa und Windpartikel/Wellenlauf als große Häkchen (15 px fett, 18-px-
@@ -3541,6 +3544,24 @@ npm run preview   # gebautes dist/ servieren
   nicht fallen lassen (`prefetching` hält das Signal, nicht nur die URL).
   Gemessen (Software-Rendering): vorwärts 2–3 s → 0,3–0,7 s je Schritt,
   zurück keine einzige Kachel mehr neu gerechnet.
+  **DIE ISOLINIEN WAREN DER ENGPASS — gemessen 2026-11-02**, Sprung auf einen
+  nicht vorgerechneten Schritt, Zeit bis zur letzten sichtbaren Kachel:
+  IFS-Globus mit Isobaren 3,9 s (34 Farbkacheln 0,2 s, 34 Isobarenkacheln
+  2,6 s), ohne Isobaren 0,5 s. Die Linien selbst kosten 3–7 ms je Kachel —
+  die Zeit steckte im ZEICHNEN über ein OffscreenCanvas im Worker (~90–100 ms
+  je Kachel, im ~100-ms-Takt: das beschleunigte Canvas wartet auf den
+  GPU-Prozess; ein wiederverwendetes Canvas änderte nichts). Seither setzt der
+  Worker die Zahlen selbst in die Pixel, aus EINMAL je Linienart gerasterten
+  Ziffern (`glyphsFor`), und gibt die Kachel wie die Farbkacheln über
+  `createImageBitmap(ImageData)` ab. **Kein OffscreenCanvas je Kachel mehr
+  einführen.** Dazu das Glätten mit LAUFENDEN SUMMEN statt (2r+1)
+  Additionen je Zelle (Varda r = 24: ~200 ms je Feld, lag direkt vor der
+  ersten Isobarenkachel; ein Test hält es Zelle für Zelle gegen die direkte
+  Rechnung). Danach: IFS-Globus 1,2–1,9 s (davon nur ~0,4 s Kachelrechnung —
+  der Rest ist SwiftShader im Headless-Browser, der den Globus auf der CPU
+  zeichnet und mit echter GPU entfällt), Varda Alpen 1,2 → 0,6 s. Gemessen
+  mit Zeitstempeln im Worker; die `idle`-Zeit der Karte taugt headless NICHT
+  als Maß, sie ist vom Software-Rendering dominiert.
   **Pixeldichte der Karte auf 1,5 gedeckelt** (`GLOBE_MAX_PIXEL_RATIO`,
   Windpartikel folgen `map.getPixelRatio()`): bei Pixeldichte 2 zeichnet die
   Grafikkarte je Frame viermal so viele Pixel. Die KACHELZAHL hängt NICHT

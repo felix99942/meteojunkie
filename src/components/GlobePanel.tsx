@@ -632,6 +632,7 @@ export function GlobePanel() {
         min: maximaOpts.min,
         factor: maximaOpts.perInterval ? (interval ?? 1) : 1,
         decimals: maximaOpts.decimals,
+        fillMin: maximaOpts.fillMin,
       },
     )
   }, [mapReady, maxima, maximaOpts, field, interval])

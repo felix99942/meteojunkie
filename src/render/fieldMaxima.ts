@@ -16,7 +16,7 @@
 
 import maplibregl from 'maplibre-gl'
 import type { GlobeField } from '../config/globe'
-import { formatMax, maxInBox, spacedMaxima, type FieldMax } from '../config/globeMaxima'
+import { formatMax, inFilledArea, maxInBox, spacedMaxima, type FieldMax } from '../config/globeMaxima'
 
 export interface MaximaOptions {
   /** Kleinster beschrifteter Wert (nach `factor`). */
@@ -25,6 +25,8 @@ export interface MaximaOptions {
   factor: number
   /** Nachkommastellen unter 10 — die Summe ist in ganzen mm gespeichert. */
   decimals: number
+  /** Unterste eingefärbte Stufe (Feldeinheit) — Zahlen nur in einer Farbfläche. */
+  fillMin: number
 }
 
 // Je Block ein Kandidat, Zahlen mindestens MIN_DIST_PX auseinander
@@ -38,7 +40,7 @@ const MIN_DIST_PX = 40
  */
 export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
   let field: GlobeField | null = null
-  let opts: MaximaOptions = { min: 0.1, factor: 1, decimals: 1 }
+  let opts: MaximaOptions = { min: 0.5, factor: 1, decimals: 1, fillMin: 0.1 }
   let markers: maplibregl.Marker[] = []
 
   const clear = () => {
@@ -86,7 +88,7 @@ export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
           continue
         }
         const m = maxInBox(field, w, Math.min(...lats), e, Math.max(...lats))
-        blocks.push(m && { ...m, value: m.value * opts.factor })
+        blocks.push(m && inFilledArea(field, m.idx, opts.fillMin) ? { ...m, value: m.value * opts.factor } : null)
       }
     }
     const busy = overlayRects(map, avoid)

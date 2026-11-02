@@ -33,6 +33,62 @@ describe('smoothField', () => {
     expect(sm[j * 1440 + i + 1]).toBeCloseTo(1000, 4)
   })
 
+  it('laufende Summen rechnen wie der direkte Kastenfilter — auch über Datumsgrenze, Lücken und Rand', () => {
+    // Direkte Fassung (vor 2026-11-02) als Bezug: je Zelle (2r+1) Additionen
+    const naive = (g: GlobeField, r: number) => {
+      const { ni, nj, global } = g.grid
+      const raw = Array.from(g.codes, (c) => (c === 0 ? NaN : g.lo + (c - 1) * g.step))
+      const tmp = raw.map((v, idx) => {
+        const j = Math.floor(idx / ni)
+        const i = idx - j * ni
+        let s = 0
+        let k = 0
+        for (let d = -r; d <= r; d++) {
+          let ii = i + d
+          if (ii < 0 || ii >= ni) {
+            if (!global) continue
+            ii = (ii + ni) % ni
+          }
+          const w = raw[j * ni + ii]
+          if (w === w) {
+            s += w
+            k++
+          }
+        }
+        return v === v && k ? s / k : NaN
+      })
+      return tmp.map((v, idx) => {
+        const j = Math.floor(idx / ni)
+        const i = idx - j * ni
+        let s = 0
+        let k = 0
+        for (let d = -r; d <= r; d++) {
+          const jj = j + d
+          if (jj < 0 || jj >= nj) continue
+          const w = tmp[jj * ni + i]
+          if (w === w) {
+            s += w
+            k++
+          }
+        }
+        return v === v && k ? s / k : NaN
+      })
+    }
+    for (const global of [true, false]) {
+      const ni = 40
+      const nj = 25
+      const codes = new Uint16Array(ni * nj)
+      for (let i = 0; i < codes.length; i++) codes[i] = i % 17 === 3 ? 0 : 1 + ((i * 7919) % 300)
+      const g: GlobeField = { grid: { ni, nj, lon0: -180, lat0: 90, dlon: 9, dlat: -7, global }, lo: 900, step: 0.5, codes }
+      const want = naive(g, 4)
+      const got = smoothField(g, 4)
+      for (let i = 0; i < want.length; i++) {
+        if (Number.isNaN(want[i])) expect(Number.isNaN(got[i])).toBe(true)
+        else expect(got[i]).toBeCloseTo(want[i], 3)
+      }
+    }
+  })
+
   it('dämpft Rauschen', () => {
     const f = field((lat, lon) => 1000 + ((Math.round(lat * 4) + Math.round(lon * 4)) % 2 ? 2 : -2))
     const sm = smoothField(f, 2)

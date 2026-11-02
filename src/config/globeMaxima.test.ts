@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GlobeField, GlobeGrid } from './globe'
-import { formatMax, maxInBox, spacedMaxima } from './globeMaxima'
+import { formatMax, inFilledArea, maxInBox, spacedMaxima } from './globeMaxima'
 
 /** Feld aus Werten (Zeile 0 = lat0), Kodierung lo 0 / step 0,05 wie `precip`; NaN = kein Wert. */
 function field(values: number[][], grid: Partial<GlobeGrid> = {}): GlobeField {
@@ -47,6 +47,37 @@ describe('maxInBox', () => {
     // Spalte 3 = 90° O; ein Kasten 80…100° O und derselbe als 440…460°
     expect(maxInBox(g, 80, 44, 100, 46)!.value).toBeCloseTo(5)
     expect(maxInBox(g, 80 + 360, 44, 100 + 360, 46)!.value).toBeCloseTo(5)
+  })
+})
+
+describe('inFilledArea', () => {
+  const idx = (f: GlobeField, j: number, i: number) => j * f.grid.ni + i
+
+  it('ein einzelner nasser Gitterpunkt steht nicht in einer Farbfläche', () => {
+    const f = field([
+      [0, 0, 0],
+      [0, 2, 0],
+      [0, 0, 0],
+    ])
+    expect(inFilledArea(f, idx(f, 1, 1), 0.1)).toBe(false)
+  })
+
+  it('eine Zelle inmitten eingefärbter Nachbarn schon', () => {
+    const f = field([
+      [0.2, 0.3, 0],
+      [0.2, 2, 0.1],
+      [0.4, 0.2, 0],
+    ])
+    expect(inFilledArea(f, idx(f, 1, 1), 0.1)).toBe(true)
+  })
+
+  it('unter der untersten Farbstufe ist auch die Zelle selbst nicht eingefärbt', () => {
+    const f = field([
+      [0.05, 0.05, 0.05],
+      [0.05, 0.05, 0.05],
+      [0.05, 0.05, 0.05],
+    ])
+    expect(inFilledArea(f, idx(f, 1, 1), 0.1)).toBe(false)
   })
 })
 
