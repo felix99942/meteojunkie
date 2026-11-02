@@ -3427,7 +3427,14 @@ npm run preview   # gebautes dist/ servieren
   Termin) plus ECMWF Open Data. **Gerechnet auf der Laptop-GPU per
   systemd-Benutzertimer** (`scripts/systemd/varda-ingest.*`, eingerichtet
   über `install-varda.sh`, Linger an, Läufe 06/18 UTC um 09:15/21:15 UTC,
-  `Persistent` holt nach) und von dort SELBST nach R2 geladen
+  `Persistent` holt nach; seit 2026-11-03 WECKT ein System-Timer den Laptop
+  aus der Bereitschaft (`varda-wake.*`, `sudo scripts/systemd/
+  install-varda-wake.sh` — ein Benutzer-Timer darf mit `WakeSystem` nicht
+  wecken): 2 min vorher geweckt, bis 10 min aufs WLAN gewartet (ohne Netz
+  kein Lauf), gerechnet unter einer Sperre gegen Bereitschaft und
+  Deckelschalter (geweckt mit geschlossenem Deckel legt logind ihn sonst nach
+  ~30 s wieder schlafen), danach zurück in die Bereitschaft — nur wenn der
+  Timer geweckt hat und die Sitzung gesperrt ist (`LockedHint`)) und von dort SELBST nach R2 geladen
   (`scripts/varda-cron.sh` → `upload-data.sh nwp/varda`, Zugangsdaten in
   `~/.config/meteojunkie/varda.env`) — GitHub Actions hat keine GPU, und der
   Deploy fasst `nwp/varda` nicht an (seine Liste nennt die Modelle einzeln).

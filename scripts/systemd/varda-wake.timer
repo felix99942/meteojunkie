@@ -1,0 +1,15 @@
+# Weckt den Laptop aus der Bereitschaft für den Varda-Lauf — zwei Minuten vor
+# dem Benutzer-Timer (varda-ingest.timer, 09:15/21:15 UTC). Ein BENUTZER-
+# Timer darf das nicht (WakeSystem braucht den System-Dienstmanager), deshalb
+# dieser System-Timer. Installieren: sudo scripts/systemd/install-varda-wake.sh
+[Unit]
+Description=Laptop für den Varda-Lauf aus der Bereitschaft wecken
+
+[Timer]
+OnCalendar=*-*-* 09:13:00 UTC
+OnCalendar=*-*-* 21:13:00 UTC
+WakeSystem=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

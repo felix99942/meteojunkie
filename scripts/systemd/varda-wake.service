@@ -1,0 +1,11 @@
+# Varda-Lauf nach dem Wecken, danach zurück in die Bereitschaft (nur wenn der
+# Timer geweckt hat und der Bildschirm noch gesperrt ist). Das Skript liegt
+# root-eigen unter /usr/local/lib/meteojunkie/ — ein root-Dienst führt kein
+# Skript aus, das ein Benutzer ändern kann.
+[Unit]
+Description=Varda-Lauf nach dem Wecken, danach wieder Bereitschaft
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/meteojunkie/varda-wake.sh @USER@
+TimeoutStartSec=2h

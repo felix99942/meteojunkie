@@ -14,6 +14,13 @@ ENV_FILE="${VARDA_ENV:-$HOME/.config/meteojunkie/varda.env}"
 # shellcheck disable=SC1090
 [[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 
+# Ohne Netz kein Lauf — sauber beenden statt mit Fehler (WLAN kommt nach dem
+# Aufwachen oft erst nach ein paar Sekunden; nm-online wartet bis 2 min)
+if command -v nm-online >/dev/null && ! nm-online -q -t 120; then
+  echo "kein Netz — kein Lauf"
+  exit 0
+fi
+
 VARDA_HOME="${VARDA_HOME:-$HOME/varda-test}"
 export VARDA_HOME
 export PATH="$HOME/.local/bin:$PATH"
