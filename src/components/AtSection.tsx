@@ -1,34 +1,12 @@
-// Österreich-Bereich: Umschalter zwischen Klima (TAWES, Österreich) und
-// Vorhersage (MOSMIX/MOS, DACH-Raum). Bewusst lokaler State — die beiden Modi
-// nutzen unterschiedliche Stationsnetze, Karten und Datenquellen.
+// Klima (Stationsdaten Österreich/Deutschland) bzw. MOS-Vorhersage (MOSMIX,
+// DACH-Raum). Bis 2026-11-02 EIN Bereich mit Umschalter („Klima + MOS"); seit
+// der Gliederung nach Vorhersage und Beobachtung zwei Bereiche, die dasselbe
+// Gerüst (`.atsection`) teilen — die Karte, Farbskalen und das Stationsdetail
+// sind ohnehin gemeinsam.
 
-import { useState } from 'react'
 import { AtClimatePanel } from './AtClimatePanel'
 import { AtForecastPanel } from './AtForecastPanel'
 
-type Mode = 'klima' | 'vorhersage'
-
-export function AtSection() {
-  const [mode, setMode] = useState<Mode>('klima')
-  return (
-    <div className="atsection">
-      <div className="atsection-tabs">
-        <button
-          type="button"
-          className={mode === 'klima' ? 'is-active' : ''}
-          onClick={() => setMode('klima')}
-        >
-          Klima
-        </button>
-        <button
-          type="button"
-          className={mode === 'vorhersage' ? 'is-active' : ''}
-          onClick={() => setMode('vorhersage')}
-        >
-          Vorhersage
-        </button>
-      </div>
-      {mode === 'klima' ? <AtClimatePanel /> : <AtForecastPanel />}
-    </div>
-  )
+export function AtSection({ mode }: { mode: 'klima' | 'vorhersage' }) {
+  return <div className="atsection">{mode === 'klima' ? <AtClimatePanel /> : <AtForecastPanel />}</div>
 }

@@ -4357,6 +4357,28 @@ npm run preview   # gebautes dist/ servieren
   hat einen Rückfall, falls `workbench` trotzdem im Zustand steht.
   Wiedereinschalten ist das Entfernen einer Umgebungsvariable aus
   `build:web`.
+- **STARTSEITE UND MENÜ NACH DER FRAGE** (seit 2026-11-02, auf Wunsch;
+  `LandingPage.tsx`, Animation `render/heroWind.ts` mit Tests, Registry
+  `config/navigation.ts` — EINE Liste für Navigation UND Kacheln). Start ist
+  die Startseite (`AppView 'home'`), das Logo „meteojunkie" links in der
+  Leiste führt dorthin. Gruppen: **Vorhersage** (Meteogramm, Modellkarten,
+  Ensemble, Soundings, Föhn, MOS) · **Beobachtung** (Radar, Satellit,
+  Klima, Luftqualität) · **Auswertung** (Verifikation). Dafür sind **Klima
+  und MOS zwei Bereiche** (`at-klima`, `mos`, gemeinsames Gerüst
+  `AtSection mode=…`) statt eines mit Umschalter. Oben auf der Startseite
+  der 10-m-Wind des AKTUELLEN IFS-Laufs als Partikel über Europa — eigenes
+  Canvas ohne MapLibre (die Seite soll sofort stehen), Mercator füllend,
+  Bewegung über die Zeit, eingefärbt nach Tempo; ein Windfeld (~0,3 MB) über
+  denselben Lader wie die Modellkarten. Ohne Lauf ein Ersatzfeld OHNE
+  Laufangabe (es ist keine Vorhersage), bei `prefers-reduced-motion` ruhende
+  Stromlinien. **Auf der Startseite KEINE Navigationsleiste** (auf Wunsch):
+  darunter stehen DREI SÄULEN (Vorhersage · Beobachtung · Auswertung), deren
+  Bereiche beim Überfahren/Antippen NACH OBEN über das Windbild aufpoppen
+  (halbtransparent, zweispaltig) — eine erste Fassung klappte nach unten auf
+  und schob die Hälfte unter den Fensterrand; auf dem Handy (Säulen
+  untereinander) klappen sie im Fluss nach unten. **Das Impressum steht dort
+  unten als Link** (§ 18 MStV: aus jeder Seite erreichbar). Der Eintrag
+  „Modellkarten" nennt die aktuellen Läufe von IFS, ICON-D2 und Varda.
 - **Eigene Bereiche statt Panel-Modi** (`state/appView.ts`, `AppNav`).
   **Die Reihe ist GRUPPIERT, und die Farbe trägt die Gruppe** — bei acht
   Bereichen ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu

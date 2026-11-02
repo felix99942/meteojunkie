@@ -4,121 +4,26 @@
 // Alle drei Panel-Bereiche teilen sich dieselben sechs Panel-Configs, es geht
 // beim Wechseln also nichts verloren.
 //
-// DIE REIHE IST GRUPPIERT, und die Farbe trägt die Gruppe — bei acht Bereichen
-// ist eine gleichförmige Knopfreihe eine Liste, die man jedes Mal neu liest:
-//
-//   mint   VORHERSAGE und Klima am Punkt bzw. an der Station — Meteogramm,
-//          Modellkarten, Klima + MOS, Ensemble, Soundings, Föhn.
-//          Alles Zahlenwerke aus Modell- oder Messreihen (die Modellkarten
-//          zeigen zwar Karten, aber MODELLausgabe mit ablesbaren Werten, keine
-//          fertigen Karten eines fremden Dienstes).
-//   ocker  BILDKARTEN — Radar und Satellit. Andere Herkunft (fertige Karten
-//          fremder Dienste), andere Bedienung (Zeitschleife statt Zeitraster),
-//          kein Open-Meteo-Budget.
-//   rot    VERIFIKATION — der einzige Bereich, der ZURÜCKschaut und die
-//          übrigen bewertet. Rot, weil er die unbequeme Frage stellt.
-//   lila   LUFTQUALITÄT — ein anderes Thema als das Wetter (Schadstoffe statt
-//          Wettergrößen), mit Modell UND Messung; steht deshalb abgesetzt am
-//          Ende der Reihe (auf Wunsch).
-//
-// Die Farbe ist NICHT der einzige Unterschied (der aktive Tab trägt zusätzlich
-// Hintergrund und Unterkante), damit die Reihe auch ohne Farbunterscheidung
-// benutzbar bleibt.
+// DIE REIHE IST NACH DER FRAGE GRUPPIERT (seit 2026-11-02) — Vorhersage ·
+// Beobachtung · Auswertung, Liste und Begründung in `config/navigation.ts`.
+// Die Farbe trägt die Gruppe (mint · ocker · rot), ist aber NICHT der einzige
+// Unterschied: der aktive Tab trägt zusätzlich Hintergrund und Unterkante,
+// damit die Reihe auch ohne Farbunterscheidung benutzbar bleibt. Links das
+// Logo, es führt zur Startseite.
 
 import { useRef, useState } from 'react'
 import { buildLabel, buildTitle } from '../config/build'
 import { POINT_FORECASTS_ENABLED } from '../config/features'
-import { useAppView, type AppView } from '../state/appView'
-
-/** Farbgruppe der Reihe — siehe Kopfkommentar. */
-type NavGroup = 'forecast' | 'imagery' | 'verify' | 'air'
+import { NAV_GROUPS, NAV_TABS, type NavGroup } from '../config/navigation'
+import { useAppView } from '../state/appView'
 
 /** Beschriftung der aufklappbaren Gruppenknöpfe (Gruppen mit mehr als einem Bereich). */
-const GROUP_LABELS: Record<NavGroup, string> = {
-  forecast: 'Vorhersage + Klima',
-  imagery: 'Analyse',
-  verify: 'Verifikation',
-  air: 'Luftqualität',
-}
+const GROUP_LABELS = Object.fromEntries(NAV_GROUPS.map((g) => [g.key, g.label])) as Record<NavGroup, string>
 
 /** Ein Klick so kurz nach dem Öffnen per Überfahren klappt nicht gleich wieder zu (Touch). */
 const HOVER_CLICK_GRACE_MS = 600
 
-const TABS: { id: AppView; label: string; title: string; group: NavGroup }[] = [
-  {
-    id: 'classic',
-    label: 'Meteogramm',
-    title: 'Klassisches Meteogramm — Temperatur, Niederschlag, Wolken, Wind auf einen Blick',
-    group: 'forecast',
-  },
-  {
-    id: 'globe',
-    label: 'Modellkarten',
-    title:
-      'ECMWF IFS, ICON-EU und ICON-D2 als Globus oder Karte (Europa, Alpen) — Temperatur, Druck, Niederschlag, Wind, Bewölkung, 500 hPa',
-    group: 'forecast',
-  },
-  {
-    id: 'at-klima',
-    label: 'Klima + MOS',
-    title: 'Österreichische Klimakarte (GeoSphere-Stationsdaten) und MOS-Punktvorhersage (DWD MOSMIX)',
-    group: 'forecast',
-  },
-  {
-    id: 'ensemble',
-    label: 'Ensemble',
-    title: 'Plume-Diagramme am Punkt — Streuung der Mitglieder',
-    group: 'forecast',
-  },
-  {
-    id: 'profile',
-    label: 'Soundings',
-    title: 'Skew-T am Punkt — Schichtung der Atmosphäre',
-    group: 'forecast',
-  },
-  {
-    id: 'foehn',
-    label: 'Föhn',
-    title: 'Föhn-Diagnose: Druckdifferenz über die Alpen, Kammwind und Lee-Station — Modelle und Ensemble',
-    group: 'forecast',
-  },
-  {
-    id: 'radar',
-    label: 'Radar',
-    title:
-      'Niederschlagsradar: DWD-Komposit im 5-Minuten-Takt — Deutschland, Schweiz und Westösterreich',
-    group: 'imagery',
-  },
-  {
-    id: 'satellite',
-    label: 'Satellit',
-    title:
-      'Satellitenbilder von EUMETSAT: Meteosat Third Generation alle 10 Minuten (Geocolour, sichtbar hochaufgelöst, Infrarot), MSG alle 15 (Luftmassen, Konvektion)',
-    group: 'imagery',
-  },
-  {
-    id: 'verify',
-    label: 'Verifikation',
-    title:
-      'Wie gut war die Vorhersage? Vergangene Modellläufe gegen die gemessenen Stationswerte',
-    group: 'verify',
-  },
-  {
-    id: 'air',
-    label: 'Luftqualität',
-    title: 'Luftqualität am Punkt — Europäischer Luftqualitätsindex, Feinstaub, Stickstoffdioxid, Ozon, Saharastaub (CAMS)',
-    group: 'air',
-  },
-  // Steht in der veröffentlichten Version nicht in der Reihe
-  // (`POINT_FORECASTS_ENABLED`) und deshalb am Ende: im vollen Build ist es
-  // der Werkzeugkasten hinter den fertigen Bereichen, nicht der Einstieg.
-  {
-    id: 'workbench',
-    label: 'Punktprognosen',
-    title: 'Modellvergleich als Zeitreihe und Karte, frei wählbare Variablen',
-    group: 'forecast',
-  },
-]
+const TABS = NAV_TABS
 
 export function AppNav() {
   const view = useAppView((s) => s.view)
@@ -192,6 +97,15 @@ export function AppNav() {
   )
   return (
     <nav className="appnav">
+      <button
+        type="button"
+        className={`appnav-brand${view === 'home' ? ' is-active' : ''}`}
+        title="Startseite"
+        aria-pressed={view === 'home'}
+        onClick={() => setView('home')}
+      >
+        meteojunkie
+      </button>
       {groups.map((g, gi) =>
         // Eine Gruppe mit nur EINEM Bereich (Verifikation, Luftqualität) ist
         // einfach ihr Knopf — ein Aufklappen um einen einzigen Eintrag wäre

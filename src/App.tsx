@@ -21,6 +21,9 @@ const SatellitePanel = lazy(() =>
   import('./components/SatellitePanel').then((m) => ({ default: m.SatellitePanel })),
 )
 const ModelMapsSection = lazy(() => import('./components/ModelMapsSection').then((m) => ({ default: m.ModelMapsSection })))
+// Startseite: holt ein Windfeld über den Worker-Pool der Modellkarten — abgetrennt
+// wie diese, damit das Hauptbündel davon frei bleibt
+const LandingPage = lazy(() => import('./components/LandingPage').then((m) => ({ default: m.LandingPage })))
 
 
 // Panel-Bereiche (Punktprognosen/Ensemble/Profil) teilen dasselbe Gerüst
@@ -39,7 +42,9 @@ export default function App() {
   const view = !POINT_FORECASTS_ENABLED && stored === 'workbench' ? 'classic' : stored
   return (
     <div className="app">
-      <AppNav />
+      {/* Auf der Startseite KEINE Leiste (auf Wunsch): die drei Säulen dort
+          SIND das Menü. Das Impressum bleibt erreichbar — unten auf der Seite */}
+      {view !== 'home' && <AppNav />}
       {isPanelSection(view) ? (
         <>
           <TopBar />
@@ -78,8 +83,14 @@ export default function App() {
         </Suspense>
       ) : view === 'impressum' ? (
         <Impressum />
+      ) : view === 'home' ? (
+        <Suspense fallback={<div className="panel-placeholder">Lade …</div>}>
+          <LandingPage />
+        </Suspense>
+      ) : view === 'mos' ? (
+        <AtSection mode="vorhersage" />
       ) : (
-        <AtSection />
+        <AtSection mode="klima" />
       )}
     </div>
   )

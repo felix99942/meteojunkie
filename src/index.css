@@ -5339,3 +5339,312 @@ button:focus-visible {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* --- Navigation: Logo ------------------------------------------------------ */
+
+/* Logo links in der Leiste, führt zur Startseite — Schriftzug statt Bild,
+   in der Farbe der Vorhersage-Gruppe, damit es zur Reihe gehört */
+.appnav-brand {
+  padding: 5px 12px 5px 4px;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.appnav-brand::first-letter {
+  color: #3fbf94;
+}
+
+.appnav-brand:hover,
+.appnav-brand.is-active {
+  color: #3fbf94;
+  background: transparent;
+}
+
+/* --- Startseite -------------------------------------------------------------- */
+
+.landing {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Windbild: dunkel wie die Karten der Seite, die Strömung trägt die Farbe */
+.landing-hero {
+  position: relative;
+  flex: 0 0 auto;
+  /* füllt, was die Säulen übrig lassen — ohne Leiste darüber gehört der
+     Bildschirm der Strömung */
+  flex: 1 1 0;
+  min-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #182029 0%, #101317 70%);
+}
+
+.landing-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.landing-hero-text {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(720px, 90%);
+  text-align: center;
+  pointer-events: none;
+  text-shadow:
+    0 0 18px #0d1014,
+    0 0 6px #0d1014;
+}
+
+.landing-hero-text h1 {
+  margin: 0;
+  font-size: clamp(36px, 6vw, 68px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #f4f6f8;
+}
+
+.landing-hero-text h1::first-letter {
+  color: #3fbf94;
+}
+
+.landing-hero-text p {
+  margin: 6px 0 0;
+  font-size: clamp(14px, 1.6vw, 19px);
+  color: #d6dbe1;
+}
+
+.landing-caption {
+  position: absolute;
+  left: 50%;
+  bottom: -54px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Drei Säulen: Vorhersage · Beobachtung · Auswertung — die Bereiche klappen
+   unter dem Kopf auf (beim Überfahren, per Tipp) */
+.landing-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 0 2px;
+}
+
+.landing-column {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--nav) 30%, var(--border));
+  border-top: 3px solid var(--nav);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--nav) 5%, var(--bg-panel));
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.landing-column.is-open {
+  border-color: color-mix(in srgb, var(--nav) 65%, var(--border));
+  background: color-mix(in srgb, var(--nav) 9%, var(--bg-panel));
+}
+
+.landing-column.is-forecast {
+  --nav: #3fbf94;
+}
+
+.landing-column.is-imagery {
+  --nav: #d59220;
+}
+
+.landing-column.is-verify {
+  --nav: #e8776c;
+}
+
+.landing-column-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 18px 14px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.landing-column-head strong {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--nav);
+}
+
+.landing-column-head span {
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+
+/* Die Bereiche als Vorschau in einer Zeile — sieht man, was drinsteht, bevor
+   die Säule aufklappt */
+.landing-column-head em {
+  font-style: normal;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+}
+
+/* AUFPOPPEN nach OBEN über das Windbild (auf Wunsch): als Fläche ÜBER der
+   Säule, damit nichts nach unten aus dem Bild geschoben wird — eine erste
+   Fassung klappte nach unten auf, und bei sieben Vorhersage-Bereichen lag die
+   Hälfte unter dem Fensterrand. Halbtransparent, die Strömung bleibt sichtbar. */
+.landing-column-items {
+  position: absolute;
+  z-index: 5;
+  left: -1px;
+  right: -1px;
+  bottom: calc(100% + 8px);
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--nav) 55%, var(--border));
+  border-radius: 6px;
+  background: rgba(16, 18, 22, 0.86);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px) scale(0.98);
+  transform-origin: bottom center;
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s ease,
+    visibility 0s linear 0.25s;
+}
+
+.landing-column.is-open .landing-column-items {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s ease,
+    visibility 0s;
+}
+
+/* Viele Bereiche zweispaltig, wenige untereinander */
+.landing-column-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 6px;
+}
+
+.landing-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 9px 12px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--nav) 22%, var(--border));
+  border-left: 3px solid var(--nav);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease,
+    background 0.15s ease;
+}
+
+.landing-column.is-open .landing-item {
+  opacity: 1;
+  transform: none;
+}
+
+/* gestaffelt einblenden — die Einträge „poppen" nacheinander auf */
+.landing-column.is-open .landing-item:nth-child(2) { transition-delay: 0.04s; }
+.landing-column.is-open .landing-item:nth-child(3) { transition-delay: 0.08s; }
+.landing-column.is-open .landing-item:nth-child(4) { transition-delay: 0.12s; }
+.landing-column.is-open .landing-item:nth-child(5) { transition-delay: 0.16s; }
+.landing-column.is-open .landing-item:nth-child(6) { transition-delay: 0.2s; }
+.landing-column.is-open .landing-item:nth-child(7) { transition-delay: 0.24s; }
+
+.landing-item:hover {
+  background: color-mix(in srgb, var(--nav) 14%, var(--bg-panel));
+}
+
+.landing-item strong {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.landing-item span {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.landing-item em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--nav);
+  font-variant-numeric: tabular-nums;
+}
+
+.landing-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px 6px;
+  margin-top: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-column-items,
+  .landing-item {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .landing-hero {
+    flex: 0 0 auto;
+    height: 42vh;
+  }
+  .landing-caption {
+    white-space: normal;
+    width: 90vw;
+  }
+  .landing-columns {
+    grid-template-columns: 1fr;
+  }
+  /* Handy: Säulen untereinander — dort nach UNTEN aufklappen, im Fluss */
+  .landing-column-items {
+    position: static;
+    max-height: none;
+    margin: 0 10px 10px;
+    display: none;
+  }
+  .landing-column.is-open .landing-column-items {
+    display: block;
+  }
+}

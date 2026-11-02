@@ -24,11 +24,22 @@ import { create } from 'zustand'
 // (Panel-MODUS: Linienchart vs. Karte, siehe workbench.ts) — ein zweites,
 // andersartiges 'meteogram' als AppView-Id wäre verwechselbar.
 export type AppView =
+  /**
+   * Startseite (seit 2026-11-02): Windströmung des aktuellen IFS-Laufs über
+   * Europa und je Bereich eine Kachel. Das Logo in der Navigation führt hierher.
+   */
+  | 'home'
   | 'classic'
   | 'workbench'
   | 'ensemble'
   | 'profile'
   | 'at-klima'
+  /**
+   * MOS-Punktvorhersage (DWD MOSMIX). Bis 2026-11-02 ein Umschalter INNERHALB
+   * von `at-klima` („Klima + MOS") — mit der Gliederung nach Vorhersage und
+   * Beobachtung gehört sie zur Vorhersage, die Klimakarte zur Beobachtung.
+   */
+  | 'mos'
   /**
    * Verifikation: was wurde vorhergesagt, was ist eingetroffen. Eigener
    * Bereich, weil er als einziger BEIDE Welten der Seite zusammenbringt —
@@ -104,11 +115,12 @@ interface AppViewStore {
 
 export const useAppView = create<AppViewStore>((set) => ({
   /**
-   * Startbereich: das klassische Meteogramm. Es war früher `workbench`, und
+   * Startbereich: die Startseite (seit 2026-11-02). Davor das klassische
+   * Meteogramm, noch früher `workbench` — und das
    * das wäre in der veröffentlichten Version ein Start in einem Bereich, den
    * die Navigation gar nicht mehr zeigt (`POINT_FORECASTS_ENABLED`). „Wie
    * man's kennt" ist ohnehin der bessere erste Blick.
    */
-  view: 'classic',
+  view: 'home',
   setView: (view) => set({ view }),
 }))
