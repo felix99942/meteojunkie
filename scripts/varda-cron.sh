@@ -14,10 +14,15 @@ ENV_FILE="${VARDA_ENV:-$HOME/.config/meteojunkie/varda.env}"
 # shellcheck disable=SC1090
 [[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 
-# Ohne Netz kein Lauf — sauber beenden statt mit Fehler (WLAN kommt nach dem
-# Aufwachen oft erst nach ein paar Sekunden; nm-online wartet bis 2 min)
-if command -v nm-online >/dev/null && ! nm-online -q -t 120; then
-  echo "kein Netz — kein Lauf"
+# Ohne Netz kein Lauf — sauber beenden statt mit Fehler. NICHT nm-online:
+# direkt nach dem Aufwachen meldet NetworkManager noch den Zustand von vor
+# der Bereitschaft, nm-online kehrt sofort zurück, und der erste Abruf
+# scheiterte an der Namensauflösung (so am 03.11. und 04.11., jeder Lauf
+# tot). Gewartet wird deshalb, bis der Host der Startwerte WIRKLICH antwortet.
+net_ok() { curl -sfI --max-time 10 -o /dev/null https://data.geo.admin.ch/api/stac/v1/; }
+for _ in $(seq 60); do net_ok && break; sleep 10; done
+if ! net_ok; then
+  echo "kein Netz nach 10 Minuten — kein Lauf"
   exit 0
 fi
 

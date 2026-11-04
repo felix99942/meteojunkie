@@ -18,11 +18,29 @@ log() { echo "[varda-wake] $*"; }
 if [[ "${2:-}" != --inner ]]; then
   # Hat DIESER Timer geweckt? Dann kam die Rückkehr aus der Bereitschaft
   # eben erst (der Timer feuert unmittelbar nach dem Aufwachen)
+  # Der Timer feuert, BEVOR die Rückkehr abgeschlossen ist: logind steckt
+  # noch in der Operation „suspend" (dann lehnt systemd-inhibit mit „already
+  # running" ab, und der Lauf fiel aus), und systemd-sleep hat „returned from
+  # sleep" noch nicht geschrieben. Erst abwarten, bis die Bereitschaft
+  # wirklich vorbei ist (gemessen ~2 s, Frist 60 s).
+  for _ in $(seq 60); do
+    systemctl is-active -q systemd-suspend.service || break
+    sleep 1
+  done
+  sleep 2
   woke=no
   journalctl -b --since "-3 min" -o cat -t systemd-sleep 2>/dev/null | grep -q "returned from sleep" && woke=yes
   log "geweckt vom Timer: $woke"
-  systemd-inhibit --what=sleep:idle:handle-lid-switch --who=varda --why="Varda-Lauf" --mode=block \
-    "$0" "$user" --inner
+  # Wiederholt, falls logind die Sperre trotzdem noch ablehnt — die Ablehnung
+  # kommt sofort, ein echter Lauf dauert Minuten
+  for try in 1 2 3 4 5 6; do
+    start=$SECONDS
+    systemd-inhibit --what=sleep:idle:handle-lid-switch --who=varda --why="Varda-Lauf" --mode=block \
+      "$0" "$user" --inner && break
+    (( SECONDS - start > 5 )) && break
+    log "Sperre abgelehnt, neuer Versuch ($try)"
+    sleep 5
+  done
   # Wieder schlafen nur, wenn der Timer geweckt hat UND die grafische Sitzung
   # gesperrt ist (bzw. es keine gibt) — LockedHint setzt GNOME beim Sperren
   sid=$(loginctl list-sessions --no-legend | awk -v u="$user" '$3 == u && $4 == "seat0" { print $1; exit }')
@@ -37,7 +55,11 @@ if [[ "${2:-}" != --inner ]]; then
   exit 0
 fi
 
-if ! nm-online -q -t 600; then
+# Aufs Netz warten: bis der Name des Startwert-Hosts auflösbar ist (nm-online
+# meldet direkt nach dem Aufwachen noch den alten Zustand), höchstens 10 min
+net_ok() { getent hosts data.geo.admin.ch >/dev/null; }
+for _ in $(seq 60); do net_ok && break; sleep 10; done
+if ! net_ok; then
   log "kein Netz nach 10 Minuten — kein Lauf"
   exit 0
 fi
