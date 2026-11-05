@@ -10,6 +10,7 @@
 import maplibregl from 'maplibre-gl'
 import { GLOBE_PROTOCOL, GLOBE_TILE_SIZE } from './globeTiles'
 import { requestTile, type ContourJob, type FieldSource } from './globePool'
+import { GLOBE_TOPO_PROTOCOL, loadTopoTile } from './globeTopo'
 import { CONTOURS, type ContourId, type GlobeModelId, type GlobeVarId } from '../config/globe'
 import { PANEL_BAND_LINES } from '../config/globePanels'
 
@@ -190,6 +191,11 @@ export function registerGlobeProtocol(source: GlobeFieldSourceFn): void {
   maplibregl.addProtocol(GLOBE_ISO_PROTOCOL, handler)
   // Kantenlinien der Panel-Ansicht: globeband://modell/lauf/größe/schritt/z/x/y
   maplibregl.addProtocol(GLOBE_BAND_PROTOCOL, handler)
+  // Höhenkacheln der Topografie-Ebene: globedem://z/x/y
+  maplibregl.addProtocol(GLOBE_TOPO_PROTOCOL, async (params: { url: string }, ac: AbortController | undefined) => {
+    if (!ac) throw new DOMException('Kachel bereits abgebrochen', 'AbortError')
+    return { data: await loadTopoTile(params.url, ac.signal) }
+  })
 }
 
 // --- Vorladen ----------------------------------------------------------

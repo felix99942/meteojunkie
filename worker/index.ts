@@ -36,12 +36,13 @@ interface ScheduledEvent {
 const R3D_CRON = '2-59/5 * * * *'
 
 /** Pfade, die aus R2 kommen — alles andere ist die App selbst. */
-const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/']
+const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/', 'topo/']
 
 // Ein Modelllauf liegt unter seiner Kennung und ändert sich nie mehr
 // (nwp/<modell>/<lauf>/<größe>/<schritt>.webp, Lauf = 10 Ziffern).
-// Dasselbe gilt für Satelliten- und Radarbilder, die unter ihrem Termin liegen.
-const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/[^/]+\/(lo|hi)\/|radar\/[^/]+\/\d{8}T\d{4}Z)/
+// Dasselbe gilt für Satelliten- und Radarbilder, die unter ihrem Termin liegen,
+// und für das Relief (topo/, scripts/topo-mirror.mjs).
+const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/[^/]+\/(lo|hi)\/|radar\/[^/]+\/\d{8}T\d{4}Z|topo\/)/
 
 /** Cache-Dauer je Pfad. Alles ausser den Laufdateien wechselt stündlich. */
 function cacheControl(key: string): string {
@@ -81,7 +82,14 @@ export default {
     }
 
     const obj = await env.DATA.get(key, { onlyIf: req.headers })
-    if (!obj) return new Response('Not Found', { status: 404 })
+    if (!obj) {
+      if (!key.startsWith('topo/')) return new Response('Not Found', { status: 404 })
+      // Im Relief-Spiegel fehlt das Meer absichtlich, und das bleibt so: ungecacht
+      // kostete jede Meereskachel jedes Mal einen R2-Abruf
+      const missing = new Response('Not Found', { status: 404, headers: { 'cache-control': cacheControl(key) } })
+      ctx.waitUntil(caches.default.put(cacheKey, missing.clone()))
+      return missing
+    }
     const headers = new Headers()
     obj.writeHttpMetadata(headers)
     // rclone setzt den Typ aus der Endung; fehlt er doch, liefe die Datei als

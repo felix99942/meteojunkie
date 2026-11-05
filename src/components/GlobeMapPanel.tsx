@@ -14,6 +14,8 @@ import { globeTileUrl, GLOBE_TILE_SIZE } from '../render/globeTiles'
 import { globeBandUrl, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
 import { addFieldMaxima } from '../render/fieldMaxima'
+import { addTopoLayer, GLOBE_TOPO_LAYER } from '../render/globeTopo'
+import { createTileQueue, type TileQueue } from '../render/tileQueue'
 import { WindBarbs } from '../render/windBarbs'
 import { globeFieldSource, loadGlobeField, prefetchGlobeField } from '../api/globeData'
 import {
@@ -26,6 +28,7 @@ import {
   sampleWind,
   getGlobeModel,
   getGlobeVariable,
+  globeFreshness,
   intervalHours,
   sampleField,
   validMs,
@@ -44,6 +47,7 @@ import {
   type PanelView,
 } from '../config/globePanels'
 import { validLabel } from '../config/globeFormat'
+import { formatRunLong } from '../config/runs'
 
 const FIELD = 'gmp-field'
 const BAND = 'gmp-band'
@@ -183,7 +187,26 @@ export function GlobeMapPanel(props: Props) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    return addWorldLabels(map, '.gmp-legend, .gmp-readout, .gmp-msg')
+    return addWorldLabels(map, '.gmp-run, .gmp-legend, .gmp-readout, .gmp-msg')
+  }, [ready])
+
+  // Topografie: fester Bestandteil, über dem Feld und unter Gradnetz und Grenzen
+  useEffect(() => {
+    const map = mapRef.current
+    if (map && ready) addTopoLayer(map, OVERLAY_INSERT_BEFORE)
+  }, [ready])
+
+  // `setTiles` nie auf laufende Kacheln — sonst überschreibt eine alte die neue
+  const tilesRef = useRef<TileQueue | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const q = createTileQueue(map)
+    tilesRef.current = q
+    return () => {
+      q.destroy()
+      tilesRef.current = null
+    }
   }, [ready])
 
   // --- Farbfläche ------------------------------------------------------------
@@ -198,7 +221,7 @@ export function GlobeMapPanel(props: Props) {
     const url = globeTileUrl(cfg.model, meta.runId, cfg.varId, step)
     const src = map.getSource(FIELD) as maplibregl.RasterTileSource | undefined
     if (src && sourceModel.current === cfg.model) {
-      src.setTiles([url])
+      tilesRef.current?.queue(FIELD, url)
     } else {
       // Die Zoomgrenze hängt am Modell und lässt sich an einer Quelle nicht ändern
       if (map.getLayer(FIELD)) map.removeLayer(FIELD)
@@ -206,8 +229,10 @@ export function GlobeMapPanel(props: Props) {
       map.addSource(FIELD, { type: 'raster', tiles: [url], tileSize: GLOBE_TILE_SIZE, maxzoom: model.maxzoom })
       map.addLayer(
         { id: FIELD, type: 'raster', source: FIELD, paint: { 'raster-fade-duration': 0, 'raster-opacity': 1 } },
-        OVERLAY_INSERT_BEFORE,
+        // Unter dem Relief bleiben, auch wenn das Feld beim Modellwechsel neu entsteht
+        map.getLayer(GLOBE_TOPO_LAYER) ? GLOBE_TOPO_LAYER : OVERLAY_INSERT_BEFORE,
       )
+      tilesRef.current?.init(FIELD, url)
       sourceModel.current = cfg.model
     }
     map.setLayoutProperty(FIELD, 'visibility', 'visible')
@@ -223,12 +248,14 @@ export function GlobeMapPanel(props: Props) {
     if (!bandOn || bandModel.current !== cfg.model) {
       if (map.getLayer(BAND)) map.removeLayer(BAND)
       if (map.getSource(BAND)) map.removeSource(BAND)
+      tilesRef.current?.forget(BAND)
     }
     if (!bandOn) return
     const url = globeBandUrl(cfg.model, meta!.runId, cfg.varId, step!)
     const src = map.getSource(BAND) as maplibregl.RasterTileSource | undefined
-    if (src) src.setTiles([url])
+    if (src) tilesRef.current?.queue(BAND, url)
     else {
+      tilesRef.current?.init(BAND, url)
       map.addSource(BAND, { type: 'raster', tiles: [url], tileSize: GLOBE_TILE_SIZE, maxzoom: model.maxzoom + BAND_EXTRA_ZOOM })
       // über der Fläche, unter Gradnetz und Grenzen
       map.addLayer({ id: BAND, type: 'raster', source: BAND, paint: { 'raster-fade-duration': 0 } }, OVERLAY_INSERT_BEFORE)
@@ -289,7 +316,7 @@ export function GlobeMapPanel(props: Props) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    const mx = addFieldMaxima(map, '.gmp-legend, .gmp-readout, .gmp-msg')
+    const mx = addFieldMaxima(map, '.gmp-run, .gmp-legend, .gmp-readout, .gmp-msg')
     maximaRef.current = mx
     return () => {
       mx.destroy()
@@ -330,6 +357,13 @@ export function GlobeMapPanel(props: Props) {
   const readValue = hover && field && !field.rgb ? sampleField(field, hover.lat, hover.lon) : NaN
   const lastMs = meta && steps.length ? validMs(meta, steps[steps.length - 1]) : NaN
 
+  // Der Lauf steht IMMER im Bild: nebeneinander können Panels verschieden alte
+  // Läufe zeigen, und das Modell allein sagt das nicht
+  const run = meta ? runMs(meta) : NaN
+  const now = Date.now()
+  const freshness = meta ? globeFreshness(run, lastMs, now, model.staleHours) : 'ok'
+  const leadH = show ? Math.round((stepMs - run) / 3_600_000) : null
+
   let msg: string | null = null
   if (metaError) msg = `${model.label}: keine Daten (${metaError})`
   else if (meta && !vm) msg = `${model.label} führt „${variable.label}" nicht`
@@ -341,6 +375,17 @@ export function GlobeMapPanel(props: Props) {
       {props.header}
       <div className="gmp-body">
         <div className="gmp-map" ref={containerRef} />
+        {meta && (
+          <div
+            className={freshness === 'ok' ? 'gmp-run' : 'gmp-run is-stale'}
+            title={`Init-Zeit des Laufs, vom Anbieter gemeldet${leadH != null ? `; das Bild zeigt den Termin ${leadH} h danach` : ''}. Warnung ab ${model.staleHours} h Laufalter.`}
+          >
+            Lauf {formatRunLong({ initTime: run, initHourUtc: new Date(run).getUTCHours() }, now)}
+            {leadH != null && ` · +${leadH} h`}
+            {freshness === 'old' && ' · ⚠ alter Lauf'}
+            {freshness === 'spent' && ' · ⚠ Stand verbraucht'}
+          </div>
+        )}
         {show && frozen && (
           <>
             <div className="gmp-frozen" />

@@ -26,6 +26,7 @@
     "ingest:icon-eu": "python3 scripts/icon-ingest.py icon-eu",
     "ingest:varda": "${VARDA_HOME:-$HOME/varda-test}/.venv-fc/bin/python scripts/varda-ingest.py",
     "build:relief": "node scripts/build-relief.mjs",
+    "ingest:topo": "node scripts/topo-mirror.mjs",
     "build:ground": "node scripts/build-ground.mjs",
     "build:labels": "node scripts/build-labels.mjs",
     "ingest:at:recidx": "node scripts/at-build-record-index.mjs",

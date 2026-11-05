@@ -17,13 +17,15 @@ import {
   sampleField,
   particleSource,
   sampleWind,
+  POLE_ROWS,
   tilePixelLat,
   tilePixelLon,
   type GlobeField,
   type GlobeGrid,
   type GlobeMeta, precipReadout, variableLabel } from './globe'
-import { colorizeTile } from '../render/globeTiles'
-import { colorForValue } from './colorscales'
+import { colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE, globeTileSize } from '../render/globeTiles'
+import { CONTOUR_STYLES, contourTile, smoothField } from '../render/globeContours'
+import { colorForValue, type ColorScale } from './colorscales'
 
 const GRID: GlobeGrid = { ni: 1440, nj: 721, lon0: -180, lat0: 90, dlon: 0.25, dlat: -0.25, global: true }
 /** Wie ICON-D2 (gemessen): regional, Zeile 0 = SÜDrand, 0,02° */
@@ -108,6 +110,93 @@ describe('Kachelgeometrie', () => {
   it('reicht in Stufe 0 bis knapp an 85,05° heran', () => {
     expect(tilePixelLat(0, 0, 0, 256)).toBeGreaterThan(84.9)
     expect(tilePixelLat(0, 0, 0, 256)).toBeLessThan(85.0512)
+  })
+})
+
+describe('globeTileSize', () => {
+  const rad = (d: number) => (d * Math.PI) / 180
+  /** Kachelstufe, die MapLibre daraus macht: Zoom + log2(512 / Kachelgröße), gerundet */
+  const tileZ = (lat: number, zoom: number) => Math.round(zoom + Math.log2(512 / globeTileSize(lat, zoom, 1300, 800)))
+  /** Zoom, den MapLibre bei `lat` für dieselbe Kugelgröße wie Zoom `z` am Äquator nimmt */
+  const sameGlobe = (z: number, lat: number) => z + Math.log2(Math.cos(rad(lat)))
+
+  it('lässt die Ansichten rund um Europa unverändert', () => {
+    for (const lat of [0, 38, 50, 55, -40]) expect(globeTileSize(lat, 2, 1300, 800)).toBe(GLOBE_TILE_SIZE)
+  })
+
+  it('hebt die Stufe von weitem am Pol um den vollen Unterschied zu 55°', () => {
+    const zoom = sameGlobe(2, 85)
+    const plain = Math.max(0, Math.round(zoom + 1))
+    expect(plain).toBe(0) // das war der Fehler: eine einzige Kachel über die ganze Erde
+    expect(tileZ(85, zoom)).toBe(Math.round(zoom + 1 + Math.log2(Math.cos(rad(55)) / Math.cos(rad(85)))))
+    expect(tileZ(-85, zoom)).toBe(tileZ(85, zoom))
+  })
+
+  it('hebt die Stufe aus der Nähe nur so weit, wie das Bild nach Süden reicht', () => {
+    const near = globeTileSize(80, sameGlobe(7, 80), 1300, 800)
+    const far = globeTileSize(80, sameGlobe(2, 80), 1300, 800)
+    expect(near).toBeGreaterThan(far)
+    expect(near).toBeLessThan(GLOBE_TILE_SIZE)
+  })
+
+  it('ändert sich stetig mit der Breite, die Kacheln springen nicht beim Drehen', () => {
+    for (let lat = 50; lat < 85; lat++) {
+      const a = globeTileSize(lat, sameGlobe(2, lat), 1300, 800)
+      const b = globeTileSize(lat + 1, sameGlobe(2, lat + 1), 1300, 800)
+      expect(Math.abs(Math.log2(b / a))).toBeLessThan(0.5)
+    }
+  })
+})
+
+describe('Polrand der Kacheln', () => {
+  // Globales Feld, dessen Wert sich mit der Länge ändert: daraus entstehen die Strahlen
+  const ni = 72
+  const nj = 37
+  const codes = new Uint16Array(ni * nj)
+  for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) codes[j * ni + i] = 1 + i * 10 + j
+  const field = {
+    grid: { ni, nj, lon0: -180, lat0: 90, dlon: 5, dlat: -5, global: true },
+    codes,
+    lo: 0,
+    step: 1,
+  } as unknown as GlobeField
+  const scale: ColorScale = { kind: 'linear', stops: [{ value: 0, color: '#000000' }, { value: 800, color: '#ffffff' }] } as ColorScale
+  const px = (t: Uint8ClampedArray, x: number, y: number) => [...t.subarray((y * 256 + x) * 4, (y * 256 + x) * 4 + 4)]
+
+  it('färbt den Polrand aller Kacheln gleich, nur darunter folgt die Fläche dem Feld', () => {
+    const a = colorizeTile(field, scale, 3, 1, 0)
+    const b = colorizeTile(field, scale, 3, 6, 0)
+    expect(px(a, 0, 0)).toEqual(px(b, 255, POLE_ROWS - 1))
+    expect(px(a, 100, POLE_ROWS)).not.toEqual(px(b, 100, POLE_ROWS))
+  })
+
+  it('färbt Süd- und Nordrand je für sich und lässt Kacheln ohne Polrand unberührt', () => {
+    const south = colorizeTile(field, scale, 3, 1, 7)
+    expect(px(south, 0, 255)).toEqual(px(colorizeTile(field, scale, 3, 6, 7), 255, 256 - POLE_ROWS))
+    const mid = colorizeTile(field, scale, 3, 1, 3)
+    expect(px(mid, 0, 0)).not.toEqual(px(mid, 255, 0))
+  })
+
+  it('gilt auch für die Wolkenschichten', () => {
+    const rgb = new Uint8Array(ni * nj * 3)
+    for (let c = 0; c < rgb.length; c += 3) rgb[c] = rgb[c + 1] = rgb[c + 2] = 20 + ((c / 3) % ni)
+    const clouds = { ...field, rgb } as unknown as GlobeField
+    const a = colorizeRgbTile(clouds, 3, 1, 0)
+    const b = colorizeRgbTile(clouds, 3, 6, 0)
+    expect(px(a, 0, 0)[3]).toBeGreaterThan(0)
+    expect(px(a, 0, 0)).toEqual(px(b, 255, POLE_ROWS - 1))
+    expect(px(a, 100, POLE_ROWS)).not.toEqual(px(b, 100, POLE_ROWS))
+  })
+
+  it('zeichnet im Polrand keine Isolinien, darunter schon', () => {
+    const { rgba } = contourTile(field, smoothField(field, 0), 20, CONTOUR_STYLES.msl, 3, 1, 0)
+    const inked = (from: number, to: number) => {
+      let n = 0
+      for (let y = from; y < to; y++) for (let x = 0; x < 256; x++) if (rgba[(y * 256 + x) * 4 + 3] > 0) n++
+      return n
+    }
+    expect(inked(0, POLE_ROWS)).toBe(0)
+    expect(inked(POLE_ROWS, 256)).toBeGreaterThan(0)
   })
 })
 

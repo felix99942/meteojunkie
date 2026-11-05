@@ -3535,6 +3535,14 @@ npm run preview   # gebautes dist/ servieren
   Er gilt auch für Panels, die erst durch den Wechsel auf 6 entstehen, und
   bis die Region von Hand gewechselt wird; ältere Presets ohne Ausschnitt
   fahren die Region an.
+  **Der LAUF steht in JEDEM Panel fest links oben** (`.gmp-run`, seit
+  2026-11-05, auf Wunsch: „Lauf heute 18 UTC · +6 h"): nebeneinander zeigen
+  die Panels verschieden alte Läufe, im Tooltip des Modells sah man das nicht.
+  Die Stunden gelten für den GEZEIGTEN Termin, auch wenn das Panel steht; bei
+  altem oder verbrauchtem Lauf wird das Schild gelb (`globeFreshness`). Die
+  Meta wird je Sitzung einmal geladen — ein lange offener Tab rückt also nicht
+  von selbst auf einen neuen Lauf, das Schild zeigt dann den tatsächlich
+  gezeigten.
   Den Wert am Zeiger
   zeigen ALLE Panels für denselben Ort. Gleiches Kachelprotokoll wie die
   Globusansicht (Kacheln aus dem gemeinsamen Speicher); das Vorrechnen
@@ -3542,15 +3550,18 @@ npm run preview   # gebautes dist/ servieren
   vorbehalten — es ist ein Singleton und bestellte sich zwischen sechs
   Karten gegenseitig ab, die Panels wärmen nur die Felder vor.
   **WINDFIEDERN bei Wind 10 m, Böen und Höhenwind** (`BARB_VARS`, auf
-  Wunsch, Einzelkarte UND Panels): beim Wechsel auf eine dieser Größen an;
-  bei den Regionalmodellen statt der Partikel, beim globalen IFS zusätzlich.
-  Bei den Böen zeigen sie den MITTLEREN 10-m-Wind (Böenkomponenten führt kein
-  Modell). Auf der Kugel nicht — gedreht wären sie verzerrt und dicht wie ein
-  Teppich, dort tragen die Partikel die Richtung.
+  Wunsch, Einzelkarte UND Panels). **In der Einzelkarte im WECHSEL mit den Partikeln**
+  (2026-11-05, auf Wunsch: Haken des einen nimmt den anderen weg, beide aus geht):
+  Vorgabe beim Wechsel auf die Größe sind Fiedern bei den Regionalmodellen, die
+  Strömung beim globalen IFS. Bei den Böen zeigen sie den MITTLEREN 10-m-Wind
+  (Böenkomponenten führt kein Modell). **Auch auf der Kugel** (`globeBarbGrid`,
+  `screenBearing`): dort lief das Häkchen früher ins Leere. Die Richtung wird je Fieder
+  auf die Bildschirmlage von Norden bezogen, das stimmt auch bei gedrehter flacher Karte;
+  die Fahnen stehen überall nach Nordhalbkugel-Konvention, auch südlich des Äquators.
   **HÖHENWIND DER REGIONALMODELLE: Windfiedern und Isotachen** (seit
   2026-11-02, auf Wunsch; „regional" = `!meta.grid.global`, also IFS 9 km,
-  ICON-EU, ICON-D2, Varda): beim Wechsel auf den Höhenwind Fiedern statt
-  Partikeln (`render/windBarbs.ts`, Raster an Gradvielfachen, breiter
+  ICON-EU, ICON-D2, Varda): beim Wechsel auf den Höhenwind Fiedern als Vorgabe
+  (`render/windBarbs.ts`, Raster an Gradvielfachen, breiter
   dunkler Rand unter der hellen Fieder — sonst unsichtbar auf dem hellblauen
   Strahlstromrand) und ISOTACHEN statt 300-hPa-Höhenlinien (Linienart
   `wind300`, alle 20 km/h ab 60, `ContourDef.min`). IFS global bleibt bei
@@ -3767,6 +3778,60 @@ npm run preview   # gebautes dist/ servieren
   Windpartikel folgen `map.getPixelRatio()`): bei Pixeldichte 2 zeichnet die
   Grafikkarte je Frame viermal so viele Pixel. Die KACHELZAHL hängt NICHT
   daran (gemessen: 68 bei Pixeldichte 1 wie 2) — es geht nur um Füllarbeit.
+  **KACHELSTUFE IM POLARBLICK** (`globeTileSize` in `render/globeTiles.ts`,
+  seit 2026-11-05, gemeldet: „Isolinien extrem fett und unscharf"): MapLibre
+  hält die Kugel beim Drehen gleich groß, indem es den Zoom um log2(1/cos(Breite))
+  senkt, am Pol um rund 3,5 Stufen — und die Kachelstufe hängt an diesem Zoom.
+  Von weitem auf den Pol lag so EINE Kachel der Stufe 0 über der ganzen Erde.
+  Die Karte setzt deshalb bei jeder Bewegung `tileSize` von Feld- und
+  Isolinien-Quelle kleiner (MapLibre liest den Wert je Aktualisierung neu, die
+  Kacheln bleiben 256 px); `calculateTileZoom` geht nicht, unterhalb von Stufe 5
+  ruft MapLibre es gar nicht auf. Abgestimmt auf ein Drittel des Wegs von der
+  Mitte zum Bildrand, nicht südlich von 55°: auf den Äquator abgestimmt wurden
+  Linien und Zahlen in hohen Breiten winzig. Gemessen von weitem am Pol Stufe 3
+  mit 32 Kacheln, wie die Startansicht (Stufe 3, 34); bis 55° in der Mitte ändert
+  sich nichts. Bei einem MapLibre-Update prüfen, ob der Zoomausgleich noch so
+  arbeitet. **DIE POLKAPPE IST EINFARBIG UND OHNE LINIEN**
+  (`poleSide`/`POLE_ROWS` in `config/globe.ts`, Wunsch nach Rückfrage): jenseits
+  85,05° streckt MapLibre die Randzeile der Kachel bis an den Pol, jede Linie
+  lief dort als Strahl zum Pol, die Fläche zeigte Fächer. Die obersten 16 Zeilen
+  bleiben deshalb in den Isolinien-Kacheln leer und tragen in den Farbkacheln das
+  Mittel des GANZEN Rings, nicht der Kachel (sonst stünden Sektoren da). 16 statt
+  einer Zeile wegen der Mipmaps, die zum Pol hin über mehrere Zeilen mitteln.
+  Preis: gut 550 km um den Pol keine Feldstruktur und am Ring ein sichtbarer
+  Rand, die Werteanzeige liest dort weiter das echte Feld. Echte Daten bis 90°
+  bräuchten eine eigene WebGL-Ebene.
+  **TOPOGRAFIE** (seit 2026-11-05, auf Wunsch; `render/globeTopo.ts` mit Tests,
+  Protokoll `globedem://`): MapLibre-`hillshade` über dem Farbfeld, unter Gradnetz
+  und Grenzen. In der Globusansicht von Anfang an AN, per Häkchen abschaltbar, in
+  den Panels fester Bestandteil ohne Schalter. Flaches Land bleibt durchsichtig, die
+  Farbe trägt weiter den Wert. Gezeigt wird das reale Relief, NICHT die
+  Modelltopografie. Das Feld wird beim Modellwechsel neu angelegt und muss dabei
+  UNTER dem Relief landen (`GLOBE_TOPO_LAYER` als `before`). **Die Terrain Tiles
+  (AWS Open Data) liegen als Spiegel in R2 unter `topo/`** (`scripts/topo-mirror.mjs`,
+  npm `ingest:topo`, einmalig von Hand, Upload `scripts/topo-upload.sh`, nicht im
+  Deploy), damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
+  keinen weiteren Host. Stufen 0–8 (feiner lösen auch die Modelle nicht auf), `immutable`,
+  ~85 KB je Kachel. **Reine Meereskacheln fehlen im Spiegel, ein 404 ist dort der
+  Normalfall**, der Browser macht daraus eine flache Kachel, und der Worker cacht das 404,
+  sonst kostete jede Meereskachel jedes Mal einen R2-Abruf. Auf ganze Meter gerundet und
+  neu gepackt waren die Kacheln nicht kleiner. `npm run dev` holt direkt bei AWS, im
+  Arbeitsbaum liegt kein Spiegel. Beim Öffnen der Kugel 34 Kacheln / 2,8 MB, Alpen
+  58 / 4,7 MB. **Die Kacheln werden vor der Schummerung bereinigt,
+  beides im Browser gesehen**: unter null wird null, sonst stehen Schelfkante und
+  Mittelatlantischer Rücken wie Struktur im Wetterfeld da; und der Polrand
+  (`POLE_ROWS`) wird flach, sonst zeigt die Schummerung am Pol denselben
+  Strahlenfächer wie früher das Feld. Eine nicht ladbare Kachel wird flach statt zum
+  Fehler (dieselbe Regel wie bei den übrigen Protokollen).
+  **`setTiles` NUR ÜBER `render/tileQueue.ts`** (Einzelkarte und Panels): MapLibre
+  bricht laufende Kacheln nicht ab, und was zuletzt fertig wird, bleibt stehen, bis zum
+  nächsten `setTiles`. Dazu übernimmt `setTiles` die Adresse verzögert (gemessen über
+  200 ms); Kacheln, die in dieser Lücke entstehen, gingen an die ALTE Adresse. So stand
+  beim Wechsel von 6 auf 4 Panels unter „Niederschlag" kachelweise Temperatur 850 hPa.
+  Die Schlange wartet deshalb, bis die Quellen nichts mehr laden (jüngster Wunsch gilt,
+  Fläche und Linien wechseln gemeinsam), und setzt `src.tiles` selbst vor `setTiles`.
+  **H und T im Bodendruckfeld waren testweise drin und sind auf Wunsch wieder raus**
+  (2026-11-05, „gefällt mir nicht").
   **PFEILTASTEN gehören der Zeit, von Anfang an**: MapLibre-Tastatur aus
   (`keyboard: false` — sie verschob die Karte und verbrauchte das Ereignis:
   nach einem Klick in die Karte schalteten zehn Tastendrücke keinen Schritt),
@@ -4242,7 +4307,7 @@ npm run preview   # gebautes dist/ servieren
   ist kein Ortsname. Geocoding läuft über plain `fetch`, NICHT über `apiGet`:
   es zählt nicht ins Forecast-Budget.
 - **Basemap ist komplett lokal** (Ausnahme: die CARTO-Kacheln unter der
-  Klima-/MOS-Karte, Begründung dort) — bewusst KEIN externer Tile-Dienst (kein
+  Klima-/MOS-Karte, Begründung dort; die Topografie der Modellkarten kommt aus R2) — bewusst KEIN externer Tile-Dienst (kein
   API-Key, kein Fremd-Rate-Limit; MapLibres `load`-Event hinge sonst an
   fremden Tile-Requests, an denen das ganze Panel gegated ist).
   Layer bottom→top: Hintergrund → Feld → Gradnetz → Bundeslandgrenzen

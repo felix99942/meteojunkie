@@ -21,7 +21,7 @@
 // zeichnete sonst über den Alpen Kringel um jeden Gipfel, die keine Wetterlage
 // sind, sondern die Reduktion auf Meereshöhe. Die Farbfläche bleibt ungeglättet.
 
-import { gridX, gridY, tilePixelLat, tilePixelLon, type GlobeField } from '../config/globe'
+import { gridX, gridY, poleSide, tilePixelLat, tilePixelLon, type GlobeField } from '../config/globe'
 
 const smoothCache = new WeakMap<GlobeField, Map<number, Float32Array>>()
 
@@ -234,6 +234,8 @@ export function contourTile(
   const [cr, cg, cb] = style.core
   const [hr, hg, hb] = style.halo
   for (let py = 0; py < size; py++) {
+    // Die Linien enden vor dem Polrand, sonst liefen sie als Strahlen zum Pol
+    if (poleSide(z, y, py, size)) continue
     for (let px = 0; px < size; px++) {
       const c = (py + BORDER) * W + px + BORDER
       const v = V[c]

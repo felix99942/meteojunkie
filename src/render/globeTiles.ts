@@ -6,7 +6,8 @@
 // mit y = 0 bzw. am Südrand) — eine image-/canvas-Source endet an der
 // Mercator-Grenze von 85,05°, und im Prototyp standen an beiden Polen schwarze
 // Löcher. Der Streifen jenseits 85,05° zeigt dabei die Randzeile der Kachel
-// gestreckt; die Werteanzeige am Zeiger liest dort trotzdem das echte Feld.
+// gestreckt, sie trägt deshalb das Ringmittel (`poleSide`); die Werteanzeige am
+// Zeiger liest dort trotzdem das echte Feld.
 //
 // Zweiter Gewinn: die Kachel wird je Zoomstufe NEU abgetastet, interpoliert
 // wird also der WERT, nicht die Farbe. Ein hochgezogenes Farbbild zeigt beim
@@ -21,6 +22,8 @@ import { buildLut, LUT_SIZE } from './fieldImage'
 import {
   gridX,
   gridY,
+  POLE_RING_LAT,
+  poleSide,
   tilePixelLat,
   tilePixelLon,
   type GlobeField,
@@ -30,6 +33,38 @@ import {
 import type { ColorScale } from '../config/colorscales'
 
 export const GLOBE_TILE_SIZE = 256
+
+/** Breite, auf die die Kachelstufe im Polarblick höchstens abgestimmt wird (rad). */
+const TILE_REF_LAT = (55 * Math.PI) / 180
+
+/**
+ * Angegebene Kachelgröße einer Quelle im Globus — kleiner als die echte, damit
+ * MapLibre eine feinere Kachelstufe wählt, sobald der Blick zum Pol geht.
+ *
+ * MapLibre hält die Kugel beim Drehen gleich groß, indem es den Zoom um
+ * log2(1/cos(Breite)) senkt, am Pol um rund 3,5 Stufen. Die Kachelstufe hängt an
+ * diesem Zoom und gilt für das ganze Bild, abgestimmt auf die Bildmitte. Von
+ * weitem auf den Pol geschaut kamen so Kacheln der Stufe 0 auf die ganze Kugel:
+ * ein Mercator-Pixel ist dort am Pol passend klein, am Äquator aber rund
+ * 8 Bildschirmpixel breit — die Isolinien standen fett und unscharf da.
+ *
+ * Abgestimmt wird deshalb auf eine Breite ein Drittel des Wegs von der Mitte zum
+ * Bildrand, aber nicht südlich von `TILE_REF_LAT`. Auf den Bildrand oder gar den
+ * Äquator abgestimmt gab es das umgekehrte Bild (im Browser gesehen): in hohen
+ * Breiten sind Mercator-Pixel auf der Kugel gestaucht, Linien und Zahlen wurden
+ * dort winzig und blass. Gemessen ist von weitem am Pol jetzt Stufe 3 mit 32 Kacheln
+ * wie in der Startansicht (Stufe 3, 34 Kacheln). Bis 55° in der Mitte bleibt es bei
+ * der Vorgabe, die Ansichten rund um Europa ändern sich also nicht. Die Quelle wird nicht neu angelegt, weil MapLibre `tileSize` je
+ * Aktualisierung frisch liest; `calculateTileZoom` ginge nicht: unterhalb von
+ * Stufe 5 fragt MapLibre die Funktion gar nicht.
+ */
+export function globeTileSize(centerLat: number, zoom: number, width: number, height: number): number {
+  const lat = (Math.min(Math.abs(centerLat), 89) * Math.PI) / 180
+  const radiusPx = (512 * 2 ** zoom) / (2 * Math.PI * Math.cos(lat))
+  const reach = Math.min(Math.PI / 2, Math.hypot(width, height) / 2 / radiusPx)
+  const ref = Math.min(lat, Math.max(TILE_REF_LAT, lat - reach / 3))
+  return GLOBE_TILE_SIZE * (Math.cos(lat) / Math.cos(ref))
+}
 
 /**
  * Teilpunkte je Pixel und Achse für die Kantenglättung (siehe
@@ -109,6 +144,14 @@ export function colorizeTile(
     fys[sy] = gy - j0
   }
 
+  /** LUT-Index eines (interpolierten) Codes, −1 = durchsichtig. */
+  const lutIndex = (code: number): number => {
+    const v = f.lo + (code - 1) * f.step
+    if (transparentBelow && v < sMin) return -1
+    const li = Math.round((v - sMin) * lutK)
+    return li < 0 ? 0 : li > LUT_SIZE - 1 ? LUT_SIZE - 1 : li
+  }
+
   const c = f.codes
   /** LUT-Index des Teilpunkts (sx, sy), −1 = durchsichtig. */
   const sample = (sx: number, sy: number): number => {
@@ -125,11 +168,7 @@ export function colorizeTile(
     if (c00 === 0 || c01 === 0 || c10 === 0 || c11 === 0) return -1
     const fx = fxs[sx]
     const fy = fys[sy]
-    const code = (c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy
-    const v = f.lo + (code - 1) * f.step
-    if (transparentBelow && v < sMin) return -1
-    const li = Math.round((v - sMin) * lutK)
-    return li < 0 ? 0 : li > LUT_SIZE - 1 ? LUT_SIZE - 1 : li
+    return lutIndex((c00 * (1 - fx) + c01 * fx) * (1 - fy) + (c10 * (1 - fx) + c11 * fx) * fy)
   }
 
   // Gemittelt VORMULTIPLIZIERT, sonst färbte ein durchsichtiger Teilpunkt
@@ -159,6 +198,36 @@ export function colorizeTile(
       out[o + 1] = sg / sa
       out[o + 2] = sb / sa
       out[o + 3] = sa / n
+    }
+  }
+
+  // Polrand: EINE Farbe aus dem Mittel des ganzen Rings, nicht je Kachel — sonst
+  // stünden auf der Kappe statt der Strahlen Sektoren in den Kachelgrenzen
+  if (f.grid.global) {
+    for (const side of [1, -1] as const) {
+      const row = side === 1 ? 0 : size - 1
+      if (!poleSide(z, y, row, size)) continue
+      const j = Math.min(nj - 1, Math.round(gridY(f.grid, side * POLE_RING_LAT) ?? 0))
+      let sum = 0
+      let k = 0
+      for (let i = 0; i < ni; i++) {
+        const code = c[j * ni + i]
+        if (code !== 0) {
+          sum += code
+          k++
+        }
+      }
+      const li = k ? lutIndex(sum / k) : -1
+      for (let py = 0; py < size; py++) {
+        if (poleSide(z, y, py, size) !== side) continue
+        for (let px = 0; px < size; px++) {
+          const o = (py * size + px) * 4
+          out[o] = li < 0 ? 0 : lut[li * 4]
+          out[o + 1] = li < 0 ? 0 : lut[li * 4 + 1]
+          out[o + 2] = li < 0 ? 0 : lut[li * 4 + 2]
+          out[o + 3] = li < 0 ? 0 : lut[li * 4 + 3]
+        }
+      }
     }
   }
   return out
@@ -324,9 +393,27 @@ export function colorizeRgbTile(f: GlobeField, z: number, x: number, y: number, 
     { ch: 0, ramp: CLOUD_LAYER_RAMPS.mid },
     { ch: 1, ramp: CLOUD_LAYER_RAMPS.high },
   ]
+  // Polrand wie in `colorizeTile`: eine Bedeckung je Schicht aus dem Ringmittel
+  const ringCover = (side: 1 | -1): number[] => {
+    const j = Math.min(nj - 1, Math.round(gridY(f.grid, side * POLE_RING_LAT) ?? 0))
+    return [0, 1, 2].map((ch) => {
+      let sum = 0
+      let k = 0
+      for (let i = 0; i < ni; i++) {
+        const v = rgb[3 * (j * ni + i) + ch]
+        if (v === v) {
+          sum += v
+          k++
+        }
+      }
+      return k ? sum / k : NaN
+    })
+  }
   for (let py = 0; py < size; py++) {
     const gy = gridY(f.grid, tilePixelLat(z, y, py, size))
     if (gy == null) continue
+    const side = f.grid.global ? poleSide(z, y, py, size) : 0
+    const ring = side ? ringCover(side) : null
     const j0 = Math.min(nj - 2, Math.floor(gy))
     const fy = gy - j0
     const r0 = j0 * ni
@@ -352,7 +439,7 @@ export function colorizeRgbTile(f: GlobeField, z: number, x: number, y: number, 
       let b = 0
       let a = 0
       for (const { ch, ramp } of order) {
-        const cover = rgb[a00 + ch] * w00 + rgb[a01 + ch] * w01 + rgb[a10 + ch] * w10 + rgb[a11 + ch] * w11
+        const cover = ring ? ring[ch] : rgb[a00 + ch] * w00 + rgb[a01 + ch] * w01 + rgb[a10 + ch] * w10 + rgb[a11 + ch] * w11
         const oct = cover / 12.5
         // weich ausblenden: 0 bei 0,3/8, voll ab 0,9/8
         const fade = Math.min(1, Math.max(0, (oct - 0.3) / 0.6))

@@ -1014,6 +1014,22 @@ export function tilePixelLon(z: number, x: number, px: number, size: number): nu
   return ((x * size + px + 0.5) / (size * 2 ** z)) * 360 - 180
 }
 
+/**
+ * Kachelzeilen am Polrand, die MapLibre im Globus bis an den Pol streckt. Über
+ * 85,05° zeigt es nur die Randzeile der Kachel; was sie kreuzt, läuft als Strahl
+ * zum Pol. Mehr als eine Zeile, weil zum Pol hin immer gröbere Mipmaps greifen und
+ * die über mehrere Zeilen mitteln. 16 Zeilen sind ab Stufe 3 kaum 0,3° Breite.
+ */
+export const POLE_ROWS = 16
+export const POLE_RING_LAT = 85.0511
+
+/** Liegt die Pixelzeile im gestreckten Polrand? 1 = Nordrand, −1 = Südrand, 0 = nein. */
+export function poleSide(z: number, y: number, py: number, size: number): 1 | -1 | 0 {
+  if (y === 0 && py < POLE_ROWS) return 1
+  if (y === 2 ** z - 1 && py >= size - POLE_ROWS) return -1
+  return 0
+}
+
 /** Breite der Pixelmitte `py` in Kachel y der Stufe z (inverse Mercator). */
 export function tilePixelLat(z: number, y: number, py: number, size: number): number {
   const m = Math.PI * (1 - (2 * (y * size + py + 0.5)) / (size * 2 ** z))

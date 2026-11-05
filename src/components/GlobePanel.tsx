@@ -17,7 +17,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
-import { CLOUD_LAYER_RAMPS, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
+import { addTopoLayer, GLOBE_TOPO_LAYER, removeTopoLayer } from '../render/globeTopo'
+import { createTileQueue, type TileQueue } from '../render/tileQueue'
+import { CLOUD_LAYER_RAMPS, globeTileSize, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
 import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
 import { addFieldMaxima } from '../render/fieldMaxima'
@@ -65,6 +67,19 @@ import { globalKeyAllowed } from '../lib/globalKeys'
 const FIELD_SOURCE = 'globe-field'
 const FIELD_LAYER = 'globe-field'
 const isoId = (c: ContourId) => `globe-iso-${c}`
+
+/** Kachelstufe von Feld, Isolinien und Relief an den Blick anpassen (siehe `globeTileSize`); flach gilt die echte Größe. */
+function applyTileSize(map: maplibregl.Map) {
+  const box = map.getContainer()
+  const size =
+    map.getProjection()?.type === 'globe'
+      ? globeTileSize(map.getCenter().lat, map.getZoom(), box.clientWidth, box.clientHeight)
+      : GLOBE_TILE_SIZE
+  for (const id of [FIELD_SOURCE, GLOBE_TOPO_LAYER, ...CONTOURS.map((c) => isoId(c.id))]) {
+    const src = map.getSource(id) as maplibregl.RasterTileSource | undefined
+    if (src) src.tileSize = size
+  }
+}
 /**
  * Isolinien werden zwei Zoomstufen ÜBER der Feldgrenze noch neu gerechnet:
  * eine gestreckte Linie wird breit und unscharf, eine gestreckte Farbfläche
@@ -138,6 +153,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const [particles, setParticles] = useState(false)
   /** Windfiedern 300 hPa (Regionalmodelle) — Vorgabe beim Wechsel auf den Höhenwind */
   const [barbs, setBarbs] = useState(false)
+  /** Topografie als Schummerung über dem Feld, zum Abschalten */
+  const [topo, setTopo] = useState(true)
 
   const model = getGlobeModel(modelId)
   const view = GLOBE_VIEWS.find((v) => v.id === viewId) ?? GLOBE_VIEWS[0]
@@ -212,14 +229,12 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     setParticles(false)
   }, [varId])
 
-  // Wer Wind oder Böen wählt, will Richtung und Stärke sehen — einmal beim
-  // Wechsel eingeschaltet, abschalten bleibt danach möglich. WINDFIEDERN bei
-  // allen drei Windgrößen (auf Wunsch); bei den REGIONALmodellen statt der
-  // Partikel (über einem feinen Gitter will man die Stärke ablesen), beim
-  // globalen IFS zusätzlich zu ihnen
+  // Wer Wind oder Böen wählt, will Richtung und Stärke sehen — einmal beim Wechsel
+  // eingeschaltet, umschalten bleibt danach möglich: Fiedern über dem feinen Gitter der
+  // Regionalmodelle (dort will man die Stärke ablesen), die Strömung beim globalen IFS
   useEffect(() => {
     if (!BARB_VARS.has(varId)) return
-    setBarbs(true)
+    setBarbs(regional)
     setParticles(!regional)
   }, [varId, regional])
 
@@ -260,6 +275,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => setMapReady(true))
+    map.on('move', () => applyTileSize(map))
     mapRef.current = map
     return () => {
       map.remove()
@@ -273,6 +289,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setProjection({ type: view.projection })
+    applyTileSize(map)
     if (view.bounds) map.fitBounds(view.bounds, { padding: 16, duration: 0 })
     else map.jumpTo({ center: [11, 38], zoom: 2 })
   }, [mapReady, view])
@@ -341,54 +358,28 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .maplibregl-ctrl-top-right')
   }, [mapReady])
 
-  // NEUESTER STAND GEWINNT: solange die Kacheln eines Schritts noch laden,
-  // wird der nächste nur VORGEMERKT; ist die Karte fertig („idle"), springt sie
-  // direkt auf den zuletzt gewählten. Vorher bekam jeder Tastendruck ein
-  // eigenes `setTiles`, und beim schnellen Durchblättern liefen die
-  // Zwischenschritte als Rückstau nach. Das Zeitlabel folgt sofort, nur die
-  // Karte überspringt, was sie nicht rechtzeitig zeigen könnte.
-  const wantTiles = useRef(new Map<string, string>())
-  const shownTiles = useRef(new Map<string, string>())
-  const tilesBusy = useRef(0)
-  const flushTiles = useCallback(() => {
-    const map = mapRef.current
-    if (!map) return
-    // Sicherheitsnetz: meldet die Karte nie „idle" (z. B. keine sichtbare
-    // Kachel), hängt die Anzeige nicht fest
-    if (tilesBusy.current && performance.now() - tilesBusy.current < 1500) return
-    let changed = false
-    for (const [id, url] of wantTiles.current) {
-      if (shownTiles.current.get(id) === url) continue
-      const src = map.getSource(id) as maplibregl.RasterTileSource | undefined
-      if (!src) continue
-      src.setTiles([url])
-      shownTiles.current.set(id, url)
-      changed = true
-    }
-    tilesBusy.current = changed ? performance.now() : 0
-  }, [])
-  const queueTiles = useCallback(
-    (id: string, url: string) => {
-      wantTiles.current.set(id, url)
-      flushTiles()
-    },
-    [flushTiles],
-  )
+  // NEUESTER STAND GEWINNT (`createTileQueue`): solange Kacheln laden, wird der
+  // nächste Schritt nur vorgemerkt. Vorher bekam jeder Tastendruck ein eigenes
+  // `setTiles`, und beim schnellen Durchblättern liefen die Zwischenschritte als
+  // Rückstau nach. Das Zeitlabel folgt sofort, nur die Karte überspringt, was sie
+  // nicht rechtzeitig zeigen könnte.
+  const tilesRef = useRef<TileQueue | null>(null)
+  const queueTiles = useCallback((id: string, url: string) => tilesRef.current?.queue(id, url), [])
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    const onIdle = () => {
-      tilesBusy.current = 0
-      flushTiles()
-      // Nach Drehen/Zoomen sind andere Kacheln sichtbar — für die nächsten
-      // Schritte nachziehen (schon Gerechnetes wird übersprungen)
-      tilePrefetchRef.current()
-    }
+    const q = createTileQueue(map)
+    tilesRef.current = q
+    // Nach Drehen/Zoomen sind andere Kacheln sichtbar — für die nächsten
+    // Schritte nachziehen (schon Gerechnetes wird übersprungen)
+    const onIdle = () => tilePrefetchRef.current()
     map.on('idle', onIdle)
     return () => {
       map.off('idle', onIdle)
+      q.destroy()
+      tilesRef.current = null
     }
-  }, [mapReady, flushTiles])
+  }, [mapReady])
 
   // Feld-Ebene: je Modell eine eigene Quelle (die Zoomgrenze der Kacheln hängt
   // am Modell und lässt sich an einer bestehenden Quelle nicht ändern), ein
@@ -414,12 +405,25 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         // Voll deckend: mit 0,92 graute die dunkle Grundkarte jede Farbe ab
         paint: { 'raster-fade-duration': 0, 'raster-opacity': 1 },
       },
-      OVERLAY_INSERT_BEFORE,
+      // Unter dem Relief bleiben, auch wenn das Feld beim Modellwechsel neu entsteht
+      map.getLayer(GLOBE_TOPO_LAYER) ? GLOBE_TOPO_LAYER : OVERLAY_INSERT_BEFORE,
     )
+    applyTileSize(map)
     sourceModelRef.current = modelId
-    wantTiles.current.set(FIELD_SOURCE, url)
-    shownTiles.current.set(FIELD_SOURCE, url)
+    tilesRef.current?.init(FIELD_SOURCE, url)
   }, [mapReady, meta, modelId, model.maxzoom, varId, step, queueTiles])
+
+  // Topografie: über dem Feld, unter Gradnetz und Grenzen
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    if (!topo) {
+      removeTopoLayer(map)
+      return
+    }
+    addTopoLayer(map, OVERLAY_INSERT_BEFORE)
+    applyTileSize(map)
+  }, [mapReady, topo])
 
   // Isolinien-Ebenen: je Linienart eine Quelle über allem (auch über den
   // Grenzen — die Linien sind der Inhalt, die Grenzen nur Orientierung).
@@ -437,8 +441,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       if (!on || rebuild) {
         if (map.getLayer(id)) map.removeLayer(id)
         if (src) map.removeSource(id)
-        wantTiles.current.delete(id)
-        shownTiles.current.delete(id)
+        tilesRef.current?.forget(id)
       }
       if (!on) continue
       const cstep = cvm.steps[nearestStepIndex(cvm.steps, run, validMs(meta, step))]
@@ -448,8 +451,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       else {
         map.addSource(id, { type: 'raster', tiles: [url], tileSize: GLOBE_TILE_SIZE, maxzoom: model.maxzoom + ISO_EXTRA_ZOOM })
         map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-fade-duration': 0 } })
-        wantTiles.current.set(id, url)
-        shownTiles.current.set(id, url)
+        applyTileSize(map)
+        tilesRef.current?.init(id, url)
       }
     }
     isoModelRef.current = modelId
@@ -487,7 +490,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     }
   }, [mapReady, particles, meta, modelId, particleVar, uvStep, refSpeed])
 
-  // Windfiedern aus denselben Windkomponenten — nur beim Höhenwind
+  // Windfiedern aus denselben Windkomponenten — bei den Windgrößen
   const barbsRef = useRef<WindBarbs | null>(null)
   useEffect(() => {
     const map = mapRef.current
@@ -499,9 +502,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       barbsRef.current = null
     }
   }, [mapReady])
-  // Auf der Kugel keine Fiedern: auf einer gedrehten Kugel wären sie verzerrt
-  // und dicht wie ein Teppich — dort tragen die Partikel die Richtung
-  const showBarbs = barbs && BARB_VARS.has(varId) && view.projection === 'mercator'
+  const showBarbs = barbs && BARB_VARS.has(varId)
   useEffect(() => {
     const wb = barbsRef.current
     if (!wb) return
@@ -874,18 +875,37 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 type="checkbox"
                 checked={particles}
                 disabled={!uvMeta}
-                onChange={(e) => setParticles(e.target.checked)}
+                onChange={(e) => {
+                  setParticles(e.target.checked)
+                  // Fiedern oder Strömung: beides zusammen ist nicht lesbar
+                  if (e.target.checked) setBarbs(false)
+                }}
               />{' '}
               {particleVar === 'uv300' ? 'Windpartikel 300 hPa' : 'Windpartikel'}
             </label>
             {BARB_VARS.has(varId) && (
               <label
                 className="globe-layer"
-                title={`Windfiedern ${varId === 'wind300' ? '300 hPa' : '10 m (bei den Böen der mittlere Wind)'}: Richtung und Stärke je Rasterpunkt (Wimpel 50 kt, ganze Fieder 10 kt, halbe 5 kt)${view.projection === 'globe' ? ' — auf der Kugel ausgeblendet' : ''}`}
+                title={`Windfiedern ${varId === 'wind300' ? '300 hPa' : '10 m (bei den Böen der mittlere Wind)'}: Richtung und Stärke je Rasterpunkt (Wimpel 50 kt, ganze Fieder 10 kt, halbe 5 kt). Im Wechsel mit den Windpartikeln.`}
               >
-                <input type="checkbox" checked={barbs} disabled={!uvMeta} onChange={(e) => setBarbs(e.target.checked)} /> Windfiedern
+                <input
+                  type="checkbox"
+                  checked={barbs}
+                  disabled={!uvMeta}
+                  onChange={(e) => {
+                    setBarbs(e.target.checked)
+                    if (e.target.checked) setParticles(false)
+                  }}
+                />{' '}
+                Windfiedern
               </label>
             )}
+            <label
+              className="globe-layer"
+              title="Gelände als Schummerung über dem Feld, zur Orientierung: das reale Relief, nicht die geglättete Topografie des Modells. Quelle: Terrain Tiles (AWS Open Data)."
+            >
+              <input type="checkbox" checked={topo} onChange={(e) => setTopo(e.target.checked)} /> Topografie
+            </label>
           </div>
         </div>
           <div className="globe-readout globe-readout-top" aria-live="polite">
@@ -1020,7 +1040,22 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             )
           </>
         )}
-        {model.provider !== 'MeteoSwiss' && ', beim Bauen der Seite übernommen'} · Küsten, Grenzen und Namen: Natural Earth. Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
+        {model.provider !== 'MeteoSwiss' && ', beim Bauen der Seite übernommen'} · Küsten, Grenzen und Namen: Natural Earth.
+        {topo && (
+          <>
+            {' '}
+            Relief:{' '}
+            <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">
+              Terrain Tiles
+            </a>{' '}
+            (AWS Open Data;{' '}
+            <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noreferrer">
+              SRTM, GMTED2010, ETOPO1 u. a.
+            </a>
+            ).
+          </>
+        )}{' '}
+        Rohe Modellausgabe, kein Warndienst. Zeiten in UTC.
       </span>
     </div>
   )

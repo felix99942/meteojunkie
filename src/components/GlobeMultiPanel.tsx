@@ -497,7 +497,7 @@ export function GlobeMultiPanel({
       </div>
       <span className="attribution radar-attribution">
         Datenquellen: ECMWF Open Data (CC BY 4.0) · Deutscher Wetterdienst (GeoNutzV) · MeteoSwiss Varda-single-1.0
-        (CC BY 4.0, gerechnet auf eigener Hardware) — je nach Modell im Panel · Küsten, Grenzen und Namen: Natural Earth. Rohe
+        (CC BY 4.0, gerechnet auf eigener Hardware) — je nach Modell im Panel · Küsten, Grenzen und Namen: Natural Earth. Relief: Terrain Tiles (AWS Open Data; SRTM, GMTED2010, ETOPO1 u. a.). Rohe
         Modellausgabe, kein Warndienst. Zeiten in UTC.
       </span>
     </div>

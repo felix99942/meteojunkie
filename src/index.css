@@ -5275,6 +5275,29 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* Lauf des Panels: fest links oben, über dem Grauschleier eines stehenden Panels */
+.gmp-run {
+  position: absolute;
+  z-index: 4;
+  left: 4px;
+  top: 4px;
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(20, 21, 24, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.gmp-run.is-stale {
+  color: #f0c04a;
+  border-color: #6b5a2a;
+}
+
 /* Panel steht (3-h-Modell zwischen seinen Terminen): ausgegraut, damit klar
    ist, dass hier nicht die gewählte Zeit zu sehen ist */
 .gmp-frozen {
