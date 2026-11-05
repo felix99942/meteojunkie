@@ -17,19 +17,89 @@
 
 import type maplibregl from 'maplibre-gl'
 import { POLE_ROWS } from '../config/globe'
+import detail from '../config/topoDetail.json'
 import { GLOBE_TILE_SIZE } from './globeTiles'
 
 export const GLOBE_TOPO_PROTOCOL = 'globedem'
 /** Gleiche Kennung für Quelle und Ebene */
 export const GLOBE_TOPO_LAYER = 'globe-topo'
 
-const SOURCE_URL = (z: string, x: string, y: string) =>
+const SOURCE_URL = (z: number, x: number, y: number) =>
   import.meta.env.DEV
     ? `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
     : `/topo/${z}/${x}/${y}.png`
 
-/** Tiefste Stufe im Spiegel — feiner lösen auch die Modelle nicht auf (`GlobeModel.maxzoom`). */
-const TOPO_MAX_ZOOM = 8
+/**
+ * Feinste Stufe im Spiegel. Weltweit endet er bei `baseZoom`, nur DACH und die Alpen
+ * reichen weiter (`topoDetail.json`) — dort zoomt man hinein, um Täler zu sehen.
+ */
+const TOPO_MAX_ZOOM = Math.max(...detail.regions.map((r) => r.maxZoom))
+
+const tileX = (lon: number, n: number) => Math.floor(((lon + 180) / 360) * n)
+const tileY = (lat: number, n: number) => {
+  const r = (lat * Math.PI) / 180
+  return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)
+}
+
+function inMirror(z: number, x: number, y: number): boolean {
+  if (z <= detail.baseZoom) return true
+  const n = 2 ** z
+  return detail.regions.some(
+    (r) => z <= r.maxZoom && x >= tileX(r.west, n) && x <= tileX(r.east, n) && y >= tileY(r.north, n) && y <= tileY(r.south, n),
+  )
+}
+
+/**
+ * Die Kachel, die eine angefragte Kachel trägt: sie selbst oder ihr nächster Vorfahr im
+ * Spiegel. `factor` = so viele Kacheln der angefragten Stufe je Vorfahr-Kante, `col`/`row`
+ * = Lage darin.
+ */
+export function topoTile(z: number, x: number, y: number): { z: number; x: number; y: number; factor: number; col: number; row: number } {
+  let up = 0
+  while (!inMirror(z - up, x >> up, y >> up)) up++
+  const factor = 2 ** up
+  return { z: z - up, x: x >> up, y: y >> up, factor, col: x % factor, row: y % factor }
+}
+
+/** Gewichte des kubischen B-Splines für die vier Stützstellen um `t` (0…1). */
+function splineWeights(t: number): [number, number, number, number] {
+  const t2 = t * t
+  const t3 = t2 * t
+  return [(1 - 3 * t + 3 * t2 - t3) / 6, (3 * t3 - 6 * t2 + 4) / 6, (-3 * t3 + 3 * t2 + 3 * t + 1) / 6, t3 / 6]
+}
+
+/**
+ * Ausschnitt einer Höhenkachel auf die volle Größe hochrechnen. Über die HÖHE, nicht
+ * über die Kanäle: Rot und Grün kodieren zusammen einen Wert. Und KUBISCH, nicht
+ * bilinear: die Schummerung zeichnet die Steigung, und die ist bilinear je Zelle
+ * konstant — bei 16-facher Vergrößerung stand über den Pyrenäen ein Karomuster da.
+ */
+export function upsampleTopoTile(px: Uint8ClampedArray, size: number, factor: number, col: number, row: number): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(px.length)
+  const clamp = (i: number) => Math.max(0, Math.min(size - 1, i))
+  for (let r = 0; r < size; r++) {
+    const sy = (row + (r + 0.5) / size) * (size / factor) - 0.5
+    const y0 = Math.floor(sy)
+    const wy = splineWeights(sy - y0)
+    for (let c = 0; c < size; c++) {
+      const sx = (col + (c + 0.5) / size) * (size / factor) - 0.5
+      const x0 = Math.floor(sx)
+      const wx = splineWeights(sx - x0)
+      let h = 0
+      for (let j = 0; j < 4; j++) {
+        const rowAt = clamp(y0 + j - 1) * size
+        for (let i = 0; i < 4; i++) h += wy[j] * wx[i] * heightAt(px, (rowAt + clamp(x0 + i - 1)) * 4)
+      }
+      const v = h + 32768
+      const k = (r * size + c) * 4
+      out[k] = Math.floor(v / 256)
+      out[k + 1] = Math.floor(v) % 256
+      out[k + 2] = Math.floor((v % 1) * 256)
+      out[k + 3] = 255
+    }
+  }
+  return out
+}
 
 /** h = R·256 + G + B/256 − 32768, also ist Rot 128 bei G = B = 0 genau Meeresniveau. */
 const SEA_LEVEL_RED = 128
@@ -112,9 +182,10 @@ function flatTile(size: number): Promise<ImageBitmap> {
 
 /** Handler des Protokolls: `globedem://z/x/y` holen und bereinigen; ein Abbruch geht an MapLibre zurück. */
 export async function loadTopoTile(url: string, signal: AbortSignal): Promise<ImageBitmap> {
-  const [z, x, y] = url.slice(GLOBE_TOPO_PROTOCOL.length + 3).split('/')
+  const [z, x, y] = url.slice(GLOBE_TOPO_PROTOCOL.length + 3).split('/').map(Number)
+  const t = topoTile(z, x, y)
   try {
-    const res = await fetch(SOURCE_URL(z, x, y), { signal })
+    const res = await fetch(SOURCE_URL(t.z, t.x, t.y), { signal })
     if (res.status === 404) return await flatTile(256)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const raw = await createImageBitmap(await res.blob(), BITMAP_OPTIONS)
@@ -124,8 +195,11 @@ export async function loadTopoTile(url: string, signal: AbortSignal): Promise<Im
     ctx.drawImage(raw, 0, 0)
     raw.close()
     const img = ctx.getImageData(0, 0, size, size)
-    cleanTopoTile(img.data, size, Number(z), Number(y))
-    return await createImageBitmap(img, BITMAP_OPTIONS)
+    // Erst bereinigen, solange Stufe und Zeile die der gespiegelten Kachel sind
+    cleanTopoTile(img.data, size, t.z, t.y)
+    if (t.factor === 1) return await createImageBitmap(img, BITMAP_OPTIONS)
+    const data = upsampleTopoTile(img.data, size, t.factor, t.col, t.row)
+    return await createImageBitmap(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, size), BITMAP_OPTIONS)
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') throw e
     return flatTile(256)

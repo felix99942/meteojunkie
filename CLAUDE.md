@@ -3402,6 +3402,9 @@ npm run preview   # gebautes dist/ servieren
   **WINDSKALA an festen Ankern** (`colorscales.ts`, gilt auch für MOS- und
   Feld-Karte): ab 100 km/h dunkelrot, ab 120 km/h lila (≈ Beaufort 12),
   Wind und Böe teilen die Anker.
+  **Windstille behält das erste Grün** (`belowMin: 'clamp'`, auf Wunsch): die
+  durchsichtigen Flecken unter 1 bzw. 2 km/h sahen wie Datenlücken aus. Der Höhenwind
+  bleibt unter 50 km/h durchsichtig, dort hebt das den Strahlstrom hervor.
   **DIE BÖE IST BEI 3-h-SCHRITTEN NUR EINE STICHPROBE** (`sampledGapHours`,
   Hinweis in der Legende): IFS bis +90 h und ICON-EU ab +78 h liefern nur
   die Böe der LETZTEN STUNDE, zwei von drei Stunden fehlen. Nicht
@@ -3811,8 +3814,13 @@ npm run preview   # gebautes dist/ servieren
   (AWS Open Data) liegen als Spiegel in R2 unter `topo/`** (`scripts/topo-mirror.mjs`,
   npm `ingest:topo`, einmalig von Hand, Upload `scripts/topo-upload.sh`, nicht im
   Deploy), damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
-  keinen weiteren Host. Stufen 0–8 (feiner lösen auch die Modelle nicht auf), `immutable`,
-  ~85 KB je Kachel. **Reine Meereskacheln fehlen im Spiegel, ein 404 ist dort der
+  keinen weiteren Host. Weltweit Stufen 0–8, **feiner nur über DACH (bis 11) und den Alpen (bis 12, ~25 m je
+  Pixel)**, festgelegt in `config/topoDetail.json`, die Skript und Browser beide lesen;
+  die Karten zoomen dafür bis 12, Feld und Linien werden dort nur gestreckt. 50.134
+  Kacheln, 4,3 GB, `immutable`. **Außerhalb dieser Gebiete rechnet der Browser aus dem
+  nächsten Vorfahren hoch** (`topoTile`, `upsampleTopoTile`), sonst bräche das Relief
+  beim Hineinzoomen weg. **Kubisch, nicht bilinear**: die Schummerung zeichnet die
+  Steigung, und bilinear gab das bei 16-facher Vergrößerung ein Karomuster. **Reine Meereskacheln fehlen im Spiegel, ein 404 ist dort der
   Normalfall**, der Browser macht daraus eine flache Kachel, und der Worker cacht das 404,
   sonst kostete jede Meereskachel jedes Mal einen R2-Abruf. Auf ganze Meter gerundet und
   neu gepackt waren die Kacheln nicht kleiner. `npm run dev` holt direkt bei AWS, im

@@ -264,8 +264,9 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       center: [11, 38],
       zoom: 2,
       attributionControl: false,
-      // Darüber werden die Kacheln nur noch gestreckt (`GlobeModel.maxzoom`)
-      maxZoom: 10,
+      // Feld und Linien werden darüber nur gestreckt (`GlobeModel.maxzoom`); so weit
+      // geht es wegen der Topografie, die über den Alpen bis Stufe 12 reicht
+      maxZoom: 12,
       // Die Pfeiltasten gehören der ZEIT. MapLibre verschiebt mit ihnen sonst
       // die Karte, sobald sie den Fokus hat, und verbraucht das Ereignis
       // (`preventDefault`) — gemessen: nach einem Klick in die Karte schalteten

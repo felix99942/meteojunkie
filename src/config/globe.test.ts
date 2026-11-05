@@ -535,3 +535,16 @@ describe('Niederschlag mit Intervall', () => {
     expect(precipReadout(1.5, undefined, f)).toBe('1.5 mm/h')
   })
 })
+
+describe('Windskalen bei Windstille', () => {
+  it('behalten das erste Grün statt durchsichtiger Flecken', () => {
+    for (const id of ['wind10', 'gust'] as const) {
+      const scale = getGlobeVariable(id).scale
+      expect(colorForValue(scale, 0)).toBe(scale.stops[0].color)
+    }
+  })
+
+  it('der Höhenwind bleibt unter seiner ersten Stufe durchsichtig, damit der Strahlstrom hervortritt', () => {
+    expect(colorForValue(getGlobeVariable('wind300').scale, 20)).toBeNull()
+  })
+})

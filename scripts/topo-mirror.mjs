@@ -1,7 +1,7 @@
 // Spiegelt die Höhenkacheln der Topografie (Terrain Tiles, AWS Open Data) einmalig
 // in ein lokales Verzeichnis; `scripts/topo-upload.sh` lädt sie nach R2.
 //
-// Aufruf: `node scripts/topo-mirror.mjs [--out verzeichnis] [--zoom 8]`
+// Aufruf: `node scripts/topo-mirror.mjs [--out verzeichnis] [--detail-only]`
 //
 // WARUM EIN SPIEGEL: so sieht AWS die Besucher der Seite nicht, die Karte kommt
 // von der eigenen Domain. Das Relief ist statisch, der Spiegel läuft also einmal und
@@ -11,10 +11,15 @@
 // nicht kleiner (gemessen 2026-11-05, je nach Gegend ±20 %). Bereinigt wird weiter im
 // Browser (`cleanTopoTile`).
 //
+// STUFEN: weltweit bis `baseZoom`, feiner nur in den Regionen aus
+// src/config/topoDetail.json (DACH, Alpen). Der Browser kennt dieselbe Datei und rechnet
+// außerhalb aus der gröberen Kachel hoch. Die Kachelbereiche rechnet `topoTile` in
+// render/globeTopo.ts genauso.
+//
 // NUR LAND: eine Kachel ohne Punkt über null fehlt im Spiegel, samt ihren Kindern;
 // der Browser macht aus dem 404 eine flache Kachel. Das spart zwei Drittel.
 
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { decodeRgbPng } from './lib/png.mjs'
 
@@ -24,7 +29,8 @@ const arg = (name, fallback) => {
 }
 
 const OUT = arg('--out', '.cache/topo')
-const MAX_ZOOM = Number(arg('--zoom', '8'))
+const DETAIL = JSON.parse(readFileSync(new URL('../src/config/topoDetail.json', import.meta.url), 'utf8'))
+const DETAIL_ONLY = process.argv.includes('--detail-only')
 const PARALLEL = 16
 const RETRIES = 4
 const SOURCE = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
@@ -85,18 +91,44 @@ async function level(z, tiles) {
   return land
 }
 
-let tiles = [[0, 0]]
-for (let z = 0; z <= MAX_ZOOM; z++) {
-  const t0 = Date.now()
-  const land = await level(z, tiles)
+const report = (z, checked, land, t0) =>
   console.log(
-    `z${z}: ${tiles.length} geprüft, ${land.length} mit Land · gesamt neu ${kept} Kacheln, ` +
+    `z${z}: ${checked} geprüft, ${land} mit Land · gesamt neu ${kept} Kacheln, ` +
       `${(bytes / 1e6).toFixed(0)} MB, Meer ${sea}, schon da ${skipped} · ${((Date.now() - t0) / 1000).toFixed(0)} s`,
   )
-  tiles = land.flatMap(([x, y]) => [
-    [2 * x, 2 * y],
-    [2 * x + 1, 2 * y],
-    [2 * x, 2 * y + 1],
-    [2 * x + 1, 2 * y + 1],
-  ])
+
+if (!DETAIL_ONLY) {
+  let tiles = [[0, 0]]
+  for (let z = 0; z <= DETAIL.baseZoom; z++) {
+    const t0 = Date.now()
+    const land = await level(z, tiles)
+    report(z, tiles.length, land.length, t0)
+    tiles = land.flatMap(([x, y]) => [
+      [2 * x, 2 * y],
+      [2 * x + 1, 2 * y],
+      [2 * x, 2 * y + 1],
+      [2 * x + 1, 2 * y + 1],
+    ])
+  }
+}
+
+const lonX = (lon, n) => Math.floor(((lon + 180) / 360) * n)
+const latY = (lat, n) => {
+  const r = (lat * Math.PI) / 180
+  return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)
+}
+const topZoom = Math.max(...DETAIL.regions.map((r) => r.maxZoom))
+for (let z = DETAIL.baseZoom + 1; z <= topZoom; z++) {
+  const n = 2 ** z
+  const wanted = new Map()
+  for (const r of DETAIL.regions) {
+    if (z > r.maxZoom) continue
+    for (let x = lonX(r.west, n); x <= lonX(r.east, n); x++) {
+      for (let y = latY(r.north, n); y <= latY(r.south, n); y++) wanted.set(`${x}/${y}`, [x, y])
+    }
+  }
+  const t0 = Date.now()
+  const list = [...wanted.values()]
+  const land = await level(z, list)
+  report(z, list.length, land.length, t0)
 }

@@ -192,9 +192,11 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
       { value: 10, color: '#e0dcfb' },
     ],
   },
-  // sequenziell grün→magenta (km/h), Windstille (< 1) transparent
+  // sequenziell grün→magenta (km/h). Windstille behält das erste Grün: durchsichtige
+  // Flecken sahen wie Datenlücken aus, und synoptisch trennt 0 km/h nichts von 1 km/h
   wind_speed_10m: {
     kind: 'stepped',
+    belowMin: 'clamp',
     stops: [
       { value: 1, color: WIND_RAMP[0] },
       { value: 5, color: WIND_RAMP[1] },
@@ -214,6 +216,7 @@ export const COLOR_SCALES: Record<string, ColorScale> = {
   },
   wind_gusts_10m: {
     kind: 'stepped',
+    belowMin: 'clamp',
     stops: [
       { value: 2, color: WIND_RAMP[0] },
       { value: 10, color: WIND_RAMP[1] },

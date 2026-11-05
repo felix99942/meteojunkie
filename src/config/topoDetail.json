@@ -1,0 +1,7 @@
+{
+  "baseZoom": 8,
+  "regions": [
+    { "name": "DACH", "maxZoom": 11, "west": 5, "south": 44.5, "east": 17.5, "north": 55.2 },
+    { "name": "Alpen", "maxZoom": 12, "west": 5.5, "south": 45.5, "east": 16.5, "north": 48.2 }
+  ]
+}

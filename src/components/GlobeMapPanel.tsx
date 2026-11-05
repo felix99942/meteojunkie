@@ -125,7 +125,7 @@ export function GlobeMapPanel(props: Props) {
       bounds: cb.current.region.bounds,
       fitBoundsOptions: { padding: 4 },
       attributionControl: false,
-      maxZoom: 10,
+      maxZoom: 12,
       // Die Pfeiltasten gehören der Zeit (siehe Einzelkarte)
       keyboard: false,
       pixelRatio: Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO),

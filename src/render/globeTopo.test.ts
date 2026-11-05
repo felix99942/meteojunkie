@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { POLE_ROWS } from '../config/globe'
-import { cleanTopoTile } from './globeTopo'
+import { cleanTopoTile, topoTile, upsampleTopoTile } from './globeTopo'
 
 const SIZE = 64
 
@@ -55,5 +55,68 @@ describe('cleanTopoTile', () => {
     cleanTopoTile(px, SIZE, 2, 1)
     expect(metres(px, 5, 0)).toBe(805)
     expect(metres(px, 5, SIZE - 1)).toBe(805)
+  })
+})
+
+describe('topoTile', () => {
+  // Innsbruck (11,4° O, 47,27° N), Stufe z
+  const inn = (z: number) => {
+    const n = 2 ** z
+    const r = (47.27 * Math.PI) / 180
+    return [Math.floor(((11.4 + 180) / 360) * n), Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)]
+  }
+
+  it('nimmt über den Alpen die feinste Stufe selbst', () => {
+    const [x, y] = inn(12)
+    expect(topoTile(12, x, y)).toMatchObject({ z: 12, x, y, factor: 1 })
+  })
+
+  it('geht in Berlin bei Stufe 12 auf die DACH-Stufe 11 zurück', () => {
+    const n = 2 ** 12
+    const x = Math.floor(((13.4 + 180) / 360) * n)
+    const r = (52.5 * Math.PI) / 180
+    const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)
+    expect(topoTile(12, x, y)).toMatchObject({ z: 11, x: x >> 1, y: y >> 1, factor: 2, col: x % 2, row: y % 2 })
+  })
+
+  it('geht außerhalb auf die weltweite Stufe zurück und lässt gröbere Stufen unverändert', () => {
+    // Himalaya
+    const x = Math.floor(((85 + 180) / 360) * 2 ** 11)
+    const t = topoTile(11, x, 800)
+    expect(t).toMatchObject({ z: 8, x: x >> 3, y: 100, factor: 8 })
+    expect(topoTile(8, 200, 100)).toMatchObject({ z: 8, x: 200, y: 100, factor: 1 })
+  })
+})
+
+describe('upsampleTopoTile', () => {
+  it('trifft auf einer schiefen Ebene die Höhen des Ausschnitts, auch über den Rot-Übertrag', () => {
+    // 200 m je Pixel: läuft mehrfach über die 256-m-Grenze zwischen Grün und Rot
+    const px = tile((col) => 1000 + col * 200)
+    const out = upsampleTopoTile(px, SIZE, 2, 1, 0)
+    // rechte Hälfte der Kachel: Spalte c zeigt Quelle (32 + (c + 0.5) / 2 − 0.5)
+    const expected = (c: number) => 1000 + (32 + (c + 0.5) / 2 - 0.5) * 200
+    expect(metres(out, 0, 10)).toBeCloseTo(expected(0), 1)
+    expect(metres(out, 20, 10)).toBeCloseTo(expected(20), 1)
+    expect(metres(out, 40, 10)).toBeCloseTo(expected(40), 1)
+  })
+
+  it('hat auch über Zellgrenzen eine stetige Steigung — sonst zeigt die Schummerung ein Karomuster', () => {
+    // Kein Hang, sondern Knicke: 300 m auf und ab, je Quellzelle eine andere Steigung
+    const px = tile((col, row) => 1500 + 300 * Math.sin(col * 0.9) + 200 * Math.cos(row * 0.7))
+    const out = upsampleTopoTile(px, SIZE, 16, 5, 5)
+    let maxJump = 0
+    for (let c = 1; c < SIZE - 1; c++) {
+      const curve = metres(out, c + 1, 30) - 2 * metres(out, c, 30) + metres(out, c - 1, 30)
+      maxJump = Math.max(maxJump, Math.abs(curve))
+    }
+    // Bilinear läge der Sprung bei einer Zellgrenze in der Größe der Steigung selbst
+    const slope = Math.abs(metres(out, 21, 30) - metres(out, 20, 30))
+    expect(maxJump).toBeLessThan(Math.max(1, slope))
+  })
+
+  it('bleibt am Rand der Kachel im Wertebereich', () => {
+    const px = tile(() => 500)
+    const out = upsampleTopoTile(px, SIZE, 4, 3, 3)
+    expect(metres(out, SIZE - 1, SIZE - 1)).toBe(500)
   })
 })
