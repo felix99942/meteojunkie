@@ -5648,6 +5648,10 @@ button:focus-visible {
 }
 
 @media (max-width: 760px) {
+  /* Der Eckkasten liegt über dem Diagramm; der Hinweis steht weiter im Impressum */
+  .legal-copy {
+    display: none;
+  }
   .landing-hero {
     flex: 0 0 auto;
     height: 42vh;

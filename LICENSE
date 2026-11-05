@@ -1,0 +1,23 @@
+Copyright (c) 2026 Betreiber von meteojunkie.com (siehe Impressum der Website)
+
+Alle Rechte vorbehalten.
+
+Dieses Repository ist öffentlich einsehbar, aber KEINE Open-Source-Software. Quellcode,
+Dokumentation und Gestaltung sind urheberrechtlich geschützt. Ohne vorherige schriftliche
+Zustimmung ist es nicht gestattet, sie ganz oder in Teilen zu kopieren, zu verändern, zu
+veröffentlichen, weiterzugeben oder in eigenen Produkten und Diensten zu verwenden. Das
+gilt auch für das Trainieren von KI-Modellen.
+
+Unberührt bleiben gesetzlich erlaubte Nutzungen sowie die in den GitHub-Nutzungsbedingungen
+eingeräumten Rechte, ein öffentliches Repository auf GitHub anzusehen und dort zu forken.
+
+Ausgenommen sind Bibliotheken Dritter sowie Wetter-, Klima- und Geodaten. Für sie gelten die
+Lizenzen der jeweiligen Anbieter, die Datenquellen nennt das Impressum der Website.
+
+---
+
+All rights reserved. This repository is publicly visible but is NOT open source. Copying,
+modifying, publishing, distributing or using this code, its documentation or its design,
+in whole or in part, including for training AI models, requires prior written permission.
+Rights granted by law or by GitHub's Terms of Service to view and fork public repositories
+on GitHub remain unaffected. Third-party libraries and data remain under their own licenses.

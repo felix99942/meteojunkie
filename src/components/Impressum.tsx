@@ -546,8 +546,9 @@ export function Impressum() {
         <section>
           <h2>Urheberrecht</h2>
           <p>
-            Gestaltung, Darstellungen und Quellcode dieser Seite unterliegen dem deutschen
-            Urheberrecht. Die zugrunde liegenden Wetter- und Klimadaten stehen unter den oben
+            © 2026 meteojunkie, alle Rechte vorbehalten. Gestaltung, Darstellungen und Quellcode
+            dieser Seite unterliegen dem deutschen Urheberrecht; dass das Repository öffentlich
+            einsehbar ist, erlaubt keine Übernahme. Die zugrunde liegenden Wetter- und Klimadaten stehen unter den oben
             genannten Lizenzen der jeweiligen Anbieter und sind bei einer Weiterverwendung
             nach deren Bedingungen zu kennzeichnen.
           </p>

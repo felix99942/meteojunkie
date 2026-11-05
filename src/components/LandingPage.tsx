@@ -310,6 +310,7 @@ export function LandingPage() {
             ? `Untergrund: EUMETSAT MTG Geocolour, ${new Date(satTime).toISOString().slice(11, 16)} UTC`
             : 'Untergrund: NASA Blue Marble und Black Marble'}
         </span>
+        <span className="label-muted">© 2026 meteojunkie</span>
         <span className="label-muted" title={buildTitle()}>
           {buildLabel()}
         </span>

@@ -166,6 +166,7 @@ export function LegalCorner() {
   const setView = useAppView((s) => s.setView)
   return (
     <div className="legal-corner">
+      <span className="label-muted legal-copy">© 2026 meteojunkie</span>
       <span className="appnav-build label-muted" title={buildTitle()}>
         {buildLabel()}
       </span>

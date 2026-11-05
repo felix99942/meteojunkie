@@ -4423,6 +4423,11 @@ npm run preview   # gebautes dist/ servieren
   die Modelle nebeneinanderstellt, ist das nicht nur Pflicht, sondern die
   Information selbst: wer ICON gegen IFS vergleicht, sollte wissen, dass da DWD
   gegen ECMWF steht.
+- **Der Code ist NICHT Open Source** (seit 2026-11-05 `LICENSE`, „alle Rechte
+  vorbehalten"; `package.json` `UNLICENSED`): das Repository ist öffentlich einsehbar,
+  die Nutzung aber nicht freigegeben. Rechteinhaber steht bewusst nur als „Betreiber von
+  meteojunkie.com", der Klarname gehört nicht ins Repo. Der Hinweis „© 2026 meteojunkie"
+  steht unten rechts in jedem Bereich und auf der Startseite.
 - **Impressum ist Pflicht, nicht Beiwerk** (`Impressum.tsx`, AppView
   `impressum`, `.legal*` in `index.css`): Rechtsrahmen ist DEUTSCHLAND, private
   nicht kommerzielle Seite. **Welche Norm gilt, entscheidet den Umfang, und der
