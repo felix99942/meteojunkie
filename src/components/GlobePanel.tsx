@@ -657,18 +657,16 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const maximaOpts = MAXIMA_OPTIONS[varId]
   const interval = step != null ? intervalHours(vm, step) : undefined
   useEffect(() => {
-    // Rate (mm/h) × Intervall = Menge im Intervall: „1,5" heißt 1,5 mm, nicht 1,5 mm/h
     maximaRef.current?.set(
       // IMMER an, ohne Haken (auf Wunsch, 2026-11-03)
       maximaOpts && field ? field : null,
       maximaOpts && {
         min: maximaOpts.min,
-        factor: maximaOpts.perInterval ? (interval ?? 1) : 1,
         decimals: maximaOpts.decimals,
         fillMin: maximaOpts.fillMin,
       },
     )
-  }, [mapReady, maximaOpts, field, interval])
+  }, [mapReady, maximaOpts, field])
 
   const readValue = readout && field && !field.rgb ? sampleField(field, readout.lat, readout.lon) : NaN
   const readLayers = readout && field?.rgb ? sampleRgb3(field, readout.lat, readout.lon) : null
@@ -934,19 +932,16 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
               <span className="globe-readout-pos">Zeiger auf die Karte: Wert ablesen</span>
             )}
           </div>
-        <div className="radar-legend globe-legend" title={varId === 'precip' ? `${variable.title} Farbskala in mm/h.` : variable.title}>
+        <div className="radar-legend globe-legend" title={variable.title}>
           <span className="radar-legend-cap">
             {model.label} · {variableLabel(variable, interval)}
-            {/* beim Niederschlag ohne „mm/h" und ohne „Mittel der letzten 3 h"
-                (auf Wunsch) — das Intervall steht im Namen, die Einheit der
-                Farbskala im Tooltip */}
-            {varId !== 'precip' && ` · ${variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}`}
+            {/* beim Niederschlag nur mm: das Intervall steht schon im Namen */}
+            {` · ${varId === 'precip' ? (interval ? 'mm' : 'mm/h') : variable.kind === 'rgb3' ? 'Achtel' : (vm?.unit ?? '')}`}
             {varId !== 'precip' && intervalText && ` · ${intervalText}`}
             {maximaOpts && (
               <>
                 {' · '}
                 <b className="globe-legend-max">Zahlen = örtliche Höchstwerte in mm</b>
-                {maximaOpts.perInterval && interval != null && ` (Menge der ${interval === 1 ? 'letzten Stunde' : `letzten ${interval} h`})`}
               </>
             )}
           </span>

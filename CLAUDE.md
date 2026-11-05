@@ -3237,9 +3237,14 @@ npm run preview   # gebautes dist/ servieren
   **Der Niederschlag trägt sein Intervall im NAMEN** (seit 2026-11-03, auf
   Wunsch, `variableLabel`/`precipReadout` in `config/globe.ts`): Auswahl in
   Globusansicht und Panels „Niederschlag 3 h" bzw. „1 h" für den gezeigten
-  Schritt, Legende „mm/h · Mittel über 3 h", Wert am Zeiger mit der Menge
-  („0,8 mm/h · 2,4 mm in 3 h", bei 1 h nur „… mm in 1 h"). MOS heißt schon
+  Schritt, Panel-Legende „mm/3 h", Wert am Zeiger „2,4 mm in 3 h". MOS heißt schon
   „Niederschlag (1 h)", die Radarprodukte nennen ihren Zeitraum im Namen.
+  **Gezeigt wird die MENGE je Intervall, nicht die Rate** (seit 2026-11-05, auf Wunsch):
+  das ist die Lesart auf Modellkarten, und das 3-h-Mittel täuschte Dauerregen vor, wo
+  ein Schauer fiel. **Gespeichert bleibt die Rate** (mm/h, `unit` in der Meta), umgerechnet
+  wird beim Laden (`displayCodeStep`), Fläche, Zeiger und Zahlen sehen also dasselbe. Der
+  Preis: an einem Intervallwechsel (IFS +144 h, ICON-EU +78 h) springt die Farbe, und im
+  Panelvergleich zeigt ein 3-h-Modell naturgemäß mehr als ein 1-h-Modell.
   **Böen- und Niederschlagsintervall stehen je Schritt in `meta.json`**
   (`intervals`, aus dem GRIB-`stepRange`) und in der Legende, weil sie
   WECHSELN: der Niederschlag gilt bis zum vorigen Schritt (1/3/6 h), die Böe
@@ -3476,7 +3481,7 @@ npm run preview   # gebautes dist/ servieren
   (40 px, der höhere Wert gewinnt). **Nicht zurück auf „nur über allen acht
   Nachbarn"**: die erste Fassung ließ je Region genau eine Zahl — gewünscht
   sind mehrere rund um die Kerne. Aus dem schon geladenen Feld, kein Abruf.
-  `precip` zeigt die MENGE im Intervall (Rate × 1/3/6 h — „1,5" = 1,5 mm),
+  `precip` zeigt die MENGE im Intervall („1,5" = 1,5 mm),
   `precipsum` ganze mm (so gespeichert). Zahlen erst ab 0,5 mm und NUR IN
   EINER FARBFLÄCHE (`inFilledArea`: die Zelle und ≥ 5 ihrer 8 Nachbarn
   eingefärbt) — gemeldet waren Zahlen bei geringen Mengen ohne sichtbare

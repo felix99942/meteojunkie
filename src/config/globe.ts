@@ -368,7 +368,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     group: 'Niederschlag & Feuchte',
     label: 'Niederschlag',
     title:
-      'Mittlere Niederschlagsrate im Intervall seit dem vorigen Zeitschritt (mm/h). ICON-D2: 1 Stunde; ICON-EU: 1 Stunde, ab +78 h 3 Stunden; IFS: 3 Stunden, ab +144 h 6 Stunden — das jeweilige Intervall steht in der Legende. Bei +0 h gibt es kein Intervall.',
+      'Niederschlagsmenge im Intervall bis zum gezeigten Termin (mm). ICON-D2: 1 Stunde; ICON-EU: 1 Stunde, ab +78 h 3 Stunden; IFS: 3 Stunden, ab +144 h 6 Stunden — das jeweilige Intervall steht im Namen. Bei +0 h gibt es kein Intervall.',
     scale: COLOR_SCALES.precipitation,
     decimals: 1,
     legendEvery: 3,
@@ -810,6 +810,22 @@ export function intervalHours(vm: GlobeVarMeta | undefined, step: number): numbe
 }
 
 /**
+ * Niederschlag ist als RATE gespeichert (mm/h, ein Lauf aus dem Ingest), gezeigt wird
+ * die MENGE im Intervall: mm/3 h ist die gewohnte Lesart auf Modellkarten, und ein
+ * 3-h-Mittel täuscht Dauerregen vor, wo ein 40-Minuten-Schauer fiel. Umgerechnet wird
+ * beim Laden über die Speicherstufe, damit Fläche, Werteanzeige und Höchstwerte
+ * dieselbe Zahl sehen. Fehlt das Intervall, bleibt es bei der Rate.
+ */
+export function displayCodeStep(varId: GlobeVarId, vm: GlobeVarMeta, step: number): number {
+  return varId === 'precip' ? vm.step * (intervalHours(vm, step) ?? 1) : vm.step
+}
+
+/** Einheit des Niederschlags in der Legende: `mm/3 h`, ohne Intervall `mm/h`. */
+export function precipUnit(interval: number | undefined): string {
+  return interval ? `mm/${interval} h` : 'mm/h'
+}
+
+/**
  * Name einer Größe in Auswahl und Legende — beim Niederschlag MIT dem
  * Intervall des gezeigten Schritts (auf Wunsch, 2026-11-03): „Niederschlag
  * 3 h" bei IFS, „1 h" bei ICON-D2 und Varda. Das Intervall wechselt je Modell
@@ -820,12 +836,9 @@ export function variableLabel(v: Pick<GlobeVariable, 'id' | 'label'>, interval?:
   return v.id === 'precip' && interval ? `${v.label} ${interval} h` : v.label
 }
 
-/** Wert am Zeiger beim Niederschlag: Rate UND Menge im Intervall („0,8 mm/h · 2,4 mm in 3 h") */
-export function precipReadout(rate: number, interval: number | undefined, fmt: (v: number) => string): string {
-  // bei einer Stunde sind Rate und Menge dieselbe Zahl
-  if (!interval) return `${fmt(rate)} mm/h`
-  if (interval === 1) return `${fmt(rate)} mm in 1 h`
-  return `${fmt(rate)} mm/h · ${fmt(rate * interval)} mm in ${interval} h`
+/** Wert am Zeiger beim Niederschlag: die Menge im Intervall („2,4 mm in 3 h"). */
+export function precipReadout(amount: number, interval: number | undefined, fmt: (v: number) => string): string {
+  return interval ? `${fmt(amount)} mm in ${interval} h` : `${fmt(amount)} mm/h`
 }
 
 /**

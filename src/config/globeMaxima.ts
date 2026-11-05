@@ -123,22 +123,17 @@ export function formatMax(v: number, decimals = 1): string {
 }
 
 /**
- * Welche Größen Höchstwerte als Zahlen bekommen, ab welcher MENGE (`min`, mm),
- * ab welchem FELDwert die Skala einfärbt (`fillMin`, für `inFilledArea`), und
- * ob der Feldwert eine RATE ist, die mit dem Intervall zur Menge wird
- * (`precip`: mm/h × 1/3/6 h — „1,5" soll 1,5 mm heißen, nicht 1,5 mm/h).
+ * Welche Größen Höchstwerte als Zahlen bekommen, ab welcher MENGE (`min`, mm) und ab
+ * welchem Wert die Skala einfärbt (`fillMin`, für `inFilledArea`).
  */
-export const MAXIMA_OPTIONS: Partial<
-  Record<GlobeVarId, { min: number; perInterval: boolean; decimals: number; fillMin: number }>
-> = {
-  // ab 0,5 mm (auf Wunsch — geringere Mengen sind als Zahl nur Rauschen);
-  // eingefärbt ist die Rate ab 0,1 mm/h
-  precip: { min: 0.5, perInterval: true, decimals: 1, fillMin: 0.1 },
+export const MAXIMA_OPTIONS: Partial<Record<GlobeVarId, { min: number; decimals: number; fillMin: number }>> = {
+  // ab 0,5 mm (auf Wunsch — geringere Mengen sind als Zahl nur Rauschen)
+  precip: { min: 0.5, decimals: 1, fillMin: 0.1 },
   // in ganzen mm gespeichert — „9,0" täuschte eine Genauigkeit vor, die es
   // nicht gibt; eingefärbt ab 1 mm
-  precipsum: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
+  precipsum: { min: 0.5, decimals: 0, fillMin: 1 },
   // Neuschnee in ganzen cm, wie die Summe
-  newsnow: { min: 0.5, perInterval: false, decimals: 0, fillMin: 1 },
+  newsnow: { min: 0.5, decimals: 0, fillMin: 1 },
 }
 
 /**

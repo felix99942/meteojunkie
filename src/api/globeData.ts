@@ -8,7 +8,7 @@
 // ARBEITSSPEICHER: ein dekodiertes Feld sind 1,8–2 MB Codes, ein Lauf über
 // alle Größen wären Hunderte MB. Deshalb ein kleiner LRU über die Felder.
 
-import type { GlobeField, GlobeMeta, GlobeModelId, GlobeVarId } from '../config/globe'
+import { displayCodeStep, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
 import { requestField, warmField, type FieldSource } from '../render/globePool'
 
 const BASE = `${import.meta.env.BASE_URL}nwp/`
@@ -59,7 +59,7 @@ export function globeFieldSource(model: GlobeModelId, runId: string, varId: Glob
     url: new URL(globeFieldUrl(model, runId, varId, step), location.href).href,
     grid: meta.grid,
     lo: vm.lo,
-    step: vm.step,
+    step: displayCodeStep(varId, vm, step),
     encoding: vm.encoding,
   }
 }

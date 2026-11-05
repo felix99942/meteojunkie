@@ -22,6 +22,7 @@ import {
   BARB_VARS,
   formatReadout,
   precipReadout,
+  precipUnit,
   nearestStepIndex,
   particleSource,
   runMs,
@@ -336,13 +337,12 @@ export function GlobeMapPanel(props: Props) {
       maximaOpts
         ? {
             min: maximaOpts.min,
-            factor: maximaOpts.perInterval ? (interval ?? 1) : 1,
             decimals: maximaOpts.decimals,
             fillMin: maximaOpts.fillMin,
           }
-        : { min: -Infinity, factor: 1, decimals: variable.decimals, fillMin: -Infinity, mode: 'grid', scale: variable.scale },
+        : { min: -Infinity, decimals: variable.decimals, fillMin: -Infinity, mode: 'grid', scale: variable.scale },
     )
-  }, [ready, numbersOn, maximaOpts, gridMode, field, interval, variable])
+  }, [ready, numbersOn, maximaOpts, gridMode, field, variable])
 
   // --- Legende und Werte -------------------------------------------------------
   const legend = useMemo(() => {
@@ -415,11 +415,12 @@ export function GlobeMapPanel(props: Props) {
         {!variable.kind && (
           <div className="gmp-legend" title={variable.title}>
             <span className="gmp-legend-cap">
-              {vm?.unit ?? ''}
+              {cfg.varId === 'precip' ? precipUnit(interval) : (vm?.unit ?? '')}
               {interval != null &&
+                cfg.varId !== 'precip' &&
                 cfg.varId !== 'precipsum' &&
                 cfg.varId !== 'newsnow' &&
-                (cfg.varId === 'precip' ? ` · Mittel über ${interval} h` : ` · ${interval} h`)}
+                ` · ${interval} h`}
               {numbersOn && maximaOpts && ` · Zahlen: Höchstwerte ${cfg.varId === 'newsnow' ? 'cm' : 'mm'}`}
             </span>
             <span className="gmp-legend-bar">

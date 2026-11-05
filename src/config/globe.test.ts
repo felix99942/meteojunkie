@@ -22,7 +22,7 @@ import {
   tilePixelLon,
   type GlobeField,
   type GlobeGrid,
-  type GlobeMeta, precipReadout, variableLabel } from './globe'
+  type GlobeMeta, displayCodeStep, precipReadout, precipUnit, variableLabel } from './globe'
 import { colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE, globeTileSize } from '../render/globeTiles'
 import { CONTOUR_STYLES, contourTile, smoothField } from '../render/globeContours'
 import { colorForValue, type ColorScale } from './colorscales'
@@ -528,11 +528,24 @@ describe('Niederschlag mit Intervall', () => {
     expect(variableLabel(precip, undefined)).toBe('Niederschlag')
     expect(variableLabel({ id: 'gust', label: 'Böen 10 m' }, 3)).toBe('Böen 10 m')
   })
-  it('zeigt am Zeiger Rate und Menge im Intervall', () => {
+  it('zeigt am Zeiger die Menge im Intervall', () => {
     const f = (v: number) => v.toFixed(1)
-    expect(precipReadout(0.8, 3, f)).toBe('0.8 mm/h · 2.4 mm in 3 h')
+    expect(precipReadout(2.4, 3, f)).toBe('2.4 mm in 3 h')
     expect(precipReadout(1.5, 1, f)).toBe('1.5 mm in 1 h')
     expect(precipReadout(1.5, undefined, f)).toBe('1.5 mm/h')
+  })
+  it('nennt das Intervall in der Einheit', () => {
+    expect(precipUnit(3)).toBe('mm/3 h')
+    expect(precipUnit(undefined)).toBe('mm/h')
+  })
+  it('macht aus der gespeicherten Rate die Menge im Intervall, je Schritt', () => {
+    const vm = { lo: 0, step: 0.05, unit: 'mm/h', steps: [3, 144, 150], intervals: [3, 3, 6] }
+    expect(displayCodeStep('precip', vm, 3)).toBeCloseTo(0.15)
+    expect(displayCodeStep('precip', vm, 150)).toBeCloseTo(0.3)
+    // Keine Angabe zum Schritt: es bleibt die Rate
+    expect(displayCodeStep('precip', vm, 7)).toBe(0.05)
+    // Andere Größen nie, auch wenn sie ein Intervall führen (Böen)
+    expect(displayCodeStep('gust', { ...vm, unit: 'km/h' }, 150)).toBe(0.05)
   })
 })
 

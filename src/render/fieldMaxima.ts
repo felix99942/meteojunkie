@@ -28,8 +28,6 @@ import { formatMax, inFilledArea, maxInBox, spacedMaxima, valueGrid, type FieldM
 export interface MaximaOptions {
   /** Kleinster beschrifteter Wert (nach `factor`). */
   min: number
-  /** Umrechnung des Feldwerts, z. B. Rate (mm/h) × Intervall (h) = Menge. */
-  factor: number
   /** Nachkommastellen unter 10 — die Summe ist in ganzen mm gespeichert. */
   decimals: number
   /** Unterste eingefärbte Stufe (Feldeinheit) — Zahlen nur in einer Farbfläche. */
@@ -54,7 +52,7 @@ const MIN_DIST_PX = 40
  */
 export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
   let field: GlobeField | null = null
-  let opts: MaximaOptions = { min: 0.5, factor: 1, decimals: 1, fillMin: 0.1 }
+  let opts: MaximaOptions = { min: 0.5, decimals: 1, fillMin: 0.1 }
   let markers: maplibregl.Marker[] = []
 
   const clear = () => {
@@ -99,7 +97,7 @@ export function addFieldMaxima(map: maplibregl.Map, avoid?: string) {
           continue
         }
         const m = maxInBox(f, w, Math.min(...lats), e, Math.max(...lats))
-        blocks.push(m && inFilledArea(f, m.idx, opts.fillMin) ? { ...m, value: m.value * opts.factor } : null)
+        blocks.push(m && inFilledArea(f, m.idx, opts.fillMin) ? m : null)
       }
     }
     const cands = blocks
