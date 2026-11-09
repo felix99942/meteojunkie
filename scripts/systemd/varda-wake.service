@@ -8,4 +8,4 @@ Description=Varda-Lauf nach dem Wecken, danach wieder Bereitschaft
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/meteojunkie/varda-wake.sh @USER@
-TimeoutStartSec=2h
+TimeoutStartSec=150min

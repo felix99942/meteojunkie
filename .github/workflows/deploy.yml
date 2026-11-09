@@ -342,6 +342,30 @@ jobs:
           path: public/nwp/icon-eu
           key: nwp-icon-eu-v5-${{ steps.icon.outputs.eu }}
 
+      # Föhn-Querschnitt aus den ICON-D2-Modellflächen, derselbe Lauf wie die Karten
+      - name: ICON-D2-Querschnitt aus dem Cache
+        id: icon-section-cache
+        if: steps.icon.outputs.d2 != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/nwp/icon-d2-section
+          key: nwp-icon-d2-section-v1-${{ steps.icon.outputs.d2 }}
+          restore-keys: nwp-icon-d2-section-v1-
+
+      - name: ICON-D2-Querschnitt erzeugen (DWD Open Data)
+        id: icon-section-ingest
+        if: steps.icon.outputs.d2 != '' && steps.icon-section-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 25
+        run: python3 -u scripts/icon-section-ingest.py --run ${{ steps.icon.outputs.d2 }}
+
+      - name: ICON-D2-Querschnitt im Cache ablegen
+        if: steps.icon-section-ingest.outcome == 'success' && steps.icon.outputs.d2 != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/nwp/icon-d2-section
+          key: nwp-icon-d2-section-v1-${{ steps.icon.outputs.d2 }}
+
       # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
       # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE
       # Postadresse des Anbieters stehen — auch nicht die der
@@ -407,7 +431,7 @@ jobs:
           export PATH="/tmp/rclone-bin:$PATH"
           rclone version | head -1
           dirs=()
-          for m in ecmwf-ifs ecmwf-hres ecmwf-hres-asia icon-d2 icon-eu; do
+          for m in ecmwf-ifs ecmwf-hres ecmwf-hres-asia icon-d2 icon-d2-section icon-eu; do
             [[ -f "public/nwp/$m/meta.json" ]] && dirs+=("nwp/$m")
           done
           [[ "${{ steps.de.outcome }}" == success ]] && dirs+=(de)

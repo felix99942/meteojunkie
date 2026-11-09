@@ -1362,6 +1362,24 @@ npm run preview   # gebautes dist/ servieren
   ≥ 30 km/h aus SO–WSW bzw. WNW–NO, rF ≤ 50 %, Δθ ≥ −3 K) und stehen so in der
   UI; offen ist eine Kalibrierung gegen gemessene Föhnstunden (GeoSphere
   10-min Innsbruck).
+  **QUERSCHNITT** (seit 2026-11-09, Umschalter „Querschnitt" im Bereich;
+  `scripts/icon-section-ingest.py`, npm `ingest:icon-d2-section`, Kern
+  `config/foehnSection.ts` mit Tests, Zeichnung `components/FoehnSection.tsx`):
+  ICON-D2 entlang der Föhnachsen, Farbe = Vertikalwind oder Wind längs der Achse,
+  Linien = potentielle Temperatur, Pfeile = Strömung in der Schnittebene.
+  **Aus den MODELLFLÄCHEN, nicht aus Druckflächen**: nur die folgen dem Gelände und
+  zeigen den Föhnstrom in den Tälern, `w` ist dort echte Modellgröße (Varda führt
+  keine Vertikalbewegung). Beim DWD je Größe × Fläche × Schritt eine Datei (~1 MB):
+  t, u, v, p auf 1–65, w und hhl auf 1–66, von oben gezählt, hhl unter
+  `hhl/…time-invariant…` (live 2026-11-09). Bis 9 km, ab 3 km jede zweite
+  Fläche: 37 Flächen, unten ~25 m Abstand,
+  unterste Fläche 10 m über Grund. Stündlich bis +24 h, danach 3-stündlich, weil
+  sonst die Abrufe doppelt so viele wären. Gemessen lokal 14 min je Lauf (~6 GB
+  Download, nicht gespeichert), Ergebnis 1,5 MB JSON je Achse (0,4 MB gzip).
+  Eigenes Verzeichnis `nwp/icon-d2-section`, eigener Actions-Cache je Lauf.
+  **Der Längswind ist auf EINE Richtung je Achse projiziert** (Anfang → Ende): dem
+  Linienverlauf folgend sprang er an jedem Knick senkrecht durch die ganze Säule.
+  Die Achsen stehen im Ingest (Wegpunkte) und reichen über die Föhnpunkte hinaus.
   **Live geprüft (2026-09-14, alle sieben Achsenpunkte)**: ICON-CH1 (1 km,
   33 h), AROME France (1,5 km, 51 h), ICON-CH2 (2,1 km, 120 h), ICON-D2 (2,2 km,
   48 h), AROME Austria (2,5 km, 60 h) liefern `pressure_msl`/`surface_pressure`/
@@ -3438,8 +3456,11 @@ npm run preview   # gebautes dist/ servieren
   MeteoSwiss KENDA-CH1 (STAC data.geo.admin.ch, erscheint 2–2¾ h nach dem
   Termin) plus ECMWF Open Data. **Gerechnet auf der Laptop-GPU per
   systemd-Benutzertimer** (`scripts/systemd/varda-ingest.*`, eingerichtet
-  über `install-varda.sh`, Linger an, Läufe 06/18 UTC um 09:15/21:15 UTC,
-  `Persistent` holt nach; seit 2026-11-03 WECKT ein System-Timer den Laptop
+  über `install-varda.sh`, Linger an, Läufe 00/06/12/18 UTC um
+  02:50/08:50/14:50/20:50 UTC — die 6-h-Analysen erscheinen sehr regelmäßig
+  2:43–2:45 h nach dem Termin (gemessen 2026-11-09 an den STAC-Zeitstempeln),
+  kommt eine später, wartet `varda-cron.sh` bis zu 45 min auf sie, sonst fiele
+  der Termin aus —, `Persistent` holt nach; seit 2026-11-03 WECKT ein System-Timer den Laptop
   aus der Bereitschaft (`varda-wake.*`, `sudo scripts/systemd/
   install-varda-wake.sh` — ein Benutzer-Timer darf mit `WakeSystem` nicht
   wecken): 2 min vorher geweckt, bis 10 min aufs WLAN gewartet (ohne Netz
@@ -3826,8 +3847,8 @@ npm run preview   # gebautes dist/ servieren
   Modelltopografie. Das Feld wird beim Modellwechsel neu angelegt und muss dabei
   UNTER dem Relief landen (`GLOBE_TOPO_LAYER` als `before`). **Die Terrain Tiles
   (AWS Open Data) liegen als Spiegel in R2 unter `topo/`** (`scripts/topo-mirror.mjs`,
-  npm `ingest:topo`, einmalig von Hand, Upload `scripts/topo-upload.sh`, nicht im
-  Deploy), damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
+  npm `ingest:topo`, gepackt mit `ingest:topo:pack` als verlustfreies WebP, einmalig von
+  Hand, Upload `scripts/topo-upload.sh`, nicht im Deploy), damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
   keinen weiteren Host. Weltweit Stufen 0–8, **feiner nur über DACH (bis 11) und den Alpen (bis 12, ~25 m je
   Pixel)**, festgelegt in `config/topoDetail.json`, die Skript und Browser beide lesen;
   die Karten zoomen dafür bis 12, Feld und Linien werden dort nur gestreckt. 50.134
@@ -3843,8 +3864,18 @@ npm run preview   # gebautes dist/ servieren
   beides im Browser gesehen**: unter null wird null, sonst stehen Schelfkante und
   Mittelatlantischer Rücken wie Struktur im Wetterfeld da; und der Polrand
   (`POLE_ROWS`) wird flach, sonst zeigt die Schummerung am Pol denselben
-  Strahlenfächer wie früher das Feld. Eine nicht ladbare Kachel wird flach statt zum
-  Fehler (dieselbe Regel wie bei den übrigen Protokollen).
+  Strahlenfächer wie früher das Feld. **Kostet Daten, nicht Rechenzeit** (gemessen 2026-11-05: Worker warm
+  71 ms, aus R2 122 ms, Hauptthread kaum belastet; je Zoomschritt ~28 Kacheln à 140 KB).
+  Deshalb verlustfreies WebP (22 % kleiner, `topo-pack.py` vergleicht jede Kachel Pixel
+  für Pixel), und jede Kachel wartet vor dem Abruf 120 ms (`TOPO_FETCH_DELAY_MS`): beim
+  Zoomen bestellte MapLibre 17–32 Kacheln je Schritt und gleich wieder ab. Mit
+  mehreren Panels überträgt der Browser jede Kachel nur einmal (der HTTP-Cache hält
+  parallele Abrufe an), dekodiert sie aber je Karte. **Schlägt ein Abruf fehl, wird er
+  wiederholt (`retryTopo`, rund 16 s, solange steht die gröbere Stufe)**, erst danach
+  wird die Kachel flach und bleibt es für die Sitzung, statt zum Fehler zu werden
+  (dieselbe Regel wie bei den übrigen Protokollen). **Ein 404 ist im Browser nur 1 h
+  gültig, an der Edge eine Woche** (`TOPO_MISSING_CACHE`): mit `immutable` hielte eine
+  beim Upload fehlende Kachel ein Jahr lang.
   **`setTiles` NUR ÜBER `render/tileQueue.ts`** (Einzelkarte und Panels): MapLibre
   bricht laufende Kacheln nicht ab, und was zuletzt fertig wird, bleibt stehen, bis zum
   nächsten `setTiles`. Dazu übernimmt `setTiles` die Adresse verzögert (gemessen über

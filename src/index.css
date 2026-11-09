@@ -2533,6 +2533,109 @@ button:focus-visible {
   row-gap: 4px;
   align-items: center;
 }
+.foehn-views {
+  display: inline-flex;
+}
+.foehn-views button {
+  padding: 7px 18px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.foehn-views button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.foehn-views button:last-child {
+  border-radius: 0 4px 4px 0;
+  border-left: 0;
+}
+.foehn-views button.is-active {
+  color: var(--ink);
+  background: var(--bg-control-hover);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.foehn-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 4px;
+}
+.foehn-section-plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 240px;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+.foehn-section-plot canvas {
+  position: absolute;
+  inset: 0;
+}
+.foehn-section-range {
+  flex: 1 1 160px;
+  min-width: 120px;
+  max-width: 460px;
+}
+.foehn-section-time {
+  min-width: 285px;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.foehn-section-time .label-muted {
+  font-size: 15px;
+  font-weight: 500;
+}
+.foehn-section-run {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.foehn-section-legend {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0;
+  padding-bottom: 12px;
+}
+.foehn-section-legend > .label-muted {
+  margin-right: 6px;
+}
+.foehn-section-chip {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 11px;
+}
+.foehn-section-chip em {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-style: normal;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.foehn-section-hover {
+  position: absolute;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(16, 17, 19, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.foehn-section-note {
+  font-size: 12px;
+  padding: 0 4px;
+}
 
 .foehn-model {
   display: flex;

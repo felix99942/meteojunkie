@@ -45,6 +45,11 @@ const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar
 // und für das Relief (topo/, scripts/topo-mirror.mjs).
 const IMMUTABLE = /^(nwp\/[^/]+\/\d{10}\/|sat\/[^/]+\/(lo|hi)\/|radar\/[^/]+\/\d{8}T\d{4}Z|topo\/)/
 
+// Eine fehlende Reliefkachel ist fast immer Meer, kann aber auch eine sein, die beim
+// Upload noch nicht da war. Mit `immutable` bliebe die Lücke ein Jahr im Browser, wo
+// sie niemand mehr löschen kann; so geht sie nach einer Stunde (Edge nach einer Woche).
+const TOPO_MISSING_CACHE = 'public, max-age=3600, s-maxage=604800'
+
 /** Cache-Dauer je Pfad. Alles ausser den Laufdateien wechselt stündlich. */
 function cacheControl(key: string): string {
   if (IMMUTABLE.test(key)) return 'public, max-age=31536000, immutable'
@@ -90,7 +95,7 @@ export default {
       if (!key.startsWith('topo/')) return new Response('Not Found', { status: 404 })
       // Im Relief-Spiegel fehlt das Meer absichtlich, und das bleibt so: ungecacht
       // kostete jede Meereskachel jedes Mal einen R2-Abruf
-      const missing = new Response('Not Found', { status: 404, headers: { 'cache-control': cacheControl(key) } })
+      const missing = new Response('Not Found', { status: 404, headers: { 'cache-control': TOPO_MISSING_CACHE } })
       ctx.waitUntil(caches.default.put(cacheKey, missing.clone()))
       return missing
     }

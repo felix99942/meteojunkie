@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { POLE_ROWS } from '../config/globe'
-import { cleanTopoTile, topoTile, upsampleTopoTile } from './globeTopo'
+import { cleanTopoTile, retryTopo, topoTile, upsampleTopoTile } from './globeTopo'
 
 const SIZE = 64
 
@@ -118,5 +118,49 @@ describe('upsampleTopoTile', () => {
     const px = tile(() => 500)
     const out = upsampleTopoTile(px, SIZE, 4, 3, 3)
     expect(metres(out, SIZE - 1, SIZE - 1)).toBe(500)
+  })
+})
+
+describe('retryTopo', () => {
+  const failing = (times: number) => {
+    let calls = 0
+    const run = async () => {
+      if (++calls <= times) throw new Error('Netz weg')
+      return 'kachel'
+    }
+    return { run, calls: () => calls }
+  }
+
+  it('wiederholt nach einem Netzfehler, bis die Kachel kommt', async () => {
+    const f = failing(2)
+    await expect(retryTopo(f.run, new AbortController().signal, [0, 0, 0])).resolves.toBe('kachel')
+    expect(f.calls()).toBe(3)
+  })
+
+  it('gibt nach dem letzten Versuch den Fehler weiter', async () => {
+    const f = failing(9)
+    await expect(retryTopo(f.run, new AbortController().signal, [0, 0])).rejects.toThrow('Netz weg')
+    expect(f.calls()).toBe(3)
+  })
+
+  it('wiederholt einen Abbruch nicht', async () => {
+    let calls = 0
+    const run = async () => {
+      calls++
+      throw new DOMException('weg', 'AbortError')
+    }
+    await expect(retryTopo(run, new AbortController().signal, [0, 0])).rejects.toMatchObject({ name: 'AbortError' })
+    expect(calls).toBe(1)
+  })
+
+  it('bricht die Pause zwischen zwei Versuchen sofort ab', async () => {
+    const ac = new AbortController()
+    const f = failing(9)
+    const pending = retryTopo(f.run, ac.signal, [60_000])
+    await Promise.resolve()
+    await Promise.resolve()
+    ac.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.calls()).toBe(1)
   })
 })

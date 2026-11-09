@@ -1,13 +1,16 @@
-# Läufe 06 und 18 UTC: die MeteoSwiss-Analyse erscheint 2–2¾ h nach dem
-# Termin, gestartet wird mit Reserve 3¼ h danach. Persistent: war der Laptop
-# zur Startzeit aus, läuft es beim nächsten Einschalten nach (und nimmt dann
-# den jüngsten verfügbaren Lauf).
+# Läufe 00, 06, 12 und 18 UTC: die 6-stündlichen MeteoSwiss-Analysen erscheinen
+# sehr regelmäßig 2:43–2:45 h nach dem Termin (gemessen 2026-11-09 an den
+# STAC-Zeitstempeln), gestartet wird 2:50 h danach. Kommt eine später, wartet
+# varda-cron.sh auf sie. Persistent: war der Laptop zur Startzeit aus, läuft es
+# beim nächsten Einschalten nach (und nimmt dann den jüngsten verfügbaren Lauf).
 [Unit]
-Description=Varda-Modellkarten zweimal täglich
+Description=Varda-Modellkarten viermal täglich
 
 [Timer]
-OnCalendar=*-*-* 09:15:00 UTC
-OnCalendar=*-*-* 21:15:00 UTC
+OnCalendar=*-*-* 02:50:00 UTC
+OnCalendar=*-*-* 08:50:00 UTC
+OnCalendar=*-*-* 14:50:00 UTC
+OnCalendar=*-*-* 20:50:00 UTC
 Persistent=true
 RandomizedDelaySec=2min
 

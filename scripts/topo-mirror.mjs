@@ -1,5 +1,6 @@
 // Spiegelt die Höhenkacheln der Topografie (Terrain Tiles, AWS Open Data) einmalig
-// in ein lokales Verzeichnis; `scripts/topo-upload.sh` lädt sie nach R2.
+// in ein lokales Verzeichnis; `scripts/topo-pack.py` packt sie verlustfrei nach WebP,
+// `scripts/topo-upload.sh` lädt sie nach R2.
 //
 // Aufruf: `node scripts/topo-mirror.mjs [--out verzeichnis] [--detail-only]`
 //
@@ -7,9 +8,9 @@
 // von der eigenen Domain. Das Relief ist statisch, der Spiegel läuft also einmal und
 // bleibt. Ein zweiter Lauf holt nur, was fehlt.
 //
-// UNVERÄNDERT ABGELEGT: auf ganze Meter gerundet und neu gepackt waren die Kacheln
-// nicht kleiner (gemessen 2026-11-05, je nach Gegend ±20 %). Bereinigt wird weiter im
-// Browser (`cleanTopoTile`).
+// DIE WERTE BLEIBEN UNVERÄNDERT: auf ganze Meter gerundet und neu gepackt waren die
+// Kacheln nicht kleiner (gemessen 2026-11-05, je nach Gegend ±20 %). Bereinigt wird
+// weiter im Browser (`cleanTopoTile`).
 //
 // STUFEN: weltweit bis `baseZoom`, feiner nur in den Regionen aus
 // src/config/topoDetail.json (DACH, Alpen). Der Browser kennt dieselbe Datei und rechnet

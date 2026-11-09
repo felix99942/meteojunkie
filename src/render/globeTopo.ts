@@ -1,8 +1,9 @@
 // Höhenkacheln der Topografie-Ebene in den Modellkarten: Terrain Tiles (AWS Open
 // Data, Kodierung „terrarium"), vor der Schummerung bereinigt. Sie liegen als Spiegel
-// in R2 unter /topo/ (`scripts/topo-mirror.mjs`), damit AWS die Besucher nicht sieht.
+// in R2 unter /topo/ (`scripts/topo-mirror.mjs`), damit AWS die Besucher nicht sieht,
+// und dort als verlustfreies WebP (`scripts/topo-pack.py`, 22 % kleiner, Pixel gleich).
 // Im Spiegel fehlt das Meer: ein 404 ist dort der Normalfall und wird zur flachen
-// Kachel. Lokal gibt es den Spiegel nicht, `npm run dev` holt direkt bei AWS.
+// Kachel. Lokal gibt es den Spiegel nicht, `npm run dev` holt die PNG direkt bei AWS.
 //
 // MEERESBODEN WEG: die Kacheln führen auch die Bathymetrie. Über einem Wetterfeld
 // sehen Schelfkante und Mittelatlantischer Rücken wie Struktur im Feld aus, und
@@ -27,7 +28,21 @@ export const GLOBE_TOPO_LAYER = 'globe-topo'
 const SOURCE_URL = (z: number, x: number, y: number) =>
   import.meta.env.DEV
     ? `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
-    : `/topo/${z}/${x}/${y}.png`
+    : `/topo/${z}/${x}/${y}.webp`
+
+/**
+ * So lange wartet eine Kachel, bevor sie abgerufen wird. Beim Zoomen bestellt MapLibre
+ * Kacheln der Zwischenstufen und bestellt sie gleich wieder ab (gemessen 17–32 je
+ * Zoomschritt neben den 28 gebrauchten, je ~140 KB). Bis dahin ist nichts übertragen.
+ */
+export const TOPO_FETCH_DELAY_MS = 120
+
+/**
+ * Pausen zwischen den Versuchen, zusammen rund 16 s. Während der Versuche zeigt MapLibre
+ * weiter die gröbere Stufe. Danach wird die Kachel flach und bleibt es für die Sitzung:
+ * eine abgelehnte Kachel lässt MapLibre stolpern (s. `flatTile`).
+ */
+export const TOPO_RETRY_DELAYS_MS = [500, 1500, 4000, 10000]
 
 /**
  * Feinste Stufe im Spiegel. Weltweit endet er bei `baseZoom`, nur DACH und die Alpen
@@ -180,28 +195,68 @@ function flatTile(size: number): Promise<ImageBitmap> {
   return createImageBitmap(new ImageData(px, size), BITMAP_OPTIONS)
 }
 
-/** Handler des Protokolls: `globedem://z/x/y` holen und bereinigen; ein Abbruch geht an MapLibre zurück. */
+const isAbort = (e: unknown) => e instanceof Error && e.name === 'AbortError'
+
+/** Pause, die ein Abbruch sofort beendet — mit AbortError. */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const aborted = () => {
+      clearTimeout(timer)
+      reject(new DOMException('Kachel abgebrochen', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', aborted)
+      resolve()
+    }, ms)
+    if (signal.aborted) aborted()
+    else signal.addEventListener('abort', aborted, { once: true })
+  })
+}
+
+/**
+ * `run` ausführen, bei einem Fehler nach den Pausen erneut. Ein Abbruch wird nie
+ * wiederholt; nach dem letzten Versuch geht der Fehler an den Aufrufer.
+ */
+export async function retryTopo<T>(run: () => Promise<T>, signal: AbortSignal, delays: readonly number[] = TOPO_RETRY_DELAYS_MS): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run()
+    } catch (e) {
+      if (isAbort(e) || attempt >= delays.length) throw e
+      await pause(delays[attempt], signal)
+    }
+  }
+}
+
+/** Eine Kachel holen und bereinigen; `null` = die Stelle bleibt endgültig flach (Meer). */
+async function fetchTopoTile(t: ReturnType<typeof topoTile>, signal: AbortSignal): Promise<ImageBitmap | null> {
+  const res = await fetch(SOURCE_URL(t.z, t.x, t.y), { signal })
+  // Überlastung und Serverfehler gehen vorbei, ein anderes 4xx kommt beim nächsten Mal wieder
+  if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) return null
+  const raw = await createImageBitmap(await res.blob(), BITMAP_OPTIONS)
+  const size = raw.width
+  const ctx = new OffscreenCanvas(size, size).getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('kein 2D-Kontext')
+  ctx.drawImage(raw, 0, 0)
+  raw.close()
+  const img = ctx.getImageData(0, 0, size, size)
+  // Erst bereinigen, solange Stufe und Zeile die der gespiegelten Kachel sind
+  cleanTopoTile(img.data, size, t.z, t.y)
+  if (t.factor === 1) return createImageBitmap(img, BITMAP_OPTIONS)
+  const data = upsampleTopoTile(img.data, size, t.factor, t.col, t.row)
+  return createImageBitmap(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, size), BITMAP_OPTIONS)
+}
+
+/** Handler des Protokolls: `globedem://z/x/y` holen; ein Abbruch geht an MapLibre zurück. */
 export async function loadTopoTile(url: string, signal: AbortSignal): Promise<ImageBitmap> {
   const [z, x, y] = url.slice(GLOBE_TOPO_PROTOCOL.length + 3).split('/').map(Number)
   const t = topoTile(z, x, y)
+  await pause(TOPO_FETCH_DELAY_MS, signal)
   try {
-    const res = await fetch(SOURCE_URL(t.z, t.x, t.y), { signal })
-    if (res.status === 404) return await flatTile(256)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const raw = await createImageBitmap(await res.blob(), BITMAP_OPTIONS)
-    const size = raw.width
-    const ctx = new OffscreenCanvas(size, size).getContext('2d', { willReadFrequently: true })
-    if (!ctx) throw new Error('kein 2D-Kontext')
-    ctx.drawImage(raw, 0, 0)
-    raw.close()
-    const img = ctx.getImageData(0, 0, size, size)
-    // Erst bereinigen, solange Stufe und Zeile die der gespiegelten Kachel sind
-    cleanTopoTile(img.data, size, t.z, t.y)
-    if (t.factor === 1) return await createImageBitmap(img, BITMAP_OPTIONS)
-    const data = upsampleTopoTile(img.data, size, t.factor, t.col, t.row)
-    return await createImageBitmap(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, size), BITMAP_OPTIONS)
+    return (await retryTopo(() => fetchTopoTile(t, signal), signal)) ?? (await flatTile(256))
   } catch (e) {
-    if (e instanceof Error && e.name === 'AbortError') throw e
+    if (isAbort(e)) throw e
     return flatTile(256)
   }
 }

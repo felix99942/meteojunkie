@@ -30,6 +30,22 @@ VARDA_HOME="${VARDA_HOME:-$HOME/varda-test}"
 export VARDA_HOME
 export PATH="$HOME/.local/bin:$PATH"
 
+# Auf die fällige Analyse warten: sie erscheint 2:43–2:45 h nach dem Termin
+# (gemessen), der Timer startet knapp danach. Käme sie einmal später, fände der
+# Lauf nur den schon gerechneten Stand, und der Termin fiele ganz aus. Fällig ist
+# der jüngste 6-h-Termin, der mindestens 2 h zurückliegt. Bis zu 45 Minuten, danach
+# gilt, was da ist. Mit Argumenten (--run …) wird nicht gewartet.
+if [[ $# -eq 0 ]]; then
+  ref=$(date -u -d '2 hours ago' +%Y%m%d%H)
+  due="${ref:0:8}$(printf %02d $(( 10#${ref:8:2} / 6 * 6 )))"
+  for _ in $(seq 22); do
+    have=$("$VARDA_HOME/.venv-fc/bin/python" scripts/varda-ingest.py --latest 2>/dev/null || true)
+    [[ -n "$have" && ! "$have" < "$due" ]] && break
+    echo "Analyse $due noch nicht da (neueste: ${have:-unbekannt}) — warte"
+    sleep 120
+  done
+fi
+
 # Erzeugungszeit statt Laufkennung: ein neu gerechneter Lauf mit derselben
 # Kennung (vorher nur ein Probelauf mit --lead 12) muss trotzdem hoch
 stamp() { grep -o '"generated":"[^"]*"' public/nwp/varda/meta.json 2>/dev/null || true; }

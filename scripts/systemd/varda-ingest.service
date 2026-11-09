@@ -11,4 +11,5 @@ ExecStart=%h/meteowebsite/scripts/varda-cron.sh
 # GPU-Lauf darf den Laptop nicht lahmlegen, während man daran arbeitet
 Nice=10
 IOSchedulingClass=idle
-TimeoutStartSec=90min
+# Bis zu 45 min Warten auf die Analyse (varda-cron.sh) plus der Lauf selbst
+TimeoutStartSec=2h

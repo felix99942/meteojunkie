@@ -75,6 +75,7 @@ import {
   type Series,
 } from './foehn'
 import { OpenMeteoAttribution } from './Attribution'
+import { FoehnSection } from './FoehnSection'
 
 const TZ = 'Etc/UTC'
 const CHART_HEIGHT = 110
@@ -127,6 +128,7 @@ interface Tile {
 
 export function FoehnPanel() {
   const [axisId, setAxisId] = useState(DEFAULT_FOEHN_AXIS)
+  const [view, setView] = useState<'charts' | 'section'>('charts')
   const [direction, setDirection] = useState<FoehnDirection>('south')
   const [overlay, setOverlay] = useState<string[]>(DEFAULT_OVERLAY_MODELS)
   const [detailId, setDetailId] = useState(DEFAULT_DETAIL_MODEL)
@@ -452,6 +454,14 @@ export function FoehnPanel() {
     <div className="meteo">
       <div className="atclima-bar foehn-bar">
         <span className="atclima-title">Föhn</span>
+        <span className="foehn-views" role="group" aria-label="Ansicht">
+          <button type="button" className={view === 'charts' ? 'is-active' : ''} onClick={() => setView('charts')}>
+            Diagramme
+          </button>
+          <button type="button" className={view === 'section' ? 'is-active' : ''} onClick={() => setView('section')}>
+            Querschnitt
+          </button>
+        </span>
         <label className="atclima-ctrl">
           <span className="label-muted">Achse</span>
           <select value={axisId} onChange={(e) => setAxisId(e.target.value)}>
@@ -462,6 +472,9 @@ export function FoehnPanel() {
             ))}
           </select>
         </label>
+        {/* Der Querschnitt hat genau ein Modell und führt seinen Lauf selbst */}
+        {view === 'charts' && (
+        <>
         <label className="atclima-ctrl">
           <span className="label-muted">Richtung</span>
           <select value={direction} onChange={(e) => setDirection(e.target.value as FoehnDirection)}>
@@ -530,7 +543,27 @@ export function FoehnPanel() {
           </span>
         )}
         {loading && <span className="label-muted">lädt …</span>}
+        </>
+        )}
       </div>
+      {view === 'section' ? (
+        <>
+          <FoehnSection axisId={axisId} />
+          <div className="app-attribution">
+            <span className="attribution">
+              Modelldaten:{' '}
+              <a href="https://opendata.dwd.de/" target="_blank" rel="noreferrer">
+                DWD ICON-D2
+              </a>{' '}
+              (Open Data, Modellflächen, 2,2 km), Nutzung nach GeoNutzV.{' '}
+              <span title="Der Längswind ist auf EINE Richtung je Achse projiziert (Anfang nach Ende), nicht auf den Verlauf der Linie.">
+                Längswind: positiv Richtung Norden.
+              </span>
+            </span>
+          </div>
+        </>
+      ) : (
+      <>
       <div className="atclima-bar foehn-bar">
         <span className="label-muted">ΔP-Modelle</span>
         {FOEHN_MODELS.map((id) => {
@@ -604,6 +637,8 @@ export function FoehnPanel() {
       <div className="app-attribution">
         <OpenMeteoAttribution />
       </div>
+      </>
+      )}
     </div>
   )
 }
