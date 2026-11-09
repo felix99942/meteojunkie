@@ -18,7 +18,7 @@
 // vorher eingetroffenen Kacheln schon gerechnet sind — beim schnellen
 // Durchblättern genau der Rückstau, den der Abbruch verhindern soll.
 
-import { decodeCodes, decodeRgb3, decodeUv8, getGlobeVariable, type GlobeField } from '../config/globe'
+import { decodeCodes, decodeRgb3, decodeUv8, displayScale, getGlobeVariable, type GlobeField } from '../config/globe'
 import { colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE } from './globeTiles'
 import { CONTOUR_STYLES, contourTile, smoothField } from './globeContours'
 import type { FieldSource, WorkerRequest, WorkerResponse } from './globePool'
@@ -220,7 +220,7 @@ async function run(job: Extract<WorkerRequest, { type: 'tile' | 'field' }>): Pro
       const { rgba, labels } = contourTile(f, smooth, job.contour.interval, style, z, x, y, GLOBE_TILE_SIZE, job.contour.min)
       bmp = await drawContourTile(rgba, labels, style)
     } else {
-      const rgba = f.rgb ? colorizeRgbTile(f, z, x, y) : colorizeTile(f, getGlobeVariable(job.varId).scale, z, x, y)
+      const rgba = f.rgb ? colorizeRgbTile(f, z, x, y) : colorizeTile(f, displayScale(getGlobeVariable(job.varId), job.src.interval), z, x, y)
       bmp = await createImageBitmap(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, GLOBE_TILE_SIZE, GLOBE_TILE_SIZE))
     }
     post({ id, bitmap: bmp }, [bmp])

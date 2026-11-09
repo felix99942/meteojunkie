@@ -151,6 +151,18 @@ const PRECIP_COLORS = [
   '#f2dcf5', // 100
 ]
 
+// Dieselben Farben für die MENGE je Intervall der Modellkarten: die Tabelle oben
+// gilt dort für 3 h, und 1 h bzw. 6 h bekommen eigene Grenzen, sonst sähen 3 mm in
+// einer Stunde aus wie 3 mm in drei. NICHT proportional zur Dauer: Starkregen fällt
+// in kurzer Zeit, die DWD-Warnschwellen liegen für 1 h bei 15/25/40 mm und für 6 h
+// nur bei 20/35/60 mm. Die oberen Stufen liegen deshalb rund Faktor 1,5 auseinander,
+// Rot beginnt bei 1 h auf 15 mm und Lila auf 25 mm, also auf den Warnstufen. Das
+// untere Ende bleibt, damit leichter Niederschlag in jedem Intervall sichtbar ist.
+const PRECIP_1H_STEPS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 25, 30, 40, 60]
+const PRECIP_6H_STEPS = [0.1, 0.2, 0.4, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 75, 100, 150]
+export const PRECIP_1H: ColorScale = { kind: 'stepped', stops: PRECIP_1H_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })) }
+export const PRECIP_6H: ColorScale = { kind: 'stepped', stops: PRECIP_6H_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })) }
+
 // Grün → Gelb → Orange → Rot → Dunkelrot → Lila (kein Blau — grenzt Wind
 // optisch von der Temperatur ab, die im Kalten violett/blau beginnt). Das
 // obere Ende ist an festen Werten verankert (auf Wunsch): ab 100 km/h

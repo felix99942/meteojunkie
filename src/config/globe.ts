@@ -16,7 +16,7 @@
 // Kachelgeometrie, Laufalter) — getestet in `globe.test.ts`. Das Einfärben
 // der Kacheln steht in `render/globeTiles.ts`, das Laden in `api/globeData.ts`.
 
-import { alternateShade, bands, COLOR_SCALES, lerpRamp, saturate, TEMP_ANCHORS, type ColorScale } from './colorscales'
+import { alternateShade, bands, COLOR_SCALES, lerpRamp, PRECIP_1H, PRECIP_6H, saturate, TEMP_ANCHORS, type ColorScale } from './colorscales'
 
 /**
  * `uv10` und `uv300` sind keine wählbaren Größen, sondern die Datenquellen
@@ -25,7 +25,8 @@ import { alternateShade, bands, COLOR_SCALES, lerpRamp, saturate, TEMP_ANCHORS, 
  */
 export type GlobeVarId =
   | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'wind300' | 'gh500' | 'gh300' | 'reltop' | 'tcc' | 'clouds'
-  | 'uv10' | 'uv300'
+  | 'uv10' | 'uv300' | 'uv850' | 'uv700'
+  | 't700' | 'wind850' | 'wind700'
   | 'swh' | 'pp1d' | 'sst'
   | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow'
 
@@ -336,6 +337,16 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendMultiple: 10,
   },
   {
+    id: 't700',
+    group: 'Temperatur & Luftmasse',
+    label: 'Temperatur 700 hPa',
+    title: 'Temperatur auf 700 hPa (~3000 m) — über den Alpen die Luftmasse oberhalb der Täler. Bisher nur bei Varda.',
+    scale: GLOBAL_TEMP,
+    decimals: 0,
+    legendEvery: 5,
+    legendMultiple: 10,
+  },
+  {
     id: 'gh500',
     group: 'Druck & Höhe',
     label: 'Geopotential 500 hPa',
@@ -368,7 +379,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     group: 'Niederschlag & Feuchte',
     label: 'Niederschlag',
     title:
-      'Niederschlagsmenge im Intervall bis zum gezeigten Termin (mm). ICON-D2: 1 Stunde; ICON-EU: 1 Stunde, ab +78 h 3 Stunden; IFS: 3 Stunden, ab +144 h 6 Stunden — das jeweilige Intervall steht im Namen. Bei +0 h gibt es kein Intervall.',
+      'Niederschlagsmenge im Intervall bis zum gezeigten Termin (mm). ICON-D2: 1 Stunde; ICON-EU: 1 Stunde, ab +78 h 3 Stunden; IFS: 3 Stunden, ab +144 h 6 Stunden — das jeweilige Intervall steht im Namen, die Farbstufen gelten je Intervall. Bei +0 h gibt es kein Intervall.',
     scale: COLOR_SCALES.precipitation,
     decimals: 1,
     legendEvery: 3,
@@ -403,6 +414,24 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendEvery: 2,
   },
   {
+    id: 'wind850',
+    group: 'Wind',
+    label: 'Wind 850 hPa',
+    title: 'Windgeschwindigkeit auf 850 hPa (~1500 m) in km/h, oberhalb der Reibung am Boden. Bisher nur bei Varda.',
+    scale: COLOR_SCALES.wind_speed_10m,
+    decimals: 0,
+    legendEvery: 3,
+  },
+  {
+    id: 'wind700',
+    group: 'Wind',
+    label: 'Wind 700 hPa',
+    title: 'Windgeschwindigkeit auf 700 hPa (~3000 m) in km/h — Anströmung des Alpenkamms. Bisher nur bei Varda.',
+    scale: COLOR_SCALES.wind_speed_10m,
+    decimals: 0,
+    legendEvery: 3,
+  },
+  {
     id: 'tcc',
     group: 'Wolken & Gewitter',
     label: 'Bewölkung gesamt',
@@ -434,9 +463,9 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
   {
     id: 'hzerocl',
     group: 'Temperatur & Luftmasse',
-    label: 'Nullgradgrenze (nur ICON)',
+    label: 'Nullgradgrenze (ICON, Varda)',
     title:
-      'Höhe der 0-°C-Fläche in Metern über NN. Keine Schneefallgrenze — die liegt bei Niederschlag meist einige hundert Meter tiefer. ECMWF Open Data führt die Größe nicht.',
+      'Höhe der 0-°C-Fläche in Metern über NN, bei Varda aus den Druckflächen gerechnet. Keine Schneefallgrenze — die liegt bei Niederschlag meist einige hundert Meter tiefer. ECMWF Open Data führt die Größe nicht.',
     scale: HZEROCL,
     decimals: 0,
     legendEvery: 4,
@@ -631,7 +660,7 @@ const ALL_GLOBE_MODELS: GlobeModel[] = [
     // Das einzige Modell, das hier GERECHNET statt geholt wird: MeteoSwiss'
     // datengetriebenes Varda-single-1.0 (Anemoi, Stretched Grid, 1 km über
     // dem ICON-CH1-Gebiet), lokal auf einer GPU per Timer, nicht im Deploy
-    // (scripts/varda-ingest.py). Läufe 06/18 UTC, ~3,5 h nach dem Termin auf
+    // (scripts/varda-ingest.py). Läufe 00/06/12/18 UTC, ~3,5 h nach dem Termin auf
     // der Seite; 12 + 3,5 + Reserve, weil der Laptop nicht immer läuft.
     // Keine Bewölkung, Böen, CAPE, Schnee — die Auswahl sperrt sie über meta.json.
     id: 'varda',
@@ -820,6 +849,17 @@ export function displayCodeStep(varId: GlobeVarId, vm: GlobeVarMeta, step: numbe
   return varId === 'precip' ? vm.step * (intervalHours(vm, step) ?? 1) : vm.step
 }
 
+/**
+ * Farbskala für den gezeigten Schritt: beim Niederschlag hängt sie am Intervall,
+ * weil dieselbe Menge in kürzerer Zeit stärkerer Regen ist (`PRECIP_1H`). Ohne
+ * Intervall ist der Wert eine Rate in mm/h, also die 1-Stunden-Tabelle.
+ */
+export function displayScale(v: Pick<GlobeVariable, 'id' | 'scale'>, interval: number | undefined): ColorScale {
+  if (v.id !== 'precip') return v.scale
+  if (interval == null || interval <= 1) return PRECIP_1H
+  return interval <= 3 ? v.scale : PRECIP_6H
+}
+
 /** Einheit des Niederschlags in der Legende: `mm/3 h`, ohne Intervall `mm/h`. */
 export function precipUnit(interval: number | undefined): string {
   return interval ? `mm/${interval} h` : 'mm/h'
@@ -903,10 +943,17 @@ export function decodeUv8(rgba: ArrayLike<number>, count: number): Uint8Array {
  * Böen zeigen die Fiedern den MITTLEREN 10-m-Wind — Böenkomponenten führt
  * kein Modell, die Böe ist die Farbfläche darunter.
  */
-export const BARB_VARS: ReadonlySet<GlobeVarId> = new Set<GlobeVarId>(['wind10', 'gust', 'wind300'])
+export const BARB_VARS: ReadonlySet<GlobeVarId> = new Set<GlobeVarId>(['wind10', 'gust', 'wind850', 'wind700', 'wind300'])
+
+/** Druckfläche der Windkomponenten, oder null beim 10-m-Wind. */
+export function uvLevel(uv: GlobeVarId): 850 | 700 | 300 | null {
+  return uv === 'uv850' ? 850 : uv === 'uv700' ? 700 : uv === 'uv300' ? 300 : null
+}
 
 export function particleSource(varId: GlobeVarId, meta: GlobeMeta | null): { var: GlobeVarId; refSpeed: number } {
   if (varId === 'wind300' && meta?.variables.uv300) return { var: 'uv300', refSpeed: 40 }
+  if (varId === 'wind700' && meta?.variables.uv700) return { var: 'uv700', refSpeed: 20 }
+  if (varId === 'wind850' && meta?.variables.uv850) return { var: 'uv850', refSpeed: 15 }
   return { var: 'uv10', refSpeed: 10 }
 }
 

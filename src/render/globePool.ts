@@ -18,6 +18,8 @@ export interface FieldSource {
   lo: number
   step: number
   encoding?: 'rgb3' | 'uv8'
+  /** Intervall des Werts in Stunden; wählt beim Niederschlag die Farbskala */
+  interval?: number
 }
 
 /**

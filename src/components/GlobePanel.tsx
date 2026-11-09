@@ -41,6 +41,8 @@ import {
   globeFreshness,
   formatReadout,
   precipReadout,
+  displayScale,
+  uvLevel,
   variableLabel,
   GLOBE_MODELS,
   GLOBE_GROUPS,
@@ -676,7 +678,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const offTarget = meta && step != null && Math.abs(validMs(meta, step) - targetMs) > 3 * 3_600_000
 
   const legend = useMemo(() => {
-    const stops = variable.scale.stops
+    const stops = displayScale(variable, interval).stops
     return stops.map((s, i) => ({
       color: s.color,
       label: (
@@ -685,7 +687,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         ? String(s.value)
         : '',
     }))
-  }, [variable])
+  }, [variable, interval])
 
   // Nur die letzte Stunde von mehreren: Spitzen dazwischen sind nicht in den Daten
   const gapHours = step != null ? sampledGapHours(vm, step) : undefined
@@ -865,8 +867,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
               title={
                 meta && !uvMeta
                   ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
-                  : particleVar === 'uv300'
-                    ? 'Höhenströmung auf 300 hPa als bewegte Spuren — beim Höhenwind zeigen die Partikel den Strahlstrom, nicht den Bodenwind. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm nicht (in der Höhe gegenüber dem Boden gebremst).'
+                  : uvLevel(particleVar)
+                    ? `Strömung auf ${uvLevel(particleVar)} hPa als bewegte Spuren, nicht der Bodenwind. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm nicht (in der Höhe gegenüber dem Boden gebremst).`
                     : 'Strömung des 10-m-Winds als bewegte Spuren über jeder Größe. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm ist nicht maßstäblich (auf der ganzen Kugel ruhiger) — den Betrag zeigt die Größe „Wind 10 m".'
               }
             >
@@ -880,12 +882,12 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                   if (e.target.checked) setBarbs(false)
                 }}
               />{' '}
-              {particleVar === 'uv300' ? 'Windpartikel 300 hPa' : 'Windpartikel'}
+              {uvLevel(particleVar) ? `Windpartikel ${uvLevel(particleVar)} hPa` : 'Windpartikel'}
             </label>
             {BARB_VARS.has(varId) && (
               <label
                 className="globe-layer"
-                title={`Windfiedern ${varId === 'wind300' ? '300 hPa' : '10 m (bei den Böen der mittlere Wind)'}: Richtung und Stärke je Rasterpunkt (Wimpel 50 kt, ganze Fieder 10 kt, halbe 5 kt). Im Wechsel mit den Windpartikeln.`}
+                title={`Windfiedern ${uvLevel(particleVar) ? `${uvLevel(particleVar)} hPa` : '10 m (bei den Böen der mittlere Wind)'}: Richtung und Stärke je Rasterpunkt (Wimpel 50 kt, ganze Fieder 10 kt, halbe 5 kt). Im Wechsel mit den Windpartikeln.`}
               >
                 <input
                   type="checkbox"

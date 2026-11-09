@@ -20,6 +20,7 @@ import { WindBarbs } from '../render/windBarbs'
 import { globeFieldSource, loadGlobeField, prefetchGlobeField } from '../api/globeData'
 import {
   BARB_VARS,
+  displayScale,
   formatReadout,
   precipReadout,
   precipUnit,
@@ -346,13 +347,13 @@ export function GlobeMapPanel(props: Props) {
 
   // --- Legende und Werte -------------------------------------------------------
   const legend = useMemo(() => {
-    const stops = variable.scale.stops
+    const stops = displayScale(variable, interval).stops
     const every = Math.max(variable.legendEvery, Math.ceil(stops.length / 7))
     return stops.map((s, i) => ({
       color: s.color,
       label: (variable.legendMultiple ? Math.abs(s.value % variable.legendMultiple) < 1e-9 : i % every === 0) ? String(s.value) : '',
     }))
-  }, [variable])
+  }, [variable, interval])
 
   const readValue = hover && field && !field.rgb ? sampleField(field, hover.lat, hover.lon) : NaN
   const lastMs = meta && steps.length ? validMs(meta, steps[steps.length - 1]) : NaN

@@ -3242,9 +3242,13 @@ npm run preview   # gebautes dist/ servieren
   **Gezeigt wird die MENGE je Intervall, nicht die Rate** (seit 2026-11-05, auf Wunsch):
   das ist die Lesart auf Modellkarten, und das 3-h-Mittel täuschte Dauerregen vor, wo
   ein Schauer fiel. **Gespeichert bleibt die Rate** (mm/h, `unit` in der Meta), umgerechnet
-  wird beim Laden (`displayCodeStep`), Fläche, Zeiger und Zahlen sehen also dasselbe. Der
-  Preis: an einem Intervallwechsel (IFS +144 h, ICON-EU +78 h) springt die Farbe, und im
-  Panelvergleich zeigt ein 3-h-Modell naturgemäß mehr als ein 1-h-Modell.
+  wird beim Laden (`displayCodeStep`), Fläche, Zeiger und Zahlen sehen also dasselbe.
+  **Die Farbstufen hängen am Intervall** (`displayScale`, `PRECIP_1H`/`PRECIP_6H`, seit
+  2026-11-09, auf Wunsch; das Intervall kommt über `FieldSource.interval` in den Worker):
+  gleiche Farben, aber 3 mm in einer Stunde sind stärkerer Regen als 3 mm in drei. NICHT
+  proportional zur Dauer, sondern rund Faktor 1,5 je Stufe: die DWD-Warnschwellen liegen
+  für 1 h bei 15/25/40 mm, für 6 h nur bei 20/35/60 mm. Rot beginnt bei 1 h auf 15 mm,
+  Lila auf 25 mm; das untere Ende ist überall gleich. Die Legende folgt dem Intervall.
   **Böen- und Niederschlagsintervall stehen je Schritt in `meta.json`**
   (`intervals`, aus dem GRIB-`stepRange`) und in der Legende, weil sie
   WECHSELN: der Niederschlag gilt bis zum vorigen Schritt (1/3/6 h), die Böe
@@ -3463,10 +3467,15 @@ npm run preview   # gebautes dist/ servieren
   erzeugten `downscaler.yaml`): ungefiltert sind es 67 Felder, ~160 MB GRIB je
   Stunde, ~20 GB über 120 h; jede Datei wird nach dem Lesen gelöscht. Bei +0
   fehlt die Niederschlagssumme in der Ausgabe und wird als 0 gesetzt.
-  Größen: T2m, T850, Bodendruck, Niederschlag (Rate/Summe), Wind 10 m und
-  300 hPa (+Partikel), 500/300 hPa, Relative Topografie, Taupunkt, rF 700 hPa
-  (aus q und T gerechnet). **KEINE Bewölkung, Böen, CAPE, Schnee** — die
-  Auswahl sperrt sie über meta.json. ~2,9 MB Bilder je Stunde, ~350 MB je
+  Größen: T2m, T850, T700, Bodendruck, Niederschlag (Rate/Summe), Wind 10 m,
+  850, 700 und 300 hPa (+Partikel), 500/300 hPa, Relative Topografie, Taupunkt,
+  rF 700 hPa (aus q und T gerechnet), Nullgradgrenze (`zero_level`: aus T und
+  Höhe auf 1000/925/850/700/500 hPa, linear in der Höhe, oberster Durchgang wie
+  HZEROCL). **KEINE VERTIKALBEWEGUNG UND KEIN 600 hPa**, gemessen an der Ausgabe
+  (2026-11-09): 12 Flächen 50–1000 hPa mit FI, QV, T, U, V. Die Metadaten des
+  Checkpoints nennen `w_*` und 600 hPa, das sind die Trainingsdaten — nicht daraus
+  ableiten. **KEINE Bewölkung, Böen, CAPE, Schnee** — die
+  Auswahl sperrt sie über meta.json. ~3,9 MB Bilder je Stunde, ~470 MB je
   Lauf. `nwp_common.ingest` kennt dafür `only`/`optional` (ein Modell mit nur
   einem Teil der Größen). Quellenzeile sagt „gerechnet auf eigener Hardware —
   keine offizielle MeteoSwiss-Vorhersage". Laufalter-Warnung ab 18 h.

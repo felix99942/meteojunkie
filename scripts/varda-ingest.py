@@ -91,13 +91,31 @@ FIELDS = {
     'z_1000': ('FI', 1000, 'gh1000'),
     'q_700': ('QV', 700, 'q700'),
     't_700': ('T', 700, 't700'),
+    'u_850': ('U', 850, 'u850'),
+    'v_850': ('V', 850, 'v850'),
+    'u_700': ('U', 700, 'u700'),
+    'v_700': ('V', 700, 'v700'),
+    # Nur für die Nullgradgrenze (500 hPa liegt selbst im Hochsommer über ihr)
+    't_1000': ('T', 1000, 't1000'),
+    't_925': ('T', 925, 't925'),
+    't_500': ('T', 500, 't500'),
+    'z_925': ('FI', 925, 'gh925'),
+    'z_850': ('FI', 850, 'gh850'),
+    'z_700': ('FI', 700, 'gh700'),
 }
 G = 9.80665
+T0 = 273.15
+# Von unten nach oben. 600 hPa gibt die Ausgabe nicht her (gemessen 2026-11-09: 12 Flächen
+# 50–1000 hPa ohne 600), zwischen 700 und 500 hPa wird also über ~2,5 km interpoliert
+ZERO_LEVELS = (1000, 925, 850, 700, 500)
 
-# Was Varda führt — Bewölkung, Böen, CAPE, Schnee, Wellen gibt es nicht
+# Was Varda führt — Bewölkung, Böen, CAPE, Schnee, Wellen und die Vertikalbewegung gibt
+# es nicht: die Metadaten des Checkpoints nennen `w_*` und 600 hPa, das sind die
+# Trainingsdaten, ausgegeben werden nur FI, QV, T, U, V
 VARIABLES = {
-    't2m', 't850', 'msl', 'precip', 'precipsum', 'wind10', 'uv10', 'wind300', 'uv300',
-    'gh500', 'gh300', 'reltop', 'td2m', 'rh700',
+    't2m', 't850', 't700', 'msl', 'precip', 'precipsum', 'wind10', 'uv10',
+    'wind850', 'uv850', 'wind700', 'uv700', 'wind300', 'uv300',
+    'gh500', 'gh300', 'reltop', 'td2m', 'rh700', 'hzerocl',
 }
 # precip/precipsum fehlen bei +0 h (kein Intervall), das ist kein Fehler
 OPTIONAL = {'precip', 'precipsum'}
@@ -268,6 +286,25 @@ def regrid_weights():
     return idx, w
 
 
+def zero_level(t: list, h: list):
+    """Höhe der 0-°C-Fläche (m) aus Temperatur (K) und Höhe je Druckfläche, von unten nach oben.
+
+    Linear in der Höhe zwischen den Flächen. Bei einer Inversion gilt der OBERSTE
+    Durchgang, wie bei HZEROCL von ICON. Friert die ganze Säule, steht dort die Höhe der
+    untersten Fläche (die Skala zeigt dann ihre tiefste Stufe), ist auch 500 hPa noch
+    über 0 °C, gibt es keinen Wert. Über Gebirge kann der Durchgang unter dem Gelände
+    liegen: die Druckflächen sind dort extrapoliert, wie bei jedem Modell.
+    """
+    import numpy as np
+
+    res = np.where(t[0] < T0, h[0], np.nan)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        for tl, tu, hl, hu in zip(t, t[1:], h, h[1:]):
+            cross = (tl >= T0) & (tu < T0)
+            res = np.where(cross, hl + (tl - T0) / (tl - tu) * (hu - hl), res)
+    return res.astype(np.float32)
+
+
 def read_step(path: Path, idx, w) -> dict:
     import eccodes
     import numpy as np
@@ -291,13 +328,18 @@ def read_step(path: Path, idx, w) -> dict:
         g = (v[safe] * w).sum(axis=1)
         g[~inside] = np.nan
         out[name] = g.reshape(GRID['nj'], GRID['ni']).astype(np.float64 if name == 'tp' else np.float32)
-    for k in ('gh500', 'gh300', 'gh1000'):
+    for k in ('gh500', 'gh300', 'gh1000', 'gh925', 'gh850', 'gh700'):
         if k in out:
             out[k] = out[k] / G
+    if all(f't{p}' in out and f'gh{p}' in out for p in ZERO_LEVELS):
+        out['hzerocl'] = zero_level([out[f't{p}'] for p in ZERO_LEVELS], [out[f'gh{p}'] for p in ZERO_LEVELS])
+    # Nur Zwischengrößen: ein Teil der 1-km-Felder je Stunde weniger im Speicher
+    for k in ('t1000', 't925', 't500', 'gh925', 'gh850', 'gh700'):
+        out.pop(k, None)
     if 'q700' in out and 't700' in out:
         # Relative Feuchte aus spezifischer Feuchte und Temperatur (über Wasser,
         # Bolton 1980) — Varda führt sie nicht direkt
-        q, t = out.pop('q700'), out.pop('t700')
+        q, t = out.pop('q700'), out['t700']
         e = q * 70000.0 / (0.622 + 0.378 * q)
         es = 611.2 * np.exp(17.67 * (t - 273.15) / (t - 29.65))
         out['rh700'] = (100.0 * e / es).astype(np.float32)

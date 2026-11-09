@@ -29,7 +29,9 @@ Einheitliche Feldnamen und Einheiten:
   tcwv         mm (kg/m²), niederschlagbares Wasser der Säule
   hsnow        m, Schneehöhe (ECMWF: aus Wasseräquivalent `sd` und Dichte
                `rsn` gerechnet, ICON `h_snow` direkt)
-  hzerocl      m über NN, Nullgradgrenze (nur ICON — ECMWF Open Data führt sie nicht)
+  hzerocl      m über NN, Nullgradgrenze (ICON direkt, Varda aus den Druckflächen
+               gerechnet — ECMWF Open Data führt sie nicht)
+  t700, u850, v850, u700, v700   K bzw. m/s (bisher nur Varda)
 
 Ausgabe (`public/nwp/<modell>/`, gitignored):
   meta.json                       Lauf, Raster, je Größe lo/step/Schritte(/Intervalle)
@@ -95,6 +97,11 @@ VARIABLES = {
     'clouds': {'lo': 0.0, 'step': 5.0, 'unit': '%', 'encoding': 'rgb3'},
     'uv10': {'lo': -63.5, 'step': 0.5, 'unit': 'm/s', 'encoding': 'uv8'},
     'uv300': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
+    'uv850': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
+    'uv700': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
+    't700': {'lo': -70.0, 'step': 0.25, 'unit': '°C'},
+    'wind850': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
+    'wind700': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
     # Meer (nur ECMWF): Wellenhöhe in 5 cm, Periode in 0,1 s, Wasser in 0,1 K
     'swh': {'lo': 0.0, 'step': 0.05, 'unit': 'm'},
     'pp1d': {'lo': 0.0, 'step': 0.1, 'unit': 's'},
@@ -128,9 +135,15 @@ NEEDS = {
     'precipsum': ('tp',), 'cape': ('cape',), 'td2m': ('td2m',), 'rh700': ('rh700',),
     'tcwv': ('tcwv',), 'snow': ('hsnow',), 'hzerocl': ('hzerocl',),
     'newsnow': ('sf',),
+    't700': ('t700',),
+    'wind850': ('u850', 'v850'), 'uv850': ('u850', 'v850'),
+    'wind700': ('u700', 'v700'), 'uv700': ('u700', 'v700'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
-OPTIONAL = {'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow'}
+OPTIONAL = {
+    'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow',
+    't700', 'wind850', 'uv850', 'wind700', 'uv700',
+}
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
 # 8-MB-Bereich einmal mit 7,8 MB/s, einmal mit 90 KB/s = 88 s). Ein
@@ -282,6 +295,14 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         return np.hypot(f['u300'], f['v300']) * 3.6
     if var == 'uv300':
         return np.stack([f['u300'], f['v300']], axis=-1)
+    if var == 't700':
+        return f['t700'] - 273.15
+    if var in ('wind850', 'wind700'):
+        p = var[4:]
+        return np.hypot(f[f'u{p}'], f[f'v{p}']) * 3.6
+    if var in ('uv850', 'uv700'):
+        p = var[2:]
+        return np.stack([f[f'u{p}'], f[f'v{p}']], axis=-1)
     if var == 'swh':
         return f['swh']
     if var == 'pp1d':

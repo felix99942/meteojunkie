@@ -22,7 +22,7 @@ import {
   tilePixelLon,
   type GlobeField,
   type GlobeGrid,
-  type GlobeMeta, displayCodeStep, precipReadout, precipUnit, variableLabel } from './globe'
+  type GlobeMeta, displayCodeStep, displayScale, precipReadout, precipUnit, variableLabel } from './globe'
 import { colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE, globeTileSize } from '../render/globeTiles'
 import { CONTOUR_STYLES, contourTile, smoothField } from '../render/globeContours'
 import { colorForValue, type ColorScale } from './colorscales'
@@ -367,7 +367,7 @@ describe('Registry', () => {
 
   it('schaltet Linien und Partikel nur bei Flächengrößen ab, nicht bei der Relativen Topografie', () => {
     const off = GLOBE_VARIABLES.filter(overlaysOffFor).map((v) => v.id).sort()
-    expect(off).toEqual(['cape', 'hzerocl', 'newsnow', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't850', 'tcwv', 'td2m'])
+    expect(off).toEqual(['cape', 'hzerocl', 'newsnow', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't700', 't850', 'tcwv', 'td2m'])
   })
 
   it('erkennt Böen, die nur eine Stichprobe des Schrittabstands sind', () => {
@@ -546,6 +546,24 @@ describe('Niederschlag mit Intervall', () => {
     expect(displayCodeStep('precip', vm, 7)).toBe(0.05)
     // Andere Größen nie, auch wenn sie ein Intervall führen (Böen)
     expect(displayCodeStep('gust', { ...vm, unit: 'km/h' }, 150)).toBe(0.05)
+  })
+  it('färbt den Niederschlag je Intervall: dieselbe Menge ist in 1 h stärker als in 3 h', () => {
+    const precip = getGlobeVariable('precip')
+    const at = (interval: number | undefined, mm: number) => colorForValue(displayScale(precip, interval), mm)
+    expect(at(1, 15)).not.toBe(at(3, 15))
+    // Gleiche Farbe, wo die Intensität vergleichbar ist; Rot liegt auf der DWD-Warnstufe
+    expect(at(1, 15)).toBe(at(3, 20))
+    expect(at(1, 15)).toBe(at(6, 30))
+    // Ohne Intervall ist der Wert eine Rate, und leichter Niederschlag bleibt überall gleich
+    expect(displayScale(precip, undefined)).toBe(displayScale(precip, 1))
+    expect(at(1, 0.1)).toBe(at(6, 0.1))
+    for (const h of [1, 3, 6]) {
+      const v = displayScale(precip, h).stops.map((s) => s.value)
+      expect(v.every((x, i) => i === 0 || x > v[i - 1]), `${h} h`).toBe(true)
+    }
+    // Andere Größen bleiben bei ihrer Skala, auch mit Intervall (Böen)
+    const gust = getGlobeVariable('gust')
+    expect(displayScale(gust, 1)).toBe(gust.scale)
   })
 })
 
