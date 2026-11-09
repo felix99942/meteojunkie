@@ -76,6 +76,7 @@ import {
 } from './foehn'
 import { OpenMeteoAttribution } from './Attribution'
 import { FoehnSection } from './FoehnSection'
+import { FREE_SECTION } from '../config/foehnSection'
 
 const TZ = 'Etc/UTC'
 const CHART_HEIGHT = 110
@@ -129,6 +130,7 @@ interface Tile {
 export function FoehnPanel() {
   const [axisId, setAxisId] = useState(DEFAULT_FOEHN_AXIS)
   const [view, setView] = useState<'charts' | 'section'>('charts')
+  const [sectionAxis, setSectionAxis] = useState<string>(FREE_SECTION)
   const [direction, setDirection] = useState<FoehnDirection>('south')
   const [overlay, setOverlay] = useState<string[]>(DEFAULT_OVERLAY_MODELS)
   const [detailId, setDetailId] = useState(DEFAULT_DETAIL_MODEL)
@@ -464,7 +466,11 @@ export function FoehnPanel() {
         </span>
         <label className="atclima-ctrl">
           <span className="label-muted">Achse</span>
-          <select value={axisId} onChange={(e) => setAxisId(e.target.value)}>
+          <select
+            value={view === 'section' ? sectionAxis : axisId}
+            onChange={(e) => (view === 'section' ? setSectionAxis(e.target.value) : setAxisId(e.target.value))}
+          >
+            {view === 'section' && <option value={FREE_SECTION}>Frei ziehen (Nord–Süd-Linie)</option>}
             {FOEHN_AXES.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label} ({a.region})
@@ -548,7 +554,7 @@ export function FoehnPanel() {
       </div>
       {view === 'section' ? (
         <>
-          <FoehnSection axisId={axisId} />
+          <FoehnSection axisId={sectionAxis} />
           <div className="app-attribution">
             <span className="attribution">
               Modelldaten:{' '}

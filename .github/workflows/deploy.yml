@@ -52,10 +52,12 @@ on:
 permissions:
   contents: read
 
-# Nur ein Deploy gleichzeitig; laufende abbrechen, wenn neuer Push kommt.
+# Nur ein Deploy gleichzeitig. Ein neuer Push bricht den laufenden ab, geplante Läufe
+# warten dagegen: ein abgebrochener Lauf lädt nichts hoch und holte den Querschnitt
+# (bis zu 15 min) beim nächsten Mal noch einmal.
 concurrency:
   group: deploy
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   build:
@@ -349,8 +351,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2-section
-          key: nwp-icon-d2-section-v1-${{ steps.icon.outputs.d2 }}
-          restore-keys: nwp-icon-d2-section-v1-
+          key: nwp-icon-d2-section-v2-${{ steps.icon.outputs.d2 }}
+          restore-keys: nwp-icon-d2-section-v2-
 
       - name: ICON-D2-Querschnitt erzeugen (DWD Open Data)
         id: icon-section-ingest
@@ -364,7 +366,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2-section
-          key: nwp-icon-d2-section-v1-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-section-v2-${{ steps.icon.outputs.d2 }}
 
       # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
       # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE

@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { colorForValue } from './colorscales'
-import { displayValue, isoLevels, isoSegments, nearestLevel, nearestSectionStep, SECTION_SCALES } from './foehnSection'
+import {
+  displayValue,
+  isoLevels,
+  isoSegments,
+  meridianId,
+  nearestLevel,
+  nearestSectionStep,
+  SECTION_SCALES,
+  snapLon,
+} from './foehnSection'
+
+describe('frei gezogene Linie', () => {
+  const m = { min: 6, max: 16.5, step: 0.1 }
+  it('rastet auf 0,1° ein und bleibt im Bereich', () => {
+    expect(snapLon(11.44, m)).toBe(11.4)
+    expect(snapLon(11.46, m)).toBe(11.5)
+    expect(snapLon(2, m)).toBe(6)
+    expect(snapLon(20, m)).toBe(16.5)
+  })
+  it('heißt wie die Datei aus dem Ingest, ohne Rundungsfehler', () => {
+    expect(meridianId(6)).toBe('lon-060')
+    expect(meridianId(11.4)).toBe('lon-114')
+    for (let t = 60; t <= 165; t++) expect(meridianId(snapLon(t / 10, m))).toBe(`lon-${String(t).padStart(3, '0')}`)
+  })
+})
 
 describe('Zeitschritt', () => {
   it('nimmt den nächsten Schritt, auch im 3-stündlichen Teil', () => {

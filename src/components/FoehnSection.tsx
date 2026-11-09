@@ -6,8 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { colorForValue } from '../config/colorscales'
 import {
   displayValue,
+  FREE_SECTION,
   isoLevels,
   isoSegments,
+  meridianId,
   nearestLevel,
   nearestSectionStep,
   SECTION_SCALES,
@@ -18,6 +20,7 @@ import {
   type SectionMode,
 } from '../config/foehnSection'
 import { globalKeyAllowed } from '../lib/globalKeys'
+import { SectionLocator, type LocatorBounds } from './SectionLocator'
 
 const BASE = `${import.meta.env.BASE_URL}nwp/icon-d2-section/`
 const M = { left: 52, right: 16, top: 30, bottom: 30 }
@@ -27,19 +30,29 @@ const ISO_BOLD = 'rgba(255,255,255,0.95)'
 const TERRAIN = '#0d0e10'
 const TERRAIN_EDGE = '#6f6e68'
 
+const DEFAULT_LON = 11.4
+/** Die Alpen zum Ziehen der Linie, die ganze DACH-Fläche zur Orientierung. */
+const ALPS_BOUNDS: LocatorBounds = { lonMin: 5.5, lonMax: 17.5, latMin: 44.6, latMax: 49.2 }
+const DACH_BOUNDS: LocatorBounds = { lonMin: 5.5, lonMax: 17.5, latMin: 45.0, latMax: 55.2 }
+/** Geladene Schnitte (je Linie ~20 MB als Objekte): beim Durchziehen nur die letzten behalten. */
+const SECTION_LRU = 10
+
 const sections = new Map<string, Promise<SectionData>>()
 
-function loadSection(runId: string, axis: string): Promise<SectionData> {
-  const key = `${runId}/${axis}`
+function loadSection(runId: string, id: string): Promise<SectionData> {
+  const key = `${runId}/${id}`
   let p = sections.get(key)
-  if (!p) {
+  if (p) {
+    sections.delete(key)
+  } else {
     p = fetch(`${BASE}${key}.json`).then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       return r.json() as Promise<SectionData>
     })
     p.catch(() => sections.delete(key))
-    sections.set(key, p)
   }
+  sections.set(key, p)
+  if (sections.size > SECTION_LRU) sections.delete(sections.keys().next().value as string)
   return p
 }
 
@@ -63,6 +76,17 @@ export function FoehnSection({ axisId }: { axisId: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
+  const [lon, setLon] = useState(DEFAULT_LON)
+  const [settledLon, setSettledLon] = useState(DEFAULT_LON)
+  const [mapOpen, setMapOpen] = useState(true)
+  const free = axisId === FREE_SECTION
+
+  // Beim Ziehen erst laden, wenn die Linie kurz steht: sonst holte jede Zwischenstellung
+  // eine Datei von rund einem MB
+  useEffect(() => {
+    const t = setTimeout(() => setSettledLon(lon), 140)
+    return () => clearTimeout(t)
+  }, [lon])
 
   useEffect(() => {
     let live = true
@@ -80,20 +104,37 @@ export function FoehnSection({ axisId }: { axisId: string }) {
     }
   }, [])
 
-  const key = meta ? `${meta.runId}/${axisId}` : null
+  const meridians = meta?.meridians
+  const missingLines = free && meta != null && !meridians
+  const fileId = free ? meridianId(settledLon) : axisId
+  const key = meta ? `${meta.runId}/${fileId}` : null
   useEffect(() => {
-    if (!meta) return
+    if (!meta || missingLines) return
     let live = true
-    const k = `${meta.runId}/${axisId}`
-    loadSection(meta.runId, axisId)
-      .then((d) => live && setLoaded({ key: k, data: d }))
+    const k = `${meta.runId}/${fileId}`
+    loadSection(meta.runId, fileId)
+      .then((d) => {
+        if (!live) return
+        setLoaded({ key: k, data: d })
+        if (free && meridians) {
+          // Die Nachbarn gleich mit: so ist der nächste Schritt der Linie sofort da
+          for (const n of [settledLon - meridians.step, settledLon + meridians.step]) {
+            if (n >= meridians.min && n <= meridians.max) void loadSection(meta.runId, meridianId(n)).catch(() => {})
+          }
+        }
+      })
       .catch(() => live && setState('empty'))
     return () => {
       live = false
     }
-  }, [meta, axisId])
-  // Beim Achsenwechsel keine Runde mit den Daten der vorigen Achse
-  const data = loaded && loaded.key === key ? loaded.data : null
+  }, [meta, fileId, free, meridians, missingLines, settledLon])
+  // Beim Achsenwechsel keine Runde mit den Daten der vorigen Achse. Beim Ziehen der Linie
+  // bleibt der vorige Schnitt stehen, bis der neue da ist; Beschriftung und Mini-Karte
+  // nennen dabei immer den Schnitt, der wirklich zu sehen ist
+  const data =
+    loaded && (loaded.key === key || (free && loaded.data.id.startsWith('lon-'))) ? loaded.data : null
+  const shownLon = data?.id.startsWith('lon-') ? Number(data.id.slice(4)) / 10 : lon
+  const busy = free && !!key && loaded?.key !== key
 
   const runMs = meta ? Date.parse(meta.run) : NaN
   const [now] = useState(() => Date.now())
@@ -222,6 +263,17 @@ export function FoehnSection({ axisId }: { axisId: string }) {
             <span className="foehn-section-run">ICON-D2 · Lauf {when(runMs)}</span>
           </>
         )}
+        {free && meridians && (
+          <>
+            <strong className="foehn-section-lon">
+              {data?.label ?? '…'}
+              {busy && <span className="label-muted"> lädt …</span>}
+            </strong>
+            <button type="button" className="foehn-section-maptoggle" onClick={() => setMapOpen((v) => !v)}>
+              Karte {mapOpen ? '▴' : '▾'}
+            </button>
+          </>
+        )}
         <span className="foehn-section-legend" title={`${info.label} in ${info.unit}`}>
           <span className="label-muted">{info.unit}</span>
           {legend.map((l, i) => (
@@ -231,6 +283,22 @@ export function FoehnSection({ axisId }: { axisId: string }) {
           ))}
         </span>
       </div>
+      {free && meridians && mapOpen && (
+        <div className="foehn-section-map">
+          <SectionLocator
+            lon={lon}
+            meridians={meridians}
+            bounds={ALPS_BOUNDS}
+            width={520}
+            height={210}
+            onChange={setLon}
+            labels
+          />
+          <p className="label-muted">
+            Rote Linie mit der Maus nach Westen oder Osten ziehen, sie läuft von Nord nach Süd und rastet alle 0,1° ein.
+          </p>
+        </div>
+      )}
       <div
         ref={wrapRef}
         className="foehn-section-plot"
@@ -238,9 +306,16 @@ export function FoehnSection({ axisId }: { axisId: string }) {
         onMouseLeave={() => setHover(null)}
       >
         <canvas ref={canvasRef} />
-        {state === 'empty' && (
+        {free && meridians && data && (
+          <div className="foehn-section-mini">
+            <SectionLocator lon={shownLon} meridians={meridians} bounds={DACH_BOUNDS} width={120} height={160} />
+          </div>
+        )}
+        {(state === 'empty' || missingLines) && (
           <div className="panel-placeholder atdetail-overlay">
-            Noch keine Querschnitte vorhanden (lokal: npm run ingest:icon-d2-section).
+            {missingLines
+              ? 'Dieser Lauf hat noch keine frei wählbaren Linien, sie kommen mit dem nächsten Lauf.'
+              : 'Noch keine Querschnitte vorhanden (lokal: npm run ingest:icon-d2-section).'}
           </div>
         )}
         {hover && (
@@ -435,7 +510,8 @@ function drawSection(
   g.textAlign = 'center'
   g.textBaseline = 'top'
   const xMax = d.km[cols - 1]
-  for (let km = 0; km <= xMax; km += 50) g.fillText(String(km), sx(km), size.h - M.bottom + 8)
+  // Die letzte Zahl nicht direkt neben die Einheit am rechten Rand
+  for (let km = 0; km <= xMax - 15; km += 50) g.fillText(String(km), sx(km), size.h - M.bottom + 8)
   g.textAlign = 'right'
   g.fillText('km', size.w - 2, size.h - M.bottom + 8)
 

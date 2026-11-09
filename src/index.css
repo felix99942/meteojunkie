@@ -2572,7 +2572,7 @@ button:focus-visible {
   background: var(--bg-panel);
   overflow: hidden;
 }
-.foehn-section-plot canvas {
+.foehn-section-plot > canvas {
   position: absolute;
   inset: 0;
 }
@@ -2619,6 +2619,51 @@ button:focus-visible {
   font-style: normal;
   color: var(--ink-secondary);
   white-space: nowrap;
+}
+.foehn-section-lon {
+  font-size: 20px;
+  min-width: 170px;
+  font-variant-numeric: tabular-nums;
+}
+.foehn-section-lon .label-muted {
+  font-size: 13px;
+  font-weight: 500;
+}
+.foehn-section-maptoggle {
+  padding: 4px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.foehn-section-map {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+.foehn-section-map p {
+  max-width: 340px;
+  margin: 0;
+  font-size: 13px;
+}
+.section-locator {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.section-locator.is-draggable {
+  cursor: ew-resize;
+  touch-action: none;
+}
+.foehn-section-mini {
+  position: absolute;
+  top: 34px;
+  right: 22px;
+  pointer-events: none;
+  opacity: 0.94;
 }
 .foehn-section-hover {
   position: absolute;

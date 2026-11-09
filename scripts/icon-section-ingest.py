@@ -62,6 +62,32 @@ AXES = {
 }
 
 
+# Nord-Süd-Linien zum Durchziehen, von der Westschweiz bis an den Alpenostrand. Alle 0,1°
+# (~7,5 km) eine eigene Datei: die Felder sind ohnehin geholt, jede weitere Linie kostet
+# nur Rechnen und ~3 MB, und abgerufen wird nur, was man wirklich ansieht
+LON_MIN, LON_MAX, LON_STEP = 6.0, 16.5, 0.1
+LAT_SOUTH, LAT_NORTH = 45.0, 48.6
+
+
+def meridian_id(tenths: int) -> str:
+    return f'lon-{tenths:03d}'
+
+
+def sections() -> dict:
+    """Alle Schnitte: id → Beschriftung und Pfad."""
+    out = {a: {'label': c['label'], 'path': build_path(c['waypoints'])} for a, c in AXES.items()}
+    for tenths in range(round(LON_MIN * 10), round(LON_MAX * 10) + 1):
+        lon = tenths / 10
+        path = build_path([('', LAT_SOUTH, lon), ('', LAT_NORTH, lon)])
+        # Keine Orte auf der frei gezogenen Linie, die Breite ist die Orientierung
+        path['marks'] = [
+            {'name': f'{lat:g}° N'.replace('.', ','), 'km': round((lat - LAT_SOUTH) * 111.2, 1)}
+            for lat in [LAT_SOUTH + 0.5 * i for i in range(8)]
+        ]
+        out[meridian_id(tenths)] = {'label': f'{lon:.1f}° O'.replace('.', ','), 'path': path}
+    return out
+
+
 def km_between(a: tuple[float, float], b: tuple[float, float]) -> float:
     k = math.cos(math.radians((a[0] + b[0]) / 2))
     return 111.2 * math.hypot(b[0] - a[0], (b[1] - a[1]) * k)
@@ -86,7 +112,8 @@ def build_path(waypoints: list) -> dict:
         lon.append(pts[i][1] + f * (pts[i + 1][1] - pts[i][1]))
     marks, s = [], 0.0
     for i, (name, _, _) in enumerate(waypoints):
-        marks.append({'name': name, 'km': round(s, 1)})
+        if name:
+            marks.append({'name': name, 'km': round(s, 1)})
         if i < len(seg):
             s += seg[i]
     # EINE Richtung für die ganze Achse (Anfang → Ende). Je Punkt der Linie folgend
@@ -148,12 +175,20 @@ def latest_run(now: datetime) -> datetime:
     raise SystemExit('kein vollständiger ICON-D2-Lauf mit Modellflächen in den letzten 24 h')
 
 
-def ints(arr, factor: float) -> list:
-    """Zeilen × Punkte als ganze Zahlen; kein Wert = null."""
+NO_VALUE = -32768
+
+
+def packed(arr, factor: float):
+    """Als int16: Python-Listen wären über alle Schnitte mehrere GB im Speicher."""
     import numpy as np
 
-    scaled = np.round(arr * factor)
-    return [[None if not math.isfinite(v) else int(v) for v in row] for row in scaled.tolist()]
+    scaled = np.clip(np.round(arr * factor), -32767, 32767)
+    return np.where(np.isfinite(scaled), scaled, NO_VALUE).astype(np.int16)
+
+
+def unpacked(arr) -> list:
+    """Schritte × Flächen × Punkte als Listen; kein Wert = null."""
+    return [[[None if v == NO_VALUE else v for v in row] for row in level] for level in arr.tolist()]
 
 
 def main() -> None:
@@ -181,7 +216,8 @@ def main() -> None:
             return
 
     t0 = time.time()
-    paths = {a: build_path(c['waypoints']) for a, c in AXES.items()}
+    defs = sections()
+    paths = {a: d['path'] for a, d in defs.items()}
     slices, start = {}, 0
     for a, p in paths.items():
         slices[a] = (start, start + len(p['km']))
@@ -219,7 +255,7 @@ def main() -> None:
                 res[key] = line.sample(vals, grid)
             return res
 
-        fields = {a: {'theta': [], 'along': [], 'w': []} for a in AXES}
+        fields = {a: {'theta': [], 'along': [], 'w': []} for a in paths}
         for n, step in enumerate(steps):
             try:
                 f = load(step)
@@ -235,9 +271,9 @@ def main() -> None:
             theta = t * (100000.0 / p) ** 0.2854
             for a, (i0, i1) in slices.items():
                 along = u[:, i0:i1] * paths[a]['east'] + v[:, i0:i1] * paths[a]['north']
-                fields[a]['theta'].append(ints(theta[:, i0:i1], 10))
-                fields[a]['along'].append(ints(along, 10))
-                fields[a]['w'].append(ints(w[:, i0:i1], 100))
+                fields[a]['theta'].append(packed(theta[:, i0:i1], 10))
+                fields[a]['along'].append(packed(along, 10))
+                fields[a]['w'].append(packed(w[:, i0:i1], 100))
             print(f'  {n + 1}/{len(steps)} Schritte, {time.time() - t0:.0f} s', flush=True)
 
     tmp = out / f'.{rid}.tmp'
@@ -247,12 +283,12 @@ def main() -> None:
     for a, (i0, i1) in slices.items():
         p = paths[a]
         doc = {
-            'id': a, 'label': AXES[a]['label'], 'runId': rid, 'steps': steps,
+            'id': a, 'label': defs[a]['label'], 'runId': rid, 'steps': steps,
             'km': p['km'], 'marks': p['marks'],
             'terrain': [round(float(x)) for x in hhl[NUM_LEVELS + 1][i0:i1]],
             'z': [[round(float(x)) for x in full[k][i0:i1]] for k in order],
             # theta in 0,1 K, along in 0,1 m/s (+ zum Achsenende), w in 0,01 m/s (+ aufwärts)
-            **fields[a],
+            **{name: unpacked(np.stack(v)) for name, v in fields[a].items()},
         }
         (tmp / f'{a}.json').write_text(json.dumps(doc, separators=(',', ':')))
     final = out / rid
@@ -262,6 +298,7 @@ def main() -> None:
         'model': MODEL, 'runId': rid, 'run': run.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'steps': steps, 'levels': len(levels), 'axes': [{'id': a, 'label': c['label']} for a, c in AXES.items()],
+        'meridians': {'min': LON_MIN, 'max': LON_MAX, 'step': LON_STEP, 'latSouth': LAT_SOUTH, 'latNorth': LAT_NORTH},
     }, separators=(',', ':')))
     for old in out.iterdir():
         if old.is_dir() and old.name != rid:

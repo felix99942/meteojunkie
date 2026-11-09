@@ -4,11 +4,35 @@
 
 import type { ColorScale } from './colorscales'
 
+export interface SectionMeridians {
+  min: number
+  max: number
+  step: number
+  latSouth: number
+  latNorth: number
+}
+
 export interface SectionMeta {
   runId: string
   /** Init-Zeit des Laufs, ISO */
   run: string
   steps: number[]
+  /** Nord-Süd-Linien zum Durchziehen; fehlt bei älteren Läufen */
+  meridians?: SectionMeridians
+}
+
+/** Auswahl „frei gezogene Linie" neben den festen Föhnachsen. */
+export const FREE_SECTION = 'free'
+
+/** Auf das Raster der vorberechneten Linien, innerhalb ihres Bereichs. */
+export function snapLon(lon: number, m: Pick<SectionMeridians, 'min' | 'max' | 'step'>): number {
+  const clamped = Math.min(m.max, Math.max(m.min, lon))
+  return Math.round(Math.round((clamped - m.min) / m.step) * m.step * 10 + m.min * 10) / 10
+}
+
+/** Dateiname der Linie auf dieser Länge (`lon-114`), wie im Ingest. */
+export function meridianId(lon: number): string {
+  return `lon-${String(Math.round(lon * 10)).padStart(3, '0')}`
 }
 
 export interface SectionData {

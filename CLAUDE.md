@@ -1380,6 +1380,15 @@ npm run preview   # gebautes dist/ servieren
   **Der Längswind ist auf EINE Richtung je Achse projiziert** (Anfang → Ende): dem
   Linienverlauf folgend sprang er an jedem Knick senkrecht durch die ganze Säule.
   Die Achsen stehen im Ingest (Wegpunkte) und reichen über die Föhnpunkte hinaus.
+  **Dazu eine FREI ZIEHBARE Nord-Süd-Linie** (45,0–48,6° N, 6,0–16,5° O, Vorgabe
+  in der Auswahl „Achse"; aufklappbare Karte `SectionLocator`, oben rechts im
+  Diagramm die Mini-Karte des DACH-Raums mit roter Linie): alle 0,1° eine eigene
+  Datei (`lon-114.json`, 106 Stück). Die Felder sind ohnehin geholt, jede Linie
+  kostet nur Rechnen: gemessen 290 MB je Lauf, je Linie 2,7 MB bzw. 0,7 MB gzip;
+  geladen wird erst, wenn die Linie 140 ms steht, dazu die zwei Nachbarn. Im Browser
+  bleiben nur die letzten zehn Schnitte (`SECTION_LRU`). Während des Ladens bleibt
+  der vorige Schnitt stehen, Beschriftung und Mini-Karte nennen deshalb den
+  GELADENEN Schnitt, nicht die Position der Linie. Längswind positiv nach Norden.
   **Live geprüft (2026-09-14, alle sieben Achsenpunkte)**: ICON-CH1 (1 km,
   33 h), AROME France (1,5 km, 51 h), ICON-CH2 (2,1 km, 120 h), ICON-D2 (2,2 km,
   48 h), AROME Austria (2,5 km, 60 h) liefern `pressure_msl`/`surface_pressure`/
