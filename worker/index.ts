@@ -59,14 +59,14 @@ declare const caches: { default: Cache }
 
 export default {
   async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
+    // Vor jedem Cache-Zugriff: sonst käme eine gespeicherte Datei ohne Anmeldung heraus
+    const denied = await authGate(req, env)
+    if (denied) return denied
     const url = new URL(req.url)
     const key = decodeURIComponent(url.pathname.slice(1))
     if (key.startsWith('sat-tiles/') && req.method === 'GET') {
       // Detailkacheln: aus R2 oder einmal von EUMETView (worker/satTiles.ts)
       const cacheKey = new Request(url.origin + url.pathname)
-    // Vor jedem Cache-Zugriff: sonst käme eine gespeicherte Datei ohne Anmeldung heraus
-    const denied = await authGate(req, env)
-    if (denied) return denied
       const cached = await caches.default.match(cacheKey)
       if (cached) return cached
       const res = await satelliteTile(key, env.DATA, (p) => ctx.waitUntil(p))

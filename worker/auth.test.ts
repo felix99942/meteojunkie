@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { authGate, COOKIE, createSession, isPublicPath, LOGIN_PATH, readCookie, SESSION_DAYS, validSession } from './auth'
+import worker from './index'
 
 const ENV = { SITE_USER: 'freunde', SITE_PASSWORD: 'geheim-und-lang', SESSION_SECRET: 'x'.repeat(40) }
 const NOW = Date.UTC(2026, 10, 5)
@@ -7,6 +8,18 @@ const req = (path: string, init: RequestInit = {}) => new Request(`https://meteo
 const nav = { headers: { 'sec-fetch-mode': 'navigate' } }
 const login = (user: string, password: string) =>
   req(LOGIN_PATH, { method: 'POST', body: new URLSearchParams({ user, password }), headers: { 'content-type': 'application/x-www-form-urlencoded' } })
+
+describe('Worker', () => {
+  // Die Prüfung muss in `fetch` vor allem anderen stehen. Geprüft wird der Worker selbst:
+  // ein falsch eingefügter Aufruf ließ die Tests von authGate grün, und die Seite blieb offen.
+  it('fragt bei jedem Pfad und jeder Methode zuerst die Anmeldung', async () => {
+    const env = { ...ENV, ASSETS: { fetch: async () => new Response('app') }, DATA: { get: async () => null } }
+    const ctx = { waitUntil() {} }
+    for (const [p, method] of [['/', 'GET'], ['/nwp/varda/meta.json', 'GET'], ['/nwp/varda/meta.json', 'POST'], ['/sat/x.jpg', 'GET'], ['/foo', 'POST']]) {
+      expect((await worker.fetch(req(p, { method }), env as never, ctx as never)).status, `${method} ${p}`).toBe(401)
+    }
+  })
+})
 
 describe('authGate', () => {
   it('sperrt Daten und App ohne Anmeldung', async () => {
