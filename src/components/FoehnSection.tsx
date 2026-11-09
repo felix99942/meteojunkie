@@ -34,6 +34,8 @@ const DEFAULT_LON = 11.4
 /** Die Alpen zum Ziehen der Linie, die ganze DACH-Fläche zur Orientierung. */
 const ALPS_BOUNDS: LocatorBounds = { lonMin: 5.5, lonMax: 17.5, latMin: 44.6, latMax: 49.2 }
 const DACH_BOUNDS: LocatorBounds = { lonMin: 5.5, lonMax: 17.5, latMin: 45.0, latMax: 55.2 }
+/** Wie im Ingest, dort stehen die Punkte in km entlang der Linie. */
+const KM_PER_DEG_LAT = 111.2
 /** Geladene Schnitte (je Linie ~20 MB als Objekte): beim Durchziehen nur die letzten behalten. */
 const SECTION_LRU = 10
 
@@ -64,6 +66,8 @@ interface Hover {
   x: number
   y: number
   text: string
+  /** Breite auf der gezogenen Linie */
+  lat: number | null
 }
 
 export function FoehnSection({ axisId }: { axisId: string }) {
@@ -213,8 +217,11 @@ export function FoehnSection({ axisId }: { axisId: string }) {
     data.km.forEach((v, i) => {
       if (Math.abs(v - km) < Math.abs(data.km[col] - km)) col = i
     })
+    // Die Linie läuft geradlinig nach Norden, die Breite folgt also direkt aus der Strecke
+    const lat = meridians && data.id.startsWith('lon-') ? meridians.latSouth + data.km[col] / KM_PER_DEG_LAT : null
+    const where = lat != null ? `${de(lat, 2)}° N · ` : ''
     if (h < data.terrain[col]) {
-      return setHover({ x, y, text: `Gelände ${Math.round(data.terrain[col])} m · km ${Math.round(km)}` })
+      return setHover({ x, y, lat, text: `${where}Gelände ${Math.round(data.terrain[col])} m` })
     }
     const k = nearestLevel(data.z, col, h)
     const th = data.theta[stepIdx][k][col]
@@ -224,7 +231,8 @@ export function FoehnSection({ axisId }: { axisId: string }) {
     setHover({
       x,
       y,
-      text: `${Math.round(data.z[k][col])} m · θ ${de(th / 10, 1)} K · w ${de(w / 100, 2)} m/s · längs ${de(displayValue('along', al), 0)} km/h`,
+      lat,
+      text: `${where}${Math.round(data.z[k][col])} m · θ ${de(th / 10, 1)} K · w ${de(w / 100, 2)} m/s · längs ${de(displayValue('along', al), 0)} km/h`,
     })
   }
 
@@ -235,6 +243,17 @@ export function FoehnSection({ axisId }: { axisId: string }) {
   }))
   const stepH = meta?.steps[stepIdx]
   const validMs = stepH != null ? runMs + stepH * 3_600_000 : NaN
+  const mapShown = free && !!meridians && mapOpen
+  const legendBar = (
+    <span className="foehn-section-legend" title={`${info.label} in ${info.unit}`}>
+      <span className="label-muted">{info.unit}</span>
+      {legend.map((l, i) => (
+        <span key={i} className="foehn-section-chip" style={{ background: l.color }}>
+          <em>{l.label}</em>
+        </span>
+      ))}
+    </span>
+  )
 
   return (
     <div className="foehn-section">
@@ -269,21 +288,16 @@ export function FoehnSection({ axisId }: { axisId: string }) {
               {data?.label ?? '…'}
               {busy && <span className="label-muted"> lädt …</span>}
             </strong>
-            <button type="button" className="foehn-section-maptoggle" onClick={() => setMapOpen((v) => !v)}>
-              Karte {mapOpen ? '▴' : '▾'}
-            </button>
+            {!mapOpen && (
+              <button type="button" className="foehn-section-maptoggle" onClick={() => setMapOpen(true)}>
+                Karte ausklappen ▾
+              </button>
+            )}
           </>
         )}
-        <span className="foehn-section-legend" title={`${info.label} in ${info.unit}`}>
-          <span className="label-muted">{info.unit}</span>
-          {legend.map((l, i) => (
-            <span key={i} className="foehn-section-chip" style={{ background: l.color }}>
-              <em>{l.label}</em>
-            </span>
-          ))}
-        </span>
+        {!mapShown && legendBar}
       </div>
-      {free && meridians && mapOpen && (
+      {free && meridians && mapShown && (
         <div className="foehn-section-map">
           <SectionLocator
             lon={lon}
@@ -293,12 +307,17 @@ export function FoehnSection({ axisId }: { axisId: string }) {
             height={210}
             onChange={setLon}
             labels
+            markLat={hover?.lat}
           />
           <p className="label-muted">
             Rote Linie mit der Maus nach Westen oder Osten ziehen, sie läuft von Nord nach Süd und rastet alle 0,1° ein.
           </p>
+          <button type="button" className="foehn-section-maptoggle is-prominent" onClick={() => setMapOpen(false)}>
+            Karte einklappen ▴
+          </button>
         </div>
       )}
+      {mapShown && <div className="foehn-section-legendrow">{legendBar}</div>}
       <div
         ref={wrapRef}
         className="foehn-section-plot"
@@ -308,7 +327,7 @@ export function FoehnSection({ axisId }: { axisId: string }) {
         <canvas ref={canvasRef} />
         {free && meridians && data && (
           <div className="foehn-section-mini">
-            <SectionLocator lon={shownLon} meridians={meridians} bounds={DACH_BOUNDS} width={120} height={160} />
+            <SectionLocator lon={shownLon} meridians={meridians} bounds={DACH_BOUNDS} width={120} height={160} markLat={hover?.lat} />
           </div>
         )}
         {(state === 'empty' || missingLines) && (
@@ -321,7 +340,7 @@ export function FoehnSection({ axisId }: { axisId: string }) {
         {hover && (
           <div
             className="foehn-section-hover"
-            style={{ left: Math.min(hover.x + 12, size.w - 300), top: Math.max(hover.y - 28, 4) }}
+            style={{ left: Math.min(hover.x + 12, size.w - 360), top: Math.max(hover.y - 28, 4) }}
           >
             {hover.text}
           </div>

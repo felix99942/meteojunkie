@@ -48,9 +48,11 @@ interface Props {
   /** Ohne bleibt die Karte eine reine Anzeige */
   onChange?: (lon: number) => void
   labels?: boolean
+  /** Breite unter dem Mauszeiger im Diagramm, als Punkt auf der Linie */
+  markLat?: number | null
 }
 
-export function SectionLocator({ lon, meridians, bounds, width, height, onChange, labels }: Props) {
+export function SectionLocator({ lon, meridians, bounds, width, height, onChange, labels, markLat }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [data, setData] = useState<Lines | null>(null)
   const dragging = useRef(false)
@@ -121,6 +123,15 @@ export function SectionLocator({ lon, meridians, bounds, width, height, onChange
     g.lineTo(x, sy(meridians.latSouth))
     g.stroke()
     g.lineCap = 'butt'
+    if (markLat != null) {
+      g.beginPath()
+      g.arc(x, sy(markLat), labels ? 6 : 4.5, 0, 2 * Math.PI)
+      g.fillStyle = '#fff'
+      g.fill()
+      g.lineWidth = 2
+      g.strokeStyle = '#ff3b30'
+      g.stroke()
+    }
   })
 
   const pick = (clientX: number) => {

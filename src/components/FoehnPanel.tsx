@@ -130,7 +130,7 @@ interface Tile {
 export function FoehnPanel() {
   const [axisId, setAxisId] = useState(DEFAULT_FOEHN_AXIS)
   const [view, setView] = useState<'charts' | 'section'>('charts')
-  const [sectionAxis, setSectionAxis] = useState<string>(FREE_SECTION)
+  const [sectionAxis, setSectionAxis] = useState<string>(DEFAULT_FOEHN_AXIS)
   const [direction, setDirection] = useState<FoehnDirection>('south')
   const [overlay, setOverlay] = useState<string[]>(DEFAULT_OVERLAY_MODELS)
   const [detailId, setDetailId] = useState(DEFAULT_DETAIL_MODEL)
