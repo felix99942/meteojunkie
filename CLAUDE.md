@@ -4532,15 +4532,22 @@ npm run preview   # gebautes dist/ servieren
   Der einzige Bereich mit FLIESSTEXT: `.legal-body` setzt die Grundschrift von
   12 auf 14 px hoch und deckelt die Satzbreite auf 78ch — die Dichte der
   Workbench ist für Prosa falsch. Ein Scroll-Container, wie in der Verifikation.
-- **Besucherzähler: GoatCounter, nur für den Betreiber** (`config/analytics.ts`,
-  `lib/analytics.ts`): cookielos, speichert weder IP noch User-Agent, Server
-  bei Hetzner (DE/FI) — kein Banner nötig, genannt in der
-  Datenschutzerklärung. Site-Code aus `VITE_GOATCOUNTER_CODE` (Deploy:
-  Repository-Variable `GOATCOUNTER_CODE`); fehlt er, wird nichts geladen, und
-  die Datenschutzerklärung sagt weiter „kein Analysedienst" — sie beschreibt
-  den GEBAUTEN Stand (`ANALYTICS_ENABLED`). Nur im Produktions-Build.
-  Bereichswechsel gehen als EREIGNIS `bereich/<id>` hinaus, sonst sähe das
-  Dashboard einer Einzelseiten-Anwendung nur „/".
+- **Die Seite steht hinter einem gemeinsamen LOGIN** (seit 2026-11-05, auf Wunsch,
+  Freundeskreis; `worker/auth.ts` mit Tests): ein Benutzername, ein Passwort, signierter
+  Cookie für 30 Tage ohne Serverzustand. Worker-Secrets `SITE_USER`, `SITE_PASSWORD`,
+  `SESSION_SECRET`, gesetzt mit `wrangler secret put`, nicht im Repo; **fehlt eines, bleibt
+  die Seite zu (503)**. Ein neues Passwort meldet alle ab. Im Worker statt in der App,
+  sonst wären die Daten in R2 direkt abrufbar; das deckt auch die workers.dev-Adresse ab.
+  `assets.run_worker_first` ist dafür Pflicht. **Der Check steht VOR jedem Cache-Zugriff**.
+  **Ohne Login bleiben `/impressum` und `/assets/`**: ein Freundeskreis ist nicht
+  „ausschließlich persönlich oder familiär" (§ 18 MStV), und die Seite braucht dafür ihre
+  Programmdateien; die enthalten keine Daten (CARTO-Key ausgenommen), und der Quellcode
+  ist ohnehin öffentlich. `impressum.html` ist eine zweite Vite-Seite mit derselben
+  Komponente. `npm run dev` hat keinen Login, das läuft nur im Worker. Bewusst nicht
+  Cloudflare Access: das meldet je E-Mail-Adresse an, gewünscht war ein Sammellogin.
+  GitHub Actions und die GPU laden direkt nach R2, der Cron läuft im Worker; beides geht
+  nicht über den Login. **Kein Besucherzähler mehr**, GoatCounter ist seit demselben Tag
+  raus (auf Wunsch).
 - **„Punktprognosen" ist in der veröffentlichten Version AUSGEBLENDET**
   (`POINT_FORECASTS_ENABLED` in `config/features.ts`, gesetzt über
   `VITE_ENABLE_POINT_FORECASTS=false` in `npm run build:web`): der Bereich hat

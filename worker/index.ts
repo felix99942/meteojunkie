@@ -1,6 +1,6 @@
-// Cloudflare-Worker der Seite: liefert die gebaute App als statische Dateien
-// (`dist/`, über die ASSETS-Bindung — Abrufe dort kosten nichts und laufen
-// gar nicht erst durch dieses Skript) und die im Deploy erzeugten DATEN aus
+// Cloudflare-Worker der Seite: prüft die Anmeldung (`auth.ts`) und liefert die gebaute
+// App als statische Dateien (`dist/`, über die ASSETS-Bindung; `run_worker_first` lässt
+// auch sie durch dieses Skript laufen) und die im Deploy erzeugten DATEN aus
 // R2, unter DENSELBEN Pfaden wie bisher auf GitHub Pages (`/nwp/…`, `/de/…`,
 // `/mos/forecast/…`, `/sondes/…`). Das Frontend merkt vom Umzug nichts: kein
 // zweiter Host, kein CORS, keine Basis-URL.
@@ -14,13 +14,14 @@
 // Bewusst ohne @cloudflare/workers-types: die paar Typen stehen unten, und
 // das Projekt bekommt keine zweite Typwelt neben DOM/Node.
 
+import { authGate, type AuthEnv } from './auth'
 import { updateRadar } from './radar'
 import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
 import { satelliteTile } from './satTiles'
 import type { R2BucketLike } from './r2'
 
-interface Env {
+interface Env extends AuthEnv {
   ASSETS: { fetch(req: Request): Promise<Response> }
   DATA: R2BucketLike
 }
@@ -63,6 +64,9 @@ export default {
     if (key.startsWith('sat-tiles/') && req.method === 'GET') {
       // Detailkacheln: aus R2 oder einmal von EUMETView (worker/satTiles.ts)
       const cacheKey = new Request(url.origin + url.pathname)
+    // Vor jedem Cache-Zugriff: sonst käme eine gespeicherte Datei ohne Anmeldung heraus
+    const denied = await authGate(req, env)
+    if (denied) return denied
       const cached = await caches.default.match(cacheKey)
       if (cached) return cached
       const res = await satelliteTile(key, env.DATA, (p) => ctx.waitUntil(p))

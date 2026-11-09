@@ -45,6 +45,8 @@ const build = buildInfo()
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [react(), gridProxyPlugin()],
+  // Zweite Seite: Impressum und Datenschutz, ohne Anmeldung erreichbar (worker/auth.ts)
+  build: { rollupOptions: { input: { main: 'index.html', impressum: 'impressum.html' } } },
   define: {
     __BUILD_COMMIT__: JSON.stringify(build.commit),
     __BUILD_DATE__: JSON.stringify(build.date),

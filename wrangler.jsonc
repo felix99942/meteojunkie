@@ -7,7 +7,10 @@
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Pflicht für den Login (worker/auth.ts): sonst liefert Cloudflare die App-Dateien aus,
+    // ohne den Worker zu fragen
+    "run_worker_first": true
   },
   // Satelliten-Vorrat (alle 10 min) und Radar-Komposite (alle 5 min), dazu
   // im eigenen Lauf 2 min später das 3D-Radar — worker/index.ts → scheduled()
