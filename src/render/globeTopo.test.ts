@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { POLE_ROWS } from '../config/globe'
-import { cleanTopoTile, retryTopo, topoTile, upsampleTopoTile } from './globeTopo'
+import { cleanTopoTile, RELIEF_PRELOAD_ZOOM, reliefTiles, retryTopo, topoTile, upsampleTopoTile } from './globeTopo'
 
 const SIZE = 64
 
@@ -162,5 +162,21 @@ describe('retryTopo', () => {
     ac.abort()
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     expect(f.calls()).toBe(1)
+  })
+})
+
+describe('Alpen 3D', () => {
+  it('lädt grob vor fein und endet an der feinsten Stufe, in begrenzter Menge', () => {
+    const t = reliefTiles()
+    expect(t[0][0]).toBe(4)
+    expect(t[t.length - 1][0]).toBe(RELIEF_PRELOAD_ZOOM)
+    expect(t.every((a, i) => i === 0 || a[0] >= t[i - 1][0])).toBe(true)
+    expect(t.length).toBeGreaterThan(100)
+    expect(t.length).toBeLessThan(600)
+  })
+  it('deckt Mitte und Ränder des erlaubten Bereichs ab', () => {
+    const fine = new Set(reliefTiles().filter((a) => a[0] === 9).map((a) => `${a[1]}/${a[2]}`))
+    expect(fine.has('272/179')).toBe(true) // Innsbruck-Umgebung, gegen die Kachelformel gerechnet
+    expect(fine.size).toBeGreaterThan(200)
   })
 })

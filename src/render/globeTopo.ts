@@ -48,7 +48,7 @@ export const TOPO_RETRY_DELAYS_MS = [500, 1500, 4000, 10000]
  * Feinste Stufe im Spiegel. Weltweit endet er bei `baseZoom`, nur DACH und die Alpen
  * reichen weiter (`topoDetail.json`) — dort zoomt man hinein, um Täler zu sehen.
  */
-const TOPO_MAX_ZOOM = Math.max(...detail.regions.map((r) => r.maxZoom))
+export const TOPO_MAX_ZOOM = Math.max(...detail.regions.map((r) => r.maxZoom))
 
 const tileX = (lon: number, n: number) => Math.floor(((lon + 180) / 360) * n)
 const tileY = (lat: number, n: number) => {
@@ -178,6 +178,103 @@ export function addTopoLayer(map: maplibregl.Map, before: string): void {
   )
 }
 
+/**
+ * Höhenquelle des 3D-Reliefs. Eine eigene neben der Schummerung: MapLibre warnt sonst,
+ * dieselbe Quelle für beides koste Darstellungsqualität. Die Kacheln sind dieselben, der
+ * Browser holt sie also nicht doppelt.
+ */
+export const GLOBE_TERRAIN_SOURCE = 'globe-terrain'
+/** Überhöhung: bei 1 wirken die Alpen aus der Übersicht fast flach */
+export const RELIEF_EXAGGERATION = 1.5
+/**
+ * Bis zu dieser Stufe lädt „Alpen 3D" vorab, das Feinere kommt beim Hineinzoomen nach wie
+ * in der 2D-Karte (Alpen bis Stufe 12, zusammen Tausende Kacheln: vorab wäre das zu viel).
+ * Die Stufe ist nicht der Engpass: gemessen brachten z7, z8 und z9 dieselbe Bildrate,
+ * teuer ist die Schummerung (6 gegen 9 Bilder/s in der Software-Grafik).
+ */
+export const RELIEF_PRELOAD_ZOOM = 9
+const RELIEF_MIN_ZOOM = 4
+/** Bereich, in dem sich die Ansicht bewegen darf: alles darin ist vorgeladen. [[W, S], [O, N]] */
+export const RELIEF_BOUNDS: [[number, number], [number, number]] = [[4.0, 44.0], [18.2, 49.5]]
+
+export function addReliefTerrain(map: maplibregl.Map): void {
+  if (!map.getSource(GLOBE_TERRAIN_SOURCE)) {
+    map.addSource(GLOBE_TERRAIN_SOURCE, {
+      type: 'raster-dem',
+      encoding: 'terrarium',
+      tiles: [`${GLOBE_TOPO_PROTOCOL}://{z}/{x}/{y}`],
+      // 512 statt 256: MapLibre nimmt dann eine Stufe gröber, ein Viertel der Kacheln fürs Gelände
+      tileSize: 512,
+      maxzoom: TOPO_MAX_ZOOM,
+    })
+  }
+  map.setTerrain({ source: GLOBE_TERRAIN_SOURCE, exaggeration: RELIEF_EXAGGERATION })
+}
+
+function inReliefBounds(z: number, x: number, y: number): boolean {
+  const [[w, s], [e, n]] = RELIEF_BOUNDS
+  const count = 2 ** z
+  return x >= tileX(w, count) && x <= tileX(e, count) && y >= tileY(n, count) && y <= tileY(s, count)
+}
+
+/** Die Kacheln, die „Alpen 3D" vorab lädt, grob vor fein. */
+export function reliefTiles(): [number, number, number][] {
+  const [[w, s], [e, n]] = RELIEF_BOUNDS
+  const out: [number, number, number][] = []
+  for (let z = RELIEF_MIN_ZOOM; z <= RELIEF_PRELOAD_ZOOM; z++) {
+    const count = 2 ** z
+    for (let y = tileY(n, count); y <= tileY(s, count); y++) {
+      for (let x = tileX(w, count); x <= tileX(e, count); x++) out.push([z, x, y])
+    }
+  }
+  return out
+}
+
+// Vorgeladene Kacheln. Das Bild wird je Abruf kopiert: MapLibre reicht es an seinen
+// Worker weiter, und dabei wird es ungültig. Beim Verlassen der Ansicht geht alles wieder
+// weg (~100 MB), der Browser hält die Dateien ohnehin im Cache.
+const preloaded = new Map<string, ImageBitmap>()
+/** Vorladen fertig: was außerhalb des Bereichs liegt, ist nur noch Horizont und bleibt flach */
+let preloadComplete = false
+const PRELOAD_WORKERS = 10
+
+/** Lädt das ganze Relief; `onProgress(fertig, gesamt)` nach jeder Kachel. */
+export async function preloadRelief(onProgress: (done: number, total: number) => void, signal: AbortSignal): Promise<void> {
+  const tiles = reliefTiles()
+  let next = 0
+  let done = 0
+  onProgress(0, tiles.length)
+  const worker = async () => {
+    while (next < tiles.length) {
+      const [z, x, y] = tiles[next++]
+      const key = `${z}/${x}/${y}`
+      if (!preloaded.has(key)) {
+        let bmp: ImageBitmap | null = null
+        try {
+          bmp = await retryTopo(() => fetchTopoTile(topoTile(z, x, y), signal), signal)
+        } catch (e) {
+          if (isAbort(e)) throw e
+        }
+        preloaded.set(key, bmp ?? (await flatTile(256)))
+      }
+      onProgress(++done, tiles.length)
+    }
+  }
+  await Promise.all(Array.from({ length: PRELOAD_WORKERS }, worker))
+  preloadComplete = true
+}
+
+export function clearPreloadedRelief(): void {
+  for (const bmp of preloaded.values()) bmp.close()
+  preloaded.clear()
+  preloadComplete = false
+}
+
+export function removeReliefTerrain(map: maplibregl.Map): void {
+  map.setTerrain(null)
+  if (map.getSource(GLOBE_TERRAIN_SOURCE)) map.removeSource(GLOBE_TERRAIN_SOURCE)
+}
+
 export function removeTopoLayer(map: maplibregl.Map): void {
   if (map.getLayer(GLOBE_TOPO_LAYER)) map.removeLayer(GLOBE_TOPO_LAYER)
   if (map.getSource(GLOBE_TOPO_LAYER)) map.removeSource(GLOBE_TOPO_LAYER)
@@ -251,6 +348,9 @@ async function fetchTopoTile(t: ReturnType<typeof topoTile>, signal: AbortSignal
 /** Handler des Protokolls: `globedem://z/x/y` holen; ein Abbruch geht an MapLibre zurück. */
 export async function loadTopoTile(url: string, signal: AbortSignal): Promise<ImageBitmap> {
   const [z, x, y] = url.slice(GLOBE_TOPO_PROTOCOL.length + 3).split('/').map(Number)
+  const ready = preloaded.get(`${z}/${x}/${y}`)
+  if (ready) return createImageBitmap(ready, BITMAP_OPTIONS)
+  if (preloadComplete && !inReliefBounds(z, x, y)) return flatTile(256)
   const t = topoTile(z, x, y)
   await pause(TOPO_FETCH_DELAY_MS, signal)
   try {

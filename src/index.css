@@ -3062,6 +3062,35 @@ button:focus-visible {
 /* Überschrift IN der Karte: sagt groß, welche Größe zu sehen ist und wie die
    Farben zu lesen sind. Zentriert unter der Werkzeugleiste, klickdurchlässig —
    sie liegt über der Karte, darf das Ziehen aber nicht blockieren. */
+.atmap-timebar {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(92%, 760px);
+  padding: 8px 14px;
+  background: rgba(24, 25, 27, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.atmap-timebar strong {
+  flex: none;
+  min-width: 170px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.atmap-timebar input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
 .atmap-headline {
   position: absolute;
   left: 50%;
@@ -4699,6 +4728,167 @@ button:focus-visible {
   border-radius: 3px;
 }
 
+/* Höhenwahl der 3D-Windpartikel, in den Ebenen oben links */
+.globe-wind3d {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 2px 0 4px;
+  pointer-events: auto;
+}
+.globe-wind3d-key {
+  display: flex;
+  align-items: flex-end;
+  font-size: 12px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.globe-wind3d-key > span {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 24px;
+}
+.globe-wind3d-key i {
+  width: 100%;
+  height: 8px;
+}
+.globe-wind3d-key .globe-wind3d-unit {
+  margin-left: 5px;
+  min-width: 0;
+  color: var(--ink-secondary);
+}
+/* Windrose der Ansicht „Alpen 3D", unter den Zoomknöpfen */
+.globe-compass {
+  position: absolute;
+  top: 92px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 132px;
+  pointer-events: none;
+}
+.globe-compass p {
+  margin: 0;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--ink);
+  background: rgba(16, 17, 19, 0.82);
+  border-radius: 4px;
+}
+.globe-rose {
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.globe-rose svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.globe-rose:hover .globe-rose-ring {
+  stroke: var(--accent);
+}
+.globe-rose-ring {
+  fill: rgba(16, 17, 19, 0.82);
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.5;
+}
+.globe-rose-star {
+  fill: rgba(242, 242, 239, 0.75);
+}
+.globe-rose-north {
+  fill: #ff3b30;
+}
+.globe-rose text {
+  text-anchor: middle;
+  dominant-baseline: central;
+  font: 700 13px system-ui, sans-serif;
+}
+.globe-rose-n {
+  fill: #ff5a50;
+  font-size: 15px;
+}
+.globe-rose-l {
+  fill: var(--ink-secondary);
+}
+/* Ladeanzeige der Ansicht „Alpen 3D": deckt die Karte, bis das Gelände steht */
+.globe-relief-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--ink);
+  background: radial-gradient(circle at 50% 42%, #1c2733 0%, #101113 70%);
+}
+.globe-relief-loading strong {
+  font-size: 20px;
+}
+.globe-relief-loading p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.globe-relief-spinner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  margin-bottom: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.globe-relief-spinner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 25%, var(--accent) 75%, #9fd0ff 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  animation: globe-relief-spin 1.1s linear infinite;
+}
+@keyframes globe-relief-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .globe-relief-spinner::before {
+    animation: none;
+  }
+}
+.globe-relief-bar {
+  width: min(320px, 70%);
+  height: 5px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+.globe-relief-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
 .globe-layer {
   display: flex;
   align-items: center;
@@ -5698,6 +5888,15 @@ button:focus-visible {
    Säule, damit nichts nach unten aus dem Bild geschoben wird — eine erste
    Fassung klappte nach unten auf, und bei sieben Vorhersage-Bereichen lag die
    Hälfte unter dem Fensterrand. Halbtransparent, die Strömung bleibt sichtbar. */
+/* Brücke über den Spalt zwischen Säule und Menü: dort wäre die Maus sonst kurz draußen */
+.landing-column.is-open::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 10px;
+}
 .landing-column-items {
   position: absolute;
   z-index: 5;
@@ -5835,6 +6034,9 @@ button:focus-visible {
   }
   .landing-column.is-open .landing-column-items {
     display: block;
+  }
+  .landing-column.is-open::before {
+    display: none;
   }
 }
 

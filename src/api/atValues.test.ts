@@ -3,6 +3,9 @@
 import type { AtStation } from './geosphere'
 import { describe, expect, it } from 'vitest'
 import {
+  isStaleLive,
+  currentStationValue,
+  todayUtc,
   hasRecords,
   recordDayLevel,
   histalpCovers,
@@ -151,6 +154,7 @@ describe('Allzeit-Verfügbarkeit', () => {
     expect(hasRecords(getAtParameter('sh'))).toBe(false)
     expect(isParamAvailable(getAtParameter('sh'), rec)).toBe(false)
     expect(isParamAvailable(getAtParameter('gefuehlt'), rec)).toBe(false)
+    expect(isParamAvailable(getAtParameter('tl_aktuell'), rec)).toBe(false)
   })
 
   /**
@@ -295,5 +299,46 @@ describe('recordDayLevel', () => {
   it('wählt im Tagesblock dieselbe Ebene wie sonst', () => {
     const withAnn = { ...idx, day: { ...idx.day, ann: { max: lv(null), min: lv(-19) } } }
     expect(recordDayLevel(withAnn, { extreme: 'min', month: null, annual: true })!.v[0]).toBe(-19)
+  })
+})
+
+describe('Werte jetzt', () => {
+  it('nimmt den letzten Wert, aber keinen stehengebliebenen', () => {
+    expect(currentStationValue([1, 2, null], 2, null, 'last')).toBe(2)
+    expect(currentStationValue([5, ...Array(9).fill(null)], 9, null, 'last')).toBeNull()
+  })
+
+  it('schaut von einem früheren Termin aus nicht in die Zukunft', () => {
+    expect(currentStationValue([1, 2, 3, 9], 2, null, 'last')).toBe(3)
+    expect(currentStationValue([1, 2, 3, 9], 2, 2, 'max')).toBe(3)
+  })
+
+  it('bildet die Böe über das Fenster bis zum Stand des Netzes', () => {
+    const s = [99, 1, 2, 3, null, 8, 4]
+    expect(currentStationValue(s, 6, 6, 'max')).toBe(8)
+  })
+
+  it('duldet in der Stunde Lücken, gibt aber bei zu vielen nichts', () => {
+    expect(currentStationValue([null, null, null, 1, 2, 3], 5, 6, 'max')).toBe(3)
+    expect(currentStationValue([null, null, null, null, 2, 3], 5, 6, 'max')).toBeNull()
+  })
+
+  it('verlangt über 24 h drei Viertel der Werte', () => {
+    const full = Array<number | null>(144).fill(1)
+    expect(currentStationValue(full, 143, 144, 'max')).toBe(1)
+    const gap = full.map((v, i) => (i > 40 && i < 90 ? null : v))
+    expect(currentStationValue(gap, 143, 144, 'max')).toBeNull()
+  })
+})
+
+describe('Temperatur aktuell', () => {
+  it('gilt nur am laufenden Tag', () => {
+    expect(isParamAvailable(getAtParameter('tl_aktuell'), { kind: 'day', day: todayUtc() })).toBe(true)
+    expect(isParamAvailable(getAtParameter('tl_aktuell'), { kind: 'day', day: '2020-01-01' })).toBe(false)
+  })
+
+  it('verwirft eine Station, die über eine Stunde hinter dem Netz liegt', () => {
+    expect(isStaleLive(100, 106)).toBe(false)
+    expect(isStaleLive(99, 106)).toBe(true)
   })
 })

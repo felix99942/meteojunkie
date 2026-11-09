@@ -19,6 +19,7 @@ import { updateRadar } from './radar'
 import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
 import { satelliteTile } from './satTiles'
+import { updateTawes } from './tawes'
 import type { R2BucketLike } from './r2'
 
 interface Env extends AuthEnv {
@@ -35,9 +36,11 @@ interface ScheduledEvent {
 
 /** Cron des 3D-Radars — muss mit wrangler.jsonc übereinstimmen */
 const R3D_CRON = '2-59/5 * * * *'
+/** Cron des TAWES-Speichers — muss mit wrangler.jsonc übereinstimmen */
+const TAWES_CRON = '7-59/10 * * * *'
 
 /** Pfade, die aus R2 kommen — alles andere ist die App selbst. */
-const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/', 'topo/']
+const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/', 'topo/', 'tawes/']
 
 // Ein Modelllauf liegt unter seiner Kennung und ändert sich nie mehr
 // (nwp/<modell>/<lauf>/<größe>/<schritt>.webp, Lauf = 10 Ziffern).
@@ -53,7 +56,7 @@ const TOPO_MISSING_CACHE = 'public, max-age=3600, s-maxage=604800'
 /** Cache-Dauer je Pfad. Alles ausser den Laufdateien wechselt stündlich. */
 function cacheControl(key: string): string {
   if (IMMUTABLE.test(key)) return 'public, max-age=31536000, immutable'
-  if (key.endsWith('/meta.json') || key.endsWith('/latest.json') || key.startsWith('radar/')) return 'public, max-age=60'
+  if (key.endsWith('/meta.json') || key.endsWith('/latest.json') || key.startsWith('radar/') || key.startsWith('tawes/')) return 'public, max-age=60'
   return 'public, max-age=300'
 }
 
@@ -127,6 +130,13 @@ export default {
     // ist beim DWD dann vollständig (letzte Elevation ~4 min nach dem Termin)
     if (event.cron === R3D_CRON) {
       console.log(await updateRadar3d(env.DATA).catch((err) => `3D-Radar: Fehler ${err}`))
+      return
+    }
+    if (event.cron === TAWES_CRON) {
+      const res = await env.ASSETS.fetch(new Request('https://assets.local/at/stations.json'))
+      const { stations } = (await res.json()) as { stations: { id: number; has10min?: boolean }[] }
+      const ids = stations.filter((s) => s.has10min).map((s) => s.id)
+      console.log(await updateTawes(env.DATA, ids).catch((err) => `TAWES: Fehler ${err}`))
       return
     }
     const minute = new Date(event.scheduledTime).getUTCMinutes()

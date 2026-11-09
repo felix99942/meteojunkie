@@ -15,6 +15,9 @@
 // Karten desselben Parameters. Eine Abweichung gibt es hier nicht — ein
 // Einzelereignis hat kein Normal.
 
+import { loadTawesStore, tawesTimeRange, tawesValuesAt } from '../api/tawesRecent'
+import { TAWES_STEP_MS, type TawesStore } from '../config/tawesStore'
+import { globalKeyAllowed } from '../lib/globalKeys'
 import { useEffect, useMemo, useState } from 'react'
 import europeBasemapUrl from '../mapdata/europe.basemap.json?url'
 import { activeStations, loadStations, type AtStation } from '../api/geosphere'
@@ -116,6 +119,15 @@ const MONTH_SHORT = Array.from({ length: 12 }, (_, i) =>
 
 const fmtClock = new Intl.DateTimeFormat('de-AT', {
   timeZone: 'Europe/Vienna',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZoneName: 'short',
+})
+/** Beim Zurückblättern reicht die Uhrzeit allein nicht */
+const fmtClockDay = new Intl.DateTimeFormat('de-AT', {
+  timeZone: 'Europe/Vienna',
+  day: '2-digit',
+  month: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   timeZoneName: 'short',
@@ -238,6 +250,11 @@ export function AtClimatePanel() {
   const [values, setValues] = useState<Record<number, number | null> | null>(null)
   const [source, setSource] = useState<PeriodValues['source'] | null>(null)
   const [asOf, setAsOf] = useState<string | null>(null)
+  const [direction, setDirection] = useState<Record<number, number | null> | undefined>(undefined)
+  /** TAWES-Speicher für den Zeitschieber: undefined = lädt, null = nicht da (dann direkt bei GeoSphere) */
+  const [tawes, setTawes] = useState<TawesStore | null | undefined>(undefined)
+  /** Gewählter Termin, null = immer der jüngste */
+  const [liveAtMs, setLiveAtMs] = useState<number | null>(null)
   const [coverage, setCoverage] = useState<PeriodCoverage | undefined>(undefined)
   const [valuesLoading, setValuesLoading] = useState(false)
   const [valuesError, setValuesError] = useState<string | null>(null)
@@ -457,9 +474,57 @@ export function AtClimatePanel() {
     else setRefresh((r) => ({ n: r.n + 1, force: true }))
   }
 
+  // Die Jetzt-Werte kommen aus dem TAWES-Speicher, nur wenn der fehlt direkt von GeoSphere
+  const jetztWerte = isToday && !isRegions && !!spec.derived
+  useEffect(() => {
+    if (!jetztWerte) return
+    let cancelled = false
+    setLiveAtMs(null)
+    void loadTawesStore(refresh.force).then((s) => !cancelled && setTawes(s))
+    return () => {
+      cancelled = true
+    }
+  }, [jetztWerte, refresh])
+  const tawesRange = useMemo(() => (jetztWerte && tawes ? tawesTimeRange(spec, tawes) : null), [jetztWerte, tawes, spec])
+  useEffect(() => {
+    if (!jetztWerte || !tawes) return
+    const r = tawesValuesAt(spec, tawes, shown.map((s) => s.id), liveAtMs)
+    setValues(r.byStation)
+    setSource(r.source)
+    setAsOf(r.asOf ?? null)
+    setDirection(r.direction)
+    setCoverage(undefined)
+    setValuesError(null)
+    setValuesLoading(false)
+    // shown über idsKey gekeyed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jetztWerte, tawes, paramCode, idsKey, liveAtMs])
+  // Pfeiltasten: wie in den übrigen Bereichen gehören sie der Zeit, ohne den Schieber anzuklicken
+  useEffect(() => {
+    if (!tawesRange) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !globalKeyAllowed(e)) return
+      e.preventDefault()
+      const d = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 6 : 1) * TAWES_STEP_MS
+      setLiveAtMs((at) => {
+        const next = Math.max(tawesRange.firstMs, (at ?? tawesRange.lastMs) + d)
+        return next >= tawesRange.lastMs ? null : next
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tawesRange])
+
   // Bulk-Abruf der Periodenwerte.
   useEffect(() => {
     if (shown.length === 0 || !avail(spec, period)) return
+    if (jetztWerte) {
+      if (tawes) return
+      if (tawes === undefined) {
+        setValuesLoading(true)
+        return
+      }
+    }
     let cancelled = false
     setValuesLoading(true)
     setValuesError(null)
@@ -473,6 +538,7 @@ export function AtClimatePanel() {
         setValues(r.byStation)
         setSource(r.source)
         setAsOf(r.asOf ?? null)
+        setDirection(r.direction)
         setCoverage(r.coverage)
       })
       .catch((err) => {
@@ -490,7 +556,7 @@ export function AtClimatePanel() {
     }
     // shown über idsKey gekeyed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramCode, period, idsKey, refresh, isDe, isRegions])
+  }, [paramCode, period, idsKey, refresh, isDe, isRegions, jetztWerte, tawes])
 
   // Anzeigewerte + Farben je gezeigter Station (Absolut oder Anomalie).
   // Der Zeitbezug bestimmt die Größenordnung und damit die Skala: eine
@@ -719,9 +785,13 @@ export function AtClimatePanel() {
   // Live-Hinweis: der laufende Tag ist ein Zwischenstand aus 10-Minuten-Messwerten,
   // kein geprüftes Tagesaggregat — das muss an der Zahl dranstehen.
   const live = source === 'live' && !valuesLoading && !valuesError
+  const clockText = asOf ? (liveAtMs == null ? fmtClock : fmtClockDay).format(new Date(asOf)) : ''
+  const barbDirs = spec.barbs && direction ? shown.map((s) => direction[s.id] ?? null) : undefined
   const liveNote = live
     ? asOf
-      ? `vorläufig, Stand ${fmtClock.format(new Date(asOf))}`
+      ? liveAtMs == null
+        ? `vorläufig, Stand ${clockText}`
+        : 'vorläufig'
       : 'vorläufig (10-Minuten-Messwerte)'
     : null
 
@@ -1169,6 +1239,7 @@ export function AtClimatePanel() {
               labelMinGap={isDe && !isRegions ? 38 : 0}
               // Dreizehn Länderwerte sind das Ergebnis, kein Netz — groß
               labelPx={isRegions ? 24 : 16}
+              barbDirs={barbDirs}
               onSelect={(i) => {
                 setSelected(shown[i])
                 setMarked(null)
@@ -1176,16 +1247,38 @@ export function AtClimatePanel() {
               highlightIdx={rankHover}
               markedIdx={selectedIdx}
             />
+            {tawesRange && (
+              <div className="atmap-timebar">
+                <strong>{clockText}</strong>
+                <input
+                  type="range"
+                  aria-label="Zeitpunkt der letzten 3 Tage"
+                  min={0}
+                  max={Math.round((tawesRange.lastMs - tawesRange.firstMs) / TAWES_STEP_MS)}
+                  value={Math.round(((liveAtMs ?? tawesRange.lastMs) - tawesRange.firstMs) / TAWES_STEP_MS)}
+                  onChange={(e) => {
+                    const ms = tawesRange.firstMs + Number(e.target.value) * TAWES_STEP_MS
+                    setLiveAtMs(ms >= tawesRange.lastMs ? null : ms)
+                  }}
+                />
+                <button type="button" disabled={liveAtMs == null} onClick={() => setLiveAtMs(null)}>
+                  Jetzt
+                </button>
+              </div>
+            )}
             {/* Was die Karte zeigt, gehört IN die Karte — groß und zentral.
                 Klein in der Werkzeugleiste hat es niemand gelesen, und genau
                 diese Zeile entscheidet, wie die Farben zu lesen sind. */}
             <div className="atmap-headline">
               <span className="atmap-headline-main">
-                {shownQuantity}
+                {/* Bei den Jetzt-Werten zählt die Uhrzeit: sie steht groß, nicht nur klein oben rechts */}
+                {spec.derived && asOf
+                  ? `${spec.label} · ${spec.liveWindowH ? 'bis ' : ''}${clockText}`
+                  : shownQuantity}
                 {anomActive ? ' — Abweichung' : ''}
               </span>
               <span className="atmap-headline-sub">
-                {spec.label} · {periodLabel} ·{' '}
+                {spec.derived && asOf ? '' : `${spec.label} · ${periodLabel} · `}
                 {anomActive ? `${anom.caption} · ${anom.unit} vs. ${refLabel}` : spec.unit}
                 {/* Beim Periodenvergleich MUSS die Quelle dastehen: dieselbe
                     Station zeigt je nach Quelle einen anderen Trend, und die

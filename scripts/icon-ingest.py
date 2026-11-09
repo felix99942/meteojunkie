@@ -96,6 +96,9 @@ FIELDS = [
     ('hzerocl', None, 'hzerocl'),
 ]
 
+# Nur ICON-D2: Bodendruck für θe auf dem Gelände (Ansicht „Alpen 3D"), live geprüft 2026-11-09
+EXTRA_FIELDS = {'icon-d2': [('ps', None, 'ps')]}
+
 G = 9.80665  # Geopotential (m²/s²) → geopotentielle Höhe (m)
 
 
@@ -128,7 +131,7 @@ def fetch_step(model: str, run: datetime, step: int, pool: ThreadPoolExecutor) -
 
     futures = {
         name: pool.submit(http_get, field_url(model, run, step, var, lev))
-        for var, lev, name in FIELDS
+        for var, lev, name in FIELDS + EXTRA_FIELDS.get(model, [])
     }
     out: dict = {}
     for name, fut in futures.items():

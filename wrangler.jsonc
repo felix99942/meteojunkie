@@ -13,8 +13,8 @@
     "run_worker_first": true
   },
   // Satelliten-Vorrat (alle 10 min) und Radar-Komposite (alle 5 min), dazu
-  // im eigenen Lauf 2 min später das 3D-Radar — worker/index.ts → scheduled()
-  "triggers": { "crons": ["*/5 * * * *", "2-59/5 * * * *"] },
+  // im eigenen Lauf 2 min später das 3D-Radar, alle 10 min die TAWES-Werte — worker/index.ts → scheduled()
+  "triggers": { "crons": ["*/5 * * * *", "2-59/5 * * * *", "7-59/10 * * * *"] },
   "r2_buckets": [
     { "binding": "DATA", "bucket_name": "meteojunkie-daten" }
   ],

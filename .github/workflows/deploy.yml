@@ -296,10 +296,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v5-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v6-${{ steps.icon.outputs.d2 }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-d2-v5-
+          restore-keys: nwp-icon-d2-v6-
 
       - name: ICON-D2-Felder erzeugen (DWD Open Data)
         id: icon-d2-ingest
@@ -315,7 +315,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v5-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v6-${{ steps.icon.outputs.d2 }}
 
       - name: ICON-EU-Felder aus dem Cache
         id: icon-eu-cache
@@ -351,8 +351,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2-section
-          key: nwp-icon-d2-section-v2-${{ steps.icon.outputs.d2 }}
-          restore-keys: nwp-icon-d2-section-v2-
+          key: nwp-icon-d2-section-v4-${{ steps.icon.outputs.d2 }}
+          restore-keys: nwp-icon-d2-section-v4-
 
       - name: ICON-D2-Querschnitt erzeugen (DWD Open Data)
         id: icon-section-ingest
@@ -366,7 +366,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2-section
-          key: nwp-icon-d2-section-v2-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-section-v4-${{ steps.icon.outputs.d2 }}
 
       # Impressum-Angaben kommen aus der Repository-Konfiguration, nicht aus
       # dem Quellcode: das Repository ist öffentlich, und dort soll KEINE

@@ -573,7 +573,7 @@ export function AtStationDetail({
               ) : error ? (
                 <span className="label-muted">{error}</span>
               ) : liveOnly?.value != null ? (
-                <span>Jetzt <strong>{fmt(liveOnly.value)}</strong> {spec.unit}</span>
+                <span>{spec.liveWindowH ? 'Spitze' : 'Jetzt'} <strong>{fmt(liveOnly.value)}</strong> {spec.unit}</span>
               ) : (
                 <span className="label-muted">kein aktueller Wert</span>
               )}

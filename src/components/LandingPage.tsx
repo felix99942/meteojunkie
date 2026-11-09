@@ -39,6 +39,11 @@ function lineStrings(fc: FeatureCollection | undefined): number[][][] {
   return out
 }
 
+/** So lange bleibt das Menü stehen, nachdem die Maus es verlassen hat (ms) */
+const MENU_CLOSE_MS = 500
+/** So lange muss die Maus auf der Nachbarsäule bleiben, bevor sie aufklappt (ms) */
+const MENU_SWITCH_MS = 180
+
 export function LandingPage() {
   const setView = useAppView((s) => s.setView)
   const baseRef = useRef<HTMLCanvasElement>(null)
@@ -54,12 +59,35 @@ export function LandingPage() {
    */
   const [open, setOpen] = useState<NavGroup | null>(null)
   const openedAt = useRef(0)
+  // Verzögert schließen und wechseln: wer vom Kopf zum Eintrag fährt, verlässt die Säule
+  // kurz oder streift die Nachbarsäule, und das Menü war dann schon weg
+  const closeTimer = useRef(0)
+  const switchTimer = useRef(0)
+  useEffect(
+    () => () => {
+      clearTimeout(closeTimer.current)
+      clearTimeout(switchTimer.current)
+    },
+    [],
+  )
   const hoverOpen = (g: NavGroup) => {
+    clearTimeout(closeTimer.current)
+    clearTimeout(switchTimer.current)
     if (open === g) return
-    openedAt.current = Date.now()
-    setOpen(g)
+    const show = () => {
+      openedAt.current = Date.now()
+      setOpen(g)
+    }
+    if (open) switchTimer.current = window.setTimeout(show, MENU_SWITCH_MS)
+    else show()
+  }
+  const hoverLeave = () => {
+    clearTimeout(switchTimer.current)
+    closeTimer.current = window.setTimeout(() => setOpen(null), MENU_CLOSE_MS)
   }
   const clickColumn = (g: NavGroup) => {
+    clearTimeout(closeTimer.current)
+    clearTimeout(switchTimer.current)
     if (open === g && Date.now() - openedAt.current < 600) return
     setOpen((cur) => (cur === g ? null : g))
   }
@@ -264,7 +292,7 @@ export function LandingPage() {
       </section>
       {/* Drei Säulen statt einer Kachelwand (auf Wunsch): die Frage zuerst,
           die Bereiche klappen darunter auf */}
-      <div className="landing-columns" onMouseLeave={() => setOpen(null)}>
+      <div className="landing-columns" onMouseLeave={hoverLeave}>
         {NAV_GROUPS.map((g) => {
           const items = tabs.filter((t) => t.group === g.key)
           const isOpen = open === g.key

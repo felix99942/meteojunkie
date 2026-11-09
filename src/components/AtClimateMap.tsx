@@ -14,6 +14,7 @@ import austriaBasemapUrl from '../mapdata/austria.basemap.json?url'
 import {
   AT_VIEW,
   drawBorderLines,
+  drawStationBarbs,
   drawStationLabels,
   drawStationPoints,
   makeMapGeometry,
@@ -93,7 +94,10 @@ export function AtClimateMap({
   highlightIdx = null,
   markedIdx = null,
   minZoom,
+  barbDirs,
 }: {
+  /** Gesetzt: Windfiedern statt Zahlen, Richtung je Station (parallel zu stations), `values` in km/h */
+  barbDirs?: (number | null)[]
   stations: MapStation[]
   /** Per-Station-Farben (parallel zu stations); null = kein Wert. */
   colors?: (string | null)[]
@@ -231,7 +235,9 @@ export function AtClimateMap({
         show,
       })
       // Werte direkt in die Karte schreiben (ersetzt die Legende), in der Wertfarbe.
-      if (values) {
+      if (values && barbDirs) {
+        drawStationBarbs(ctx, g, stations, values, barbDirs, { colors })
+      } else if (values) {
         drawStationLabels(ctx, g, stations, values, formatValue, {
           colors,
           highlightIdx: hi,
@@ -250,7 +256,7 @@ export function AtClimateMap({
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [basemap, stations, colors, values, hover, view, labelMinGap, labelPx, highlightIdx, markedIdx, show, labelOrder])
+  }, [basemap, stations, colors, values, hover, view, labelMinGap, labelPx, highlightIdx, markedIdx, show, labelOrder, barbDirs])
 
   // Nachgeladene Kacheln: gebündelt im nächsten Frame neu zeichnen — beim
   // Öffnen kommen ein paar Dutzend fast gleichzeitig.

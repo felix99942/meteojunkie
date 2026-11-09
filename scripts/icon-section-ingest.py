@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import argparse
 import bz2
+import gzip
 import json
 import math
 import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from nwp_common import Missing, OUT_ROOT, decode_grib, http_get, run_id, url_exists
 
@@ -67,6 +70,19 @@ AXES = {
 # nur Rechnen und ~3 MB, und abgerufen wird nur, was man wirklich ansieht
 LON_MIN, LON_MAX, LON_STEP = 6.0, 16.5, 0.1
 LAT_SOUTH, LAT_NORTH = 45.0, 48.6
+
+
+# Windvolumen für die 3D-Partikel der Ansicht „Alpen 3D": dieselben Dateien wie die Schnitte,
+# nur als Ausschnitt statt auf Linien. Im vollen Raster (2,2 km): auf 4 km fiel das Wipptal
+# durch, und um den Wind in den Tälern geht es
+VOLUME_BOX = (44.0, 49.5, 4.0, 18.2)  # lat min/max, lon min/max: der Bereich von „Alpen 3D"
+VOLUME_STRIDE = 1
+# Höhen über Grund (m), je die nächstgelegene schon geholte Modellfläche
+# „Alpen 3D" zeigt den Wind bis 1 km über Grund; 1500 m, damit die Spitze nicht am Rand endet
+VOLUME_AGL = (10, 50, 100, 200, 300, 450, 600, 800, 1000, 1500)
+VOLUME_UV_STEP = 0.5  # m/s je Stufe, ±63,5 m/s
+VOLUME_W_STEP = 0.1  # m/s je Stufe, ±12,7 m/s
+VOLUME_MISSING = -128
 
 
 def meridian_id(tenths: int) -> str:
@@ -186,6 +202,29 @@ def packed(arr, factor: float):
     return np.where(np.isfinite(scaled), scaled, NO_VALUE).astype(np.int16)
 
 
+def crop_slices(grid: dict) -> tuple:
+    """Ausschnitt des Windvolumens im Raster dieses Felds."""
+    lat0, lat1, lon0, lon1 = VOLUME_BOX
+    j0 = round((lat0 - grid['lat0']) / grid['dlat'])
+    j1 = round((lat1 - grid['lat0']) / grid['dlat']) + 1
+    i0 = round((lon0 - grid['lon0']) / grid['dlon'])
+    i1 = round((lon1 - grid['lon0']) / grid['dlon']) + 1
+    return slice(j0, j1, VOLUME_STRIDE), slice(i0, i1, VOLUME_STRIDE)
+
+
+def packed_i8(arr, step: float):
+    import numpy as np
+
+    v = np.round(arr / step)
+    return np.where(np.isfinite(v), np.clip(v, -127, 127), VOLUME_MISSING).astype(np.int8)
+
+
+def meters_i16(arr):
+    import numpy as np
+
+    return np.nan_to_num(np.round(arr), nan=0.0).astype(np.int16)
+
+
 def unpacked(arr) -> list:
     """Schritte × Flächen × Punkte als Listen; kein Wert = null."""
     return [[[None if v == NO_VALUE else v for v in row] for row in level] for level in arr.tolist()]
@@ -231,9 +270,16 @@ def main() -> None:
         # Halbflächen-Höhen: daraus folgt, welche Flächen unter ZMAX_M liegen
         futs = {k: pool.submit(fetch, hhl_url(run, k)) for k in range(1, NUM_LEVELS + 2)}
         hhl = {}
+        hhl_crop = {}
+        slices_vol = None
+        vol_grid = None
         for k, fut in futs.items():
             vals, grid, _ = decode_grib(fut.result())
             hhl[k] = line.sample(vals, grid)
+            if slices_vol is None:
+                slices_vol = crop_slices(grid)
+                vol_grid = grid
+            hhl_crop[k] = vals[slices_vol].astype(np.float32)
         full = {k: 0.5 * (hhl[k] + hhl[k + 1]) for k in range(1, NUM_LEVELS + 1)}
         top = next(k for k in range(1, NUM_LEVELS + 1) if float(np.nanmean(full[k])) < ZMAX_M)
         # Oberhalb von THIN_ABOVE_M jede zweite Fläche: dort ist die Atmosphäre glatt, und
@@ -243,6 +289,11 @@ def main() -> None:
             if float(np.nanmean(full[k])) < THIN_ABOVE_M or (k - top) % 2 == 0
         ]
         half = sorted({h for k in levels for h in (k, k + 1)})
+        # Volumen: je Zielhöhe die nächste schon geholte Fläche, von unten nach oben
+        surface = hhl_crop[NUM_LEVELS + 1]
+        agl = {k: float(np.nanmean(0.5 * (hhl_crop[k] + hhl_crop[k + 1]) - surface)) for k in levels}
+        vol_levels = list(dict.fromkeys(min(levels, key=lambda k: abs(agl[k] - target)) for target in VOLUME_AGL))
+        vol_tmp = Path(tempfile.mkdtemp(prefix='icon-wind3d-'))
         print(f'Querschnitt Lauf {rid}: {len(levels)} Flächen ab {top}, {len(steps)} Schritte, '
               f'{start} Achsenpunkte', flush=True)
 
@@ -250,9 +301,13 @@ def main() -> None:
             jobs = {(v, k): pool.submit(fetch, level_url(run, step, k, v)) for v in ('t', 'u', 'v', 'p') for k in levels}
             jobs.update({('w', k): pool.submit(fetch, level_url(run, step, k, 'w')) for k in half})
             res = {}
+            needed = {('u', k) for k in vol_levels} | {('v', k) for k in vol_levels}
+            needed |= {('w', h) for k in vol_levels for h in (k, k + 1)}
             for key, fut in jobs.items():
                 vals, grid, _ = decode_grib(fut.result())
                 res[key] = line.sample(vals, grid)
+                if key in needed:
+                    res['crop', *key] = vals[slices_vol].astype(np.float32)
             return res
 
         fields = {a: {'theta': [], 'along': [], 'w': []} for a in paths}
@@ -274,6 +329,15 @@ def main() -> None:
                 fields[a]['theta'].append(packed(theta[:, i0:i1], 10))
                 fields[a]['along'].append(packed(along, 10))
                 fields[a]['w'].append(packed(w[:, i0:i1], 100))
+            # Windvolumen dieses Schritts: Flächen von unten nach oben, je Fläche u, v, w
+            volume = []
+            for k in vol_levels:
+                volume += [
+                    packed_i8(f['crop', 'u', k], VOLUME_UV_STEP),
+                    packed_i8(f['crop', 'v', k], VOLUME_UV_STEP),
+                    packed_i8(0.5 * (f['crop', 'w', k] + f['crop', 'w', k + 1]), VOLUME_W_STEP),
+                ]
+            (vol_tmp / f'{step:03d}.bin').write_bytes(gzip.compress(np.stack(volume).tobytes(), 6))
             print(f'  {n + 1}/{len(steps)} Schritte, {time.time() - t0:.0f} s', flush=True)
 
     tmp = out / f'.{rid}.tmp'
@@ -291,6 +355,11 @@ def main() -> None:
             **{name: unpacked(np.stack(v)) for name, v in fields[a].items()},
         }
         (tmp / f'{a}.json').write_text(json.dumps(doc, separators=(',', ':')))
+    # Höhen des Volumens (m über NN) von unten nach oben, danach das Modellgelände
+    heights = [meters_i16(0.5 * (hhl_crop[k] + hhl_crop[k + 1])) for k in vol_levels]
+    heights.append(meters_i16(surface))
+    (vol_tmp / 'grid.bin').write_bytes(gzip.compress(np.stack(heights).tobytes(), 6))
+    shutil.move(str(vol_tmp), str(tmp / 'wind3d'))
     final = out / rid
     shutil.rmtree(final, ignore_errors=True)
     tmp.rename(final)
@@ -299,6 +368,13 @@ def main() -> None:
         'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'steps': steps, 'levels': len(levels), 'axes': [{'id': a, 'label': c['label']} for a, c in AXES.items()],
         'meridians': {'min': LON_MIN, 'max': LON_MAX, 'step': LON_STEP, 'latSouth': LAT_SOUTH, 'latNorth': LAT_NORTH},
+        'wind3d': {
+            'nx': int(surface.shape[1]), 'ny': int(surface.shape[0]), 'levels': len(vol_levels),
+            'lon0': round(vol_grid['lon0'] + slices_vol[1].start * vol_grid['dlon'], 6),
+            'lat0': round(vol_grid['lat0'] + slices_vol[0].start * vol_grid['dlat'], 6),
+            'dlon': round(vol_grid['dlon'] * VOLUME_STRIDE, 6), 'dlat': round(vol_grid['dlat'] * VOLUME_STRIDE, 6),
+            'uvStep': VOLUME_UV_STEP, 'wStep': VOLUME_W_STEP, 'missing': VOLUME_MISSING,
+        },
     }, separators=(',', ':')))
     for old in out.iterdir():
         if old.is_dir() and old.name != rid:

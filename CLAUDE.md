@@ -923,6 +923,21 @@ npm run preview   # gebautes dist/ servieren
   aber der naheliegende Kandidat, falls je ein echtes Flächenmittel gebraucht
   wird (siehe `answerFromNormalsRange`, wo es aus Stationsdaten bewusst keines
   gibt).
+  **JETZT-WERTE DER TAWES-STATIONEN** (`derived: 'current'`, `fetchLiveCurrentValues`, Kern
+  `currentStationValue`, nur am laufenden Tag aus `klima-v2-10min`): Temperatur (`tl`), Wind (`ff`),
+  Böen der letzten Stunde bzw. 24 h (`ffx`, `liveWindowH`) und Windfiedern (`barbs`, Richtung `dd`,
+  `drawStationBarbs`, ausgedünnt am Kartenraster). Liegt eine Station über eine Stunde hinter dem
+  Netz, bleibt sie leer (ein stehengebliebener Fühler sähe sonst aktuell aus). Stationen melden
+  einzelne Termine oft verspätet: über eine Stunde darf die Hälfte der Werte fehlen, über 24 h ein
+  Viertel. Die Uhrzeit steht groß in der Überschrift der Karte.
+  **ZEITSCHIEBER ÜBER 3 TAGE** (seit 2026-11-09, auf Wunsch; älter ist Sache des Klimaarchivs): der
+  Worker führt die 10-Minuten-Werte `tl, rf, ff, ffx, dd` der letzten 96 h in EINER Datei in R2
+  (`tawes/recent.bin`, Kern `config/tawesStore.ts`, `worker/tawes.ts`, eigener Cron alle 10 min,
+  144 Schreibvorgänge am Tag, ~640 KB; 96 h, weil die 24-h-Böe am ältesten Termin ihr Fenster
+  braucht). Jeder Lauf holt die letzten 6 h neu, verspätet gemeldete Termine füllen sich so nach.
+  Direkt bei GeoSphere dauern 3 Tage aller Stationen 6 bis 8 s je Größe (gemessen 2026-11-09), das
+  taugt für keinen Schieber. Fehlt die Datei oder ist sie über 2 h alt, gibt es keinen Schieber und
+  die Werte kommen wie bisher direkt von GeoSphere. Lokal: `npm run ingest:tawes`, dann Dev-Server neu.
   **Gefühlte Temperatur** (`config/apparentTemperature.ts`, AU-BOM/Steadman-
   Formel, dieselbe wie Open-Meteos `apparent_temperature`) ist der erste
   ABGELEITETE Parameter — kein GeoSphere-Feld, sondern aus Temperatur +
@@ -3885,6 +3900,38 @@ npm run preview   # gebautes dist/ servieren
   (dieselbe Regel wie bei den übrigen Protokollen). **Ein 404 ist im Browser nur 1 h
   gültig, an der Edge eine Woche** (`TOPO_MISSING_CACHE`): mit `immutable` hielte eine
   beim Upload fehlende Kachel ein Jahr lang.
+  **ALPEN 3D** (eigene Ansicht `alps3d`, seit 2026-11-09, auf Wunsch; die anderen bleiben flach):
+  die Karte liegt auf dem Gelände (`setTerrain`, 1,5-fach überhöht), Rechtsziehen kippt und
+  dreht, Windrose rechts oben richtet nach Norden aus. Beim Öffnen werden die Reliefstufen
+  bis z9 vorgeladen (`preloadRelief`, 391 Kacheln, Ladeanzeige), das Feinere kommt wie in 2D
+  bis z12 beim Hineinzoomen nach. **Die Reliefstufe ist nicht der Engpass** (gemessen in
+  Software-Grafik: z7, z8, z9 gleich schnell), teuer ist die Schummerung (6 gegen 9 Bilder/s),
+  sie bleibt aber an, weil sie dem Gelände die Form gibt. Beschriftung auf 40 Marker und den
+  Bereich begrenzt (sonst schweben Namen am Himmel), Pixeldichte 1, Isolinien aus.
+  **GENAU EINE DARSTELLUNG, auf Wunsch**: nur ICON-D2 (`WIND3D_MODEL`), Farbfeld nur θe 2 m
+  (`THETAE_VARIABLE`, steht bewusst nicht in `GLOBE_VARIABLES`, sonst läge es in allen anderen
+  Auswahllisten); beide Listen sind in der Ansicht gesperrt. θe rechnet der Ingest aus T2m, Td2m
+  und Bodendruck `ps` (Bolton, wie `thetaE` in `lib/thermo.ts`), ~166 KB je Bild. Eine Fassung
+  mit Varda (1 km, aber ohne Vertikalbewegung) war nur kurz drin.
+  **3D-WINDPARTIKEL AUS DEM WINDVOLUMEN VON ICON-D2** (`render/wind3dLayer.ts`, `config/wind3d.ts`,
+  `api/wind3d.ts`; im Querschnitt-Ingest mit erzeugt, Flächen bis 1,5 km über Grund in 2,2 km,
+  stündlich bis +24 h, danach 3-stündlich): u, v und das echte `w`. **Gerechnet in der HÖHE über
+  NN, nicht entlang der Modellflächen** (`sampleWind3dAtHeight`): die Flächen folgen dem Gelände,
+  ein Partikel würde am Berg doppelt gehoben. Unter der untersten Fläche gleitet es am Gelände
+  entlang, über der obersten verschwindet es. Waagrecht und senkrecht dieselbe Raffung je
+  Partikel, die Steigung ist also echt (plus Überhöhung); das Bezugstempo wächst mit der Höhe
+  über Grund (6 m/s am Boden), damit Talwind ins Auge fällt. Gezeichnet wird bodennah über dem
+  ECHTEN Relief, weil das Modellgelände geglättet ist, nach oben klingt das ab (`RELIEF_BLEND_M`).
+  **Gezeigt wird nur der Wind bis 1 km über Grund** (`TOP_AGL_M`, auf Wunsch); wer darüber
+  steigt, startet neu, die höheren Schichten liest man in 2D.
+  Eigene WebGL-Ebene mit Instanzen (GL-Linien sind fest 1 Pixel, Matrix ist
+  `defaultProjectionData.mainMatrix`, `modelViewProjectionMatrix` rechnet in Pixeln, dann bleibt
+  das Bild leer). Tempo wie 2D (`pxPerSecondAt10`), Spuren dünn und zum Ende hin schmaler und
+  blasser, die Deckkraft hängt am ALTER des Stützpunkts, nicht an seiner Nummer (eine erste,
+  breite Fassung mit Stufen je Stützpunkt wirkte grob). Farbe nach Tempo, Legende in der Ecke.
+  Neue Spuren entstehen gleichmäßig über den BILDSCHIRM (Raster aus `unproject`, nur nach einer
+  Bewegung): `getBounds()` reicht bei gekippter Karte bis zum Horizont, hineingezoomt blieben im
+  Tal sonst einzelne Striche.
   **`setTiles` NUR ÜBER `render/tileQueue.ts`** (Einzelkarte und Panels): MapLibre
   bricht laufende Kacheln nicht ab, und was zuletzt fertig wird, bleibt stehen, bis zum
   nächsten `setTiles`. Dazu übernimmt `setTiles` die Adresse verzögert (gemessen über

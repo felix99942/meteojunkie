@@ -28,7 +28,7 @@ export type GlobeVarId =
   | 'uv10' | 'uv300' | 'uv850' | 'uv700'
   | 't700' | 'wind850' | 'wind700'
   | 'swh' | 'pp1d' | 'sst'
-  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow'
+  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow' | 'thetae'
 
 /**
  * Gruppen der Auswahlliste (`<optgroup>`) — bei über zwanzig Größen ist eine
@@ -229,6 +229,13 @@ const RELTOP: ColorScale = {
   // dieselbe Begründung wie bei `GLOBAL_TEMP` — mit 4-gpdm-Bändern auf
   // 8-K-Ankern lag eine ganze Wetterlage in zwei, drei Farben
   stops: bands(488, 2, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS.slice(8, 22), 53), TEMP_VIVID), TEMP_SHADE)),
+}
+
+/** θe 2 m (K): 2-K-Bänder auf der Temperaturrampe, jedes zweite abgedunkelt wie bei T2m */
+const THETAE: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(270, 2, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS.slice(6, 26), 40), TEMP_VIVID), TEMP_SHADE)),
 }
 
 /**
@@ -764,7 +771,7 @@ export function contoursFor(varId: GlobeVarId, regional = false): ContourDef[] {
   return CONTOURS.filter((c) => c.id === 'msl' || c.id === upper)
 }
 
-export type GlobeViewId = 'globe' | 'europe' | 'alps' | 'thailand'
+export type GlobeViewId = 'globe' | 'europe' | 'alps' | 'alps3d' | 'thailand'
 
 export interface GlobeView {
   id: GlobeViewId
@@ -780,6 +787,9 @@ const ALL_GLOBE_VIEWS: GlobeView[] = [
   { id: 'europe', label: 'Europa', projection: 'mercator', bounds: [[-25, 34], [42, 71]] },
   // Alpen: der Raum, in dem ICON-D2 seine 2,2 km ausspielt
   { id: 'alps', label: 'Alpen', projection: 'mercator', bounds: [[4.5, 44.3], [17.8, 49.8]] },
+  // Alpen 3D: die Karte liegt auf dem Gelände und lässt sich kippen. Eine eigene Ansicht,
+  // weil das Relief vorab geladen wird und die übrigen Ansichten flach bleiben sollen
+  { id: 'alps3d', label: 'Alpen 3D', projection: 'mercator', bounds: [[5.3, 44.5], [16.9, 48.7]] },
   // Thailand (Tropendienst): Andamanensee UND Golf von Thailand — die beiden
   // Küsten haben ihre Regenzeit zu verschiedenen Monsunphasen. Nur das IFS
   // deckt es ab (ICON-EU/-D2 sind europäisch).
@@ -787,7 +797,26 @@ const ALL_GLOBE_VIEWS: GlobeView[] = [
 ]
 export const GLOBE_VIEWS: GlobeView[] = ALL_GLOBE_VIEWS
 
+/** „Alpen 3D" zeigt nur dieses Modell: es allein hat ein Windvolumen mit echtem Vertikalwind */
+export const WIND3D_MODEL: GlobeModelId = 'icon-d2'
+
+/**
+ * Das einzige Farbfeld von „Alpen 3D", und nur dort wählbar: steht deshalb nicht in
+ * `GLOBE_VARIABLES`, sonst läge es in den Auswahllisten aller übrigen Ansichten.
+ */
+export const THETAE_VARIABLE: GlobeVariable = {
+  id: 'thetae',
+  group: 'Temperatur & Luftmasse',
+  label: 'θe 2 m',
+  title:
+    'Äquivalentpotentielle Temperatur in 2 m Höhe (K) am Modellgelände, aus T, Taupunkt und Bodendruck: warm und feucht ergibt hohe Werte. θe bleibt bei trockener wie feuchter Hebung erhalten und markiert deshalb Luftmassen.',
+  scale: THETAE,
+  decimals: 0,
+  legendEvery: 5,
+}
+
 export function getGlobeVariable(id: string): GlobeVariable {
+  if (id === THETAE_VARIABLE.id) return THETAE_VARIABLE
   return GLOBE_VARIABLES.find((v) => v.id === id) ?? GLOBE_VARIABLES[0]
 }
 

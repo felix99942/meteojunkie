@@ -186,7 +186,13 @@ function onSphere(map: maplibregl.Map, x: number, y: number): boolean {
  * Was beim aktuellen Kamerastand stehen soll: Kandidaten in Rangfolge, jeder
  * nur, wenn er im Bild liegt und keinen schon gesetzten überdeckt.
  */
-function choose(map: maplibregl.Map, sorted: LabelCandidate[], avoid: Rect[]): LabelCandidate[] {
+function choose(
+  map: maplibregl.Map,
+  sorted: LabelCandidate[],
+  avoid: Rect[],
+  maxLabels: number,
+  bounds?: [[number, number], [number, number]],
+): LabelCandidate[] {
   const zoom = map.getZoom()
   const { clientWidth: W, clientHeight: H } = map.getContainer()
   const globe = map.getProjection()?.type === 'globe'
@@ -196,6 +202,8 @@ function choose(map: maplibregl.Map, sorted: LabelCandidate[], avoid: Rect[]): L
   const out: LabelCandidate[] = []
   for (const c of sorted) {
     if (c.minZoom > zoom) break // sortiert: alle weiteren kommen noch später
+    // Gekippt reicht der Blick weit über das Gebiet hinaus, die Namen stünden dann am Himmel
+    if (bounds && (c.lon < bounds[0][0] || c.lon > bounds[1][0] || c.lat < bounds[0][1] || c.lat > bounds[1][1])) continue
     if (globe && facing(c, center) < FACING_MIN[c.kind]) continue
     const p = map.project([c.lon, c.lat])
     const { w, h, centered } = labelBox(c)
@@ -209,7 +217,7 @@ function choose(map: maplibregl.Map, sorted: LabelCandidate[], avoid: Rect[]): L
     if (placed.some((q) => r.x0 < q.x1 && r.x1 > q.x0 && r.y0 < q.y1 && r.y1 > q.y0)) continue
     placed.push(r)
     out.push(c)
-    if (out.length >= MAX_LABELS) break
+    if (out.length >= maxLabels) break
   }
   return out
 }
@@ -251,14 +259,19 @@ function overlayRects(map: maplibregl.Map, selector: string | undefined): Rect[]
  * `avoid` = CSS-Selektor der Bedienelemente über der Karte (im selben
  * Elternelement wie der Kartencontainer), unter die kein Name gesetzt wird.
  */
-export function addWorldLabels(map: maplibregl.Map, avoid?: string): () => void {
+export function addWorldLabels(
+  map: maplibregl.Map,
+  avoid?: string,
+  maxLabels: number = MAX_LABELS,
+  bounds?: [[number, number], [number, number]],
+): () => void {
   let alive = true
   const shown = new Map<LabelCandidate, maplibregl.Marker>()
   let sorted: LabelCandidate[] = []
 
   const update = () => {
     if (!alive || sorted.length === 0) return
-    const want = new Set(choose(map, sorted, overlayRects(map, avoid)))
+    const want = new Set(choose(map, sorted, overlayRects(map, avoid), maxLabels, bounds))
     for (const [c, m] of shown) {
       if (!want.has(c)) {
         m.remove()

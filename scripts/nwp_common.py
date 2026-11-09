@@ -122,6 +122,8 @@ VARIABLES = {
     # (mm), mit der Faustregel 10:1 als cm — 1 mm Wasser ≈ 1 cm Neuschnee
     'newsnow': {'lo': 0.0, 'step': 1.0, 'unit': 'cm'},
     'hzerocl': {'lo': -500.0, 'step': 50.0, 'unit': 'm'},
+    # Äquivalentpotentielle Temperatur 2 m, nur ICON-D2 (Farbfeld von „Alpen 3D")
+    'thetae': {'lo': 200.0, 'step': 0.5, 'unit': 'K'},
 }
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
@@ -136,13 +138,14 @@ NEEDS = {
     'tcwv': ('tcwv',), 'snow': ('hsnow',), 'hzerocl': ('hzerocl',),
     'newsnow': ('sf',),
     't700': ('t700',),
+    'thetae': ('t2m', 'td2m', 'ps'),
     'wind850': ('u850', 'v850'), 'uv850': ('u850', 'v850'),
     'wind700': ('u700', 'v700'), 'uv700': ('u700', 'v700'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
 OPTIONAL = {
     'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow',
-    't700', 'wind850', 'uv850', 'wind700', 'uv700',
+    't700', 'wind850', 'uv850', 'wind700', 'uv700', 'thetae',
 }
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
@@ -316,6 +319,17 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         # in der Arktis — als „Wassertemperatur" wäre das falsch, also kein Wert.
         sst = np.where(np.isfinite(f['swh']), f['skt'] - 273.15, np.nan)
         return np.where(sst < -2.0, np.nan, sst)
+    if var == 'thetae':
+        # Bolton 1980 (Gl. 15, 21, 43), wie `thetaE` in src/lib/thermo.ts; mit dem Bodendruck,
+        # also am Modellgelände und nicht auf Meereshöhe reduziert
+        t = f['t2m']
+        td = np.minimum(f['td2m'], t)
+        p = f['ps'] / 100.0
+        tc = td - 273.15
+        e = 6.112 * np.exp(17.67 * tc / (tc + 243.5))
+        r = 622.0 * e / (p - e)
+        t_lcl = 1.0 / (1.0 / (td - 56.0) + np.log(t / td) / 800.0) + 56.0
+        return t * (1000.0 / p) ** (0.2854 * (1 - 0.28e-3 * r)) * np.exp((3.376 / t_lcl - 0.00254) * r * (1 + 0.81e-3 * r))
     if var == 'precipsum':
         # bei +0 ist die Summe überall 0 — kein Bild, der Schritt fehlt wie beim Niederschlag
         # Unter 1 mm (die Skala ist dort durchsichtig) auf 0: der Nieselhauch

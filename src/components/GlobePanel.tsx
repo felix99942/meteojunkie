@@ -17,11 +17,23 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_STYLE, buildGraticuleBox, EMPTY_FC, loadBasemap, OVERLAY_INSERT_BEFORE } from '../render/basemap'
-import { addTopoLayer, GLOBE_TOPO_LAYER, removeTopoLayer } from '../render/globeTopo'
+import {
+  addReliefTerrain,
+  addTopoLayer,
+  clearPreloadedRelief,
+  GLOBE_TOPO_LAYER,
+  preloadRelief,
+  RELIEF_BOUNDS,
+  removeReliefTerrain,
+  removeTopoLayer,
+} from '../render/globeTopo'
 import { createTileQueue, type TileQueue } from '../render/tileQueue'
 import { CLOUD_LAYER_RAMPS, globeTileSize, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
 import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
+import { Wind3dLayer, WIND3D_LAYER } from '../render/wind3dLayer'
+import { nearestWind3dStep, sampleWind3dAtHeight, speedColor } from '../config/wind3d'
+import { loadWind3dField, loadWind3dMeta, type Wind3dMeta } from '../api/wind3d'
 import { addFieldMaxima } from '../render/fieldMaxima'
 import { MAXIMA_OPTIONS } from '../config/globeMaxima'
 import { runLabel, validLabel } from '../config/globeFormat'
@@ -35,6 +47,8 @@ import {
   contoursFor,
   DEFAULT_GLOBE_MODEL,
   DEFAULT_GLOBE_VARIABLE,
+  THETAE_VARIABLE,
+  WIND3D_MODEL,
   getGlobeModel,
   getGlobeVariable,
   overlaysOffFor,
@@ -99,7 +113,19 @@ const PREFETCH_AHEAD = 3
  */
 const TILE_PREFETCH_AHEAD = [1, 2, -1]
 /** Gradnetz je Ansicht: grob auf der Kugel, fein über den Alpen. */
-const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alps: 2, thailand: 5 }
+const GLOBE_SKY: maplibregl.SkySpecification = { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 4, 0.8, 6, 0] }
+/** Gekippt sieht man den Himmel: dunkel wie die Seite statt des hellen Standards */
+const RELIEF_SKY: maplibregl.SkySpecification = {
+  'sky-color': '#0b0e12',
+  'horizon-color': '#1b2430',
+  'fog-color': '#12161c',
+  'sky-horizon-blend': 0.6,
+  'horizon-fog-blend': 0.5,
+  'fog-ground-blend': 0.85,
+  'atmosphere-blend': 0,
+}
+
+const GRATICULE_STEP: Record<GlobeViewId, number> = { globe: 30, europe: 10, alps: 2, alps3d: 2, thailand: 5 }
 
 /** Kantenlänge der Sternkachel in CSS-Pixeln (muss zur Parallaxe passen). */
 const STAR_TILE = 768
@@ -165,7 +191,17 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const metaError = metaState && 'error' in metaState ? metaState.error : null
   /** Regionalmodell (ICON-D2/-EU, IFS 9 km, Varda): beim Höhenwind Fiedern und Isotachen */
   const regional = meta ? !meta.grid.global : false
-  const shownContours = useMemo(() => contoursFor(varId, regional), [varId, regional])
+  const relief = viewId === 'alps3d'
+  /** Stand des Vorladens; null = fertig bzw. nicht in „Alpen 3D" */
+  const [reliefLoading, setReliefLoading] = useState<{ done: number; total: number } | null>(null)
+  const [reliefTilesReady, setReliefTilesReady] = useState(false)
+  const roseRef = useRef<SVGSVGElement>(null)
+  const [wind3dOn, setWind3dOn] = useState(true)
+  const [wind3dMeta, setWind3dMeta] = useState<Wind3dMeta | null>(null)
+  const wind3dRef = useRef<Wind3dLayer | null>(null)
+  const showRose = relief && !reliefLoading
+  // Auf dem Relief keine Isolinien (auf Wunsch)
+  const shownContours = useMemo(() => (relief ? [] : contoursFor(varId, regional)), [varId, regional, relief])
   const variable = getGlobeVariable(varId)
   const vm = meta?.variables[varId]
   const steps = useMemo(() => vm?.steps ?? [], [vm])
@@ -261,7 +297,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         projection: { type: 'globe' },
         // Atmosphärenschein am Kugelrand — auf der ganzen Kugel voll, beim
         // Hineinzoomen ausgeblendet (in den flachen Ansichten stört er nur)
-        sky: { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 4, 0.8, 6, 0] },
+        sky: GLOBE_SKY,
       },
       center: [11, 38],
       zoom: 2,
@@ -293,6 +329,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     if (!map || !mapReady) return
     map.setProjection({ type: view.projection })
     applyTileSize(map)
+    // Jede Ansicht beginnt flach, sonst bliebe die Neigung der vorigen stehen
+    map.jumpTo({ pitch: 0, bearing: 0 })
     if (view.bounds) map.fitBounds(view.bounds, { padding: 16, duration: 0 })
     else map.jumpTo({ center: [11, 38], zoom: 2 })
   }, [mapReady, view])
@@ -317,7 +355,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     const admin1 = map.getSource('admin1') as maplibregl.GeoJSONSource
     // Bundesländer/Kantone gibt es nur für D-A-CH — auf der Kugel und über
     // Thailand blieben sie unsichtbar bzw. außer Sicht
-    if (view.id !== 'europe' && view.id !== 'alps') admin1.setData(EMPTY_FC)
+    if (view.id !== 'europe' && view.id !== 'alps' && view.id !== 'alps3d') admin1.setData(EMPTY_FC)
     else
       loadBasemap('dach')
         .then((bm) => !cancelled && mapRef.current === map && admin1.setData(bm.admin1 ?? EMPTY_FC))
@@ -358,8 +396,14 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    return addWorldLabels(map, '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .maplibregl-ctrl-top-right')
-  }, [mapReady])
+    // Auf dem Gelände muss MapLibre jeden Marker je Bild neu auf das Relief setzen
+    return addWorldLabels(
+      map,
+      '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .globe-compass, .maplibregl-ctrl-top-right',
+      relief ? 40 : undefined,
+      relief ? RELIEF_BOUNDS : undefined,
+    )
+  }, [mapReady, relief])
 
   // NEUESTER STAND GEWINNT (`createTileQueue`): solange Kacheln laden, wird der
   // nächste Schritt nur vorgemerkt. Vorher bekam jeder Tastendruck ein eigenes
@@ -416,17 +460,123 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     tilesRef.current?.init(FIELD_SOURCE, url)
   }, [mapReady, meta, modelId, model.maxzoom, varId, step, queueTiles])
 
-  // Topografie: über dem Feld, unter Gradnetz und Grenzen
+  // Ansicht „Alpen 3D": erst das Relief komplett laden, dann aufs Gelände legen. Solange
+  // liegt die Ladeanzeige über der Karte. Bereich, Zoom und Pixeldichte sind hier begrenzt,
+  // weil jedes Bild das ganze Gelände neu zeichnet
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !relief) return
+    const ac = new AbortController()
+    let onIdle: (() => void) | null = null
+    let safety = 0
+    setReliefLoading({ done: 0, total: 0 })
+    preloadRelief((done, total) => setReliefLoading({ done, total }), ac.signal)
+      .then(() => {
+        if (ac.signal.aborted) return
+        setReliefTilesReady(true)
+        map.setMaxBounds(RELIEF_BOUNDS)
+        map.setMinZoom(5)
+        map.setMaxPitch(70)
+        map.setPixelRatio(1)
+        map.setSky(RELIEF_SKY)
+        addReliefTerrain(map)
+        map.fitBounds(view.bounds!, { padding: 16, pitch: 58, duration: 0 })
+        // Die Anzeige bleibt, bis auch das Farbfeld auf dem Gelände liegt
+        const reveal = () => setReliefLoading(null)
+        onIdle = reveal
+        map.once('idle', reveal)
+        safety = window.setTimeout(reveal, 8000)
+      })
+      .catch((e) => {
+        if (!ac.signal.aborted) console.warn('Alpen 3D:', e)
+        setReliefLoading(null)
+      })
+    return () => {
+      ac.abort()
+      window.clearTimeout(safety)
+      if (onIdle) map.off('idle', onIdle)
+      setReliefLoading(null)
+      setReliefTilesReady(false)
+      clearPreloadedRelief()
+      // Beim Verlassen des Bereichs ist die Karte zu diesem Zeitpunkt schon entfernt
+      if (mapRef.current !== map) return
+      removeReliefTerrain(map)
+      map.setMaxBounds(null)
+      map.setMinZoom(0)
+      map.setMaxPitch(60)
+      map.setSky(GLOBE_SKY)
+      map.setPixelRatio(Math.min(window.devicePixelRatio || 1, GLOBE_MAX_PIXEL_RATIO))
+    }
+  }, [mapReady, relief, view.bounds])
+
+  // 3D-Windpartikel: das Windvolumen von ICON-D2 samt Vertikalwind (Querschnitt-Ingest)
+  useEffect(() => {
+    if (!relief || wind3dMeta) return
+    let live = true
+    void loadWind3dMeta().then((m) => live && setWind3dMeta(m))
+    return () => {
+      live = false
+    }
+  }, [relief, wind3dMeta])
+  const wind3dAvailable = modelId === WIND3D_MODEL && !!wind3dMeta?.wind3d
+  const wind3dActive = showRose && wind3dOn && wind3dAvailable
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !wind3dActive) return
+    const layer = new Wind3dLayer()
+    wind3dRef.current = layer
+    map.addLayer(layer)
+    return () => {
+      wind3dRef.current = null
+      if (mapRef.current === map && map.getLayer(WIND3D_LAYER)) map.removeLayer(WIND3D_LAYER)
+    }
+  }, [mapReady, wind3dActive])
+  // Das Volumen ist ab +24 h nur noch 3-stündlich: gezeigt wird das zeitlich nächste
+  const wind3dStep = useMemo(() => {
+    if (!wind3dMeta || !meta || step == null) return undefined
+    const i = nearestWind3dStep(Date.parse(wind3dMeta.run), wind3dMeta.steps, validMs(meta, step))
+    return i < 0 ? undefined : wind3dMeta.steps[i]
+  }, [wind3dMeta, meta, step])
+  useEffect(() => {
+    const layer = wind3dRef.current
+    if (!layer || !wind3dActive || !wind3dMeta?.wind3d) return
+    if (wind3dStep == null) {
+      layer.setSampler(null)
+      return
+    }
+    let live = true
+    loadWind3dField(wind3dMeta, wind3dMeta.wind3d, wind3dStep)
+      .then((f) => live && layer.setSampler((lon, lat, z) => sampleWind3dAtHeight(f, lon, lat, z)))
+      .catch(() => live && layer.setSampler(null))
+    return () => {
+      live = false
+    }
+  }, [wind3dActive, wind3dMeta, wind3dStep])
+
+  // Windrose: dreht direkt am Element mit, ohne React-Durchlauf je Bild
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !showRose) return
+    const sync = () => {
+      if (roseRef.current) roseRef.current.style.transform = `rotate(${-map.getBearing()}deg)`
+    }
+    sync()
+    map.on('rotate', sync)
+    return () => {
+      map.off('rotate', sync)
+    }
+  }, [mapReady, showRose])
+
+  // Topografie: über dem Feld, unter Gradnetz und Grenzen, in 3D genauso fein wie in 2D
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    if (!topo) {
-      removeTopoLayer(map)
-      return
-    }
+    removeTopoLayer(map)
+    // In 3D erst nach dem Vorladen, sonst holte die Schummerung dieselben Kacheln ein zweites Mal
+    if (!topo || (relief && !reliefTilesReady)) return
     addTopoLayer(map, OVERLAY_INSERT_BEFORE)
     applyTileSize(map)
-  }, [mapReady, topo])
+  }, [mapReady, topo, relief, reliefTilesReady])
 
   // Isolinien-Ebenen: je Linienart eine Quelle über allem (auch über den
   // Grenzen — die Linien sind der Inhalt, die Grenzen nur Orientierung).
@@ -480,7 +630,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   useEffect(() => {
     const wp = particlesRef.current
     if (!wp) return
-    if (!particles || !meta || uvStep == null) {
+    // Die Partikel rechnen auf der flachen Karte und lägen auf dem Relief daneben
+    if (!particles || relief || !meta || uvStep == null) {
       wp.setSampler(null)
       return
     }
@@ -491,7 +642,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     return () => {
       cancelled = true
     }
-  }, [mapReady, particles, meta, modelId, particleVar, uvStep, refSpeed])
+  }, [mapReady, particles, relief, meta, modelId, particleVar, uvStep, refSpeed])
 
   // Windfiedern aus denselben Windkomponenten — bei den Windgrößen
   const barbsRef = useRef<WindBarbs | null>(null)
@@ -505,7 +656,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       barbsRef.current = null
     }
   }, [mapReady])
-  const showBarbs = barbs && BARB_VARS.has(varId)
+  const showBarbs = barbs && BARB_VARS.has(varId) && !relief
   useEffect(() => {
     const wb = barbsRef.current
     if (!wb) return
@@ -718,6 +869,13 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 // IFS 0,25° lässt sich danach von Hand wählen. Umgekehrt deckt
                 // der Asien-Ausschnitt Europa nicht ab.
                 if (v.id === 'thailand') setModelId('ecmwf-hres-asia')
+                // „Alpen 3D" ist genau EINE Darstellung: ICON-D2 mit θe, alles andere ist dort gesperrt
+                if (v.id === 'alps3d') {
+                  setModelId(WIND3D_MODEL)
+                  setVarId(THETAE_VARIABLE.id)
+                } else if (relief) {
+                  setVarId(DEFAULT_GLOBE_VARIABLE)
+                }
                 if ((v.id === 'europe' || v.id === 'alps') && modelId === 'ecmwf-hres-asia') setModelId('ecmwf-hres')
               }}
             >
@@ -733,8 +891,9 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             e.currentTarget.blur()
           }}
           title={model.title}
+          disabled={relief}
         >
-          {GLOBE_MODELS.map((m) => (
+          {GLOBE_MODELS.filter((m) => !relief || m.id === WIND3D_MODEL).map((m) => (
             <option key={m.id} value={m.id} title={m.title}>
               {m.label} · {m.resolution}
             </option>
@@ -747,16 +906,21 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             e.currentTarget.blur()
           }}
           title={variable.title}
+          disabled={relief}
         >
-          {GLOBE_GROUPS.map((g) => (
-            <optgroup key={g} label={g}>
-              {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
-                <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
-                  {variableLabel(v, v.id === varId ? interval : undefined)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
+          {relief ? (
+            <option value={THETAE_VARIABLE.id}>{THETAE_VARIABLE.label}</option>
+          ) : (
+            GLOBE_GROUPS.map((g) => (
+              <optgroup key={g} label={g}>
+                {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
+                  <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
+                    {variableLabel(v, v.id === varId ? interval : undefined)}
+                  </option>
+                ))}
+              </optgroup>
+            ))
+          )}
         </select>
         <button
           type="button"
@@ -847,6 +1011,44 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>
+        {showRose && (
+          <div className="globe-compass">
+            <button
+              type="button"
+              className="globe-rose"
+              title="Karte nach Norden ausrichten"
+              aria-label="Karte nach Norden ausrichten"
+              onClick={() => mapRef.current?.easeTo({ bearing: 0, duration: 500 })}
+            >
+              <svg ref={roseRef} viewBox="-50 -50 100 100" aria-hidden="true">
+                <circle r="47" className="globe-rose-ring" />
+                <path d="M0 -30 L7 0 L0 30 L-7 0 Z M-30 0 L0 -7 L30 0 L0 7 Z" className="globe-rose-star" />
+                <path d="M0 -32 L8 0 L-8 0 Z" className="globe-rose-north" />
+                <text y="-35" className="globe-rose-n">N</text>
+                <text x="35" className="globe-rose-l">O</text>
+                <text y="35" className="globe-rose-l">S</text>
+                <text x="-35" className="globe-rose-l">W</text>
+              </svg>
+            </button>
+            <p>Kippen und drehen: rechte Maustaste halten und ziehen (Mac: ctrl + ziehen)</p>
+          </div>
+        )}
+        {reliefLoading && (
+          <div className="globe-relief-loading" role="status">
+            <div className="globe-relief-spinner">
+              <span>{reliefLoading.total ? Math.round((reliefLoading.done / reliefLoading.total) * 100) : 0}&nbsp;%</span>
+            </div>
+            <strong>Alpen 3D wird vorbereitet</strong>
+            <p>
+              {reliefLoading.total > 0 && reliefLoading.done >= reliefLoading.total
+                ? 'Gelände wird aufgebaut …'
+                : `Hochaufgelöste Topografie: ${reliefLoading.done.toLocaleString('de-DE')} von ${reliefLoading.total.toLocaleString('de-DE')} Kacheln`}
+            </p>
+            <div className="globe-relief-bar">
+              <i style={{ width: `${reliefLoading.total ? (reliefLoading.done / reliefLoading.total) * 100 : 0}%` }} />
+            </div>
+          </div>
+        )}
         {/* Oben links: die Ebenen zum Anhaken (groß — sie werden ständig
             umgeschaltet), darunter der Wert am Zeiger */}
         <div className="globe-corner">
@@ -865,7 +1067,11 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             <label
               className="globe-layer"
               title={
-                meta && !uvMeta
+                relief
+                  ? wind3dAvailable
+                    ? '3D-Wind von ICON-D2 bis 1 km über Grund als Partikel über dem Relief: u, v und der echte Vertikalwind w. Richtung und Steigung sind maßstäblich (samt Überhöhung des Geländes), das Tempo auf dem Schirm ist gerafft.'
+                    : 'Für diesen Lauf liegt noch kein Windvolumen vor.'
+                  : meta && !uvMeta
                   ? 'Dieser Lauf enthält noch keine Windkomponenten — ab dem nächsten Ingest verfügbar.'
                   : uvLevel(particleVar)
                     ? `Strömung auf ${uvLevel(particleVar)} hPa als bewegte Spuren, nicht der Bodenwind. Richtung und Tempo-VERHÄLTNIS sind maßstäblich, das Tempo auf dem Schirm nicht (in der Höhe gegenüber dem Boden gebremst).`
@@ -874,16 +1080,33 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             >
               <input
                 type="checkbox"
-                checked={particles}
-                disabled={!uvMeta}
+                checked={relief ? wind3dOn && wind3dAvailable : particles}
+                disabled={relief ? !wind3dAvailable : !uvMeta}
                 onChange={(e) => {
+                  if (relief) {
+                    setWind3dOn(e.target.checked)
+                    return
+                  }
                   setParticles(e.target.checked)
                   // Fiedern oder Strömung: beides zusammen ist nicht lesbar
                   if (e.target.checked) setBarbs(false)
                 }}
               />{' '}
-              {uvLevel(particleVar) ? `Windpartikel ${uvLevel(particleVar)} hPa` : 'Windpartikel'}
+              {relief ? 'Wind bis 1 km über Grund' : uvLevel(particleVar) ? `Windpartikel ${uvLevel(particleVar)} hPa` : 'Windpartikel'}
             </label>
+            {wind3dActive && (
+              <div className="globe-wind3d" title="Die Partikel laufen durch das Windfeld von ICON-D2 (2,2 km) und steigen und sinken mit dem Vertikalwind des Modells. Das Tempo ist gerafft. Gezeigt wird der Wind bis 1 km über Grund.">
+                <span className="globe-wind3d-key" title="Farbe der Spuren: Windgeschwindigkeit">
+                  {[10, 20, 30, 45, 65, 90, 120].map((kmh) => (
+                    <span key={kmh}>
+                      <i style={{ background: `rgb(${speedColor(kmh).map((c) => Math.round(c * 255)).join(',')})` }} />
+                      {kmh}
+                    </span>
+                  ))}
+                  <span className="globe-wind3d-unit">km/h</span>
+                </span>
+              </div>
+            )}
             {BARB_VARS.has(varId) && (
               <label
                 className="globe-layer"
@@ -891,8 +1114,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
               >
                 <input
                   type="checkbox"
-                  checked={barbs}
-                  disabled={!uvMeta}
+                  checked={barbs && !relief}
+                  disabled={!uvMeta || relief}
                   onChange={(e) => {
                     setBarbs(e.target.checked)
                     if (e.target.checked) setParticles(false)

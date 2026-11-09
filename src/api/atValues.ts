@@ -17,7 +17,7 @@ import {
   fetchStationSeriesMulti,
   type AtStation,
 } from './geosphere'
-import { aggregate, type AtParameterSpec } from '../config/atParameters'
+import { aggregate, type AggMode, type AtParameterSpec } from '../config/atParameters'
 import { apparentTemperature, vaporPressureFromRH } from '../config/apparentTemperature'
 import type { NormalPeriodId } from '../config/atNormals'
 
@@ -189,6 +189,8 @@ export interface PeriodValues {
   source: 'daily' | 'monthly' | 'live' | 'normal' | 'record'
   /** Nur bei `live`: Zeitstempel des jüngsten verwendeten Messwerts (ISO). */
   asOf?: string
+  /** Nur bei Windfiedern: Windrichtung (°, woher) je Station */
+  direction?: Record<number, number | null>
   /**
    * Nur bei mehrmonatigen Zeitbezügen (Saison/Jahr): welche Kalendermonate
    * tatsächlich Daten geliefert haben. Der LAUFENDE Monat fehlt im
@@ -273,6 +275,95 @@ async function fetchLiveApparentTemperature(
   }
 }
 
+/** Liegt der letzte Wert einer Station mehr als eine Stunde (6 × 10 min) hinter dem jüngsten des Netzes? */
+export function isStaleLive(stationLast: number, networkLast: number): boolean {
+  return networkLast - stationLast > 6
+}
+
+/** Letzter Index bis einschließlich `at`, an dem die Reihe einen Wert hat, sonst -1 */
+export function lastValueIndex(series: (number | null)[], at: number): number {
+  for (let i = Math.min(at, series.length - 1); i >= 0; i--) if (series[i] != null) return i
+  return -1
+}
+
+/**
+ * Wert einer Station „jetzt": der letzte Wert (ohne Fenster) oder das Aggregat der letzten
+ * `windowSteps` Zehnminutenwerte bis zum jüngsten Stand des Netzes. Ein stehengebliebener Fühler
+ * gibt null. Lücken: über eine Stunde darf die Hälfte fehlen (einzelne Termine fehlen oft), über
+ * längere Fenster nur ein Viertel, sonst läge die Spitze womöglich gerade in der Lücke.
+ */
+export function currentStationValue(
+  series: (number | null)[],
+  networkLast: number,
+  windowSteps: number | null,
+  agg: AggMode,
+): number | null {
+  const last = lastValueIndex(series, networkLast)
+  if (last < 0 || isStaleLive(last, networkLast)) return null
+  if (windowSteps == null) return series[last]
+  const window = series.slice(Math.max(0, networkLast - windowSteps + 1), networkLast + 1)
+  const have = window.filter((v) => v != null).length
+  if (have < windowSteps * (windowSteps <= 6 ? 0.5 : 0.75)) return null
+  return aggregate(window, agg)
+}
+
+/** „Aktuelle" Größen der TAWES-Stationen (`derived: 'current'`) aus den 10-Minuten-Werten. */
+async function fetchLiveCurrentValues(
+  spec: AtParameterSpec,
+  day: string,
+  ids: number[],
+  force: boolean,
+): Promise<PeriodValues> {
+  const code = spec.liveCode as string
+  const hours = spec.liveWindowH ?? 1
+  // Vorlauf über Mitternacht: kurz nach 00 UTC wäre „aktuell" sonst leer
+  const start = new Date(Date.parse(`${day}T00:00Z`) - hours * 3_600_000).toISOString().slice(0, 16)
+  const multi = await fetchStationSeriesMulti(
+    spec.barbs ? [code, 'dd'] : [code],
+    start,
+    `${day}T23:50`,
+    ids,
+    DATASET_10MIN,
+    LIVE_TTL_MS,
+    force,
+  )
+  const s = multi[code]
+  const series = new Map<number, (number | null)[]>()
+  let networkLast = -1
+  for (const id of ids) {
+    const data = s?.byStation[id]
+    if (!data) continue
+    const cleaned = data.map((v) => clean(spec, v))
+    series.set(id, cleaned)
+    for (let i = cleaned.length - 1; i > networkLast; i--) {
+      if (cleaned[i] != null) {
+        networkLast = i
+        break
+      }
+    }
+  }
+  const byStation: Record<number, number | null> = {}
+  const direction: Record<number, number | null> = {}
+  const windowSteps = spec.liveWindowH ? spec.liveWindowH * 6 : null
+  const factor = spec.liveFactor ?? 1
+  for (const id of ids) {
+    const cleaned = series.get(id)
+    const v = cleaned ? currentStationValue(cleaned, networkLast, windowSteps, spec.liveAgg ?? spec.agg) : null
+    // Wind in ganzen km/h: so werden die Zehnminutenwerte gelesen
+    byStation[id] = v == null ? null : spec.category === 'Wind' ? Math.round(v * factor) : v * factor
+    if (spec.barbs && cleaned && v != null) {
+      direction[id] = multi.dd?.byStation[id]?.[lastValueIndex(cleaned, networkLast)] ?? null
+    }
+  }
+  return {
+    byStation,
+    unit: spec.unit,
+    source: 'live',
+    asOf: networkLast >= 0 ? s.timestamps[networkLast] : undefined,
+    direction: spec.barbs ? direction : undefined,
+  }
+}
+
 /**
  * Tageswerte des LAUFENDEN Tages aus dem 10-Minuten-Datensatz zusammenfassen.
  * klima-v2-1d aggregiert erst nach Tagesende, deshalb gibt es „heute" nur so.
@@ -295,6 +386,8 @@ export async function fetchLiveDayValues(
     return fetchLiveApparentTemperature(spec, day, ids, force)
   }
   if (!spec.liveCode) return { byStation, unit: spec.unit, source: 'live' }
+
+  if (spec.derived === 'current') return fetchLiveCurrentValues(spec, day, ids, force)
 
   const s = await fetchStationSeries(
     spec.liveCode,

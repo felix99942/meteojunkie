@@ -13,6 +13,7 @@
 // 45,6 und 55,2 °N um ein Viertel, am Kartenrand lägen die Punkte sichtbar
 // neben ihrem Ort. Über der Österreich-Box sehen beide praktisch gleich aus.
 
+import { drawWindBarb } from './wxsymbols'
 /** Minimale Stationsform fürs Zeichnen — TAWES (AtStation) wie MOS erfüllen sie. */
 export interface MapStation {
   name: string
@@ -348,6 +349,43 @@ export function drawStationLabels(
     ctx.stroke()
     ctx.fillStyle = markColor
     ctx.fillText(text, x, by + h / 2 + 1)
+  }
+  ctx.restore()
+}
+
+/**
+ * Windfiedern statt Zahlen, in der Wertfarbe mit dunklem Rand. Ausgedünnt wie die Labels: das
+ * Raster hängt an der Karte, beim Ziehen springt also nichts, beim Zoomen kommen mehr dazu.
+ */
+export function drawStationBarbs(
+  ctx: CanvasRenderingContext2D,
+  g: MapGeometry,
+  stations: MapStation[],
+  speedsKmh: (number | null)[],
+  dirs: (number | null)[],
+  opts: { colors?: (string | null)[]; minGap?: number; len?: number } = {},
+): void {
+  const { colors, minGap = 30, len = 26 } = opts
+  const occupied = new Set<string>()
+  ctx.save()
+  for (let i = 0; i < stations.length; i++) {
+    const speed = speedsKmh[i]
+    const dir = dirs[i]
+    if (speed == null || dir == null || !Number.isFinite(speed + dir)) continue
+    const cx = Math.floor(((stations[i].lon - g.lonMin) * g.scale) / minGap)
+    const cy = Math.floor(((g.yMax - mercY(stations[i].lat)) * g.scale) / minGap)
+    const key = `${cx},${cy}`
+    if (occupied.has(key)) continue
+    occupied.add(key)
+    const { x, y } = project(g, stations[i].lon, stations[i].lat)
+    // Der Zeichner setzt die Mitte des Schafts: verschoben, damit er AM Stationspunkt beginnt.
+    // Windstille (Kreis, unter 2,5 kt) bleibt auf dem Punkt.
+    const shift = speed < 4.63 ? 0 : len / 2
+    const r = (dir * Math.PI) / 180
+    const bx = x + Math.sin(r) * shift
+    const by = y - Math.cos(r) * shift
+    drawWindBarb(ctx, bx, by, speed, dir, len, 'rgba(0,0,0,0.85)', 4)
+    drawWindBarb(ctx, bx, by, speed, dir, len, colors?.[i] ?? '#f4f2ee', 1.8)
   }
   ctx.restore()
 }
