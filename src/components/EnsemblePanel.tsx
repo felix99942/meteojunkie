@@ -13,7 +13,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import { useDeterministicSeries, useEnsembleSeries } from '../api/queries'
+import { useDeterministicSeries, useEnsembleRunMeta, useEnsembleSeries } from '../api/queries'
+import { estimateRunInit, pickRunInit, runStartIndex } from '../config/ensembleRun'
 import {
   ENSEMBLE_BUCKET_HOURS,
   ensembleThresholds,
@@ -105,6 +106,15 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
   const variable = getEnsembleVariable(panel.ensembleVariable)
   const query = useEnsembleSeries(location, model.id, variable.id)
   const hres = useDeterministicSeries(location, model.id, variable.id)
+  // Plume erst ab dem jüngsten Laufstart: davor setzt Open-Meteo ältere Läufe
+  // ein, und die Linien verbänden an der Naht Member, die nichts miteinander
+  // zu tun haben (Knoten, siehe config/ensembleRun.ts)
+  const runMeta = useEnsembleRunMeta(model.id)
+  const runInit = pickRunInit(
+    runMeta.data ?? null,
+    estimateRunInit(model.id, model.updateIntervalHours, query.dataUpdatedAt || Date.now()),
+    query.dataUpdatedAt || Date.now(),
+  )
 
   /**
    * SCHWELLE für die Wahrscheinlichkeitsleiste: Index einer Voreinstellung,
@@ -175,23 +185,29 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       rawDet = query.data.times.map((t) => byTime.get(t) ?? null)
     }
 
-    let times = query.data.times
+    // Ab dem Laufstart schneiden — Summen beginnen damit dort, nicht um 00 UTC
+    const start = runStartIndex(query.data.times, runInit)
+    const srcTimes = query.data.times.slice(start)
+    const srcMembers = query.data.members.map((m) => m.slice(start))
+    if (rawDet) rawDet = rawDet.slice(start)
+
+    let times = srcTimes
     let members: (number | null)[][]
     let deterministic: (number | null)[] | null
 
     if (bucketed) {
       // Hauptlauf als zusätzliche „Reihe" mitbündeln, damit er GARANTIERT auf
       // denselben Stützstellen landet wie die Mitglieder
-      const all = rawDet ? [...query.data.members, rawDet] : query.data.members
-      const b = bucketMembers(query.data.times, all, ENSEMBLE_BUCKET_HOURS)
+      const all = rawDet ? [...srcMembers, rawDet] : srcMembers
+      const b = bucketMembers(srcTimes, all, ENSEMBLE_BUCKET_HOURS)
       times = b.times
       members = rawDet ? b.members.slice(0, -1) : b.members
       deterministic = rawDet ? b.members[b.members.length - 1] : null
     } else if (variable.kind === 'accum') {
-      members = accumulateMembers(query.data.members)
+      members = accumulateMembers(srcMembers)
       deterministic = rawDet ? accumulateMembers([rawDet])[0] : null
     } else {
-      members = query.data.members
+      members = srcMembers
       deterministic = rawDet
     }
 
@@ -202,7 +218,7 @@ export function EnsemblePanel({ panel }: { panel: PanelConfig }) {
       unit: query.data.unit,
       stats: plumeStats(members),
     }
-  }, [query.data, hres.data, variable.kind, bucketed])
+  }, [query.data, hres.data, variable.kind, bucketed, runInit])
 
   /** Anteil der Member je Zeitschritt, der die Schwelle erfüllt (0…1). */
   const prob = useMemo(

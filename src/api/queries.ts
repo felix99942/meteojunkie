@@ -22,6 +22,8 @@ import type { AirQualityData } from '../config/airQuality'
 import type { AirStation, MeasuredRow } from '../config/airMeasured'
 import { fetchMeasuredAt, loadAtStations } from './airMeasured'
 import { getEnsembleModel } from '../config/ensemble'
+import { runMetaDataset } from '../config/ensembleRun'
+import { MOCK_MODE } from './mock'
 import { getModel } from '../config/models'
 import { supportsPressureLevels } from '../config/levels'
 import type { LatLon } from '../state/workbench'
@@ -307,6 +309,27 @@ export function useMeasuredAt(fromDay: string, enabled: boolean): UseQueryResult
     enabled,
     staleTime: 20 * 60 * 1000,
     gcTime: SERIES_GC_TIME_MS,
+    retry: 1,
+  })
+}
+
+/**
+ * Laufstart des jüngsten Ensemble-Laufs laut Open-Meteo (`meta.json`, ms) —
+ * oder null (unbekannt, Fehler, Mock). Ob der Wert frisch genug ist,
+ * entscheidet `pickRunInit`; siehe `config/ensembleRun.ts`.
+ */
+export function useEnsembleRunMeta(modelId: string): UseQueryResult<number | null> {
+  const dataset = runMetaDataset(modelId)
+  return useQuery({
+    queryKey: ['ensemble-run-meta', dataset],
+    queryFn: async () => {
+      if (!dataset || MOCK_MODE !== 'off') return null
+      const res = await fetch(`https://ensemble-api.open-meteo.com/data/${dataset}/static/meta.json`)
+      if (!res.ok) return null
+      const j = (await res.json()) as { last_run_initialisation_time?: number }
+      return typeof j.last_run_initialisation_time === 'number' ? j.last_run_initialisation_time * 1000 : null
+    },
+    staleTime: 10 * 60 * 1000,
     retry: 1,
   })
 }

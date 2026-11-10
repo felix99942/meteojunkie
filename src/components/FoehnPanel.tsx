@@ -32,7 +32,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { EnsembleSeries, HourlySeries } from '../api/openmeteo'
-import { useEnsembleSeriesFor, useMeteogramSeries, usePointSeries } from '../api/queries'
+import { useEnsembleSeriesFor, useMeteogramSeries, usePointSeries, useEnsembleRunMeta } from '../api/queries'
 import { MOCK_FOEHN } from '../api/mock'
 import { FOEHN_EPISODE } from '../api/mockFoehn'
 import { ChartRow } from './ChartStack'
@@ -44,6 +44,8 @@ import {
   type Curve,
 } from '../config/chartDef'
 import { SERIES_COLORS } from '../config/colors'
+import { getEnsembleModel } from '../config/ensemble'
+import { estimateRunInit, pickRunInit } from '../config/ensembleRun'
 import {
   DEFAULT_DETAIL_MODEL,
   DEFAULT_FOEHN_AXIS,
@@ -188,6 +190,14 @@ export function FoehnPanel() {
   // Ensemble: Druck an beiden Enden, ΔP je Member.
   const ensSouthQ = useEnsembleSeriesFor(axis.south, ens.id, 'pressure_msl', ens.forecastDays, ens.members)
   const ensNorthQ = useEnsembleSeriesFor(axis.north, ens.id, 'pressure_msl', ens.forecastDays, ens.members)
+  // ΔP je Member erst ab dem jüngsten Laufstart — davor setzt Open-Meteo ältere
+  // Läufe ein, und die Linien verbänden fremde Member (config/ensembleRun.ts)
+  const runMeta = useEnsembleRunMeta(ens.id)
+  const runInit = pickRunInit(
+    runMeta.data ?? null,
+    estimateRunInit(ens.id, getEnsembleModel(ens.id).updateIntervalHours, now),
+    now,
+  )
 
   const allQueries = [
     ...southQ, ...northQ, t700Q, ws700Q, wd700Q, crestPrecipQ, leeT2mQ, leeSpQ,
@@ -202,7 +212,9 @@ export function FoehnPanel() {
   const derived = useMemo(() => {
     const g = (q: { data?: HourlySeries }): Series => alignSeries(gridMs, q.data?.times, q.data?.values)
     const members = (q: { data?: EnsembleSeries }): Series[] =>
-      (q.data?.members ?? []).map((m) => alignSeries(gridMs, q.data!.times, m))
+      (q.data?.members ?? []).map((m) =>
+        alignSeries(gridMs, q.data!.times, m).map((v, i) => (gridMs[i] < runInit ? null : v)),
+      )
 
     const dpByModel = pModels.map((id, i) => ({ id, values: difference(g(southQ[i]), g(northQ[i])) }))
     const dp = dpByModel.find((d) => d.id === detailId)?.values ?? gridMs.map(() => null)
@@ -435,7 +447,7 @@ export function FoehnPanel() {
     // Query-Objekte sind jede Renderrunde neue Referenzen — auf `dataKey`
     // keyen (wie im klassischen Meteogramm), sonst rechnet der Memo ständig.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey, gridMs, direction, axisId, detailId, pModels, overlay, ensId, lee])
+  }, [dataKey, gridMs, direction, axisId, detailId, pModels, overlay, ensId, lee, runInit])
 
   const glance = useMemo(
     () => summarize(derived.phases, derived.prob, gridMs, now),

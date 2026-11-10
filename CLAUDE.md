@@ -1296,6 +1296,20 @@ npm run preview   # gebautes dist/ servieren
   Maximum von 19,2).
   Bei Temperatur, Druck und Wind bleibt es bei der Plume; dort ist sie
   richtig, und der Umschalter erscheint gar nicht.
+  **DIE PLUME BEGINNT AM JÜNGSTEN LAUFSTART, nicht um 00 UTC** (seit
+  2026-11-10, gemeldet als „ab einem Datum kreuzen sich die Member"; Kern
+  `config/ensembleRun.ts` mit Tests, Hook `useEnsembleRunMeta`): Open-Meteo
+  füllt die Stunden davor mit älteren Läufen, und „Member 7" ist in jedem Lauf
+  eine andere Bahn. An der Naht schnürte sich das Bündel zusammen (der neue
+  Lauf startet mit kleiner Streuung) und die Linien kreuzten quer — gemessen
+  ICON-EU-EPS Innsbruck T2m: Streuung 0,85 → 0,47 K um 12 UTC, Rangkorrelation
+  der Member 0,57 statt ~0,9. Laufstart aus `meta.json` des Datensatzes, wenn
+  frisch (≤ 48 h); die DWD-Datensätze standen dort am 10.11. noch auf dem 06.10.,
+  dann Schätzung aus Rhythmus und Bereitstellungszeit (bewusst etwas zu kurz:
+  zu früh geschätzt bliebe der Knoten). Aus den Daten selbst ist die Naht NICHT
+  zu finden — bei Wind, Niederschlag und den Konvektions-EPS springt die
+  Reihenfolge auch mitten im Lauf. Summen beginnen damit am Laufstart. Gilt
+  ebenso für ΔP je Member im Föhn-Bereich.
   **WAHRSCHEINLICHKEITSLEISTE unter der Plume** (`exceedance` in
   `render/plume.ts` mit Tests, Schwellen `ENSEMBLE_THRESHOLDS` in
   `config/ensemble.ts`): Anteil der Member, die eine Schwelle erfüllen, über
