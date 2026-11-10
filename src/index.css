@@ -6219,3 +6219,32 @@ button:focus-visible {
   margin-right: auto;
   font-size: 11px;
 }
+
+/* Schneevorhersage (Unterpunkt des Meteogramms, `SnowForecast.tsx`): oben das
+   kombinierte Diagramm groß, darunter je Ensemble eine Kachel. */
+.snow-main {
+  flex: 0 0 auto;
+  height: 340px;
+}
+.snow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(280px, 1fr);
+  gap: 8px;
+  flex: 1 0 auto;
+}
+/* ICON-D2-EPS und ICON-EU-EPS (kurze Horizonte) nebeneinander, IFS-ENS
+   darunter über die volle Breite */
+.snow-grid .snow-wide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 900px) {
+  .snow-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Bandfarben in der Legende als Fläche statt als Strich */
+.atfc-legend i.snow-swatch-band {
+  height: 9px;
+  opacity: 0.7;
+}

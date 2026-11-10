@@ -22,7 +22,7 @@
 // sich aber den `lockedLocation` mit Punktprognosen/Ensemble/Profil: wer den
 // Ort dort setzt, sieht ihn hier sofort, und umgekehrt.
 
-import { Fragment, useCallback, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { seriesKey } from '../lib/dataKey'
 import type { HourlySeries } from '../api/openmeteo'
 import { useMeteogramSeries } from '../api/queries'
@@ -50,6 +50,7 @@ import { LocationPicker } from './LocationPicker'
 import { QuickPoints } from './QuickPoints'
 import { OpenMeteoAttribution } from './Attribution'
 import { useIsPhone } from '../lib/useIsPhone'
+import { SnowForecast } from './SnowForecast'
 
 const DEFAULT_MODEL = 'ecmwf_ifs025'
 // UTC, wie der Rest der App intern durchgehend rechnet (siehe CLAUDE.md) — der
@@ -223,7 +224,30 @@ function alignToGrid(gridMs: number[], series: HourlySeries | undefined): (numbe
   return gridMs.map((t) => byTime.get(t) ?? null)
 }
 
+/**
+ * Unterpunkte des Meteogramm-Bereichs (seit 2026-11-10): das klassische
+ * Meteogramm und die Schneevorhersage (`SnowForecast`). Ein Umschalter in der
+ * Leiste statt eines eigenen Bereichs — beide fragen „was kommt an DIESEM
+ * Ort", und der Ort (`lockedLocation`) gilt für beide.
+ */
+type MeteoSub = 'meteogram' | 'snow'
+
 export function ClassicMeteogram() {
+  const [sub, setSub] = useState<MeteoSub>('meteogram')
+  const nav = (
+    <span className="foehn-views" role="group" aria-label="Ansicht">
+      <button type="button" className={sub === 'meteogram' ? 'is-active' : ''} onClick={() => setSub('meteogram')}>
+        Meteogramm
+      </button>
+      <button type="button" className={sub === 'snow' ? 'is-active' : ''} onClick={() => setSub('snow')}>
+        Schneevorhersage
+      </button>
+    </span>
+  )
+  return sub === 'snow' ? <SnowForecast nav={nav} /> : <MeteogramView nav={nav} />
+}
+
+function MeteogramView({ nav }: { nav: ReactNode }) {
   const location = useWorkbench((s) => s.lockedLocation)
   const [modelId, setModelId] = useState(DEFAULT_MODEL)
   const model = getModel(modelId)
@@ -503,7 +527,7 @@ export function ClassicMeteogram() {
   return (
     <div className="meteo">
       <div className="atclima-bar">
-        <span className="atclima-title">Meteogramm</span>
+        {nav}
         <LocationPicker />
         {/* Schnellwahl NEBEN der Suche, nicht statt ihr: die acht Punkte sind
             der Alltag, das Suchfeld der Rest der Welt. Derselbe Baustein wie

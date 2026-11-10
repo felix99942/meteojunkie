@@ -12,19 +12,35 @@
 // danach die Thai-Knöpfe —, lässt sich aber auch ohne Ortswechsel umschalten.
 
 import { useEffect, useState } from 'react'
-import { QUICK_POINT_EPS, QUICK_REGIONS, regionFor, type QuickRegionId } from '../config/quickPoints'
+import { QUICK_POINT_EPS, QUICK_REGIONS as ALL_REGIONS, regionFor, type QuickRegionId } from '../config/quickPoints'
 import { useWorkbench } from '../state/workbench'
 import { useIsPhone } from '../lib/useIsPhone'
 
-export function QuickPoints({ caption = 'Punkt' }: { caption?: string }) {
+export function QuickPoints({
+  caption = 'Punkt',
+  regions: only,
+}: {
+  caption?: string
+  /**
+   * Nur diese Regionen anbieten — die Schneevorhersage braucht Thailand nicht
+   * (seit 2026-11-10, auf Wunsch). Ohne Angabe alle.
+   */
+  regions?: QuickRegionId[]
+}) {
+  const QUICK_REGIONS = only ? ALL_REGIONS.filter((r) => only.includes(r.id)) : ALL_REGIONS
   const location = useWorkbench((s) => s.lockedLocation)
   const setLockedLocation = useWorkbench((s) => s.setLockedLocation)
-  const [regionId, setRegionId] = useState<QuickRegionId>(() => regionFor(location).id)
+  const [regionId, setRegionId] = useState<QuickRegionId>(() => {
+    const id = regionFor(location).id
+    return QUICK_REGIONS.some((r) => r.id === id) ? id : QUICK_REGIONS[0].id
+  })
   // Ort wechselt in eine andere Region → die Knöpfe ziehen mit. Nur wenn der
   // Ort IN einer Region liegt — ein Punkt irgendwo sonst lässt die Wahl stehen.
   useEffect(() => {
     const hit = QUICK_REGIONS.find((r) => inside(location, r.bbox))
     if (hit) setRegionId(hit.id)
+    // QUICK_REGIONS hängt nur am (festen) Prop `only`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location])
   const region = QUICK_REGIONS.find((r) => r.id === regionId) ?? QUICK_REGIONS[0]
   const isPhone = useIsPhone()

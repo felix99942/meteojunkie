@@ -1684,6 +1684,31 @@ npm run preview   # gebautes dist/ servieren
   sie außerhalb der Fläche und verdeckt keine Symbole. Symboldichte an der
   Breite orientiert (~30 px Mindestabstand), Radius zusätzlich am Abstand
   gedeckelt, damit sich die Kreise nie berühren.
+- **SCHNEEVORHERSAGE** (seit 2026-11-10, auf Wunsch; Unterpunkt des Meteogramms,
+  Umschalter „Meteogramm | Schneevorhersage" in dessen Leiste; `SnowForecast.tsx`,
+  Kern `config/snowForecast.ts` mit Tests): Neuschnee-SUMME ab der laufenden Stunde
+  über 7 Tage am gewählten Ort. Oben ALLE Ensembles in EINER Verteilung, jedes
+  Ensemble mit GLEICHEM Gewicht (`pooledStats`, gewichtetes Quantil) — je Member
+  gezählt bestimmte IFS-ENS mit 51 Membern das Band fast allein. Darüber die vier
+  Hauptläufe AROME 1 km, ICON-D2, ICON-EU, IFS 9 km (`ecmwf_ifs`). Darunter je
+  Ensemble eine Kachel mit eigenem Band, Median und zugehörigem Hauptlauf
+  (ICON-D2-EPS 20 Member +48 h, ICON-EU-EPS 40 +120 h, IFS-ENS 51, 0,25°). Anordnung (auf
+  Wunsch): ICON-D2 und ICON-EU NEBENEINANDER mit eigener, bis zu ihrem letzten Wert
+  GEKÜRZTER Zeitachse (`Tile.n`), IFS-ENS darunter über die volle Breite — auf der
+  7-Tage-Achse in halber Breite wäre ICON-D2 ein schmaler Streifen links gewesen.
+  Der Zeiger-Sync läuft je Achsenlänge (`snow-<n>`), die Zeitleiste über `readoutTime`. Bänder
+  rosa (10–90 %) und lila (25–75 %), Median dunkelviolett. Endet ein Ensemble,
+  springt das kombinierte Band; die Kopfzeile nennt die Stelle (`groupChanges`).
+  **AROME kommt DIREKT vom GeoSphere Data Hub** (Punktabfrage `timeseries/forecast/
+  nwp-v2-1h-1km`, CORS offen, kein Schlüssel): Open-Meteo liefert
+  `geosphere_arome_austria` seit dem Ende des 2,5-km-Datensatzes (04.11.2026) nur
+  noch null (gemessen 2026-11-10). Außerhalb des Gebiets antwortet der Hub HTTP 400
+  → leere Reihe. AROME hat hier kein Ensemble. **Schnee in cm wie Open-Meteo**
+  (1 mm Wasserwert = 0,7 cm); AROME `sf` (kg/m²) wird ebenso umgerechnet — die
+  Modellkarten rechnen beim Neuschnee 10:1, die Zahlen dort liegen also höher.
+  Die Werte gelten für die MODELLhöhe des Gitterpunkts, nicht für die Höhe des
+  Orts (Hinweis im Tooltip). Kosten: 3 Ensemble- und 3 Hauptlauf-Abrufe bei
+  Open-Meteo je Ort, dazu einer bei GeoSphere.
 - **Ortswahl auf der Karte** (`LocationMap.tsx` + `ProfileMapPane.tsx`, Asset
   `scripts/build-relief.mjs` → `src/mapdata/europe-relief.png`, Konstanten in
   `config/relief.ts` mit Tests) — der Soundings-Bereich wählt den Punkt auf

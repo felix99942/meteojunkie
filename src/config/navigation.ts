@@ -39,9 +39,9 @@ export const NAV_TABS: NavTab[] = [
   {
     id: 'classic',
     label: 'Meteogramm',
-    title: 'Klassisches Meteogramm — Temperatur, Niederschlag, Wolken, Wind auf einen Blick',
+    title: 'Klassisches Meteogramm — Temperatur, Niederschlag, Wolken, Wind auf einen Blick — und die Schneevorhersage aus vier Modellen und drei Ensembles',
     group: 'forecast',
-    blurb: 'Ein Ort, ein Modell: Temperatur, Niederschlag, Wolken in Achteln, Wind mit Fiedern, Luftdruck.',
+    blurb: 'Ein Ort, ein Modell: Temperatur, Niederschlag, Wolken in Achteln, Wind mit Fiedern, Luftdruck. Dazu die Schneevorhersage als Ensemble.',
   },
   {
     id: 'globe',
