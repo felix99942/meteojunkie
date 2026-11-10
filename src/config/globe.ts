@@ -28,7 +28,7 @@ export type GlobeVarId =
   | 'uv10' | 'uv300' | 'uv850' | 'uv700'
   | 't700' | 'wind850' | 'wind700'
   | 'swh' | 'pp1d' | 'sst'
-  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow' | 'thetae'
+  | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow' | 'thetae' | 'precipphase'
 
 /**
  * Gruppen der Auswahlliste (`<optgroup>`) — bei über zwanzig Größen ist eine
@@ -70,8 +70,11 @@ export interface GlobeVariable {
   /**
    * 'rgb3': drei Größen in einem Bild (Wolkenschichten), eigene Einfärbung
    * und Legende — `scale` gilt dann nicht.
+   * 'phase': Niederschlagssumme, je Pixel als Regen (`scale`) oder Schnee
+   * (`PHASE_SNOW_SCALE`) gefärbt, je nachdem ob das ECHTE Gelände über der
+   * Höhe liegt, über der die Summe überwiegend Schnee war (`encoding: 'phase'`).
    */
-  kind?: 'rgb3'
+  kind?: 'rgb3' | 'phase'
 }
 
 /**
@@ -815,8 +818,54 @@ export const THETAE_VARIABLE: GlobeVariable = {
   legendEvery: 5,
 }
 
+/**
+ * Niederschlagssumme REGEN/SCHNEE, das zweite Farbfeld von „Alpen 3D" (seit 2026-11-10).
+ * Gleiche Stufen wie die Summe, aber zwei Rampen: Regen grün → blau, Schnee hellrosa →
+ * dunkelviolett. Welche gilt, entscheidet je Pixel das echte Gelände gegen die Höhe, über
+ * der die Summe überwiegend als Schnee fiel (Ingest: `phase_step` in scripts/nwp_common.py,
+ * aus der Schneefallgrenze `snowlmt` je Stunde, gewichtet mit dem Niederschlag der Stunde).
+ */
+const PHASE_STEPS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200]
+const PHASE_RAIN_COLORS = [
+  '#dff3c8', '#bfe6a0', '#9bd57c', '#73c35f', '#4fae55', '#33975a', '#1f8063', '#1a6f78',
+  '#1e5f8f', '#2350a6', '#263fb5', '#2b2fa8', '#26238a', '#1c186b', '#120f4c',
+]
+const PHASE_SNOW_COLORS = [
+  '#fde6f3', '#f9cde8', '#f3b2dc', '#eb96d0', '#e07bc5', '#d061bb', '#bd4bb2', '#a73aa7',
+  '#90309c', '#7a278f', '#661f82', '#531873', '#421263', '#320c52', '#240840',
+]
+export const PHASE_RAIN_SCALE: ColorScale = {
+  kind: 'stepped',
+  stops: PHASE_STEPS.map((value, i) => ({ value, color: PHASE_RAIN_COLORS[i] })),
+}
+export const PHASE_SNOW_SCALE: ColorScale = {
+  kind: 'stepped',
+  stops: PHASE_STEPS.map((value, i) => ({ value, color: PHASE_SNOW_COLORS[i] })),
+}
+
+/** B-Kanal der Phasen-Summe → Höhe in m (wie `encode_phase`: 20-m-Stufen ab −200 m). */
+export function phaseLineM(b: number): number {
+  return b * 20 - 200
+}
+
+export const PRECIPPHASE_VARIABLE: GlobeVariable = {
+  id: 'precipphase',
+  group: 'Niederschlag & Feuchte',
+  label: 'Niederschlag Summe Regen/Schnee',
+  title:
+    'Aufsummierter Niederschlag seit Laufbeginn (mm Wasser), grün bis blau als Regen, hellrosa bis dunkelviolett als Schnee. Die Phase entscheidet je Bildpunkt das ECHTE Gelände: Schnee, wo es über der Höhe liegt, über der mehr als die Hälfte der Summe als Schnee fiel. Gerechnet aus der Schneefallgrenze des Modells je Stunde, gewichtet mit dem Niederschlag dieser Stunde; wo das Modell keine Grenze führt, gilt seine eigene Phase. Unter 1 mm nicht eingefärbt.',
+  scale: PHASE_RAIN_SCALE,
+  decimals: 1,
+  legendEvery: 1,
+  kind: 'phase',
+}
+
+/** Die Farbfelder von „Alpen 3D", in der Reihenfolge der Auswahl. */
+export const RELIEF_VARIABLES: GlobeVariable[] = [THETAE_VARIABLE, PRECIPPHASE_VARIABLE]
+
 export function getGlobeVariable(id: string): GlobeVariable {
   if (id === THETAE_VARIABLE.id) return THETAE_VARIABLE
+  if (id === PRECIPPHASE_VARIABLE.id) return PRECIPPHASE_VARIABLE
   return GLOBE_VARIABLES.find((v) => v.id === id) ?? GLOBE_VARIABLES[0]
 }
 
@@ -856,8 +905,9 @@ export interface GlobeVarMeta {
    * 'rgb3' = Wolkenschichten, drei Kanäle in % statt eines Codes;
    * 'uv8' = Windkomponenten, R = u, G = v, je (code − 128) · step m/s, 0 = kein Wert
    *   (`uv10` 0,5 m/s, `uv300` 1 m/s — der Strahlstrom reicht über 63,5 m/s)
+   * 'phase' = Code in R+G wie sonst, dazu in B die Schnee-Höhe (`phaseLineM`)
    */
-  encoding?: 'rgb3' | 'uv8'
+  encoding?: 'rgb3' | 'uv8' | 'phase'
 }
 
 /** Intervall (h) des Werts zum Schritt, oder undefined für Termingrößen. */
@@ -948,6 +998,26 @@ export interface GlobeField {
   rgb?: Uint8Array
   /** Nur Windkomponenten: je Zelle [u, v] als Code, (code − 128) · step m/s, 0 = kein Wert. */
   uv?: Uint8Array
+  /** Nur Phasen-Summe: je Zelle die Schnee-Höhe als B-Kanal (`phaseLineM`). */
+  zline?: Uint8Array
+}
+
+/** RGBA eines Phasenbilds → B-Kanal je Zelle (die Codes kommen über `decodeCodes`). */
+export function decodePhaseLine(rgba: ArrayLike<number>, count: number): Uint8Array {
+  const out = new Uint8Array(count)
+  for (let i = 0; i < count; i++) out[i] = rgba[4 * i + 2]
+  return out
+}
+
+/** Schnee-Höhe am Punkt (nächster Gitterpunkt), m, oder null. */
+export function samplePhaseLine(f: GlobeField, lat: number, lon: number): number | null {
+  if (!f.zline) return null
+  const gx = gridX(f.grid, lon)
+  const gy = gridY(f.grid, lat)
+  if (gx == null || gy == null) return null
+  const i = Math.round(gy) * f.grid.ni + Math.round(gx) % f.grid.ni
+  if (f.codes[i] === 0) return null
+  return phaseLineM(f.zline[i])
 }
 
 /** RGBA-Pixel eines Windbilds → je Zelle [u, v] als 8-Bit-Code (R = u, G = v). */

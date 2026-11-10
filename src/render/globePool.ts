@@ -17,7 +17,7 @@ export interface FieldSource {
   grid: GlobeGrid
   lo: number
   step: number
-  encoding?: 'rgb3' | 'uv8'
+  encoding?: 'rgb3' | 'uv8' | 'phase'
   /** Intervall des Werts in Stunden; wählt beim Niederschlag die Farbskala */
   interval?: number
 }

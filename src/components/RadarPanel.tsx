@@ -65,7 +65,7 @@ import {
   type RadarMeta,
   type RadarOverlay,
 } from '../config/radar'
-import { drawFlashRings, drawLightningCrosses, type LightningCell } from '../render/lightning'
+import { drawFlashDots, drawFlashRings, drawLightningCrosses, type LightningCell } from '../render/lightning'
 import {
   BASE_STYLE,
   buildGraticuleBox,
@@ -797,6 +797,7 @@ export function RadarPanel() {
       for (let k = buckets.length - 1; k >= 0; k--) {
         const color = LIGHTNING_AGES[k].color
         if (symbols.symbol === 'rings') drawFlashRings(ctx, buckets[k], size, color, scale)
+        else if (symbols.symbol === 'dots') drawFlashDots(ctx, buckets[k], size, color, scale)
         else drawLightningCrosses(ctx, buckets[k], size, color, scale)
       }
       out[overlay.id] = canvas.toDataURL('image/png')

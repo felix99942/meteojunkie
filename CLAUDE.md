@@ -50,7 +50,7 @@ npm run preview   # gebautes dist/ servieren
   im Freikontingent. Lokal bleibt `npm run dev` mit Daten aus `public/`.
   **Cron alle 5 Minuten** (`scheduled` in `worker/index.ts`,
   `triggers.crons` in `wrangler.jsonc`): eigene Radarbilder
-  (`worker/radar.ts`, jedes Mal) und Satelliten-Vorrat
+  (`worker/radar.ts`, jedes Mal), MTG-Einzelblitze (`worker/flashes.ts`, jedes Mal) und Satelliten-Vorrat
   (`worker/satellite.ts`, jedes zweite Mal) — beschrieben bei Radar bzw.
   Satellit. Lokal testen: `wrangler dev --test-scheduled`, dann
   `curl localhost:<port>/__scheduled?cron=*/5+*+*+*+*` (wartet, bis der
@@ -2243,6 +2243,29 @@ npm run preview   # gebautes dist/ servieren
   Altersfenster, der Zellen hat, nicht `current`: sonst stand „keine Blitze"
   unter einer Karte voller Ringe. Das BILD greift weiter nie zurück — dort
   trägt die Farbe das Alter, ein Rückgriff wäre eine falsche Aussage.
+  **MTG-EINZELBLITZE** (seit 2026-11-10, Overlay `mtgflash`, Vorgabe aus;
+  `worker/flashes.ts`, Format `FlashBucket` in `config/radar.ts`, Tests
+  `worker/flashes.test.ts`): dieselbe Quelle wie `mtgli`, aber die EINZELNEN
+  Blitze aus dem Data Store („LI Lightning Flashes", `EO:EUM:DAT:0691`) statt
+  der aufsummierten Fläche — eigene Zeit je Blitz, gezeichnet als PUNKT
+  (`drawFlashDots`, Farbe = Alter in 5-Minuten-Stufen, Größe = Leuchtstärke
+  `flashLevel`). Holt der WORKER im 5-Minuten-Cron, nicht der Laptop: die
+  Datei ist ~790 KB NetCDF4 UNKOMPRIMIERT (anders als FCI, siehe MTG HD),
+  jsfive liest sie in ~15 ms. Gemessen 2026-11-10: ein Paket je 10 Minuten,
+  ~2¾ min nach Fensterende im Data Store; SUCHE ohne Token, ABRUF nur mit
+  (sonst 404) — Secrets `EUMETSAT_KEY`/`EUMETSAT_SECRET` (`wrangler secret
+  put`). Geholt wird direkt der NetCDF-Teil (`sip-entries`, „CHK-BODY"), nicht
+  die ZIP. Je Paket zwei Fenster `radar/mtgflash/<Ende>.json` (Ende :x5/:x0,
+  5 s Versatz zum Paket bewusst geschluckt, damit jedes Fenster zu genau EINER
+  Datei gehört), Index wie die eigenen Radarbilder (6 h), ~2 Dateien + Index
+  je Lauf. Abgelegt wird die Blitzfläche ±1°. `flash_filter_confidence` ≥ 0,5
+  fliegt raus (drei Werte in der Datei: 0 = 81 % kräftige Blitze, 0,052, 1 =
+  8 % schwache) — die Lesart „Sicherheit für Fehlalarm" ist ABGELEITET, nicht
+  dokumentiert. Ein abgebrochener Abruf (kam lokal vor: der Server schließt
+  die Verbindung) kostet nur diese Datei, drei Versuche, der Index wird
+  trotzdem geschrieben. Gegen netCDF4 geprüft: Zahl, Lage, Zeit, Strahldichte
+  gleich. Lokal: `npm run ingest:flashes` (Zugang aus
+  `~/.config/meteojunkie/eumetsat.env`, Ablage `public/radar/mtgflash`).
   **Die Quellenzeile trennt die Lizenzen** (`RadarOverlay.credit`): „Nutzung
   nach GeoNutzV" gilt für den DWD, nicht für EUMETSAT — ein pauschaler Satz
   über beiden wäre die falsche Angabe, und Attribution ist Lizenzbedingung.
@@ -3941,13 +3964,42 @@ npm run preview   # gebautes dist/ servieren
   bis z9 vorgeladen (`preloadRelief`, 391 Kacheln, Ladeanzeige), das Feinere kommt wie in 2D
   bis z12 beim Hineinzoomen nach. **Die Reliefstufe ist nicht der Engpass** (gemessen in
   Software-Grafik: z7, z8, z9 gleich schnell), teuer ist die Schummerung (6 gegen 9 Bilder/s),
-  sie bleibt aber an, weil sie dem Gelände die Form gibt. Beschriftung auf 40 Marker und den
-  Bereich begrenzt (sonst schweben Namen am Himmel), Pixeldichte 1, Isolinien aus.
-  **GENAU EINE DARSTELLUNG, auf Wunsch**: nur ICON-D2 (`WIND3D_MODEL`), Farbfeld nur θe 2 m
+  sie bleibt aber an, weil sie dem Gelände die Form gibt. Beschriftung auf 80 Marker (anfangs 40)
+  und den Bereich begrenzt (sonst schweben Namen am Himmel), Pixeldichte 1, Isolinien aus.
+  **Talorte nur in dieser Ansicht** (`config/alpsTowns.ts`, seit 2026-11-10, auf Wunsch:
+  „sonst kennt man sich nicht so aus"): ~130 Orte von Bregenz bis Kranj in drei Zoomstufen
+  (Talzentren ab 6,3, weitere ab 7,2, kleine ab 8,1), über `addWorldLabels(…, extra)` zu den
+  übrigen genommen; Natural Earth kennt dort kaum etwas unter Bezirksgröße, Bludenz fehlte ganz.
+  **GENAU EINE DARSTELLUNG, auf Wunsch**: nur ICON-D2 (`WIND3D_MODEL`), Farbfeld θe 2 m
+  (seit 2026-11-10 dazu die Phasen-Summe, s. u.)
   (`THETAE_VARIABLE`, steht bewusst nicht in `GLOBE_VARIABLES`, sonst läge es in allen anderen
   Auswahllisten); beide Listen sind in der Ansicht gesperrt. θe rechnet der Ingest aus T2m, Td2m
   und Bodendruck `ps` (Bolton, wie `thetaE` in `lib/thermo.ts`), ~166 KB je Bild. Eine Fassung
   mit Varda (1 km, aber ohne Vertikalbewegung) war nur kurz drin.
+  **ZWEITES FARBFELD: NIEDERSCHLAGSSUMME REGEN/SCHNEE** (`precipphase`, seit 2026-11-10, auf
+  Wunsch; `PRECIPPHASE_VARIABLE`/`RELIEF_VARIABLES` in `config/globe.ts`, Ingest `phase_step` in
+  `scripts/nwp_common.py`, Einfärbung `colorizePhaseTile`, Tests `render/globePhase.test.ts`): die
+  Summe seit Laufbeginn, Regen grün → blau, Schnee hellrosa → dunkelviolett, dieselben Stufen.
+  **Die Phase entscheidet JE PIXEL DAS ECHTE GELÄNDE**, nicht das Modell: der Rechen-Worker holt zu
+  jeder Feldkachel die Reliefkachel (`topoHeights`, dieselbe Quelle wie das 3D-Gelände, also meist
+  aus dem HTTP-Cache) und färbt violett, wo das Gelände über der Schnee-Höhe liegt. So läuft die
+  Schneegrenze am Hang entlang, auch quer durch eine 2,2-km-Zelle. **Die Schnee-Höhe ist ein
+  GEWICHTETER MEDIAN**: je Stunde zählt der Niederschlag dieser Stunde mit der Schneefallgrenze
+  `snowlmt` (ICON-D2, m über NN, live geprüft 2026-11-10) zum Ende der Stunde; an einem Ort der Höhe
+  z ist er Schnee, wenn z darüber liegt. Über die Stunden ist Schnee(z) die mit dem Niederschlag
+  gewichtete Verteilungsfunktion der Grenzen — die Höhe, über der mehr als die Hälfte der Summe
+  Schnee war, ist also deren gewichteter Median, und genau das braucht die Anzeige (überwiegende
+  Phase). Die Grenze zum gezeigten Termin allein wäre falsch: sie bestimmte dann auch den
+  Niederschlag der Stunden davor. **`snowlmt` fehlt in 19 % des Gitters** (gemessen, zu 88 % dort,
+  wo auch die Nullgradgrenze fehlt) — in diesen Stunden entscheidet die Modellphase
+  (`snow_gsp + snow_con` gegen `tot_prec`) für die ganze Zelle. Kodierung `encoding: 'phase'`: R+G
+  die Summe als 16-Bit-Code (0,1 mm), B die Höhe in 20-m-Stufen ab −200 m (0 = Schnee überall,
+  255 = Regen bis 4900 m). Gerechnet nur in `PHASE_BOX` (Alpen 3D mit Rand), außerhalb kein Wert
+  — das ganze Gitter hielte 48 h × 2 Felder × 906.000 Punkte. Gemessen ~76 KB je Bild, die
+  Rechenzeit fällt im Lauf nicht auf. **Gegenprobe gegen die Modellphase steht noch aus**: am
+  10.11. schneite es im ganzen D2-Gebiet nirgends (alle Niederschlagszellen weit unter der
+  Grenze); bei der ersten Schneelage prüfen, ob dort, wo das Modellgelände über der Grenze liegt,
+  auch das Modell Schnee führt.
   **3D-WINDPARTIKEL AUS DEM WINDVOLUMEN VON ICON-D2** (`render/wind3dLayer.ts`, `config/wind3d.ts`,
   `api/wind3d.ts`; im Querschnitt-Ingest mit erzeugt, Flächen bis 1,5 km über Grund in 2,2 km,
   stündlich bis +24 h, danach 3-stündlich): u, v und das echte `w`. **Gerechnet in der HÖHE über

@@ -16,9 +16,11 @@
 // ServiceException statt mit einem Bild.
 
 import { r3dLevelImage } from './radar3d'
-import { extractLightningCells, toPalette, type LightningCell } from '../render/lightning'
+import { extractLightningCells, flashCells, toPalette, type LightningCell } from '../render/lightning'
 import { maskRadarEdge } from '../render/radarImage'
 import {
+  flashBucketKey,
+  type FlashBucket,
   metaForSource,
   ownRadarImageKey,
   ownRadarMeta,
@@ -261,6 +263,19 @@ export async function loadLightningCells(
       const slot = next++
       if (slot >= order.length) return
       const time = order[slot]
+      if (cells.fromFlashes) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}${flashBucketKey(time)}`, { signal: opts.signal })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const found = flashCells((await res.json()) as FlashBucket, meta.merc)
+          if (opts.signal?.aborted) return
+          opts.onLoaded(time, found)
+        } catch (err) {
+          if (opts.signal?.aborted) return
+          opts.onError?.(time, err)
+        }
+        continue
+      }
       const url = radarImageUrl(source, meta, {
         time,
         width: opts.width,

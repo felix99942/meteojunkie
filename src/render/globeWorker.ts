@@ -18,8 +18,19 @@
 // vorher eingetroffenen Kacheln schon gerechnet sind — beim schnellen
 // Durchblättern genau der Rückstau, den der Abbruch verhindern soll.
 
-import { decodeCodes, decodeRgb3, decodeUv8, displayScale, getGlobeVariable, type GlobeField } from '../config/globe'
-import { colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE } from './globeTiles'
+import {
+  decodeCodes,
+  decodePhaseLine,
+  decodeRgb3,
+  decodeUv8,
+  displayScale,
+  getGlobeVariable,
+  PHASE_RAIN_SCALE,
+  PHASE_SNOW_SCALE,
+  type GlobeField,
+} from '../config/globe'
+import { colorizePhaseTile, colorizeRgbTile, colorizeTile, GLOBE_TILE_SIZE } from './globeTiles'
+import { topoHeights } from './globeTopo'
 import { CONTOUR_STYLES, contourTile, smoothField } from './globeContours'
 import type { FieldSource, WorkerRequest, WorkerResponse } from './globePool'
 
@@ -54,12 +65,36 @@ function loadField(src: FieldSource): Promise<GlobeField> {
     const base = { grid: src.grid, lo: src.lo, step: src.step }
     if (src.encoding === 'uv8') return { ...base, codes: new Uint16Array(0), uv: decodeUv8(data, w * h) }
     if (src.encoding === 'rgb3') return { ...base, codes: new Uint16Array(0), rgb: decodeRgb3(data, w * h) }
+    if (src.encoding === 'phase') return { ...base, codes: decodeCodes(data, w * h), zline: decodePhaseLine(data, w * h) }
     return { ...base, codes: decodeCodes(data, w * h) }
   })()
   // Ein gescheiterter Abruf darf nicht im Cache kleben
   p.catch(() => fields.get(src.url) === p && fields.delete(src.url))
   fields.set(src.url, p)
   while (fields.size > FIELD_LRU) fields.delete(fields.keys().next().value!)
+  return p
+}
+
+/** Geländehöhen je Kachel für die Phasen-Summe — beim Durchblättern immer dieselben Kacheln. */
+const HEIGHT_LRU = 64
+const heightTiles = new Map<string, Promise<Float32Array>>()
+
+function heightsFor(z: number, x: number, y: number): Promise<Float32Array> {
+  const key = `${z}/${x}/${y}`
+  const hit = heightTiles.get(key)
+  if (hit) {
+    heightTiles.delete(key)
+    heightTiles.set(key, hit)
+    return hit
+  }
+  // Scheitert der Abruf, wird die Kachel trotzdem gezeichnet (Gelände 0 m, also Regen
+  // außer bei Schnee bis ins Flachland) — aber nicht gemerkt, der nächste Versuch holt neu
+  const p = topoHeights(z, x, y, GLOBE_TILE_SIZE).catch(() => {
+    if (heightTiles.get(key) === p) heightTiles.delete(key)
+    return new Float32Array(GLOBE_TILE_SIZE * GLOBE_TILE_SIZE)
+  })
+  heightTiles.set(key, p)
+  while (heightTiles.size > HEIGHT_LRU) heightTiles.delete(heightTiles.keys().next().value!)
   return p
 }
 
@@ -204,9 +239,11 @@ async function run(job: Extract<WorkerRequest, { type: 'tile' | 'field' }>): Pro
       const out: GlobeField = { grid: f.grid, lo: f.lo, step: f.step, codes: f.codes.slice() }
       if (f.rgb) out.rgb = f.rgb.slice()
       if (f.uv) out.uv = f.uv.slice()
+      if (f.zline) out.zline = f.zline.slice()
       const tr: Transferable[] = [out.codes.buffer]
       if (out.rgb) tr.push(out.rgb.buffer)
       if (out.uv) tr.push(out.uv.buffer)
+      if (out.zline) tr.push(out.zline.buffer)
       return post({ id, field: out }, tr)
     }
     const f = await loadField(job.src)
@@ -220,7 +257,11 @@ async function run(job: Extract<WorkerRequest, { type: 'tile' | 'field' }>): Pro
       const { rgba, labels } = contourTile(f, smooth, job.contour.interval, style, z, x, y, GLOBE_TILE_SIZE, job.contour.min)
       bmp = await drawContourTile(rgba, labels, style)
     } else {
-      const rgba = f.rgb ? colorizeRgbTile(f, z, x, y) : colorizeTile(f, displayScale(getGlobeVariable(job.varId), job.src.interval), z, x, y)
+      const rgba = f.zline
+        ? colorizePhaseTile(f, PHASE_RAIN_SCALE, PHASE_SNOW_SCALE, await heightsFor(z, x, y), z, x, y)
+        : f.rgb
+          ? colorizeRgbTile(f, z, x, y)
+          : colorizeTile(f, displayScale(getGlobeVariable(job.varId), job.src.interval), z, x, y)
       bmp = await createImageBitmap(new ImageData(rgba as Uint8ClampedArray<ArrayBuffer>, GLOBE_TILE_SIZE, GLOBE_TILE_SIZE))
     }
     post({ id, bitmap: bmp }, [bmp])

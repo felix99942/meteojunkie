@@ -27,7 +27,7 @@ export const GLOBE_TOPO_PROTOCOL = 'globedem'
 /** Gleiche Kennung für Quelle und Ebene */
 export const GLOBE_TOPO_LAYER = 'globe-topo'
 
-const SOURCE_URL = (z: number, x: number, y: number) =>
+export const SOURCE_URL = (z: number, x: number, y: number) =>
   import.meta.env.DEV
     ? `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
     : `/topo/${z}/${x}/${y}.png`
@@ -361,4 +361,44 @@ export async function loadTopoTile(url: string, signal: AbortSignal): Promise<Im
     if (isAbort(e)) throw e
     return flatTile(256)
   }
+}
+
+/**
+ * Geländehöhe (m) je Pixel einer Kachel z/x/y, size × size — für die Phasen-Summe
+ * (`colorizePhaseTile`), die je Pixel Regen von Schnee trennt. Dieselbe Quelle und
+ * derselbe Vorfahr wie das 3D-Gelände, die Kachel kommt also meist aus dem HTTP-Cache.
+ * Fehlt sie (Meer), ist alles 0 m; dort ist die Phase ohnehin die des Flachlands.
+ */
+export async function topoHeights(z: number, x: number, y: number, size: number): Promise<Float32Array> {
+  const t = topoTile(z, x, y)
+  const out = new Float32Array(size * size)
+  const res = await fetch(new URL(SOURCE_URL(t.z, t.x, t.y), self.location.href).href)
+  if (!res.ok) return out
+  const bmp = await createImageBitmap(await res.blob(), BITMAP_OPTIONS)
+  const n = bmp.width
+  const ctx = new OffscreenCanvas(n, n).getContext('2d', { willReadFrequently: true })
+  if (!ctx) {
+    bmp.close()
+    return out
+  }
+  ctx.drawImage(bmp, 0, 0)
+  bmp.close()
+  const px = ctx.getImageData(0, 0, n, n).data
+  const h = new Float32Array(n * n)
+  for (let i = 0; i < n * n; i++) h[i] = Math.max(0, heightAt(px, 4 * i))
+  // Pixelmitten der angefragten Kachel im Raster des Vorfahren, bilinear
+  for (let py = 0; py < size; py++) {
+    const v = Math.min(n - 1, Math.max(0, ((t.row + (py + 0.5) / size) / t.factor) * n - 0.5))
+    const j0 = Math.min(n - 2, Math.floor(v))
+    const fy = v - j0
+    for (let px2 = 0; px2 < size; px2++) {
+      const u = Math.min(n - 1, Math.max(0, ((t.col + (px2 + 0.5) / size) / t.factor) * n - 0.5))
+      const i0 = Math.min(n - 2, Math.floor(u))
+      const fx = u - i0
+      const a = j0 * n + i0
+      out[py * size + px2] =
+        (h[a] * (1 - fx) + h[a + 1] * fx) * (1 - fy) + (h[a + n] * (1 - fx) + h[a + n + 1] * fx) * fy
+    }
+  }
+  return out
 }

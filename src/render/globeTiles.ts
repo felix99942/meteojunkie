@@ -22,6 +22,7 @@ import { buildLut, LUT_SIZE } from './fieldImage'
 import {
   gridX,
   gridY,
+  phaseLineM,
   POLE_RING_LAT,
   poleSide,
   tilePixelLat,
@@ -467,4 +468,114 @@ export function colorizeRgbTile(f: GlobeField, z: number, x: number, y: number, 
 
 export function globeTileUrl(model: GlobeModelId, runId: string, varId: GlobeVarId, step: number): string {
   return `${GLOBE_PROTOCOL}://${model}/${runId}/${varId}/${step}/{z}/{x}/{y}`
+}
+
+/**
+ * Phasen-Summe einfärben (`kind: 'phase'`): je Teilpunkt Summe UND Schnee-Höhe aus dem
+ * Gitter interpoliert, und die Rampe wählt das ECHTE Gelände unter dem Pixel
+ * (`heights`, size × size in m) — liegt es über der Höhe, war die Summe dort
+ * überwiegend Schnee. So läuft die Schneegrenze am Hang entlang, auch quer durch eine
+ * 2,2-km-Zelle des Modells. Überabtastung und vormultiplizierte Mittelung wie bei
+ * `colorizeTile`; nur regionale Gitter (ICON-D2), deshalb ohne Polrand.
+ */
+export function colorizePhaseTile(
+  f: GlobeField,
+  rain: ColorScale,
+  snow: ColorScale,
+  heights: Float32Array,
+  z: number,
+  x: number,
+  y: number,
+  size = GLOBE_TILE_SIZE,
+): Uint8ClampedArray {
+  const { ni, nj } = f.grid
+  const zl = f.zline!
+  const luts = [buildLut(rain), buildLut(snow)]
+  const sMin = rain.stops[0].value
+  const sMax = rain.stops[rain.stops.length - 1].value
+  const lutK = (LUT_SIZE - 1) / (sMax - sMin)
+
+  const sub = size * SUPERSAMPLE
+  const ix0 = new Int32Array(sub)
+  const fxs = new Float32Array(sub)
+  for (let sx = 0; sx < sub; sx++) {
+    const gx = gridX(f.grid, tilePixelLon(z, x, sx, sub))
+    if (gx == null || gx > ni - 1) {
+      ix0[sx] = -1
+      continue
+    }
+    const i0 = Math.min(ni - 2, Math.floor(gx))
+    ix0[sx] = i0
+    fxs[sx] = gx - i0
+  }
+  const iy0s = new Int32Array(sub)
+  const fys = new Float32Array(sub)
+  for (let sy = 0; sy < sub; sy++) {
+    const gy = gridY(f.grid, tilePixelLat(z, y, sy, sub))
+    if (gy == null) {
+      iy0s[sy] = -1
+      continue
+    }
+    const j0 = Math.min(nj - 2, Math.floor(gy))
+    iy0s[sy] = j0
+    fys[sy] = gy - j0
+  }
+
+  const c = f.codes
+  let lut = luts[0]
+  /** LUT-Index des Teilpunkts, −1 = durchsichtig; setzt `lut` auf Regen oder Schnee. */
+  const sample = (sx: number, sy: number, h: number): number => {
+    const iy0 = iy0s[sy]
+    const a = ix0[sx]
+    if (iy0 < 0 || a < 0) return -1
+    const r0 = iy0 * ni + a
+    const r1 = r0 + ni
+    const c00 = c[r0]
+    const c01 = c[r0 + 1]
+    const c10 = c[r1]
+    const c11 = c[r1 + 1]
+    if (c00 === 0 || c01 === 0 || c10 === 0 || c11 === 0) return -1
+    const fx = fxs[sx]
+    const fy = fys[sy]
+    const w00 = (1 - fx) * (1 - fy)
+    const w01 = fx * (1 - fy)
+    const w10 = (1 - fx) * fy
+    const w11 = fx * fy
+    const v = f.lo + (c00 * w00 + c01 * w01 + c10 * w10 + c11 * w11 - 1) * f.step
+    if (v < sMin) return -1
+    const line = phaseLineM(zl[r0] * w00 + zl[r0 + 1] * w01 + zl[r1] * w10 + zl[r1 + 1] * w11)
+    lut = luts[h > line ? 1 : 0]
+    const li = Math.round((v - sMin) * lutK)
+    return li > LUT_SIZE - 1 ? LUT_SIZE - 1 : li
+  }
+
+  const n = SUPERSAMPLE * SUPERSAMPLE
+  const out = new Uint8ClampedArray(size * size * 4)
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const h = heights[py * size + px]
+      let sr = 0
+      let sg = 0
+      let sb = 0
+      let sa = 0
+      for (let dy = 0; dy < SUPERSAMPLE; dy++)
+        for (let dx = 0; dx < SUPERSAMPLE; dx++) {
+          const li = sample(px * SUPERSAMPLE + dx, py * SUPERSAMPLE + dy, h)
+          if (li < 0) continue
+          const q = li * 4
+          const al = lut[q + 3]
+          sr += lut[q] * al
+          sg += lut[q + 1] * al
+          sb += lut[q + 2] * al
+          sa += al
+        }
+      if (sa === 0) continue
+      const o = (py * size + px) * 4
+      out[o] = sr / sa
+      out[o + 1] = sg / sa
+      out[o + 2] = sb / sa
+      out[o + 3] = sa / n
+    }
+  }
+  return out
 }

@@ -5,6 +5,7 @@
 // der Dimension ist NICHT der letzte Analysezeitpunkt, sondern das Ende der
 // Verlagerungsrechnung, die dieser Bereich NICHT zeigt.
 
+import { FLASH_AREA_BOX } from './radar'
 import { describe, expect, it } from 'vitest'
 import {
   analysisTime,
@@ -295,7 +296,7 @@ describe('Produkt-Registry', () => {
 
 describe('Overlays', () => {
   it('laufen im 5-Minuten-Takt und ohne Vorhersageteil', () => {
-    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'mtgli'])
+    expect(RADAR_OVERLAYS.map((o) => o.id)).toEqual(['blitze', 'mtgli', 'mtgflash'])
     for (const o of RADAR_OVERLAYS) {
       expect(o.stepMs, o.id).toBe(300_000)
       // Die `fcst_*`-Layer bleiben draußen, wie die Radarvorhersage auch.
@@ -304,12 +305,13 @@ describe('Overlays', () => {
     }
   })
 
-  // Bis auf den MTG-Blitz-Layer kommt alles vom DWD. Der Test hält die
-  // Ausnahme fest, damit sie eine bleibt: jede weitere Fremdquelle braucht
+  // Bis auf die MTG-Blitze kommt alles vom DWD. Der Test hält die
+  // Ausnahmen fest, damit sie welche bleiben: jede weitere Fremdquelle braucht
   // eigene Endpunkte UND eine eigene Fläche (siehe `WmsImageSource.area`).
+  // `mtgflash` kommt aus R2 (worker/flashes.ts), nicht von einem WMS.
   it('kommen bis auf MTG alle vom DWD-WMS', () => {
     for (const o of RADAR_OVERLAYS) {
-      if (o.id === 'mtgli') continue
+      if (o.id === 'mtgli' || o.id === 'mtgflash') continue
       expect(o.layer, o.id).toMatch(/^dwd:/)
       expect(o.wmsBase, o.id).toBeUndefined()
       expect(o.capsBase, o.id).toBeUndefined()
@@ -413,8 +415,16 @@ describe('MTG-Blitz-Overlay', () => {
   // Beide Blitzquellen zeichnen selbst; alles andere geht als Bild auf die
   // Karte. Das Panel entscheidet daran, nicht an der Id.
   it('ist neben den DWD-Blitzen die zweite Zellquelle', () => {
-    expect(RADAR_OVERLAYS.filter((o) => o.cells).map((o) => o.id)).toEqual(['blitze', 'mtgli'])
+    expect(RADAR_OVERLAYS.filter((o) => o.cells).map((o) => o.id)).toEqual(['blitze', 'mtgli', 'mtgflash'])
     expect(RADAR_OVERLAYS.find((o) => o.id === 'blitze')!.cells?.symbol).toBe('crosses')
+  })
+
+  it('die Einzelblitze kommen aus R2 und haben ein eigenes Symbol', () => {
+    const o = RADAR_OVERLAYS.find((x) => x.id === 'mtgflash')!
+    expect(o.own).toBe(true)
+    expect(o.cells?.fromFlashes).toBe(true)
+    expect(o.cells?.symbol).toBe('dots')
+    expect(o.area).toEqual(FLASH_AREA_BOX)
   })
 })
 

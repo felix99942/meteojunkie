@@ -124,6 +124,11 @@ VARIABLES = {
     'hzerocl': {'lo': -500.0, 'step': 50.0, 'unit': 'm'},
     # Äquivalentpotentielle Temperatur 2 m, nur ICON-D2 (Farbfeld von „Alpen 3D")
     'thetae': {'lo': 200.0, 'step': 0.5, 'unit': 'K'},
+    # Niederschlagssumme mit PHASE, nur ICON-D2 (Farbfeld von „Alpen 3D", seit 2026-11-10):
+    # R+G = Summe als 16-Bit-Code wie sonst, B = Höhe, über der die Summe überwiegend
+    # als Schnee fiel (`phase_step`), (B · 20 − 200) m. Die Anzeige vergleicht sie je
+    # Pixel mit dem ECHTEN Gelände.
+    'precipphase': {'lo': 0.0, 'step': 0.1, 'unit': 'mm', 'encoding': 'phase'},
 }
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
@@ -139,13 +144,14 @@ NEEDS = {
     'newsnow': ('sf',),
     't700': ('t700',),
     'thetae': ('t2m', 'td2m', 'ps'),
+    'precipphase': ('tp', 'sf', 'snowlmt'),
     'wind850': ('u850', 'v850'), 'uv850': ('u850', 'v850'),
     'wind700': ('u700', 'v700'), 'uv700': ('u700', 'v700'),
 }
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
 OPTIONAL = {
     'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow',
-    't700', 'wind850', 'uv850', 'wind700', 'uv700', 'thetae',
+    't700', 'wind850', 'uv850', 'wind700', 'uv700', 'thetae', 'precipphase',
 }
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
@@ -398,6 +404,85 @@ def encode(values, lo: float, step: float) -> bytes:
     return buf.getvalue()
 
 
+# Gebiet der Phasen-Summe (lon_w, lat_s, lon_e, lat_n): „Alpen 3D" mit Rand. Nur dort
+# gerechnet, außerhalb kein Wert — das ganze D2-Gitter hielte 48 Stunden × 2 Felder ×
+# 906.000 Punkte im Speicher, und gezeigt wird die Größe nirgends sonst
+PHASE_BOX = (4.5, 43.8, 17.7, 49.4)
+# Sinnbild „überall Schnee" bzw. „überall Regen" für Stunden ohne Schneefallgrenze
+PHASE_ALL_SNOW, PHASE_ALL_RAIN = -1000.0, 9000.0
+PHASE_Z0, PHASE_DZ = -200.0, 20.0
+
+
+def phase_step(st: dict, f: dict, step: int):
+    """Summe seit Laufbeginn und die Höhe, über der sie überwiegend Schnee war (NJ×NI×2).
+
+    Je Stunde zählt der Niederschlag dieser Stunde (`tp` differenziert) mit der
+    Schneefallgrenze `snowlmt` zum Ende der Stunde: an einem Ort der Höhe z ist er
+    Schnee, wenn z über der Grenze liegt. Über die Stunden summiert ist Schnee(z) die
+    mit dem Niederschlag GEWICHTETE Verteilungsfunktion der Grenzen bei z — die Höhe,
+    über der mehr als die Hälfte der Summe Schnee war, ist also der gewichtete MEDIAN
+    der Grenzen. Genau das braucht die Anzeige: je Pixel die überwiegende Phase.
+
+    Fehlt die Grenze (gemessen 19 % des Gebiets, zu 88 % dort, wo auch die
+    Nullgradgrenze fehlt), entscheidet in dieser Stunde die Phase des Modells selbst
+    (`snow_gsp + snow_con` gegen `tot_prec`).
+    """
+    import numpy as np
+
+    g = st['grid']
+    w, s_, e, n = PHASE_BOX
+    i0 = max(0, round((w - g['lon0']) / g['dlon']))
+    i1 = min(g['ni'], round((e - g['lon0']) / g['dlon']) + 1)
+    j0, j1 = sorted((round((s_ - g['lat0']) / g['dlat']), round((n - g['lat0']) / g['dlat'])))
+    j0, j1 = max(0, j0), min(g['nj'], j1 + 1)
+    box = (slice(j0, j1), slice(i0, i1))
+    tp = f['tp'][box].astype(np.float64)
+    sf = f['sf'][box].astype(np.float64)
+    ph = st.setdefault('phase', {'S': [], 'W': [], 'tp': None, 'sf': None})
+    prev_tp, prev_sf = ph['tp'], ph['sf']
+    ph['tp'], ph['sf'] = tp, sf
+    if prev_tp is None:
+        return None  # +0: noch keine Stunde
+    dp = np.maximum(tp - prev_tp, 0.0)
+    ds = np.maximum(sf - prev_sf, 0.0)
+    line = f['snowlmt'][box]
+    own = np.where(ds >= 0.5 * dp, PHASE_ALL_SNOW, PHASE_ALL_RAIN)
+    ph['S'].append(np.where(np.isfinite(line), line, own).astype(np.float32))
+    ph['W'].append(np.nan_to_num(dp).astype(np.float32))
+
+    S = np.stack(ph['S'])
+    W = np.stack(ph['W'])
+    total = W.sum(0)
+    order = np.argsort(S, axis=0)
+    cum = np.cumsum(np.take_along_axis(W, order, 0), axis=0)
+    k = np.argmax(cum >= 0.5 * total, axis=0)
+    z50 = np.take_along_axis(np.take_along_axis(S, order, 0), k[None], 0)[0]
+
+    out = np.full((g['nj'], g['ni'], 2), np.nan, np.float32)
+    # unter 1 mm auf 0 wie bei der Niederschlagssumme (Skala dort durchsichtig)
+    out[box + (0,)] = np.where(total < 1.0, 0.0, total)
+    out[box + (1,)] = z50
+    return out
+
+
+def encode_phase(values, lo: float, step: float) -> bytes:
+    """Summe (R+G, 16 Bit) und Schneehöhe (B, 20-m-Stufen ab −200 m) → RGB-WebP."""
+    import numpy as np
+    from PIL import Image
+
+    p, z = values[..., 0], values[..., 1]
+    code = np.round((p - lo) / step) + 1
+    code = np.where(np.isfinite(p), np.clip(code, 1, 65535), 0).astype(np.uint16)
+    rgb = np.zeros(p.shape + (3,), np.uint8)
+    rgb[..., 0] = code >> 8
+    rgb[..., 1] = code & 255
+    zc = np.clip(np.round((np.nan_to_num(z, nan=PHASE_Z0) - PHASE_Z0) / PHASE_DZ), 0, 255)
+    rgb[..., 2] = np.where(code > 0, zc, 0).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(rgb).save(buf, 'WEBP', lossless=True, method=4)
+    return buf.getvalue()
+
+
 def run_id(run: datetime) -> str:
     return f'{run:%Y%m%d%H}'
 
@@ -472,6 +557,7 @@ def ingest(
         data = (
             encode_rgb3(values) if enc == 'rgb3'
             else encode_uv8(values, spec['step']) if enc == 'uv8'
+            else encode_phase(values, spec['lo'], spec['step']) if enc == 'phase'
             else encode(values, spec['lo'], spec['step'])
         )
         path = state[m]['tmp'] / var / f'{step:03d}.webp'
@@ -513,7 +599,10 @@ def ingest(
                         if var not in opt and m == next(iter(todo)):
                             print(f'  ! {var} fehlt bei +{step} h', file=sys.stderr)
                         continue
-                    values = derive(var, f, st['prev_tp'], step, prev_step)
+                    values = (
+                        phase_step(st, f, step) if var == 'precipphase'
+                        else derive(var, f, st['prev_tp'], step, prev_step)
+                    )
                     if values is None:
                         continue
                     st['have'][var].append(step)

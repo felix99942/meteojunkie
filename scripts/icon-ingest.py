@@ -96,8 +96,10 @@ FIELDS = [
     ('hzerocl', None, 'hzerocl'),
 ]
 
-# Nur ICON-D2: Bodendruck für θe auf dem Gelände (Ansicht „Alpen 3D"), live geprüft 2026-11-09
-EXTRA_FIELDS = {'icon-d2': [('ps', None, 'ps')]}
+# Nur ICON-D2: Bodendruck für θe auf dem Gelände (Ansicht „Alpen 3D"), live geprüft 2026-11-09.
+# Schneefallgrenze (m über NN) für die Phasen-Summe, live geprüft 2026-11-10: in 19 % des
+# Gitters undefiniert, dort meist auch die Nullgradgrenze
+EXTRA_FIELDS = {'icon-d2': [('ps', None, 'ps'), ('snowlmt', None, 'snowlmt')]}
 
 G = 9.80665  # Geopotential (m²/s²) → geopotentielle Höhe (m)
 

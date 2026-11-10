@@ -15,6 +15,7 @@
 // das Projekt bekommt keine zweite Typwelt neben DOM/Node.
 
 import { authGate, type AuthEnv } from './auth'
+import { updateFlashes, type EumetsatCreds } from './flashes'
 import { updateRadar } from './radar'
 import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
@@ -22,7 +23,7 @@ import { satelliteTile } from './satTiles'
 import { updateTawes } from './tawes'
 import type { R2BucketLike } from './r2'
 
-interface Env extends AuthEnv {
+interface Env extends AuthEnv, EumetsatCreds {
   ASSETS: { fetch(req: Request): Promise<Response> }
   DATA: R2BucketLike
 }
@@ -122,7 +123,7 @@ export default {
     return res
   },
 
-  // Cron (wrangler.jsonc, alle 5 Minuten): Radar jedes Mal, der Satellit
+  // Cron (wrangler.jsonc, alle 5 Minuten): Radar und MTG-Blitze jedes Mal, der Satellit
   // jedes zweite Mal — EUMETView schiebt nur alle 10 bzw. 15 Minuten nach.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     // 3D-Radar im EIGENEN Cron (2 min versetzt): eigenes CPU-Budget von 30 s,
@@ -142,6 +143,9 @@ export default {
     const minute = new Date(event.scheduledTime).getUTCMinutes()
     const jobs: Promise<string>[] = [updateRadar(env.DATA)]
     if (minute % 10 < 5) jobs.push(mirrorSatellite(env.DATA))
+    // MTG-Einzelblitze: jedes Mal nachsehen — die Datei kommt ~2¾ min nach
+    // ihrem 10-Minuten-Fenster, ein fester Takt verlöre sonst bis zu 5 Minuten
+    jobs.push(updateFlashes(env.DATA, env))
     // Abgewartet statt waitUntil: ein Cron-Lauf darf bis zu 15 Minuten
     // dauern, solange sein Promise offen ist
     const results = await Promise.allSettled(jobs)

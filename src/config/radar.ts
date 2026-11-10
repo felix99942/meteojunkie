@@ -697,6 +697,59 @@ export const FLASH_AREA_COLORS = [
  */
 export const FLASH_AREA_BOX: GeoBox = { west: 1.5, east: 18.7, south: 45.7, north: 56.2 }
 
+// --- MTG-Einzelblitze (R2) -----------------------------------------------------
+//
+// Der Worker holt alle 5 Minuten die neue Datei „LI Lightning Flashes"
+// (EO:EUM:DAT:0691) aus dem EUMETSAT Data Store (worker/flashes.ts) und legt die
+// Blitze in 5-Minuten-Fenstern ab — ANDERS als `mtgli` (Blitzfläche als WMS-Bild,
+// nach Zellen gerastert) sind das EINZELNE Blitze mit eigener Zeit und Lage.
+// Gemessen 2026-11-10: eine Datei je 10 Minuten, ~790 KB NetCDF4 unkomprimiert,
+// ~2¾ min nach Fensterende im Data Store; jsfive liest sie in ~15 ms.
+
+export const FLASH_SOURCE_ID = 'mtgflash'
+export const FLASH_STEP_MS = 5 * 60_000
+
+/**
+ * Was abgelegt wird: die Blitzfläche um 1° nach jeder Seite — gezeichnet wird
+ * nur `FLASH_AREA_BOX`, der Rand fängt Ringe auf, die über die Kante ragen.
+ */
+export const FLASH_STORE_BOX: GeoBox = {
+  west: FLASH_AREA_BOX.west - 1,
+  east: FLASH_AREA_BOX.east + 1,
+  south: FLASH_AREA_BOX.south - 1,
+  north: FLASH_AREA_BOX.north + 1,
+}
+
+/**
+ * Ein 5-Minuten-Fenster: `radar/mtgflash/<Ende>.json`. `f` ist flach, je Blitz
+ * vier Zahlen: Breite, Länge (je 3 Nachkommastellen), Sekunden nach `start`,
+ * Strahldichte (mW m⁻² sr⁻¹). Flach statt Objekte, weil ein Gewittertag über
+ * Mitteleuropa Zehntausende Blitze je Fenster bringen kann.
+ */
+export interface FlashBucket {
+  start: number
+  end: number
+  f: number[]
+}
+
+export function flashBucketKey(end: number): string {
+  return `radar/${FLASH_SOURCE_ID}/${radarStamp(end)}.json`
+}
+
+/**
+ * Stufe 0…4 für die Symbolgröße, aus der Strahldichte. Die Schwellen sind die
+ * Quartile einer Datei vom 10.11.2026 (ganze Erdscheibe: 25 % unter 49, Median
+ * 137, 75 % unter 390, 90 % unter 1031) — eine relative Stärke, keine
+ * Stromstärke: die misst ein optischer Sensor nicht.
+ */
+export function flashLevel(radiance: number): number {
+  if (radiance < 50) return 0
+  if (radiance < 140) return 1
+  if (radiance < 400) return 2
+  if (radiance < 1000) return 3
+  return 4
+}
+
 /**
  * Pixelblock, mit dem die Zellen aus dem grob angeforderten Dichtebild
  * zusammengefasst werden (siehe `render/lightning.ts`): eine 10-km-Zelle deckt
@@ -731,7 +784,13 @@ export interface CellSymbols {
    * (zwei Quellen, die sich einig sind), östlich und südlich davon steht der
    * Ring allein — mit zweimal Kreuzen sähe die Überlappung wie ein Fehler aus.
    */
-  symbol: 'crosses' | 'rings'
+  symbol: 'crosses' | 'rings' | 'dots'
+  /**
+   * Gesetzt → die Zellen kommen nicht aus einem Dichtebild, sondern sind
+   * EINZELBLITZE aus R2 (`FlashBucket`, worker/flashes.ts); `palette` und
+   * `blockPx` gelten dann nicht.
+   */
+  fromFlashes?: true
   /** Grundmaß in Pixeln bei `RADAR_IMAGE_WIDTH`. */
   base: number
   /** Zuschlag je Stufe — die GRÖSSE trägt die Intensität. */
@@ -849,6 +908,37 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
     },
     credit: { name: 'EUMETSAT', href: 'https://www.eumetsat.int/' },
     note: 'MTG Lightning Imager, Accumulated Flash Area: OPTISCH aus dem All gesehene Blitzfläche, 5-Minuten-Takt. Ringfarbe = Alter wie bei den DWD-Kreuzen, Ringgröße = Intensitätsstufe. Deckt im Gegensatz zur DWD-Blitzdichte ganz Österreich ab. Eine optische Messung liefert weder Polarität noch Stromstärke und unterscheidet Wolken- nicht von Erdblitzen — dafür bräuchte es ein bodengebundenes VLF/LF-Netz, das es offen nicht gibt.',
+  },
+  // Dieselbe Quelle wie `mtgli`, aber die EINZELNEN Blitze statt der
+  // aufsummierten Fläche: eigene Zeit je Blitz, Lage auf ~4,5 km (Pixel des
+  // Lightning Imager über Mitteleuropa). Holt der Worker (worker/flashes.ts).
+  {
+    id: FLASH_SOURCE_ID,
+    label: 'MTG-Einzelblitze',
+    layer: FLASH_SOURCE_ID,
+    capsLayer: FLASH_SOURCE_ID,
+    own: true,
+    area: FLASH_AREA_BOX,
+    stepMs: FLASH_STEP_MS,
+    forecastMs: 0,
+    maskOpacity: null,
+    opacity: 1,
+    defaultOn: false,
+    cells: {
+      palette: [],
+      blockPx: 1,
+      symbol: 'dots',
+      base: 1.6,
+      perLevel: 0.45,
+      fromFlashes: true,
+    },
+    legend: {
+      kind: 'dots',
+      caption: 'MTG-Einzelblitze, Minuten zurück',
+      items: LIGHTNING_AGES,
+    },
+    credit: { name: 'EUMETSAT', href: 'https://www.eumetsat.int/' },
+    note: 'MTG Lightning Imager, Lightning Flashes (EO:EUM:DAT:0691): jeder Punkt ist EIN Blitz, gefärbt nach seinem Alter in 5-Minuten-Stufen, Größe = Leuchtstärke. Optisch aus dem All, Lage auf ~4,5 km; Wolken- und Erdblitze sind nicht unterschieden. Die Daten kommen in 10-Minuten-Paketen etwa 3 Minuten nach deren Ende — der jüngste Blitz ist also 3 bis 13 Minuten alt.',
   },
 ]
 
@@ -1156,3 +1246,4 @@ export function classifyRadarPixel(r: number, g: number, b: number, a: number, l
   if (best < 0 || bestD > CLASS_TOLERANCE) return { kind: 'none' }
   return { kind: 'echo', from: legend[best].label, to: legend[best + 1]?.label ?? null }
 }
+

@@ -48,7 +48,7 @@ import {
   type PanelRegion,
   type PanelView,
 } from '../config/globePanels'
-import { validLabel } from '../config/globeFormat'
+import { validLabel, validParts } from '../config/globeFormat'
 import { formatRunLong } from '../config/runs'
 
 const FIELD = 'gmp-field'
@@ -385,6 +385,14 @@ export function GlobeMapPanel(props: Props) {
             {leadH != null && ` · +${leadH} h`}
             {freshness === 'old' && ' · ⚠ alter Lauf'}
             {freshness === 'spent' && ' · ⚠ Stand verbraucht'}
+          </div>
+        )}
+        {show && (
+          // Welcher Zeitschritt GERADE zu sehen ist, ohne in die Zeitleiste zu
+          // schauen — beim Durchziehen ändert sich nur dieses Kästchen
+          <div className={frozen ? 'gmp-valid is-frozen' : 'gmp-valid'} title="Gültigkeitszeit des gezeigten Bildes (UTC)">
+            <span className="gmp-valid-time">{validParts(stepMs).time}</span>
+            <span className="gmp-valid-day">{validParts(stepMs).day}</span>
           </div>
         )}
         {show && frozen && (

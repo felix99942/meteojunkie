@@ -1,3 +1,6 @@
+import { flashLevel, type FlashBucket } from '../config/radar'
+import { toMercator, type MercBox } from '../config/wmsTime'
+
 // Blitze als KREUZE, gefärbt nach dem Alter.
 //
 // **Der DWD veröffentlicht keine Einzelblitze.** Was es gibt, ist die
@@ -177,6 +180,52 @@ export function drawFlashRings(
       ctx.arc(c.x * size.width, c.y * size.height, r, 0, Math.PI * 2)
       ctx.stroke()
     }
+  }
+  ctx.restore()
+}
+
+/**
+ * EINZELBLITZE (MTG Lightning Flashes, `FlashBucket`) → Zellen in
+ * Bildkoordinaten der Overlay-Fläche. Die Stufe kommt aus der Leuchtstärke
+ * (`flashLevel`); Blitze außerhalb der Fläche fallen weg.
+ */
+export function flashCells(bucket: FlashBucket, merc: MercBox): LightningCell[] {
+  const out: LightningCell[] = []
+  const w = merc.maxx - merc.minx
+  const h = merc.maxy - merc.miny
+  for (let i = 0; i + 3 < bucket.f.length; i += 4) {
+    const p = toMercator(bucket.f[i + 1], bucket.f[i])
+    const x = (p.x - merc.minx) / w
+    const y = (merc.maxy - p.y) / h
+    if (x < 0 || x > 1 || y < 0 || y > 1) continue
+    out.push({ x, y, level: flashLevel(bucket.f[i + 3]) })
+  }
+  return out
+}
+
+/**
+ * Zeichnet die PUNKTE einer Altersstufe — für die Einzelblitze, damit sie
+ * sich von DWD-Kreuz und MTG-Ring (Zellen) unterscheiden. Dunkler Rand wie
+ * bei den anderen Symbolen, sonst geht ein gelber Punkt auf gelbem Echo unter.
+ */
+export function drawFlashDots(
+  ctx: CanvasRenderingContext2D,
+  cells: LightningCell[],
+  size: { width: number; height: number },
+  color: string,
+  radius: { base: number; perLevel: number },
+): void {
+  if (cells.length === 0) return
+  ctx.save()
+  ctx.fillStyle = color
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+  ctx.lineWidth = 1
+  for (const c of cells) {
+    const r = radius.base + c.level * radius.perLevel
+    ctx.beginPath()
+    ctx.arc(c.x * size.width, c.y * size.height, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
   }
   ctx.restore()
 }

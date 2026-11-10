@@ -4992,6 +4992,11 @@ button:focus-visible {
   height: 13px;
 }
 
+/* Phasen-Summe: 15 Stufen je Rampe statt 8 Achtel */
+.globe-legend-phase .globe-legend-octa-row {
+  grid-template-columns: 52px repeat(15, 22px);
+}
+
 .globe-legend-octa-scale em {
   font-style: normal;
   font-size: 11.5px;
@@ -5647,6 +5652,44 @@ button:focus-visible {
 }
 
 .gmp-run.is-stale {
+  color: #f0c04a;
+  border-color: #6b5a2a;
+}
+
+.gmp-valid {
+  position: absolute;
+  z-index: 4;
+  right: 4px;
+  top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 3px 8px 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(20, 21, 24, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  line-height: 1.15;
+}
+
+.gmp-valid-time {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gmp-valid-day {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+/* Steht das Panel (älterer Termin als gewählt), zeigt das Kästchen den
+   Termin des Bildes — in der Warnfarbe wie das „steht bei"-Schild */
+.gmp-valid.is-frozen {
   color: #f0c04a;
   border-color: #6b5a2a;
 }

@@ -264,6 +264,8 @@ export function addWorldLabels(
   avoid?: string,
   maxLabels: number = MAX_LABELS,
   bounds?: [[number, number], [number, number]],
+  /** Zusätzliche Orte nur für diese Karte (Talorte in „Alpen 3D", `config/alpsTowns.ts`). */
+  extra?: LabelCandidate[],
 ): () => void {
   let alive = true
   const shown = new Map<LabelCandidate, maplibregl.Marker>()
@@ -289,7 +291,7 @@ export function addWorldLabels(
   loadLabels()
     .then((all) => {
       if (!alive) return
-      sorted = all.slice().sort(compareCandidates)
+      sorted = (extra ? mergeCandidates(all, extra) : all.slice()).sort(compareCandidates)
       update()
     })
     .catch((err: unknown) => console.error('[labels]', err))

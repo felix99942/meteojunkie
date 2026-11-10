@@ -13,6 +13,7 @@
 // nicht aus der Farbe. Gewählt wird eine GÜLTIGKEITSZEIT, kein Index — beim
 // Wechsel auf ein Modell mit anderen Schritten bleibt der Termin stehen.
 
+import { ALPS_TOWNS } from '../config/alpsTowns'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -24,6 +25,7 @@ import {
   GLOBE_TOPO_LAYER,
   preloadRelief,
   RELIEF_BOUNDS,
+  RELIEF_EXAGGERATION,
   removeReliefTerrain,
   removeTopoLayer,
 } from '../render/globeTopo'
@@ -48,6 +50,10 @@ import {
   DEFAULT_GLOBE_MODEL,
   DEFAULT_GLOBE_VARIABLE,
   THETAE_VARIABLE,
+  RELIEF_VARIABLES,
+  PHASE_RAIN_SCALE,
+  PHASE_SNOW_SCALE,
+  samplePhaseLine,
   WIND3D_MODEL,
   getGlobeModel,
   getGlobeVariable,
@@ -144,6 +150,23 @@ const STAR_TILE = 768
 const GLOBE_MAX_PIXEL_RATIO = 1.5
 
 type MetaState = { meta: GlobeMeta } | { error: string }
+
+/**
+ * Ablesung der Phasen-Summe, IMMER mit Zahlen (auf Wunsch — in Hochtälern und an Pässen
+ * zählt die Höhe): Seehöhe unter dem Zeiger, die Phase dort und die Höhe, über der die
+ * Summe überwiegend Schnee war. `ground` = echtes Gelände in m (null ohne Relief).
+ */
+function phaseReadout(mm: string, line: number | null, ground: number | null): string {
+  const m = (v: number) => `${(Math.round(v / 10) * 10).toLocaleString('de-DE')} m`
+  const parts = [`${mm} mm`]
+  if (line != null && ground != null) parts[0] += ground > line ? ' Schnee' : ' Regen'
+  if (ground != null) parts.push(`Gelände ${m(ground)}`)
+  // B = 0 bzw. 255 sind die Ränder der Kodierung (−200 m / 4900 m): dort gibt es keine
+  // genauere Zahl — die Summe war bis auf Meereshöhe Schnee bzw. bis in die Gipfel Regen
+  if (line != null)
+    parts.push(line <= -200 ? 'Schnee ab 0 m' : line >= 4900 ? 'Schnee erst über 4.900 m' : `Schnee ab ~${m(Math.max(0, line))}`)
+  return parts.join(' · ')
+}
 
 export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -396,12 +419,14 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    // Auf dem Gelände muss MapLibre jeden Marker je Bild neu auf das Relief setzen
+    // Auf dem Gelände muss MapLibre jeden Marker je Bild neu auf das Relief setzen — deshalb
+    // gedeckelt; 80 statt anfangs 40, seit die Talorte dazukommen (`ALPS_TOWNS`)
     return addWorldLabels(
       map,
       '.globe-arrows, .globe-legend, .globe-corner, .globe-readout, .globe-compass, .maplibregl-ctrl-top-right',
-      relief ? 40 : undefined,
+      relief ? 80 : undefined,
       relief ? RELIEF_BOUNDS : undefined,
+      relief ? ALPS_TOWNS : undefined,
     )
   }, [mapReady, relief])
 
@@ -823,6 +848,10 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
 
   const readValue = readout && field && !field.rgb ? sampleField(field, readout.lat, readout.lon) : NaN
   const readLayers = readout && field?.rgb ? sampleRgb3(field, readout.lat, readout.lon) : null
+  const readLine = readout && field?.zline ? samplePhaseLine(field, readout.lat, readout.lon) : null
+  // Geländehöhe unter dem Zeiger: MapLibre liefert sie MIT der Überhöhung
+  const groundRaw = readout && field?.zline && relief ? mapRef.current?.queryTerrainElevation([readout.lon, readout.lat]) : null
+  const readGround = groundRaw != null ? Math.max(0, groundRaw / RELIEF_EXAGGERATION) : null
   const lastValid = meta && steps.length ? validMs(meta, steps[steps.length - 1]) : NaN
   const freshness = meta ? globeFreshness(run, lastValid, Date.now(), model.staleHours) : 'ok'
   // Termin weicht deutlich von der Wahl ab — das Modell reicht nicht so weit
@@ -869,7 +898,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 // IFS 0,25° lässt sich danach von Hand wählen. Umgekehrt deckt
                 // der Asien-Ausschnitt Europa nicht ab.
                 if (v.id === 'thailand') setModelId('ecmwf-hres-asia')
-                // „Alpen 3D" ist genau EINE Darstellung: ICON-D2 mit θe, alles andere ist dort gesperrt
+                // „Alpen 3D": nur ICON-D2, Farbfeld θe oder die Phasen-Summe (`RELIEF_VARIABLES`)
                 if (v.id === 'alps3d') {
                   setModelId(WIND3D_MODEL)
                   setVarId(THETAE_VARIABLE.id)
@@ -906,10 +935,13 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             e.currentTarget.blur()
           }}
           title={variable.title}
-          disabled={relief}
         >
           {relief ? (
-            <option value={THETAE_VARIABLE.id}>{THETAE_VARIABLE.label}</option>
+            RELIEF_VARIABLES.map((v) => (
+              <option key={v.id} value={v.id} disabled={!meta?.variables[v.id]} title={v.title}>
+                {v.label}
+              </option>
+            ))
           ) : (
             GLOBE_GROUPS.map((g) => (
               <optgroup key={g} label={g}>
@@ -1144,6 +1176,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                     ? readLayers
                       ? `hoch ${toOcta(readLayers.high)}/8 · mittel ${toOcta(readLayers.mid)}/8 · tief ${toOcta(readLayers.low)}/8`
                       : field ? `außerhalb ${model.label}` : '—'
+                    : Number.isFinite(readValue) && variable.kind === 'phase'
+                    ? phaseReadout(formatReadout(readValue, variable.decimals), readValue >= 1 ? readLine : null, readGround)
                     : Number.isFinite(readValue)
                     ? varId === 'precip'
                       ? precipReadout(readValue, interval, (v) => formatReadout(v, variable.decimals))
@@ -1196,6 +1230,26 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 <span className="globe-legend-octa-name">Achtel</span>
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <em key={n}>{n}</em>
+                ))}
+              </div>
+            </div>
+          ) : variable.kind === 'phase' ? (
+            <div className="globe-legend-octas globe-legend-phase">
+              {([
+                ['Regen', PHASE_RAIN_SCALE],
+                ['Schnee', PHASE_SNOW_SCALE],
+              ] as const).map(([name, sc]) => (
+                <div key={name} className="globe-legend-octa-row">
+                  <span className="globe-legend-octa-name">{name}</span>
+                  {sc.stops.map((st) => (
+                    <i key={st.value} style={{ background: st.color }} title={`ab ${st.value} mm`} />
+                  ))}
+                </div>
+              ))}
+              <div className="globe-legend-octa-row globe-legend-octa-scale">
+                <span className="globe-legend-octa-name">mm</span>
+                {PHASE_RAIN_SCALE.stops.map((st) => (
+                  <em key={st.value}>{st.value}</em>
                 ))}
               </div>
             </div>
