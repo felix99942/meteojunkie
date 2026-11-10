@@ -1,0 +1,15 @@
+# MTG HD (scripts/mtg-hd-ingest.py): python3 -m venv ~/mtg-hd/.venv && ~/mtg-hd/.venv/bin/pip install -r scripts/requirements-mtg-hd.txt
+dask==2026.8.0
+eumdac==3.1.1
+h5netcdf==1.8.2
+hdf5plugin==7.1.0
+netCDF4==1.7.5.1.post1
+numpy==2.5.4
+pillow==13.0.0
+pyorbital==1.14.0
+pyproj==3.8.0
+pyresample==1.35.0
+pyspectral==0.14.3
+satpy==0.60.0
+scipy==1.18.1
+xarray==2026.9.0

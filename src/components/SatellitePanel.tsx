@@ -711,7 +711,7 @@ export function SatellitePanel() {
     // Je Termin eine neue Quelle: `setTiles` behielte die Kacheln des vorigen
     // Termins stehen, bis die neuen da sind — ein Detail zur falschen Zeit
     remove()
-    const a = productArea(product)
+    const a = product.tileBounds ?? productArea(product)
     map.addSource(DETAIL_SOURCE_ID, {
       type: 'raster',
       tiles: [url],
@@ -1023,14 +1023,23 @@ export function SatellitePanel() {
             ? 'Meteosat Second Generation (SEVIRI, Farbe) und Third Generation (FCI, Schärfe)'
             : product.mission === 'MTG'
               ? 'Meteosat Third Generation (FCI)'
-              : 'Meteosat Second Generation (SEVIRI)'} über{' '}
-          <a
-            href="https://view.eumetsat.int/productviewer"
-            target="_blank"
-            rel="noreferrer"
-          >
-            EUMETView
-          </a>
+              : 'Meteosat Second Generation (SEVIRI)'}{' '}
+          {product.source === 'own' ? (
+            <>
+              aus den Level-1C-Rohdaten (
+              <a href="https://data.eumetsat.int/" target="_blank" rel="noreferrer">
+                EUMETSAT Data Store
+              </a>
+              ), selbst gerechnet mit Satpy
+            </>
+          ) : (
+            <>
+              über{' '}
+              <a href="https://view.eumetsat.int/productviewer" target="_blank" rel="noreferrer">
+                EUMETView
+              </a>
+            </>
+          )}
           . Kartenlinien: Natural Earth.{' '}
           {/* Der Untergrund liegt seit 2026-09-30 nur noch UNTER den Wolken im
               Komposit, also bei den beiden Graustufen-Kanälen — genannt wird er

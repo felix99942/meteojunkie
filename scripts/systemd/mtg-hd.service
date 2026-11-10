@@ -1,0 +1,15 @@
+# MTG HD: FCI-Rohdaten holen, Echtfarben/Infrarot rechnen, nach R2.
+# Installieren: scripts/systemd/install-mtg-hd.sh
+[Unit]
+Description=MTG-HD-Satellitenbild rechnen und hochladen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/meteowebsite/scripts/mtg-hd-cron.sh
+# Läuft alle 10 Minuten neben der Arbeit am Laptop
+Nice=10
+IOSchedulingClass=idle
+# Ein Termin ~1,5 min; nach dem Aufwachen bis zu drei (BACKFILL)
+TimeoutStartSec=20min

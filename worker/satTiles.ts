@@ -27,7 +27,10 @@ export async function satelliteTile(
   // Zu jung: EUMETView beantwortet einen Termin, den es noch nicht gibt, STILL
   // mit dem nächstgelegenen Bild (`nearestValue`) — das läge dann für immer
   // unter der falschen Zeit in R2. Zu alt: liegt außerhalb der Ziehleiste.
-  if (t.time > now - TILE_MIN_AGE_MS || t.time < now - MIRROR_SPAN_MS - 2 * 3_600_000) {
+  // Selbst gerechnet (MTG HD): die Kacheln legt der Rechenlauf ab, es gibt keinen Dienst
+  // dahinter — also nur R2, und die Altersgrenze (gegen `nearestValue`) entfällt
+  const own = t.product.source === 'own'
+  if ((!own && t.time > now - TILE_MIN_AGE_MS) || t.time < now - MIRROR_SPAN_MS - 2 * 3_600_000) {
     return new Response('Not Found', { status: 404 })
   }
   const key = path.replace(/^sat-tiles\//, 'sattile/')
@@ -35,6 +38,8 @@ export async function satelliteTile(
   if (hit && 'body' in hit) {
     return new Response(hit.body, { headers: { 'content-type': 'image/jpeg', 'cache-control': IMMUTABLE } })
   }
+  // Außerhalb des Detailblocks oder noch nicht hochgeladen: kurz cachen, nicht für immer
+  if (own) return new Response('Not Found', { status: 404, headers: { 'cache-control': 'public, max-age=300' } })
   const res = await fetch(satelliteTileSourceUrl(t.product, t.time, t.z, t.x, t.y), {
     signal: AbortSignal.timeout(25_000),
   })

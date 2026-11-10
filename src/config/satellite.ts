@@ -294,8 +294,13 @@ export interface SharpenSpec {
 export interface SatelliteProduct {
   id: string
   label: string
-  /** Bildquelle — Vorgabe EUMETView. 'gibs' = NASA GIBS (Himawari). */
-  source?: 'gibs'
+  /**
+   * Bildquelle — Vorgabe EUMETView. 'gibs' = NASA GIBS (Himawari). 'own' = SELBST
+   * gerechnet aus den FCI-Rohdaten (MTG HD, scripts/mtg-hd-ingest.py auf dem Laptop):
+   * Bilder, Kacheln und Zeitliste liegen NUR im Vorrat in R2, es gibt keinen Dienst,
+   * auf den bei einer Lücke ausgewichen werden könnte.
+   */
+  source?: 'gibs' | 'own'
   /** Workspace des GeoServers — zugleich der Satellit. */
   workspace: string
   /** Layername OHNE Workspace. */
@@ -332,6 +337,12 @@ export interface SatelliteProduct {
    * das Feld gibt es keine Kacheln (Wasserdampf ist schon nativ).
    */
   tileMaxZoom?: number
+  /**
+   * Nur dort gibt es Kacheln (Vorgabe: die ganze Fläche des Produkts). MTG HD rechnet
+   * sie über einem festen Block; ohne die Grenze fragte die Karte daneben Kacheln an,
+   * die es nie gibt.
+   */
+  tileBounds?: GeoBox
   /**
    * Misst reflektiertes Sonnenlicht — nachts also schwarz. Das steht so in der
    * Legende: ein schwarzes Bild sieht sonst nach einem Fehler aus, und es ist
@@ -526,6 +537,27 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
     imageWidth: SATELLITE_MTG_WIDTH,
     tileMaxZoom: 6,
     note: 'MTG/FCI Geocolour: tagsüber nahezu echte Farben, nachts Infrarot — die einzige Darstellung, die über den ganzen Tag trägt. 10 Minuten.',
+  },
+  {
+    // SELBST GERECHNET (scripts/mtg-hd-ingest.py, Timer auf dem Laptop): tagsüber
+    // Echtfarben aus den 1-km-Kanälen, mit VIS 0,6 µm HRFI auf 500 m geschärft,
+    // nachts Infrarot 10,5 µm, je Pixel nach dem Sonnenstand überblendet (72–84°
+    // Zenit). Europabild wie die übrigen (2000 px), Detailkacheln bis z7 (≈ 410 m
+    // am Boden) über 0–22,5° O / 41–55,8° N. Fehlen Termine (Laptop aus), stehen
+    // sie als Lücke in der Leiste (`missing` in sat/mtghd/meta.json).
+    id: 'mtghd',
+    label: 'MTG HD (Tag/Nacht, 500 m)',
+    source: 'own',
+    workspace: '',
+    name: 'mtghd',
+    mission: 'MTG',
+    stepMs: 10 * 60_000,
+    format: 'image/jpeg',
+    imageWidth: SATELLITE_MTG_WIDTH,
+    tileMaxZoom: 7,
+    // = BLOCK in scripts/mtg-hd-ingest.py (z5 x 16–17, y 10–11)
+    tileBounds: { west: 0, east: 22.5, south: 40.979898, north: 55.776573 },
+    note: 'MTG/FCI, selbst gerechnet aus den Rohdaten: tagsüber echte Farben (der Grünkanal 0,51 µm macht das bei MTG erstmals möglich), mit dem 500-m-Kanal nachgeschärft — über Alpen und D-A-CH beim Hineinzoomen bis etwa 400 m je Pixel. Nachts Infrarot 10,5 µm (je kälter, desto heller: hohe Wolken weiß, tiefe grau). In der Dämmerung gleitend überblendet. 10 Minuten; Termine können fehlen, wenn der Rechner aus war.',
   },
   {
     id: 'vis06',
@@ -789,11 +821,20 @@ export const SATELLITE_PRODUCTS: SatelliteProduct[] = [
  * Satellit geordnet steht oben, was 10-minütig und aktuell ist, darunter das,
  * was es nur von MSG gibt.
  */
+/**
+ * MTG HD (`source: 'own'`) gibt es vorerst NUR LOKAL im Dev-Server (auf Wunsch,
+ * 2026-11-10): es hängt am Laptop, der nicht immer läuft, und der Mehrwert für die
+ * Seite ist noch offen. In der Registry bleibt es (Worker und Tests kennen es), nur
+ * die Auswahl zeigt es nicht. `?.`, weil der Worker diese Datei ohne Vite lädt.
+ * Freischalten: diese Bedingung entfernen und in mtg-hd-cron.sh MTG_UPLOAD=1 setzen.
+ */
+export const OWN_PRODUCTS_VISIBLE: boolean = import.meta.env?.DEV === true
+
 export const SATELLITE_GROUPS: { mission: SatelliteMission; label: string; items: SatelliteProduct[] }[] = [
   {
     mission: 'MTG',
     label: 'Meteosat Third Generation · FCI · 10 min',
-    items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'MTG'),
+    items: SATELLITE_PRODUCTS.filter((p) => p.mission === 'MTG' && (p.source !== 'own' || OWN_PRODUCTS_VISIBLE)),
   },
   {
     mission: 'MSG',
@@ -1173,7 +1214,7 @@ export const MIRRORED_SATELLITE_IDS = ['geocolour', 'vis06', 'ir105', 'wv062'] a
 export const MIRROR_SPAN_MS = 24 * 3_600_000
 
 export function isMirrored(p: SatelliteProduct): boolean {
-  return p.source !== 'gibs' && (MIRRORED_SATELLITE_IDS as readonly string[]).includes(p.id)
+  return p.source === 'own' || (p.source !== 'gibs' && (MIRRORED_SATELLITE_IDS as readonly string[]).includes(p.id))
 }
 
 /** R2-Schlüssel eines Bilds, z. B. `sat/vis06/hi/20261028T2010Z.jpg`. */

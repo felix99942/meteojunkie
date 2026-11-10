@@ -55,13 +55,33 @@ export async function fetchSatelliteExtent(
   const hit = metaCache.get(key)
   if (!opts.force && hit && Date.now() - hit.at < META_TTL_MS) return hit.extent
 
-  const res = await fetch(satelliteCapabilitiesUrl(product), { signal: opts.signal })
-  if (!res.ok) throw new Error(`EUMETSAT-WMS: HTTP ${res.status}`)
-  const xml = await res.text()
-  const extent = parseSatelliteCapabilities(xml, product)
-  if (!extent) throw new Error('EUMETSAT-WMS: Zeitdimension nicht lesbar')
+  const extent = product.source === 'own' ? await ownExtent(product, opts.signal) : await wmsExtent(product, opts.signal)
   metaCache.set(key, { at: Date.now(), extent })
   return extent
+}
+
+async function wmsExtent(product: SatelliteProduct, signal?: AbortSignal): Promise<TimeExtent> {
+  const res = await fetch(satelliteCapabilitiesUrl(product), { signal })
+  if (!res.ok) throw new Error(`EUMETSAT-WMS: HTTP ${res.status}`)
+  const extent = parseSatelliteCapabilities(await res.text(), product)
+  if (!extent) throw new Error('EUMETSAT-WMS: Zeitdimension nicht lesbar')
+  return extent
+}
+
+/**
+ * Zeitliste des SELBST gerechneten Produkts (`sat/<id>/meta.json`, geschrieben von
+ * scripts/mtg-hd-ingest.py NACH den Bildern): schon in der Form von `TimeExtent`,
+ * mit den Terminen, die fehlen, weil der Rechner aus war. Auf JSON geprüft — der
+ * Vite-Dev-Server beantwortet unbekannte Pfade mit der Startseite.
+ */
+async function ownExtent(product: SatelliteProduct, signal?: AbortSignal): Promise<TimeExtent> {
+  const res = await fetch(`${import.meta.env.BASE_URL}sat/${product.id}/meta.json`, { signal })
+  if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) {
+    throw new Error('MTG HD: noch keine Bilder — der Rechenlauf hat nichts abgelegt')
+  }
+  const e = (await res.json()) as TimeExtent
+  if (!Number.isFinite(e.start) || !Number.isFinite(e.end) || !e.stepMs) throw new Error('MTG HD: Zeitliste nicht lesbar')
+  return e
 }
 
 /**
@@ -129,6 +149,8 @@ export async function loadSatelliteImage(
   // (`api/imageStore.ts`); EUMETView cacht der Browser selbst (7 Tage)
   // Vorrat in R2 zuerst (nur die gespiegelten Produkte), sonst beim Dienst
   const mirrored = isMirrored(product) ? await fromMirror(product, time, tier, signal) : null
+  // Selbst gerechnet: es gibt NUR den Vorrat, kein Ausweichen auf einen Dienst
+  if (product.source === 'own' && !mirrored) throw new Error('Termin nicht im Vorrat')
   const raw: Blob =
     product.source === 'gibs'
       ? await storedFetch(

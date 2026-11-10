@@ -3041,6 +3041,36 @@ npm run preview   # gebautes dist/ servieren
   die Städte über dieselbe Pseudo-Domain `'imagery'` in `config/cities.ts`
   (ein paar Einträge — Mailand, Venedig, Turin — liegen außerhalb der
   Radarfläche und tragen nur hier).
+  **MTG HD — SELBST GERECHNET AUS DEN ROHDATEN** (seit 2026-11-10, auf Wunsch, als
+  Antwort auf das „HD"-Bild von sat24; `scripts/mtg-hd-ingest.py`, `mtg-hd-cron.sh`,
+  Timer `scripts/systemd/mtg-hd.*`, Produkt `mtghd` mit `source: 'own'`): tagsüber
+  ECHTFARBEN (FCI hat den Grünkanal 0,51 µm, den SEVIRI nicht hatte) aus den 1-km-Kanälen,
+  mit VIS 0,6 µm HRFI auf 500 m geschärft (Verhältnis 500 m / 1 km derselben Wellenlänge,
+  0,85 gedämpft wie `panSharpen.ts`), nachts Infrarot 10,5 µm (290 → 205 K), je Pixel nach
+  Sonnenzenit 72–84° überblendet — darüber machen Sonnenstands- und Rayleigh-Korrektur
+  aus den Echtfarben ein weißes Band am Terminator. Läuft auf dem LAPTOP wie Varda; ist er
+  aus, fehlen Termine, und die stehen als `missing` in `sat/mtghd/meta.json`.
+  **Quelle**: EUMETSAT Data Store über `eumdac` (Konto mit Lizenz „Meteosat < 1 hr
+  latency", Schlüssel in `~/.config/meteojunkie/eumetsat.env`), Sammlungen 0662 (FDHSI)
+  und 0665 (HRFI). Ein Termin liegt ~3 min nach Scan-Ende vor. Je Termin 40 Streifen von
+  Süd nach Nord, EINZELN ladbar (`product.open(entry=…)`); Europa = Streifen 32–40
+  (Satpy zählt Zeilen von Süden, Streifen = Zeile // 278 + 1). Gemessen: 220 MB nachts bis
+  ~350 MB tagsüber je Termin, 8 parallel in 25–30 s; die ganze Scheibe wären ~2 GB.
+  **Ausgabe in DENSELBEN Pfaden wie der Vorrat**: Europabild `sat/mtghd/{hi,lo}/<Termin>.jpg`
+  (2000/1000 px über `SATELLITE_AREA`), Detailkacheln `sattile/mtghd/<Termin>/z/x/y.jpg`
+  z5–7 über dem z5-Block x 16–17 / y 10–11 (0–22,5° O, 41–55,8° N; `tileBounds`, Test hält
+  ihn mit dem Skript gleich) — 86 Dateien je Termin, ~1,5 min. Gerechnet wird EINMAL in z7
+  (4096² px), z6/z5 durch Verkleinern. Der Browser nimmt NUR den Vorrat (kein Ausweichen),
+  der Worker gibt die Kacheln nur aus R2 und ohne die 12-min-Sperre (die gilt
+  `nearestValue` bei EUMETView). Lokal liegt der Vorrat in `/var/tmp/mtg-hd/out` (/home ist
+  knapp); `public/sat/mtghd` und `public/sat-tiles/mtghd` sind Verweise dorthin.
+  **Vier Fallen, alle im Bild gesehen**: (1) FCI-Dateien sind mit FCIDECOMP gepackt →
+  `hdf5plugin` + `HDF5_PLUGIN_PATH`. (2) netCDF ist nicht threadsicher — mit dem
+  Thread-Scheduler von dask „NetCDF: HDF error" bzw. Speicherzugriffsfehler, daher
+  synchron. (3) `true_color` GETRENNT mit `resolution=1000` laden. (4) Das Enhancement
+  liefert über hellen Wolken Werte > 1 — vor `uint8` klemmen, sonst läuft der Kanal über
+  und es entstehen blaue und rote Flecken (sah zuerst nach Rayleigh-Fehlern aus, war es
+  nicht). Lage gegen die Natural-Earth-Küsten geprüft (Europabild und Kachelmosaik).
 - **Thailand-Tropendienst** (seit 2026-10-08, Quellen gemessen in den
   Projektnotizen): kein eigener Bereich, sondern Südostasien in DREI
   vorhandenen. **In der VERÖFFENTLICHTEN Version Satellit und Modellkarten**

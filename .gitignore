@@ -53,3 +53,7 @@ public/radar/
 
 # TAWES-Speicher: im Betrieb schreibt ihn der Worker nach R2, lokal npm run ingest:tawes
 public/tawes/
+
+# MTG HD (scripts/mtg-hd-cron.sh): Verweise auf den Vorrat in /var/tmp
+public/sat/mtghd
+public/sat-tiles/

@@ -136,6 +136,9 @@ describe('Registry', () => {
     geocolour: 1577,
     vis06: 788,
     ir105: 1113,
+    // Selbst gerechnet: das Europabild aus den FCI-Rohdaten. Feinster Kanal ist
+    // HRFI VIS 0,6 µm — dasselbe Raster wie `vis06`.
+    mtghd: 788,
     // Die übrigen FCI-RGBs liegen auf DEMSELBEN Raster wie Geocolour —
     // nachgemessen 2026-09-29 mit derselben Methode (Autokorrelation des
     // Spaltengradienten über den Alpen, Kontrollwerte 779/1558/1169 gegen die
@@ -606,6 +609,8 @@ describe('Katalog', () => {
   it('holt nur von den beiden Vollscheiben-Diensten — und Himawari von GIBS', () => {
     for (const p of SATELLITE_PRODUCTS) {
       if (p.mission === 'HIM') expect(p.source, p.id).toBe('gibs')
+      // Selbst gerechnet aus den Rohdaten — kein Dienst dahinter (eigener Test unten)
+      else if (p.source === 'own') expect(p.id).toBe('mtghd')
       else expect(['mtg_fd', 'msg_fes'], p.id).toContain(p.workspace)
     }
   })
@@ -754,11 +759,32 @@ describe('Himawari (GIBS)', () => {
 
 describe('Vorrat in R2', () => {
   it('spiegelt genau die vier gewünschten Produkte, keines davon geschärft oder von GIBS', () => {
-    const mirrored = SATELLITE_PRODUCTS.filter(isMirrored).map((p) => p.id)
+    // Das selbst gerechnete MTG HD liegt AUSSCHLIESSLICH im Vorrat und zählt deshalb
+    // mit; gespiegelt (vom Worker bei EUMETView geholt) werden genau die vier
+    const mirrored = SATELLITE_PRODUCTS.filter((p) => isMirrored(p) && p.source !== 'own').map((p) => p.id)
     expect(mirrored.sort()).toEqual([...MIRRORED_SATELLITE_IDS].sort())
+    expect(SATELLITE_PRODUCTS.filter((p) => p.source === 'own').every(isMirrored)).toBe(true)
     // Die Spiegel-URL kennt keine Schärfung — ein geschärftes Produkt käme
     // sonst ungeschärft aus dem Vorrat
     for (const p of SATELLITE_PRODUCTS.filter(isMirrored)) expect(p.sharpen, p.id).toBeUndefined()
+  })
+
+  it('nimmt Kacheln des selbst gerechneten Produkts nur im Detailblock und bis z7 an', () => {
+    // Der Block steht zweimal: im Rechenlauf (BLOCK in scripts/mtg-hd-ingest.py) und
+    // hier als Kachelgrenze. Rechnet man die Ecken zurück, müssen es genau die
+    // z5-Kacheln x 16–17, y 10–11 sein — sonst fragt die Karte ins Leere.
+    const p = SATELLITE_PRODUCTS.find((x) => x.id === 'mtghd')!
+    const b = p.tileBounds!
+    const tx = (lon: number) => ((lon + 180) / 360) * 32
+    const ty = (lat: number) => ((1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2) * 32
+    expect(tx(b.west)).toBeCloseTo(16, 6)
+    expect(tx(b.east)).toBeCloseTo(18, 6)
+    expect(ty(b.north)).toBeCloseTo(10, 4)
+    expect(ty(b.south)).toBeCloseTo(12, 4)
+    expect(p.tileMaxZoom).toBe(7)
+    const t = Date.UTC(2026, 10, 10, 9, 40)
+    expect(parseSatelliteTilePath(satelliteTilePath(p, t, 7, 66, 44))?.product.id).toBe('mtghd')
+    expect(parseSatelliteTilePath(satelliteTilePath(p, t, 8, 132, 88))).toBeNull()
   })
 
   it('kodiert den Termin im Schlüssel umkehrbar', () => {

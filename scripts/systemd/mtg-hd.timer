@@ -1,0 +1,14 @@
+# Alle 10 Minuten, 4 Minuten nach dem Termin: der Scan dauert ~9 min, der Data Store
+# hat ihn gemessen ~3 min nach Scan-Ende (Termin 09:10 → Scan bis 09:19:23 → ~09:22).
+# Der Lauf nimmt den jüngsten vollständigen Termin, ein zu früher Start verliert also
+# nichts, er rechnet dann den vorigen. Persistent: nach dem Aufwachen sofort.
+[Unit]
+Description=MTG-HD-Satellitenbild alle 10 Minuten
+
+[Timer]
+OnCalendar=*-*-* *:02/10:00
+Persistent=true
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target
