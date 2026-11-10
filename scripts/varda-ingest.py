@@ -142,13 +142,38 @@ def kenda_times() -> set[datetime]:
     return out
 
 
+# Was der Vorhersager je Termin aus den stündlichen KENDA-Items holt (HHL, HSURF
+# … sind Sammlungs-Konstanten und stehen nicht in den Items)
+KENDA_NEEDED = {'P', 'PMSL', 'PS', 'QV', 'T', 'TD_2M', 'T_2M', 'U', 'U_10M', 'V', 'V_10M'}
+_complete: dict[datetime, bool] = {}
+
+
+def kenda_complete(t: datetime) -> bool:
+    """Liegen ALLE benötigten Felder zum Termin t vor? Die Analyse erscheint Feld
+    für Feld (am 10.11. um 02:48 UTC fand die Suche `P` für 00 UTC schon, der
+    Items-Endpunkt, den das Plugin nutzt, noch nicht → KeyError, Lauf tot).
+    Deshalb über denselben Endpunkt wie das Plugin prüfen."""
+    if t not in _complete:
+        url = (f'{STAC.removesuffix("/search")}/collections/{KENDA}/items'
+               f'?datetime={t:%Y-%m-%dT%H:%M:%SZ}&limit=100')
+        have = set()
+        while url:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                page = json.load(r)
+            have |= {f['properties'].get('forecast:variable') for f in page.get('features', [])}
+            url = next((l['href'] for l in page.get('links', []) if l.get('rel') == 'next'), None)
+        _complete[t] = KENDA_NEEDED <= have
+    return _complete[t]
+
+
 def latest_run() -> datetime:
-    """Jüngster 6-h-Termin, zu dem t UND t−6 h als KENDA-Analyse vorliegen."""
+    """Jüngster 6-h-Termin, zu dem t UND t−6 h als vollständige KENDA-Analyse vorliegen."""
     have = kenda_times()
-    ok = [t for t in have if t.hour % 6 == 0 and t - timedelta(hours=6) in have]
-    if not ok:
-        raise SystemExit('keine zwei KENDA-Analysen im 6-h-Abstand gefunden')
-    return max(ok)
+    cands = sorted((t for t in have if t.hour % 6 == 0 and t - timedelta(hours=6) in have), reverse=True)
+    for t in cands:
+        if kenda_complete(t) and kenda_complete(t - timedelta(hours=6)):
+            return t
+    raise SystemExit('keine zwei vollständigen KENDA-Analysen im 6-h-Abstand gefunden')
 
 
 # --- Rechnen ---------------------------------------------------------------

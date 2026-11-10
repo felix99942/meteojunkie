@@ -3871,8 +3871,13 @@ npm run preview   # gebautes dist/ servieren
   Modelltopografie. Das Feld wird beim Modellwechsel neu angelegt und muss dabei
   UNTER dem Relief landen (`GLOBE_TOPO_LAYER` als `before`). **Die Terrain Tiles
   (AWS Open Data) liegen als Spiegel in R2 unter `topo/`** (`scripts/topo-mirror.mjs`,
-  npm `ingest:topo`, gepackt mit `ingest:topo:pack` als verlustfreies WebP, einmalig von
-  Hand, Upload `scripts/topo-upload.sh`, nicht im Deploy), damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
+  npm `ingest:topo`, einmalig von Hand, nicht im Deploy) — **in R2 liegen PNG, und der
+  Browser fragt PNG ab.** Am 09.11. wurde der Abruf auf WebP umgestellt (`ingest:topo:pack`,
+  Upload `scripts/topo-upload.sh`), ohne dass die WebP je hochgeladen waren: jede Kachel lief
+  ins 404, das Relief war auf ALLEN Karten weg, und weil 404 dort der Normalfall (Meer) ist,
+  fiel es keinem Test auf. Am 10.11. zurück auf PNG. Wer WebP will: erst packen und hochladen,
+  mit `rclone lsf -R …/topo/ | grep -c webp` die 50.134 prüfen, DANN umstellen — die .webp-404
+  stehen bis zu einer Woche im Edge-Cache (`TOPO_MISSING_CACHE`), vorher Cache leeren, damit AWS die Besucher nicht sieht; die Datenschutzerklärung nennt deshalb
   keinen weiteren Host. Weltweit Stufen 0–8, **feiner nur über DACH (bis 11) und den Alpen (bis 12, ~25 m je
   Pixel)**, festgelegt in `config/topoDetail.json`, die Skript und Browser beide lesen;
   die Karten zoomen dafür bis 12, Feld und Linien werden dort nur gestreckt. 50.134
@@ -3890,8 +3895,8 @@ npm run preview   # gebautes dist/ servieren
   (`POLE_ROWS`) wird flach, sonst zeigt die Schummerung am Pol denselben
   Strahlenfächer wie früher das Feld. **Kostet Daten, nicht Rechenzeit** (gemessen 2026-11-05: Worker warm
   71 ms, aus R2 122 ms, Hauptthread kaum belastet; je Zoomschritt ~28 Kacheln à 140 KB).
-  Deshalb verlustfreies WebP (22 % kleiner, `topo-pack.py` vergleicht jede Kachel Pixel
-  für Pixel), und jede Kachel wartet vor dem Abruf 120 ms (`TOPO_FETCH_DELAY_MS`): beim
+  WebP wäre 22 % kleiner (`topo-pack.py` vergleicht jede Kachel Pixel
+  für Pixel, s. o. — noch nicht hochgeladen), und jede Kachel wartet vor dem Abruf 120 ms (`TOPO_FETCH_DELAY_MS`): beim
   Zoomen bestellte MapLibre 17–32 Kacheln je Schritt und gleich wieder ab. Mit
   mehreren Panels überträgt der Browser jede Kachel nur einmal (der HTTP-Cache hält
   parallele Abrufe an), dekodiert sie aber je Karte. **Schlägt ein Abruf fehl, wird er

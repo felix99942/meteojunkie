@@ -50,7 +50,13 @@ fi
 # Kennung (vorher nur ein Probelauf mit --lead 12) muss trotzdem hoch
 stamp() { grep -o '"generated":"[^"]*"' public/nwp/varda/meta.json 2>/dev/null || true; }
 before=$(stamp)
-"$VARDA_HOME/.venv-fc/bin/python" scripts/varda-ingest.py "$@"
+# Ein zweiter Versuch nach 5 Minuten: scheitert der Abruf einmal (Analyse doch
+# noch lückenhaft, Netz kurz weg), fiele sonst der ganze Termin aus
+if ! "$VARDA_HOME/.venv-fc/bin/python" scripts/varda-ingest.py "$@"; then
+  echo "Lauf gescheitert — zweiter Versuch in 5 Minuten"
+  sleep 300
+  "$VARDA_HOME/.venv-fc/bin/python" scripts/varda-ingest.py "$@"
+fi
 after=$(stamp)
 
 if [[ "$before" == "$after" ]]; then

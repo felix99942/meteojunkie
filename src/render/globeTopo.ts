@@ -1,7 +1,9 @@
 // Höhenkacheln der Topografie-Ebene in den Modellkarten: Terrain Tiles (AWS Open
 // Data, Kodierung „terrarium"), vor der Schummerung bereinigt. Sie liegen als Spiegel
 // in R2 unter /topo/ (`scripts/topo-mirror.mjs`), damit AWS die Besucher nicht sieht,
-// und dort als verlustfreies WebP (`scripts/topo-pack.py`, 22 % kleiner, Pixel gleich).
+// als PNG. Die WebP-Fassung (`scripts/topo-pack.py`, 22 % kleiner) ist NIE hochgeladen
+// worden: am 09.11. auf .webp umgestellt, lief jede Kachel ins 404 und das Relief war
+// auf allen Karten weg (10.11. bemerkt). Erst umstellen, wenn `rclone lsf` dort .webp zeigt.
 // Im Spiegel fehlt das Meer: ein 404 ist dort der Normalfall und wird zur flachen
 // Kachel. Lokal gibt es den Spiegel nicht, `npm run dev` holt die PNG direkt bei AWS.
 //
@@ -28,7 +30,7 @@ export const GLOBE_TOPO_LAYER = 'globe-topo'
 const SOURCE_URL = (z: number, x: number, y: number) =>
   import.meta.env.DEV
     ? `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`
-    : `/topo/${z}/${x}/${y}.webp`
+    : `/topo/${z}/${x}/${y}.png`
 
 /**
  * So lange wartet eine Kachel, bevor sie abgerufen wird. Beim Zoomen bestellt MapLibre

@@ -12,4 +12,4 @@ ExecStart=%h/meteowebsite/scripts/varda-cron.sh
 Nice=10
 IOSchedulingClass=idle
 # Bis zu 45 min Warten auf die Analyse (varda-cron.sh) plus der Lauf selbst
-TimeoutStartSec=2h
+TimeoutStartSec=3h
