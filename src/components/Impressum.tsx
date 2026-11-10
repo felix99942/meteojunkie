@@ -261,7 +261,8 @@ export function Impressum() {
               <span title="HISTALP: homogenisierte, bruchbereinigte Langzeitreihen des Alpenraums. Wird auf dieser Seite ausschließlich für den Vergleich zweier Klimaperioden verwendet — Absolutwerte, Rekorde und alles Übrige laufen auf den nicht homogenisierten Stationsdaten.">
                 HISTALP
               </span>{' '}
-              für den Periodenvergleich. Lizenz{' '}
+              für den Periodenvergleich, dazu die Vorhersage AROME 1 km („nwp-v2-1h-1km“, nur
+              Niederschlag, in „Alpen 3D“). Lizenz{' '}
               <a
                 href="https://creativecommons.org/licenses/by/4.0/deed.de"
                 target="_blank"

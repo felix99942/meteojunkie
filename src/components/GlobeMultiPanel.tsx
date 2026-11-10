@@ -44,7 +44,7 @@ import { globalKeyAllowed } from '../lib/globalKeys'
 type MetaState = { meta: GlobeMeta } | { error: string }
 
 /** Asien gehört nicht in eine Europa-/Österreich-Ansicht */
-const PANEL_MODELS = GLOBE_MODELS.filter((m) => m.id !== 'ecmwf-hres-asia')
+const PANEL_MODELS = GLOBE_MODELS.filter((m) => m.id !== 'ecmwf-hres-asia' && !m.reliefOnly)
 
 function readPresets(): MapPanelPreset[] {
   try {

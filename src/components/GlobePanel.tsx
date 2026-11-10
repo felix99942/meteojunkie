@@ -51,6 +51,8 @@ import {
   DEFAULT_GLOBE_VARIABLE,
   THETAE_VARIABLE,
   RELIEF_VARIABLES,
+  RELIEF_MODELS,
+  PRECIPPHASE_VARIABLE,
   PHASE_RAIN_SCALE,
   PHASE_SNOW_SCALE,
   samplePhaseLine,
@@ -898,12 +900,14 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 // IFS 0,25° lässt sich danach von Hand wählen. Umgekehrt deckt
                 // der Asien-Ausschnitt Europa nicht ab.
                 if (v.id === 'thailand') setModelId('ecmwf-hres-asia')
-                // „Alpen 3D": nur ICON-D2, Farbfeld θe oder die Phasen-Summe (`RELIEF_VARIABLES`)
+                // „Alpen 3D": ICON-D2 (θe oder Regen/Schnee) oder AROME (nur Regen/Schnee)
                 if (v.id === 'alps3d') {
                   setModelId(WIND3D_MODEL)
                   setVarId(THETAE_VARIABLE.id)
                 } else if (relief) {
                   setVarId(DEFAULT_GLOBE_VARIABLE)
+                  // AROME gibt es nur dort — sonst stünde die neue Ansicht ohne Feld da
+                  if (model.reliefOnly) setModelId(WIND3D_MODEL)
                 }
                 if ((v.id === 'europe' || v.id === 'alps') && modelId === 'ecmwf-hres-asia') setModelId('ecmwf-hres')
               }}
@@ -915,14 +919,16 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         <select
           value={modelId}
           onChange={(e) => {
-            setModelId(e.target.value as GlobeModelId)
+            const id = e.target.value as GlobeModelId
+            setModelId(id)
+            // AROME führt in „Alpen 3D" nur die Regen/Schnee-Summe
+            if (relief && id !== WIND3D_MODEL) setVarId(PRECIPPHASE_VARIABLE.id)
             // Fokus abgeben: sonst blättern die Pfeiltasten danach in der Liste statt in der Zeit
             e.currentTarget.blur()
           }}
           title={model.title}
-          disabled={relief}
         >
-          {GLOBE_MODELS.filter((m) => !relief || m.id === WIND3D_MODEL).map((m) => (
+          {GLOBE_MODELS.filter((m) => (relief ? RELIEF_MODELS.includes(m.id) : !m.reliefOnly)).map((m) => (
             <option key={m.id} value={m.id} title={m.title}>
               {m.label} · {m.resolution}
             </option>
@@ -1274,6 +1280,17 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
               ECMWF Open Data
             </a>{' '}
             (IFS {modelId.startsWith('ecmwf-hres') ? '0,1°' : '0,25°'},{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+              CC BY 4.0
+            </a>
+            )
+          </>
+        ) : model.provider === 'GeoSphere' ? (
+          <>
+            <a href="https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km" target="_blank" rel="noreferrer">
+              GeoSphere Austria
+            </a>{' '}
+            (AROME 1 km,{' '}
             <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
               CC BY 4.0
             </a>

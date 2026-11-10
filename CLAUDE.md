@@ -4000,6 +4000,18 @@ npm run preview   # gebautes dist/ servieren
   10.11. schneite es im ganzen D2-Gebiet nirgends (alle Niederschlagszellen weit unter der
   Grenze); bei der ersten Schneelage prüfen, ob dort, wo das Modellgelände über der Grenze liegt,
   auch das Modell Schnee führt.
+  **AROME 1 km ALS ZWEITES MODELL DAFÜR** (`arome-at`, seit 2026-11-10, `scripts/arome-ingest.py`,
+  `RELIEF_MODELS`, `reliefOnly`): GeoSphere Data Hub `nwp-v2-1h-1km` (C-LAEF-AA, offen, CC BY 4.0;
+  der 2,5-km-Vorgänger endet am 04.11.2026). Nur Niederschlag, Summe, Neuschnee und die
+  Regen/Schnee-Summe, nur in „Alpen 3D" wählbar (verlässt man die Ansicht, springt das Modell auf
+  ICON-D2 zurück); θe und Windpartikel bleiben ICON-D2. `tp`/`sf` gelten je STUNDE und werden
+  aufsummiert, damit dieselbe Pipeline läuft. **`snowlmt` heißt dort „height above ground", ist
+  aber über NN** — gegen ICON-D2 zur selben Zeit hängt die Differenz nicht von der Geländehöhe ab
+  (Steigung −0,04, Median −50…+80 m); anders als bei ICON überall gesetzt. Je Abfrage höchstens
+  10 Mio. Punkte → 5 Stunden × 3 Größen über 622 × 937, 13 Abfragen je Lauf, ~2 min, Phasenfeld
+  ~17 MB je Lauf. Bereitstellung langsamer als ICON-D2 (um 16 UTC war 09 UTC der neueste Lauf).
+  Deploy: eigener Schritt mit Cache je Lauf (`nwp-arome-at-v1-<lauf>`), `netCDF4` in
+  `requirements-nwp.txt`.
   **3D-WINDPARTIKEL AUS DEM WINDVOLUMEN VON ICON-D2** (`render/wind3dLayer.ts`, `config/wind3d.ts`,
   `api/wind3d.ts`; im Querschnitt-Ingest mit erzeugt, Flächen bis 1,5 km über Grund in 2,2 km,
   stündlich bis +24 h, danach 3-stündlich): u, v und das echte `w`. **Gerechnet in der HÖHE über

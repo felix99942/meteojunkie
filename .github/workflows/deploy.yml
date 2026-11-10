@@ -296,10 +296,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v6-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v7-${{ steps.icon.outputs.d2 }}
           # Bei neuem Lauf den vorigen Stand als Grundlage — der Ingest legt
           # den neuen dazu, statt mit leerem Verzeichnis zu beginnen
-          restore-keys: nwp-icon-d2-v6-
+          restore-keys: nwp-icon-d2-v7-
 
       - name: ICON-D2-Felder erzeugen (DWD Open Data)
         id: icon-d2-ingest
@@ -315,7 +315,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: public/nwp/icon-d2
-          key: nwp-icon-d2-v6-${{ steps.icon.outputs.d2 }}
+          key: nwp-icon-d2-v7-${{ steps.icon.outputs.d2 }}
 
       - name: ICON-EU-Felder aus dem Cache
         id: icon-eu-cache
@@ -343,6 +343,39 @@ jobs:
         with:
           path: public/nwp/icon-eu
           key: nwp-icon-eu-v5-${{ steps.icon.outputs.eu }}
+
+      # AROME 1 km von GeoSphere (Data Hub, offen, ohne Schlüssel) — nur die
+      # Niederschlagsgrößen für „Alpen 3D" (scripts/arome-ingest.py). Läufe alle
+      # 3 h, ein Lauf = 13 Abfragen (~80 MB, ~2 min); die Grenze von 240 Abfragen
+      # je Stunde gilt je IP, die Seite fragt GeoSphere aus dem Browser der Besucher
+      - name: AROME-Lauf bestimmen
+        id: arome
+        if: steps.nwp-deps.outcome == 'success'
+        continue-on-error: true
+        run: echo "run=$(python3 scripts/arome-ingest.py --latest)" >> "$GITHUB_OUTPUT"
+
+      - name: AROME-Felder aus dem Cache
+        id: arome-cache
+        if: steps.arome.outputs.run != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: public/nwp/arome-at
+          key: nwp-arome-at-v1-${{ steps.arome.outputs.run }}
+          restore-keys: nwp-arome-at-v1-
+
+      - name: AROME-Felder erzeugen (GeoSphere Data Hub)
+        id: arome-ingest
+        if: steps.arome.outputs.run != '' && steps.arome-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 -u scripts/arome-ingest.py --run ${{ steps.arome.outputs.run }}
+
+      - name: AROME-Felder im Cache ablegen
+        if: steps.arome-ingest.outcome == 'success' && steps.arome.outputs.run != ''
+        uses: actions/cache/save@v4
+        with:
+          path: public/nwp/arome-at
+          key: nwp-arome-at-v1-${{ steps.arome.outputs.run }}
 
       # Föhn-Querschnitt aus den ICON-D2-Modellflächen, derselbe Lauf wie die Karten
       - name: ICON-D2-Querschnitt aus dem Cache
@@ -433,7 +466,7 @@ jobs:
           export PATH="/tmp/rclone-bin:$PATH"
           rclone version | head -1
           dirs=()
-          for m in ecmwf-ifs ecmwf-hres ecmwf-hres-asia icon-d2 icon-d2-section icon-eu; do
+          for m in ecmwf-ifs ecmwf-hres ecmwf-hres-asia icon-d2 icon-d2-section icon-eu arome-at; do
             [[ -f "public/nwp/$m/meta.json" ]] && dirs+=("nwp/$m")
           done
           [[ "${{ steps.de.outcome }}" == success ]] && dirs+=(de)
