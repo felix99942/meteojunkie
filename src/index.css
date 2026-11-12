@@ -3078,6 +3078,26 @@ button:focus-visible {
   border-radius: 5px;
 }
 
+/* Tagesmodus der TAWES-Zeitleiste (Höchst-/Tiefstwerte): ein Knopf je synoptischem Tag */
+.tawes-periods {
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+}
+
+.tawes-periods button {
+  padding: 5px 12px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tawes-periods button.is-active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .atmap-timebar strong {
   flex: none;
   min-width: 170px;

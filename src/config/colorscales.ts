@@ -160,6 +160,15 @@ const PRECIP_COLORS = [
 // untere Ende bleibt, damit leichter Niederschlag in jedem Intervall sichtbar ist.
 const PRECIP_1H_STEPS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 25, 30, 40, 60]
 const PRECIP_6H_STEPS = [0.1, 0.2, 0.4, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 75, 100, 150]
+/**
+ * Niederschlagsskala mit eigenen Stufen, aber denselben 20 Farben — für weitere Summenfenster
+ * (TAWES: 10 min bis 48 h). Rot steht an Index 14, Lila an 16; wer Stufen setzt, legt dorthin
+ * die DWD-Warnschwellen „markant" und „Unwetter" des jeweiligen Zeitraums.
+ */
+export function precipScale(steps: number[]): ColorScale {
+  if (steps.length !== PRECIP_COLORS.length) throw new Error('precipScale: 20 Stufen erwartet')
+  return { kind: 'stepped', stops: steps.map((value, i) => ({ value, color: PRECIP_COLORS[i] })) }
+}
 export const PRECIP_1H: ColorScale = { kind: 'stepped', stops: PRECIP_1H_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })) }
 export const PRECIP_6H: ColorScale = { kind: 'stepped', stops: PRECIP_6H_STEPS.map((value, i) => ({ value, color: PRECIP_COLORS[i] })) }
 

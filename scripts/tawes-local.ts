@@ -1,20 +1,21 @@
-// Füllt den TAWES-Speicher für die Entwicklung (public/tawes/), mit demselben Code wie der Cron
-// des Workers. Danach den Dev-Server neu starten, neue Dateien kennt Vite sonst nicht.
+// Füllt den TAWES-Speicher für die Entwicklung (public/tawes/10min/), mit demselben Code wie der
+// Cron des Workers. Danach den Dev-Server neu starten, neue Dateien kennt Vite sonst nicht.
 // Aufruf: npm run ingest:tawes
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { TAWES_STORE_KEY } from '../src/config/tawesStore'
 import type { R2BucketLike } from '../worker/r2'
 import { updateTawes } from '../worker/tawes'
 
-const path = `public/${TAWES_STORE_KEY}`
+const pathOf = (key: string) => `public/${key}`
 const bucket = {
-  get: async () => {
+  get: async (key: string) => {
+    const path = pathOf(key)
     if (!existsSync(path)) return null
     return { body: new Blob([readFileSync(path)]).stream() }
   },
-  put: async (_key: string, value: ArrayBuffer) => {
+  put: async (key: string, value: ArrayBuffer) => {
+    const path = pathOf(key)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, new Uint8Array(value))
   },

@@ -41,6 +41,12 @@ export type AppView =
    */
   | 'mos'
   /**
+   * TAWES (seit 2026-11-12): alle Messgrößen der österreichischen Wetterstationen im
+   * 10-Minuten-Takt über die letzten 3 Tage. Getrennt von der Klimakarte, die nach dem
+   * Zeitraum gegen das Normal fragt — hier geht es um „was misst das Netz jetzt".
+   */
+  | 'tawes'
+  /**
    * Verifikation: was wurde vorhergesagt, was ist eingetroffen. Eigener
    * Bereich, weil er als einziger BEIDE Welten der Seite zusammenbringt —
    * Open-Meteo-Modellläufe und gemessene GeoSphere-Stationswerte — und weil er

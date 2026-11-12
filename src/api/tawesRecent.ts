@@ -1,15 +1,17 @@
 // Liest den rollenden TAWES-Speicher (`config/tawesStore.ts`) und rechnet daraus die Jetzt-Werte
-// der Klimakarte für einen beliebigen Termin der letzten 3 Tage.
+// der Klimakarte für einen beliebigen Termin der letzten 3 Tage. Der Bereich TAWES liest dieselben
+// Dateien über `loadTawesCode`.
 
 import { apparentTemperature, vaporPressureFromRH } from '../config/apparentTemperature'
 import type { AtParameterSpec } from '../config/atParameters'
 import {
+  mergeTawesStores,
   tawesSeries,
   tawesStepMs,
+  tawesStoreKey,
   TAWES_NT,
   TAWES_SLIDER_HOURS,
   TAWES_STEP_MS,
-  TAWES_STORE_KEY,
   unpackTawesStore,
   type TawesCode,
   type TawesStore,
@@ -19,10 +21,34 @@ import { clean, currentStationValue, lastValueIndex, type PeriodValues } from '.
 /** Älter als das, und der Speicher gilt als ausgefallen: dann direkt bei GeoSphere fragen */
 const MAX_AGE_MS = 2 * 3_600_000
 
-export async function loadTawesStore(force = false): Promise<TawesStore | null> {
-  const r = await fetch(`${import.meta.env.BASE_URL}${TAWES_STORE_KEY}`, { cache: force ? 'no-cache' : 'default' }).catch(() => null)
+// Je Größe einmal je Minute: Karte, Stationsdetail und Klimakarte fragen dieselben Dateien
+const CODE_TTL_MS = 60_000
+const codeCache = new Map<TawesCode, { t: number; p: Promise<TawesStore | null> }>()
+
+/** Eine Größe aus R2 (`tawes/10min/<code>.bin`); null, wenn sie fehlt oder nicht passt */
+export function loadTawesCode(code: TawesCode, force = false): Promise<TawesStore | null> {
+  const hit = codeCache.get(code)
+  if (!force && hit && Date.now() - hit.t < CODE_TTL_MS) return hit.p
+  const p = fetchTawesCode(code, force)
+  codeCache.set(code, { t: Date.now(), p })
+  p.then((s) => s ?? codeCache.delete(code))
+  return p
+}
+
+async function fetchTawesCode(code: TawesCode, force: boolean): Promise<TawesStore | null> {
+  const r = await fetch(`${import.meta.env.BASE_URL}${tawesStoreKey(code)}`, { cache: force ? 'no-cache' : 'default' }).catch(() => null)
   if (!r?.ok) return null
   const store = await unpackTawesStore(await r.arrayBuffer())
+  return store?.values[code] ? store : null
+}
+
+/** Die Größen der Jetzt-Werte der Klimakarte */
+const KLIMA_CODES: TawesCode[] = ['tl', 'rf', 'ff', 'ffx', 'dd']
+
+export async function loadTawesStore(force = false): Promise<TawesStore | null> {
+  const parts = await Promise.all(KLIMA_CODES.map((c) => loadTawesCode(c, force)))
+  if (parts.some((p) => p == null)) return null
+  const store = mergeTawesStores(parts as TawesStore[])
   return store && Date.now() - store.endMs < MAX_AGE_MS ? store : null
 }
 
@@ -59,7 +85,7 @@ function prepare(spec: AtParameterSpec, store: TawesStore): Prepared {
       const w = ff.get(id)
       series.set(
         id,
-        tl.get(id)!.map((t, i) => {
+        (tl.get(id) ?? []).map((t, i) => {
           const hv = h?.[i]
           const wv = w?.[i]
           return t == null || hv == null || wv == null ? null : apparentTemperature(t, vaporPressureFromRH(t, hv), wv)
@@ -68,7 +94,10 @@ function prepare(spec: AtParameterSpec, store: TawesStore): Prepared {
     }
   } else {
     const source = raw(store, spec.liveCode as TawesCode)
-    for (const id of store.ids) series.set(id, source.get(id)!.map((v) => clean(spec, v)))
+    for (const id of store.ids) {
+      const s = source.get(id)
+      if (s) series.set(id, s.map((v) => clean(spec, v)))
+    }
   }
   let last = -1
   for (const s of series.values()) {

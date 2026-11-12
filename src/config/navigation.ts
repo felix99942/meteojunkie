@@ -79,6 +79,13 @@ export const NAV_TABS: NavTab[] = [
     blurb: 'Statistisch korrigierte Punktvorhersage (DWD MOSMIX) für 3.000 Stationen in D-A-CH.',
   },
   {
+    id: 'tawes',
+    label: 'TAWES',
+    title: 'Messnetz Österreich: alle Messgrößen der TAWES-Stationen im 10-Minuten-Takt, die letzten 3 Tage',
+    group: 'imagery',
+    blurb: 'Alle Messgrößen der österreichischen Wetterstationen alle 10 Minuten — Temperatur, Wind, Druck, Niederschlag bis 48 h, Boden.',
+  },
+  {
     id: 'radar',
     label: 'Radar',
     title: 'Niederschlagsradar: DWD-Komposit im 5-Minuten-Takt — Deutschland, Schweiz und Westösterreich',

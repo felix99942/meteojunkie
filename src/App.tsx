@@ -5,6 +5,7 @@ import { ProfileSplit } from './components/ProfileSplit'
 import { TimeScrubber } from './components/TimeScrubber'
 import { AppNav, LegalCorner } from './components/AppNav'
 import { AtSection } from './components/AtSection'
+import { TawesPanel } from './components/TawesPanel'
 import { ClassicMeteogram } from './components/ClassicMeteogram'
 import { AirQualityPanel } from './components/AirQualityPanel'
 import { VerifyPanel } from './components/VerifyPanel'
@@ -89,6 +90,10 @@ export default function App() {
         </Suspense>
       ) : view === 'mos' ? (
         <AtSection mode="vorhersage" />
+      ) : view === 'tawes' ? (
+        <div className="atsection">
+          <TawesPanel />
+        </div>
       ) : (
         <AtSection mode="klima" />
       )}
