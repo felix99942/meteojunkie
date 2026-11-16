@@ -259,7 +259,16 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   // Wechsel eingeschaltet, abschalten bleibt danach möglich. Die Relative
   // Topografie liest man klassisch mit den 500-hPa-Linien darüber.
   useEffect(() => {
-    const line = varId === 'reltop' ? 'gh500' : varId === 'wind300' ? (regional ? 'wind300' : 'gh300') : varId
+    const line =
+      varId === 'reltop'
+        ? 'gh500'
+        : varId === 'wind300'
+          ? regional
+            ? 'wind300'
+            : 'gh300'
+          : varId === 'wind250' || varId === 'wind200'
+            ? 'gh300'
+            : varId
     if (line === 'msl' || line === 'gh500' || line === 'gh300' || line === 'wind300')
       setContours((c) => (c[line] ? c : { ...c, [line]: true }))
   }, [varId, regional])
@@ -270,7 +279,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
   // abgeschaltet wurden, nicht wenn man sie vorher selbst ausgemacht hatte.
   const mslAutoOff = useRef(false)
   useEffect(() => {
-    if (varId === 'wind300') {
+    if (varId === 'wind300' || varId === 'wind250' || varId === 'wind200') {
       setContours((c) => {
         if (!c.msl) return c
         mslAutoOff.current = true

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   getGlobeVariable,
+  BARB_VARS,
+  levelOf,
+  PRESSURE_LEVELS,
+  type GlobeVarId,
   contoursFor,
   formatReadout,
   decodeCodes,
@@ -367,7 +371,11 @@ describe('Registry', () => {
 
   it('schaltet Linien und Partikel nur bei Flächengrößen ab, nicht bei der Relativen Topografie', () => {
     const off = GLOBE_VARIABLES.filter(overlaysOffFor).map((v) => v.id).sort()
-    expect(off).toEqual(['cape', 'hzerocl', 'newsnow', 'precip', 'precipsum', 'rh700', 'snow', 't2m', 't700', 't850', 'tcwv', 'td2m'])
+    expect(off).toEqual([
+      'cape', 'hzerocl', 'newsnow', 'precip', 'precipsum', 'rh700', 'snow',
+      't1000', 't200', 't250', 't2m', 't300', 't500', 't700', 't850', 't925', 't950',
+      'tcwv', 'td2m', 'thetae850',
+    ])
   })
 
   it('erkennt Böen, die nur eine Stichprobe des Schrittabstands sind', () => {
@@ -474,6 +482,49 @@ describe('Meeresgrößen', () => {
     // ein Lauf ohne Höhenwind fällt auf den Bodenwind zurück
     const old = { variables: { uv10: vm } } as unknown as GlobeMeta
     expect(particleSource('wind300', old).var).toBe('uv10')
+  })
+})
+
+describe('Druckflächen', () => {
+  it('jede Standardfläche hat Temperatur und Wind in der Auswahl, die Komponenten nicht', () => {
+    for (const p of PRESSURE_LEVELS) {
+      expect(GLOBE_VARIABLES.some((v) => v.id === `t${p}`), `t${p}`).toBe(true)
+      expect(GLOBE_VARIABLES.some((v) => v.id === `wind${p}`), `wind${p}`).toBe(true)
+      expect(GLOBE_VARIABLES.some((v) => v.id === `uv${p}`)).toBe(false)
+      expect(BARB_VARS.has(`wind${p}` as GlobeVarId)).toBe(true)
+    }
+    expect(GLOBE_VARIABLES.some((v) => v.id === 'thetae850')).toBe(true)
+  })
+  it('levelOf erkennt nur Level-Größen', () => {
+    expect(levelOf('t925')).toBe(925)
+    expect(levelOf('wind250')).toBe(250)
+    expect(levelOf('uv1000')).toBe(1000)
+    expect(levelOf('t2m')).toBeNull()
+    expect(levelOf('tcc')).toBeNull()
+    expect(levelOf('wind10')).toBeNull()
+    expect(levelOf('t600')).toBeNull() // keine Standardfläche
+  })
+  it('die Partikel laufen mit dem Wind der gewählten Fläche, in der Höhe schneller bezogen', () => {
+    const vm = { lo: 0, step: 1, unit: 'm/s', steps: [0] }
+    const meta = { variables: { uv10: vm, uv925: vm, uv500: vm, uv250: vm } } as unknown as GlobeMeta
+    expect(particleSource('wind925', meta)).toEqual({ var: 'uv925', refSpeed: 12 })
+    expect(particleSource('wind500', meta)).toEqual({ var: 'uv500', refSpeed: 30 })
+    expect(particleSource('wind250', meta)).toEqual({ var: 'uv250', refSpeed: 40 })
+    // ein Modell ohne die Fläche fällt auf den Bodenwind zurück, nicht auf eine andere Fläche
+    expect(particleSource('wind950', meta).var).toBe('uv10')
+  })
+  it('obere Flächen haben eine eigene Skala, die ihre Temperaturen nicht klemmt', () => {
+    const t200 = getGlobeVariable('t200').scale
+    const t850 = getGlobeVariable('t850').scale
+    // −65 und −75 °C liegen in verschiedenen Farben (mit der Bodenskala beide im untersten Band)
+    expect(colorForValue(t200, -65)).not.toEqual(colorForValue(t200, -75))
+    expect(colorForValue(t850, -65)).toEqual(colorForValue(t850, -75))
+  })
+  it('über 250/200 hPa stehen die 300-hPa-Linien, über 500 hPa die 500er', () => {
+    expect(contoursFor('wind250').map((c) => c.id)).toEqual(['msl', 'gh300'])
+    expect(contoursFor('wind200').map((c) => c.id)).toEqual(['msl', 'gh300'])
+    expect(contoursFor('wind500').map((c) => c.id)).toEqual(['msl', 'gh500'])
+    expect(contoursFor('wind300', true).map((c) => c.id)).toEqual(['msl', 'wind300'])
   })
 })
 

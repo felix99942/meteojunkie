@@ -117,7 +117,16 @@ FIELDS = {
     # 0,25° und 0,1°)
     ('sf', None): 'sf',
     ('rsn', None): 'rsn',
+    # θe 850 hPa (seit 2026-11-15, im Index geprüft 0,25° und 0,1°)
+    ('r', '850'): 'rh850',
 }
+# Temperatur und Wind auf den Standardflächen (seit 2026-11-15). Open Data führt 14 Flächen
+# 1000–10 hPa (im Index geprüft 2026-11-15, 0,25° und 0,1°), genommen werden auf Wunsch nur
+# die Standardflächen; 950 hPa gibt es bei ECMWF nicht
+PL_LEVELS = ('1000', '925', '850', '700', '500', '300', '250', '200')
+for _lev in PL_LEVELS:
+    for _par in ('t', 'u', 'v'):
+        FIELDS.setdefault((_par, _lev), f'{_par}{_lev}')
 
 # Wellenmodell (WAM): eigener Strom `wave` im selben Verzeichnis, gleiches
 # 0,25°-Gitter, gleiche Schritte (gemessen 2026-10-08, +0 bis +360 h); über

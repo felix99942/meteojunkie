@@ -26,9 +26,25 @@ import { alternateShade, bands, COLOR_SCALES, lerpRamp, PRECIP_1H, PRECIP_6H, sa
 export type GlobeVarId =
   | 't2m' | 't850' | 'msl' | 'precip' | 'wind10' | 'gust' | 'wind300' | 'gh500' | 'gh300' | 'reltop' | 'tcc' | 'clouds'
   | 'uv10' | 'uv300' | 'uv850' | 'uv700'
-  | 't700' | 'wind850' | 'wind700'
+  | `t${PressureLevel}` | `wind${PressureLevel}` | `uv${PressureLevel}` | 'thetae850'
   | 'swh' | 'pp1d' | 'sst'
   | 'precipsum' | 'cape' | 'td2m' | 'rh700' | 'tcwv' | 'snow' | 'hzerocl' | 'newsnow' | 'thetae' | 'precipphase'
+
+/**
+ * Druckflächen für Temperatur und Wind (seit 2026-11-15, auf Wunsch die
+ * STANDARDflächen — welche davon ein Modell hat, steht in seiner meta.json):
+ * ECMWF und ICON-EU 1000/925/850/700/500/300/250/200, ICON-D2 950 statt 925
+ * (es führt kein 925), Varda wie ECMWF.
+ */
+export const PRESSURE_LEVELS = [1000, 950, 925, 850, 700, 500, 300, 250, 200] as const
+export type PressureLevel = (typeof PRESSURE_LEVELS)[number]
+
+/** Druckfläche einer Level-Größe (`t500`, `wind250`, `uv925`), sonst null. */
+export function levelOf(varId: string): PressureLevel | null {
+  const m = /^(?:t|wind|uv)(\d{3,4})$/.exec(varId)
+  const p = m ? Number(m[1]) : NaN
+  return (PRESSURE_LEVELS as readonly number[]).includes(p) ? (p as PressureLevel) : null
+}
 
 /**
  * Gruppen der Auswahlliste (`<optgroup>`) — bei über zwanzig Größen ist eine
@@ -324,6 +340,88 @@ const HZEROCL: ColorScale = {
   stops: bands(0, 250, lerpRamp(TEMP_ANCHORS.slice(1), 21)),
 }
 
+/**
+ * Temperatur der OBEREN Troposphäre (300/250/200 hPa): −84 … −20 °C in 1-K-Bändern auf
+ * derselben Rampe. Mit `GLOBAL_TEMP` (ab −56 °C) lägen diese Flächen fast ganz im
+ * untersten, geklemmten Band — dieselbe Farbe heißt hier deshalb NICHT dieselbe
+ * Temperatur wie am Boden, die Legende sagt welche.
+ */
+const UPPER_TEMP: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(-84, 1, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS.slice(0, 22), 65), TEMP_VIVID), TEMP_SHADE)),
+}
+
+/** Ungefähre Höhe der Druckflächen in der Standardatmosphäre, für die Erklärungen. */
+const LEVEL_HEIGHT: Record<PressureLevel, string> = {
+  1000: '~100 m', 950: '~500 m', 925: '~750 m', 850: '~1500 m', 700: '~3000 m',
+  500: '~5500 m', 300: '~9000 m', 250: '~10.500 m', 200: '~12.000 m',
+}
+const LEVEL_NOTE: Partial<Record<PressureLevel, string>> = {
+  1000: ' Liegt über Land oft UNTER dem Gelände und ist dort vom Modell extrapoliert.',
+  950: ' Über den Alpen und Hochland unter dem Gelände, dort extrapoliert.',
+  925: ' Über den Alpen und Hochland unter dem Gelände, dort extrapoliert.',
+  850: ' Die Luftmasse ohne die bodennahe Grenzschicht. Über Hochland (Tibet, Anden, Antarktis) liegt die Fläche UNTER dem Gelände und ist vom Modell extrapoliert.',
+  700: ' Über den Alpen die Luftmasse oberhalb der Täler.',
+  500: ' Mittlere Troposphäre, Höhenkaltluft und Tröge.',
+}
+
+/**
+ * Temperatur auf den Druckflächen (die Liste der Modelle steht in deren meta.json — welche
+ * Fläche ein Modell nicht hat, ist in der Auswahl gesperrt bzw. in den Panels ausgeblendet).
+ */
+const TEMP_LEVEL_VARS: GlobeVariable[] = PRESSURE_LEVELS.map((p) => ({
+  id: `t${p}` as GlobeVarId,
+  group: 'Temperatur & Luftmasse',
+  label: `Temperatur ${p} hPa`,
+  title:
+    `Temperatur auf ${p} hPa (${LEVEL_HEIGHT[p]}).${LEVEL_NOTE[p] ?? ''}` +
+    (p <= 300 ? ' Eigene Farbskala −84 … −20 °C (die Bodenskala endet bei −56 °C).' : ''),
+  scale: p <= 300 ? UPPER_TEMP : GLOBAL_TEMP,
+  decimals: 0,
+  legendEvery: 5,
+  legendMultiple: 10,
+}))
+
+/** θe 850 hPa — die klassische Höhenkarte der Luftmassen (seit 2026-11-15, alle Modelle). */
+const THETAE850_VAR: GlobeVariable = {
+  id: 'thetae850',
+  group: 'Temperatur & Luftmasse',
+  label: 'θe 850 hPa',
+  title:
+    'Äquivalentpotentielle Temperatur auf 850 hPa (~1500 m) in K, aus Temperatur und relativer Feuchte der Fläche (Bolton 1980): warm UND feucht ergibt hohe Werte. θe bleibt bei trockener wie feuchter Hebung erhalten und markiert deshalb Luftmassen — enge Abstände der Farbstufen sind Luftmassengrenzen (Fronten), Zungen hoher Werte feuchtwarme Zufuhr. Über Hochland liegt die Fläche unter dem Gelände und ist extrapoliert.',
+  scale: THETAE,
+  decimals: 0,
+  legendEvery: 5,
+}
+
+const WIND_LEVEL_TITLE: Partial<Record<PressureLevel, string>> = {
+  850: 'oberhalb der Reibung am Boden; die Strömung, mit der die Luftmassen ziehen.',
+  700: 'Anströmung des Alpenkamms.',
+  500: 'Steuerungsströmung der Tiefs und Gewitter.',
+  300: 'der Strahlstrom (Jetstream), darüber das Geopotential derselben Fläche als Linien (statt 500 hPa).',
+  250: 'Höhe des Strahlstroms (Jetstream) in den mittleren Breiten.',
+  200: 'Strahlstrom, vor allem der subtropische.',
+}
+
+/**
+ * Wind auf den Druckflächen. Bis 700 hPa auf der Skala des Bodenwinds, ab 500 hPa auf
+ * der Strahlstromskala (unter 50 km/h durchsichtig) — dort ist der Wind ein Vielfaches.
+ */
+const WIND_LEVEL_VARS: GlobeVariable[] = PRESSURE_LEVELS.map((p) => ({
+  id: `wind${p}` as GlobeVarId,
+  group: 'Wind',
+  label: p === 300 ? 'Höhenwind + Geopotential 300 hPa' : `Wind ${p} hPa`,
+  title:
+    `Windgeschwindigkeit auf ${p} hPa (${LEVEL_HEIGHT[p]}) in km/h${WIND_LEVEL_TITLE[p] ? ' — ' + WIND_LEVEL_TITLE[p] : '.'}` +
+    (p <= 500 ? ' Unter 50 km/h nicht eingefärbt.' : '') +
+    (p >= 925 ? ' Über Land oft unter dem Gelände und dort extrapoliert.' : '') +
+    ' Windpartikel und Windfiedern zeigen die Strömung DIESER Fläche, nicht den Bodenwind.',
+  scale: p <= 500 ? JET : COLOR_SCALES.wind_speed_10m,
+  decimals: 0,
+  legendEvery: p <= 500 ? 2 : 3,
+}))
+
 export const GLOBE_VARIABLES: GlobeVariable[] = [
   {
     id: 't2m',
@@ -335,27 +433,8 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     legendEvery: 5,
     legendMultiple: 10,
   },
-  {
-    id: 't850',
-    group: 'Temperatur & Luftmasse',
-    label: 'Temperatur 850 hPa',
-    title:
-      'Temperatur auf 850 hPa (~1500 m) — die Luftmasse ohne die bodennahe Grenzschicht. Über Hochland (Tibet, Anden, Antarktis) liegt die Fläche UNTER dem Gelände und ist vom Modell extrapoliert.',
-    scale: GLOBAL_TEMP,
-    decimals: 0,
-    legendEvery: 5,
-    legendMultiple: 10,
-  },
-  {
-    id: 't700',
-    group: 'Temperatur & Luftmasse',
-    label: 'Temperatur 700 hPa',
-    title: 'Temperatur auf 700 hPa (~3000 m) — über den Alpen die Luftmasse oberhalb der Täler. Bisher nur bei Varda.',
-    scale: GLOBAL_TEMP,
-    decimals: 0,
-    legendEvery: 5,
-    legendMultiple: 10,
-  },
+  ...TEMP_LEVEL_VARS,
+  THETAE850_VAR,
   {
     id: 'gh500',
     group: 'Druck & Höhe',
@@ -413,34 +492,7 @@ export const GLOBE_VARIABLES: GlobeVariable[] = [
     decimals: 0,
     legendEvery: 2,
   },
-  {
-    id: 'wind300',
-    group: 'Wind',
-    label: 'Höhenwind + Geopotential 300 hPa',
-    title:
-      'Windgeschwindigkeit auf 300 hPa (~9 km) in km/h — der Strahlstrom (Jetstream), darüber das Geopotential derselben Fläche als Linien (statt 500 hPa). Unter 70 km/h nicht eingefärbt. Die Windpartikel zeigen hier die Höhenströmung, nicht den Bodenwind.',
-    scale: JET,
-    decimals: 0,
-    legendEvery: 2,
-  },
-  {
-    id: 'wind850',
-    group: 'Wind',
-    label: 'Wind 850 hPa',
-    title: 'Windgeschwindigkeit auf 850 hPa (~1500 m) in km/h, oberhalb der Reibung am Boden. Bisher nur bei Varda.',
-    scale: COLOR_SCALES.wind_speed_10m,
-    decimals: 0,
-    legendEvery: 3,
-  },
-  {
-    id: 'wind700',
-    group: 'Wind',
-    label: 'Wind 700 hPa',
-    title: 'Windgeschwindigkeit auf 700 hPa (~3000 m) in km/h — Anströmung des Alpenkamms. Bisher nur bei Varda.',
-    scale: COLOR_SCALES.wind_speed_10m,
-    decimals: 0,
-    legendEvery: 3,
-  },
+  ...WIND_LEVEL_VARS,
   {
     id: 'tcc',
     group: 'Wolken & Gewitter',
@@ -786,7 +838,10 @@ export function contoursFor(varId: GlobeVarId, regional = false): ContourDef[] {
   // Höhenwind der REGIONALmodelle: Isotachen statt 300-hPa-Höhenlinien (auf
   // Wunsch, zusammen mit Windfiedern statt Partikeln) — über einem feinen
   // Gitter will man die Stärke ablesen, die Strömungsrichtung tragen die Fiedern
-  const upper: ContourId = varId === 'wind300' ? (regional ? 'wind300' : 'gh300') : 'gh500'
+  // 250/200 hPa: die nächstgelegenen Höhenlinien sind die von 300 hPa (eigene Isotachen
+  // gibt es nur für 300 hPa)
+  const upper: ContourId =
+    varId === 'wind300' ? (regional ? 'wind300' : 'gh300') : varId === 'wind250' || varId === 'wind200' ? 'gh300' : 'gh500'
   return CONTOURS.filter((c) => c.id === 'msl' || c.id === upper)
 }
 
@@ -1061,17 +1116,29 @@ export function decodeUv8(rgba: ArrayLike<number>, count: number): Uint8Array {
  * Böen zeigen die Fiedern den MITTLEREN 10-m-Wind — Böenkomponenten führt
  * kein Modell, die Böe ist die Farbfläche darunter.
  */
-export const BARB_VARS: ReadonlySet<GlobeVarId> = new Set<GlobeVarId>(['wind10', 'gust', 'wind850', 'wind700', 'wind300'])
+export const BARB_VARS: ReadonlySet<GlobeVarId> = new Set<GlobeVarId>([
+  'wind10',
+  'gust',
+  ...PRESSURE_LEVELS.map((p) => `wind${p}` as GlobeVarId),
+])
 
 /** Druckfläche der Windkomponenten, oder null beim 10-m-Wind. */
-export function uvLevel(uv: GlobeVarId): 850 | 700 | 300 | null {
-  return uv === 'uv850' ? 850 : uv === 'uv700' ? 700 : uv === 'uv300' ? 300 : null
+export function uvLevel(uv: GlobeVarId): PressureLevel | null {
+  return uv.startsWith('uv') ? levelOf(uv) : null
+}
+
+/**
+ * Bezugstempo der Partikel je Fläche (m/s, so schnell wie 10 m/s am Boden): in der Höhe
+ * ist der Wind ein Vielfaches, maßstäblich rasten die Partikel im Strahlstrom.
+ */
+function particleRefSpeed(p: PressureLevel): number {
+  return p >= 925 ? 12 : p === 850 ? 15 : p === 700 ? 20 : p === 500 ? 30 : 40
 }
 
 export function particleSource(varId: GlobeVarId, meta: GlobeMeta | null): { var: GlobeVarId; refSpeed: number } {
-  if (varId === 'wind300' && meta?.variables.uv300) return { var: 'uv300', refSpeed: 40 }
-  if (varId === 'wind700' && meta?.variables.uv700) return { var: 'uv700', refSpeed: 20 }
-  if (varId === 'wind850' && meta?.variables.uv850) return { var: 'uv850', refSpeed: 15 }
+  const p = varId.startsWith('wind') ? levelOf(varId) : null
+  const uv = p ? (`uv${p}` as GlobeVarId) : null
+  if (p && uv && meta?.variables[uv]) return { var: uv, refSpeed: particleRefSpeed(p) }
   return { var: 'uv10', refSpeed: 10 }
 }
 

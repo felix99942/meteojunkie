@@ -31,7 +31,9 @@ Einheitliche Feldnamen und Einheiten:
                `rsn` gerechnet, ICON `h_snow` direkt)
   hzerocl      m über NN, Nullgradgrenze (ICON direkt, Varda aus den Druckflächen
                gerechnet — ECMWF Open Data führt sie nicht)
-  t700, u850, v850, u700, v700   K bzw. m/s (bisher nur Varda)
+  t<p>, u<p>, v<p>   K bzw. m/s auf den Druckflächen p aus `LEVELS` (seit 2026-11-15
+               alle Modelle, je nachdem welche Flächen sie führen)
+  rh850        %, relative Feuchte auf 850 hPa — nur für θe 850 hPa
 
 Ausgabe (`public/nwp/<modell>/`, gitignored):
   meta.json                       Lauf, Raster, je Größe lo/step/Schritte(/Intervalle)
@@ -97,11 +99,7 @@ VARIABLES = {
     'clouds': {'lo': 0.0, 'step': 5.0, 'unit': '%', 'encoding': 'rgb3'},
     'uv10': {'lo': -63.5, 'step': 0.5, 'unit': 'm/s', 'encoding': 'uv8'},
     'uv300': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
-    'uv850': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
-    'uv700': {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'},
-    't700': {'lo': -70.0, 'step': 0.25, 'unit': '°C'},
-    'wind850': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
-    'wind700': {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'},
+    # Temperatur und Wind auf den übrigen Druckflächen: unten per Schleife (`LEVELS`)
     # Meer (nur ECMWF): Wellenhöhe in 5 cm, Periode in 0,1 s, Wasser in 0,1 K
     'swh': {'lo': 0.0, 'step': 0.05, 'unit': 'm'},
     'pp1d': {'lo': 0.0, 'step': 0.1, 'unit': 's'},
@@ -129,7 +127,21 @@ VARIABLES = {
     # als Schnee fiel (`phase_step`), (B · 20 − 200) m. Die Anzeige vergleicht sie je
     # Pixel mit dem ECHTEN Gelände.
     'precipphase': {'lo': 0.0, 'step': 0.1, 'unit': 'mm', 'encoding': 'phase'},
+    # Äquivalentpotentielle Temperatur auf 850 hPa (seit 2026-11-15, alle Modelle) aus
+    # T und relativer Feuchte derselben Fläche — die klassische θe-Höhenkarte
+    'thetae850': {'lo': 200.0, 'step': 0.5, 'unit': 'K'},
 }
+
+# Druckflächen für Temperatur und Wind (seit 2026-11-15, auf Wunsch die STANDARDflächen,
+# nicht alle, die ein Modell führt — Speicher und R2-Schreibvorgänge). Welche ein Modell
+# davon hat, entscheidet sein Ingest; 950 hPa nur ICON-D2 (das kein 925 führt).
+LEVELS = (1000, 950, 925, 850, 700, 500, 300, 250, 200)
+for _p in LEVELS:
+    # bis −100 °C: 200 hPa über dem tropischen Pazifik liegt unter −70 °C
+    VARIABLES.setdefault(f't{_p}', {'lo': -100.0, 'step': 0.25, 'unit': '°C'})
+    VARIABLES.setdefault(f'wind{_p}', {'lo': 0.0, 'step': 1.0, 'unit': 'km/h'})
+    # 1 m/s je Stufe wie `uv300`: im Strahlstrom über 63,5 m/s
+    VARIABLES.setdefault(f'uv{_p}', {'lo': -127.0, 'step': 1.0, 'unit': 'm/s', 'encoding': 'uv8'})
 
 # Felder, die eine Größe braucht (ohne sie fehlt der Schritt)
 NEEDS = {
@@ -142,16 +154,20 @@ NEEDS = {
     'precipsum': ('tp',), 'cape': ('cape',), 'td2m': ('td2m',), 'rh700': ('rh700',),
     'tcwv': ('tcwv',), 'snow': ('hsnow',), 'hzerocl': ('hzerocl',),
     'newsnow': ('sf',),
-    't700': ('t700',),
     'thetae': ('t2m', 'td2m', 'ps'),
+    'thetae850': ('t850', 'rh850'),
     'precipphase': ('tp', 'sf', 'snowlmt'),
-    'wind850': ('u850', 'v850'), 'uv850': ('u850', 'v850'),
-    'wind700': ('u700', 'v700'), 'uv700': ('u700', 'v700'),
 }
+for _p in LEVELS:
+    NEEDS.setdefault(f't{_p}', (f't{_p}',))
+    NEEDS[f'wind{_p}'] = NEEDS[f'uv{_p}'] = (f'u{_p}', f'v{_p}')
 # Größen, die nicht jedes Modell hat — ihr Fehlen ist kein Fehler
 OPTIONAL = {
     'gust', 'precip', 'precipsum', 'clouds', 'swh', 'pp1d', 'sst', 'hzerocl', 'newsnow',
-    't700', 'wind850', 'uv850', 'wind700', 'uv700', 'thetae', 'precipphase',
+    'thetae', 'thetae850', 'precipphase',
+    # Druckflächen: nicht jedes Modell führt jede (850-hPa-Temperatur und 300-hPa-Wind
+    # haben alle und bleiben Pflicht)
+    *(v for p in LEVELS for v in (f't{p}', f'wind{p}', f'uv{p}') if v not in ('t850', 'wind300', 'uv300')),
 }
 
 # Die Abrufe bei ECMWF TRÖPFELN sporadisch (gemessen 2026-10-05: derselbe
@@ -265,6 +281,31 @@ def crop(vals, grid: dict, box: tuple[float, float, float, float]):
     return out, g
 
 
+def dewpoint_from_rh(t, rh):
+    """Taupunkt (K) aus Temperatur (K) und relativer Feuchte (%), Magnus über Wasser
+    (dieselben Konstanten wie `theta_e`, die Umkehrung ist damit exakt)."""
+    import numpy as np
+
+    tc = t - 273.15
+    a = np.log(np.clip(rh, 1.0, 100.0) / 100.0) + 17.67 * tc / (tc + 243.5)
+    return 243.5 * a / (17.67 - a) + 273.15
+
+
+def theta_e(t, td, p):
+    """Äquivalentpotentielle Temperatur (K) aus T, Taupunkt (K) und Druck (hPa).
+
+    Bolton 1980 (Gl. 15, 21, 43), wie `thetaE` in src/lib/thermo.ts.
+    """
+    import numpy as np
+
+    td = np.minimum(td, t)
+    tc = td - 273.15
+    e = 6.112 * np.exp(17.67 * tc / (tc + 243.5))
+    r = 622.0 * e / (p - e)
+    t_lcl = 1.0 / (1.0 / (td - 56.0) + np.log(t / td) / 800.0) + 56.0
+    return t * (1000.0 / p) ** (0.2854 * (1 - 0.28e-3 * r)) * np.exp((3.376 / t_lcl - 0.00254) * r * (1 + 0.81e-3 * r))
+
+
 def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
     """Größe in Anzeigeeinheit, oder None, wenn sie zu diesem Schritt fehlt."""
     import numpy as np
@@ -304,14 +345,16 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         return np.hypot(f['u300'], f['v300']) * 3.6
     if var == 'uv300':
         return np.stack([f['u300'], f['v300']], axis=-1)
-    if var == 't700':
-        return f['t700'] - 273.15
-    if var in ('wind850', 'wind700'):
+    if var.startswith('wind') and var[4:].isdigit():
         p = var[4:]
         return np.hypot(f[f'u{p}'], f[f'v{p}']) * 3.6
-    if var in ('uv850', 'uv700'):
+    if var.startswith('uv') and var[2:].isdigit():
         p = var[2:]
         return np.stack([f[f'u{p}'], f[f'v{p}']], axis=-1)
+    if var.startswith('t') and var[1:].isdigit():
+        return f[var] - 273.15
+    if var == 'thetae850':
+        return theta_e(f['t850'], dewpoint_from_rh(f['t850'], f['rh850']), 850.0)
     if var == 'swh':
         return f['swh']
     if var == 'pp1d':
@@ -326,16 +369,8 @@ def derive(var: str, f: dict, prev_tp, step: int, prev_step: int | None):
         sst = np.where(np.isfinite(f['swh']), f['skt'] - 273.15, np.nan)
         return np.where(sst < -2.0, np.nan, sst)
     if var == 'thetae':
-        # Bolton 1980 (Gl. 15, 21, 43), wie `thetaE` in src/lib/thermo.ts; mit dem Bodendruck,
-        # also am Modellgelände und nicht auf Meereshöhe reduziert
-        t = f['t2m']
-        td = np.minimum(f['td2m'], t)
-        p = f['ps'] / 100.0
-        tc = td - 273.15
-        e = 6.112 * np.exp(17.67 * tc / (tc + 243.5))
-        r = 622.0 * e / (p - e)
-        t_lcl = 1.0 / (1.0 / (td - 56.0) + np.log(t / td) / 800.0) + 56.0
-        return t * (1000.0 / p) ** (0.2854 * (1 - 0.28e-3 * r)) * np.exp((3.376 / t_lcl - 0.00254) * r * (1 + 0.81e-3 * r))
+        # mit dem Bodendruck, also am Modellgelände und nicht auf Meereshöhe reduziert
+        return theta_e(f['t2m'], f['td2m'], f['ps'] / 100.0)
     if var == 'precipsum':
         # bei +0 ist die Summe überall 0 — kein Bild, der Schritt fehlt wie beim Niederschlag
         # Unter 1 mm (die Skala ist dort durchsichtig) auf 0: der Nieselhauch

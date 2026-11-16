@@ -331,15 +331,22 @@ export function GlobeMultiPanel({
             e.currentTarget.blur()
           }}
         >
-          {GLOBE_GROUPS.map((g) => (
-            <optgroup key={g} label={g}>
-              {GLOBE_VARIABLES.filter((v) => v.group === g).map((v) => (
-                <option key={v.id} value={v.id} disabled={!!meta && !meta.variables[v.id]}>
-                  {variableLabel(v, v.id === p.varId ? interval : undefined)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
+          {GLOBE_GROUPS.map((g) => {
+            // Was das Modell nicht führt, steht gar nicht erst da (seit den Druckflächen
+            // wären es je Modell ein Dutzend gesperrte Einträge) — außer der gewählten
+            // Größe, sonst stünde die Auswahl leer, z. B. wenn PARSYNC sie hergespiegelt hat
+            const vars = GLOBE_VARIABLES.filter((v) => v.group === g && (!meta || meta.variables[v.id] || v.id === p.varId))
+            if (!vars.length) return null
+            return (
+              <optgroup key={g} label={g}>
+                {vars.map((v) => (
+                  <option key={v.id} value={v.id} disabled={!!meta && !meta.variables[v.id]}>
+                    {variableLabel(v, v.id === p.varId ? interval : undefined)}
+                  </option>
+                ))}
+              </optgroup>
+            )
+          })}
         </select>
         {!p.sync && (
           <span className="gmp-localtime">

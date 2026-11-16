@@ -3574,6 +3574,21 @@ npm run preview   # gebautes dist/ servieren
   ist die andere Größe. Varda führt ihn nicht. Unter 1 cm als 0 gespeichert,
   Höchstwerte als Zahlen wie bei der Regensumme. Cache-Schlüssel dafür
   gesprungen (ECMWF `v9`, IFS 9 km `v4`, ICON `v5`).
+  **DRUCKFLÄCHEN UND θe 850 hPa** (seit 2026-11-15, auf Wunsch, alle Modelle;
+  `PRESSURE_LEVELS`/`levelOf` in `config/globe.ts`, `LEVELS` in `nwp_common.py`):
+  Temperatur und Wind auf den STANDARDflächen 1000/925/850/700/500/300/250/200 hPa,
+  ICON-D2 950 statt 925 (es führt kein 925). Bewusst NICHT alle, die die Modelle haben
+  — gemessen (2026-11-15) ECMWF 14 Flächen 1000–10 hPa, ICON-EU 20 (1000–50 samt
+  950/900/875/825/800/775), ICON-D2 11 (1000–200), Varda 12 (1000–50 ohne 600); alle
+  hätten grob +1,8 Mio. R2-Schreibvorgänge im Monat gekostet. Je Fläche drei Bilder
+  (`t<p>`, `wind<p>`, `uv<p>` für Fiedern/Partikel), gemessen ~22 Bilder je Termin mehr,
+  ECMWF 0,25° ~5,7 MB je Termin, ICON-D2 ~2,9 MB. θe 850 hPa (`thetae850`) aus T und rF
+  derselben Fläche (Bolton, `theta_e` in `nwp_common.py`; Varda rF aus q). 300/250/200 hPa
+  haben eine eigene Temperaturskala −84 … −20 °C (`UPPER_TEMP`), ab 500 hPa läuft der
+  Wind auf der Strahlstromskala; über 250/200 hPa stehen die 300-hPa-Höhenlinien. Die
+  Panel-Auswahl BLENDET aus, was das Modell nicht führt (sonst ein Dutzend gesperrte
+  Einträge), die Globusansicht sperrt weiter nur. Cache-Schlüssel dafür gesprungen
+  (ECMWF `v10`, IFS 9 km `v5`, ICON-D2 `v8`, ICON-EU `v6`).
   **WINDSKALA an festen Ankern** (`colorscales.ts`, gilt auch für MOS- und
   Feld-Karte): ab 100 km/h dunkelrot, ab 120 km/h lila (≈ Beaufort 12),
   Wind und Böe teilen die Anker.

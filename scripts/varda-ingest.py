@@ -95,10 +95,18 @@ FIELDS = {
     'v_850': ('V', 850, 'v850'),
     'u_700': ('U', 700, 'u700'),
     'v_700': ('V', 700, 'v700'),
-    # Nur für die Nullgradgrenze (500 hPa liegt selbst im Hochsommer über ihr)
+    # Temperatur und Wind auf den Standardflächen (seit 2026-11-15); die Ausgabe führt
+    # 12 Flächen 50–1000 hPa ohne 600, 250 und 200 also dabei. 1000/925/500 hPa
+    # braucht außerdem die Nullgradgrenze
     't_1000': ('T', 1000, 't1000'),
     't_925': ('T', 925, 't925'),
     't_500': ('T', 500, 't500'),
+    't_300': ('T', 300, 't300'),
+    't_250': ('T', 250, 't250'),
+    't_200': ('T', 200, 't200'),
+    **{f'{c}_{lev}': (c.upper(), lev, f'{c}{lev}') for lev in (1000, 925, 500, 250, 200) for c in ('u', 'v')},
+    # θe 850 hPa: Varda führt nur die spezifische Feuchte, rF wird gerechnet
+    'q_850': ('QV', 850, 'q850'),
     'z_925': ('FI', 925, 'gh925'),
     'z_850': ('FI', 850, 'gh850'),
     'z_700': ('FI', 700, 'gh700'),
@@ -112,10 +120,11 @@ ZERO_LEVELS = (1000, 925, 850, 700, 500)
 # Was Varda führt — Bewölkung, Böen, CAPE, Schnee, Wellen und die Vertikalbewegung gibt
 # es nicht: die Metadaten des Checkpoints nennen `w_*` und 600 hPa, das sind die
 # Trainingsdaten, ausgegeben werden nur FI, QV, T, U, V
+LEVELS = (1000, 925, 850, 700, 500, 300, 250, 200)
 VARIABLES = {
-    't2m', 't850', 't700', 'msl', 'precip', 'precipsum', 'wind10', 'uv10',
-    'wind850', 'uv850', 'wind700', 'uv700', 'wind300', 'uv300',
-    'gh500', 'gh300', 'reltop', 'td2m', 'rh700', 'hzerocl',
+    't2m', 'msl', 'precip', 'precipsum', 'wind10', 'uv10',
+    'gh500', 'gh300', 'reltop', 'td2m', 'rh700', 'hzerocl', 'thetae850',
+    *(v for p in LEVELS for v in (f't{p}', f'wind{p}', f'uv{p}')),
 }
 # precip/precipsum fehlen bei +0 h (kein Intervall), das ist kein Fehler
 OPTIONAL = {'precip', 'precipsum'}
@@ -359,15 +368,16 @@ def read_step(path: Path, idx, w) -> dict:
     if all(f't{p}' in out and f'gh{p}' in out for p in ZERO_LEVELS):
         out['hzerocl'] = zero_level([out[f't{p}'] for p in ZERO_LEVELS], [out[f'gh{p}'] for p in ZERO_LEVELS])
     # Nur Zwischengrößen: ein Teil der 1-km-Felder je Stunde weniger im Speicher
-    for k in ('t1000', 't925', 't500', 'gh925', 'gh850', 'gh700'):
+    for k in ('gh925', 'gh850', 'gh700'):
         out.pop(k, None)
-    if 'q700' in out and 't700' in out:
-        # Relative Feuchte aus spezifischer Feuchte und Temperatur (über Wasser,
-        # Bolton 1980) — Varda führt sie nicht direkt
-        q, t = out.pop('q700'), out['t700']
-        e = q * 70000.0 / (0.622 + 0.378 * q)
-        es = 611.2 * np.exp(17.67 * (t - 273.15) / (t - 29.65))
-        out['rh700'] = (100.0 * e / es).astype(np.float32)
+    for lev in (700, 850):
+        if f'q{lev}' in out and f't{lev}' in out:
+            # Relative Feuchte aus spezifischer Feuchte und Temperatur (über Wasser,
+            # Bolton 1980) — Varda führt sie nicht direkt
+            q, t = out.pop(f'q{lev}'), out[f't{lev}']
+            e = q * lev * 100.0 / (0.622 + 0.378 * q)
+            es = 611.2 * np.exp(17.67 * (t - 273.15) / (t - 29.65))
+            out[f'rh{lev}'] = (100.0 * e / es).astype(np.float32)
     return out
 
 

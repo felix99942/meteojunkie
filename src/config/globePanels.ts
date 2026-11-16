@@ -5,7 +5,7 @@
 // alle → Modellvergleich) bzw. MODSYNC (ein Modell für alle → Synoptik).
 // Hier die reinen Teile: Regionen, Vorgaben, Kopplung, Zeitraster.
 
-import { validMs, type GlobeMeta, type GlobeModelId, type GlobeVarId } from './globe'
+import { PRESSURE_LEVELS, validMs, type GlobeMeta, type GlobeModelId, type GlobeVarId } from './globe'
 
 export type PanelCount = 4 | 6
 export type PanelRegionId = 'europe' | 'austria'
@@ -167,8 +167,7 @@ const SMOOTH_FINE: Partial<Record<GlobeModelId, number>> = { 'ecmwf-hres': 1, 'i
 export const PANEL_BAND_LINES: Partial<Record<GlobeVarId, BandLines>> = {
   t2m: { interval: 2, smooth: SMOOTH_FINE },
   td2m: { interval: 2, smooth: SMOOTH_FINE },
-  t850: { interval: 2, smooth: SMOOTH_FINE },
-  t700: { interval: 2, smooth: SMOOTH_FINE },
+  thetae850: { interval: 4, smooth: SMOOTH_FINE },
   sst: { interval: 1, smooth: SMOOTH_FINE },
   reltop: { interval: 4, smooth: SMOOTH_FINE },
   gh500: { interval: 4, smooth: SMOOTH_FINE },
@@ -176,14 +175,19 @@ export const PANEL_BAND_LINES: Partial<Record<GlobeVarId, BandLines>> = {
   msl: { interval: 4, smooth: { 'ecmwf-hres': 2, 'icon-eu': 3, 'icon-d2': 12, varda: 24 } },
   wind10: { interval: 10, min: 10, smooth: SMOOTH_FINE },
   gust: { interval: 20, min: 20, smooth: SMOOTH_FINE },
-  wind850: { interval: 10, min: 10, smooth: SMOOTH_FINE },
-  wind700: { interval: 10, min: 10, smooth: SMOOTH_FINE },
-  wind300: { interval: 20, min: 60, smooth: SMOOTH_FINE },
   tcc: { interval: 20, min: 20, smooth: SMOOTH_FINE },
   rh700: { interval: 10, min: 50, smooth: SMOOTH_FINE },
   tcwv: { interval: 5, min: 5, smooth: SMOOTH_FINE },
   cape: { interval: 250, min: 250, smooth: SMOOTH_FINE },
   hzerocl: { interval: 500, smooth: SMOOTH_FINE },
+  // Druckflächen: Temperatur in 2 K wie am Boden, Wind bis 700 hPa wie der Bodenwind,
+  // darüber auf der Strahlstromskala in 20 km/h ab 60
+  ...Object.fromEntries(
+    PRESSURE_LEVELS.flatMap((p) => [
+      [`t${p}`, { interval: 2, smooth: SMOOTH_FINE }],
+      [`wind${p}`, p >= 700 ? { interval: 10, min: 10, smooth: SMOOTH_FINE } : { interval: 20, min: 60, smooth: SMOOTH_FINE }],
+    ]),
+  ),
 }
 
 /**

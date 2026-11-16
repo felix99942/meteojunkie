@@ -96,10 +96,31 @@ FIELDS = [
     ('hzerocl', None, 'hzerocl'),
 ]
 
+# θe 850 hPa (seit 2026-11-15): relative Feuchte derselben Fläche, D2 und EU im Verzeichnis geprüft
+FIELDS.append(('relhum', '850', 'rh850'))
+
+# Temperatur und Wind auf den Standardflächen (seit 2026-11-15, im Verzeichnis geprüft):
+# ICON-EU führt 20 Flächen 1000–50 hPa, ICON-D2 11 Flächen 1000–200 OHNE 925 — dort
+# deshalb 950 hPa. Auf Wunsch nur die Standardflächen, nicht alle.
+PL_LEVELS = {
+    'icon-eu': ('1000', '925', '850', '700', '500', '300', '250', '200'),
+    'icon-d2': ('1000', '950', '850', '700', '500', '300', '250', '200'),
+}
+
 # Nur ICON-D2: Bodendruck für θe auf dem Gelände (Ansicht „Alpen 3D"), live geprüft 2026-11-09.
 # Schneefallgrenze (m über NN) für die Phasen-Summe, live geprüft 2026-11-10: in 19 % des
 # Gitters undefiniert, dort meist auch die Nullgradgrenze
 EXTRA_FIELDS = {'icon-d2': [('ps', None, 'ps'), ('snowlmt', None, 'snowlmt')]}
+
+
+def model_fields(model: str) -> list[tuple[str, str | None, str]]:
+    have = {name for _, _, name in FIELDS}
+    levels = [
+        (var, lev, f'{var}{lev}')
+        for lev in PL_LEVELS[model] for var in ('t', 'u', 'v')
+        if f'{var}{lev}' not in have
+    ]
+    return FIELDS + levels + EXTRA_FIELDS.get(model, [])
 
 G = 9.80665  # Geopotential (m²/s²) → geopotentielle Höhe (m)
 
@@ -133,7 +154,7 @@ def fetch_step(model: str, run: datetime, step: int, pool: ThreadPoolExecutor) -
 
     futures = {
         name: pool.submit(http_get, field_url(model, run, step, var, lev))
-        for var, lev, name in FIELDS + EXTRA_FIELDS.get(model, [])
+        for var, lev, name in model_fields(model)
     }
     out: dict = {}
     for name, fut in futures.items():
