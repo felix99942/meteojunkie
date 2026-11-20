@@ -332,7 +332,9 @@ jobs:
         id: icon-eu-ingest
         if: steps.icon.outputs.eu != '' && steps.icon-eu-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        timeout-minutes: 10
+        # Seit den Druckflächen (281a1f4) braucht ein Lauf 7–10 min; mit 10 min
+        # Grenze brachen gemessen 2 von 3 Versuchen ab (612 s) und wurden verworfen
+        timeout-minutes: 20
         # Ausdrücklich DIESER Lauf — erschiene zwischendurch ein neuerer, landete er sonst
         # unter dem Schlüssel des alten im Cache
         run: python3 -u scripts/icon-ingest.py icon-eu --run ${{ steps.icon.outputs.eu }}
