@@ -139,20 +139,31 @@ export function decodeFlashes(buf: ArrayBuffer, start: number, end: number, box 
   const confS = num(conf.attrs, 'scale_factor', 1)
   const confFill = num(conf.attrs, '_FillValue', 255)
 
+  // `value` ist in jsfive ein GETTER, der bei jedem Zugriff den ganzen
+  // Datensatz neu liest — in der Schleife wurde das quadratisch: bei ~0,9 MB
+  // je Datei 11–34 s CPU statt Millisekunden, der 5-Minuten-Cron riss jedes
+  // Mal das CPU-Limit, und Satellitenvorrat und Blitze blieben stehen
+  // (gemessen 2026-11-20). Deshalb jedes Feld genau EINMAL lesen.
+  const latV = lat.value
+  const lonV = lon.value
+  const timeV = time.value
+  const radV = rad.value
+  const confV = conf.value
+
   const ends = bucketEnds(start, end)
   const buckets: FlashBucket[] = ends.map((e) => ({ start: e - FLASH_STEP_MS, end: e, f: [] }))
-  for (let i = 0; i < lat.value.length; i++) {
-    const rawLat = lat.value[i]
+  for (let i = 0; i < latV.length; i++) {
+    const rawLat = latV[i]
     if (rawLat === latFill) continue
     const y = rawLat * latS
-    const x = lon.value[i] * lonS
+    const x = lonV[i] * lonS
     if (y < box.south || y > box.north || x < box.west || x > box.east) continue
-    const c = conf.value[i]
+    const c = confV[i]
     if (c !== confFill && c * confS >= MAX_FILTER_CONFIDENCE) continue
-    const t = EPOCH_2000 + time.value[i] * 1000
+    const t = EPOCH_2000 + timeV[i] * 1000
     const k = Math.min(ends.length - 1, Math.max(0, Math.floor((t - start) / FLASH_STEP_MS)))
     const b = buckets[k]
-    b.f.push(Math.round(y * 1000) / 1000, Math.round(x * 1000) / 1000, Math.round((t - b.start) / 100) / 10, rad.value[i])
+    b.f.push(Math.round(y * 1000) / 1000, Math.round(x * 1000) / 1000, Math.round((t - b.start) / 100) / 10, radV[i])
   }
   return buckets
 }
