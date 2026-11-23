@@ -723,11 +723,16 @@
   Bodengrößen, KEINE Druckflächen, kein Taupunkt (aus `2r` gerechnet), Bewölkung nur
   gesamt, keine Schneehöhe, kein Bodendruck (deshalb kein θe 2 m). Geholt werden T2m,
   Taupunkt, MSL, Wind/Böen 10 m (+Partikel/Fiedern), Bewölkung, CAPE, Niederschlag,
-  Summe, Neuschnee, Regen/Schnee-Summe über das GANZE Gebiet (945 × 1300, 43–51,5° N /
-  5–22,6° O). Einheiten im NetCDF: `2t` °C (nicht K), `cape` m²/s², `tp`/`sf` je
+  Summe, Neuschnee, Regen/Schnee-Summe über den ALPENRAUM (= Ansicht „Alpen",
+  44,3–49,8° N / 5–17,8° O, ~611 × 946). Einheiten im NetCDF: `2t` °C (nicht K), `cape` m²/s², `tp`/`sf` je
   Stunde; bei +0 fehlen `tp`/`sf`/`10fg` überall (Summe dort 0, sonst wäre der
-  Niederschlag bei +1 leer). Je Schritt zwei Abfragen (Grenze 10 Mio. Punkte), 122 je
-  Lauf, lokal ~5 min, ~2 MB Bilder je Schritt, ~12 Bilder je Schritt in R2.
+  Niederschlag bei +1 leer). Je Schritt EINE Abfrage mit allen 11 Größen (6,4 Mio.
+  Punkte, Grenze 10 Mio.), 61 je Lauf, ~12 Bilder je Schritt in R2. **Erste Fassung
+  über das ganze Gebiet (945 × 1300, zwei Abfragen je Schritt, ~750 MB je Lauf)
+  scheiterte im Deploy**: der Runner holt bei GeoSphere nur ~0,5 MB/s, 31 s je
+  Schritt, nach 20 min bei +27 h abgebrochen — lokal dauert derselbe Lauf ~5 min.
+  Lokal schnell heißt hier NICHTS über den Runner; neue Data-Hub-Ingests nach der
+  Datenmenge je Lauf bemessen, nicht nach der lokalen Laufzeit.
   **3D-WINDPARTIKEL AUS DEM WINDVOLUMEN VON ICON-D2** (`render/wind3dLayer.ts`, `config/wind3d.ts`,
   `api/wind3d.ts`; im Querschnitt-Ingest mit erzeugt, Flächen bis 1,5 km über Grund in 2,2 km,
   stündlich bis +24 h, danach 3-stündlich): u, v und das echte `w`. **Gerechnet in der HÖHE über

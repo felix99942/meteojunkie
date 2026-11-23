@@ -347,9 +347,9 @@ jobs:
           key: nwp-icon-eu-v6-${{ steps.icon.outputs.eu }}
 
       # C-LAEF 1 km von GeoSphere (Data Hub, offen, ohne Schlüssel; Nachfolger von
-      # AROME Austria, Modell-ID bleibt arome-at) — alle Bodengrößen über das ganze
-      # Gebiet (scripts/arome-ingest.py). Läufe alle 3 h, ein Lauf = 122 Abfragen
-      # (~6–7 MB je Abfrage, lokal gemessen ~5 min); die Grenze von 240 Abfragen je
+      # AROME Austria, Modell-ID bleibt arome-at) — alle Bodengrößen über den Alpenraum
+      # (scripts/arome-ingest.py). Läufe alle 3 h, ein Lauf = 61 Abfragen à ~6 MB; das
+      # ganze Gebiet (122 Abfragen) schaffte der Runner nicht in 20 min; die Grenze von 240 Abfragen je
       # Stunde gilt je IP, die Seite fragt GeoSphere aus dem Browser der Besucher
       - name: C-LAEF-Lauf bestimmen
         id: arome
@@ -370,7 +370,7 @@ jobs:
         id: arome-ingest
         if: steps.arome.outputs.run != '' && steps.arome-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: python3 -u scripts/arome-ingest.py --run ${{ steps.arome.outputs.run }}
 
       - name: C-LAEF-Felder im Cache ablegen

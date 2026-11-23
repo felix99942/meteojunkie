@@ -798,7 +798,7 @@ const ALL_GLOBE_MODELS: GlobeModel[] = [
     staleHours: 12,
     maxzoom: 9,
     title:
-      'GeoSphere Austria C-LAEF 1 km (C-LAEF-AA, Nachfolger von AROME Austria) — Alpenraum 43–51,5° N / 5–22,6° O, bis +60 h, stündlich (Läufe alle 3 h). Nur Bodengrößen, keine Druckflächen.',
+      'GeoSphere Austria C-LAEF 1 km (C-LAEF-AA, Nachfolger von AROME Austria) — Alpenraum 44,3–49,8° N / 5–17,8° O, bis +60 h, stündlich (Läufe alle 3 h). Nur Bodengrößen, keine Druckflächen.',
   },
 ]
 
