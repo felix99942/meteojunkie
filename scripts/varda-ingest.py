@@ -221,7 +221,11 @@ def prepare_work() -> None:
         link = WORK / name
         if not link.exists():
             link.symlink_to(HOME / name)
-    shutil.rmtree(WORK / 'outputs', ignore_errors=True)
+    # Reste eines abgebrochenen Laufs (Bereitschaft, Fehler) wegräumen: das
+    # Aufräumen am Ende von main() erreicht nur ein Lauf, der durchkommt, und
+    # je liegen gebliebenem Lauf bleiben ~2 GB Startwerte im Cache stehen
+    for d in ('cache', 'outputs'):
+        shutil.rmtree(WORK / d, ignore_errors=True)
     (WORK / 'outputs').mkdir()
 
 
