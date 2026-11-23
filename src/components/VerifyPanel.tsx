@@ -79,7 +79,7 @@ const DEFAULT_MODELS = [
   'ecmwf_ifs025',
   'icon_eu',
   'gfs_seamless',
-  'geosphere_arome_austria',
+  'icon_d2',
 ]
 /** Voreingestellte Station: lange Reihe, zentral, jedem ein Begriff. */
 const DEFAULT_STATION = 105 // Wien Hohe Warte
@@ -1196,7 +1196,7 @@ export function VerifyPanel() {
           nicht zu sehen, warum ein Modell im Alpental danebenliegt.
 
           Gezeigt werden nur Modelle, die den gewählten Vorlauf überhaupt
-          tragen: bei +3 Tagen fallen AROME Austria (60 h) und ICON-D2 (48 h)
+          tragen: bei +3 Tagen fallen ICON-D2 (48 h) und AROME France (51 h)
           heraus, weil es dort keine drei Tage alte Vorhersage für diesen Tag
           geben KANN. Sie als leere Spalten anzubieten wäre eine Einladung zum
           Fehlschluss. */}
@@ -1274,7 +1274,7 @@ export function VerifyPanel() {
                   'GLEITENDER Vorlauf als Referenz: für jede Stunde des Tages der Stand, den die ' +
                   'Vorhersage ' + lead * 24 + ' Stunden davor hatte. Das ist NICHT ein fester ' +
                   'Modelllauf — je nach Zeitpunkt und Modell stammt der Stand aus einem anderen ' +
-                  'Lauf, und die Modelle laufen unterschiedlich oft: AROME Austria und ICON-D2 ' +
+                  'Lauf, und die Modelle laufen unterschiedlich oft: ICON-D2 ' +
                   'alle 3 Stunden, IFS alle 6, andere alle 12. Ein fester Lauf wäre über die API ' +
                   'ohnehin nicht zu bekommen (geprüft) — und er hätte einen Nachteil: er mischt ' +
                   'über den Tag hinweg ' + lead * 24 + ' bis ' + (lead * 24 + 23) + ' Stunden ' +

@@ -53,7 +53,7 @@ export const DOMAIN_PRESETS: DomainPreset[] = [
     gridLon: 30,
     // lokale Referenz · zweite hochaufgelöste Meinung · Brücke in die
     // Mittelfrist · synoptischer Hintergrund (SPEC §7)
-    recommendedModels: ['geosphere_arome_austria', 'icon_d2', 'icon_eu', 'ecmwf_ifs025'],
+    recommendedModels: ['icon_d2', 'icon_eu', 'ecmwf_ifs025'],
     graticuleDeg: 1,
   },
 ]

@@ -20,6 +20,7 @@
 //   meteoswiss_icon_ch2         2,1 km     120 h     nein (null)
 //   icon_d2                     2,2 km     48 h      ja
 //   geosphere_arome_austria     2,5 km     60 h      nein (null)
+//     → seit 2026-11-23 entfernt: Datensatz endete am 04.11.2026, nur noch null
 // `meteofrance_arome_france_hd` liefert KEIN pressure_msl (nur Bodengrößen) —
 // deshalb nicht dabei. Lokal-Ensembles mit pressure_msl: ICON-CH2-EPS
 // (21 Member, bis +120 h), ICON-D2-EPS (20, +48 h), ICON-CH1-EPS (11, +33 h).
@@ -116,7 +117,6 @@ export const FOEHN_MODELS = [
   'meteofrance_arome_france',
   'meteoswiss_icon_ch2',
   'icon_d2',
-  'geosphere_arome_austria',
 ] as const
 
 /** Live geprüft: liefern `temperature_700hPa`/`wind_*_700hPa` an allen Achsenpunkten. */

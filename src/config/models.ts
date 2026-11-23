@@ -53,10 +53,9 @@ export interface ModelInfo {
    * komplett — in Österreich antwortet der Request nicht einmal mit JSON, und
    * für diese Workbench liegt jeder interessante Punkt dort.
    *
-   * `geosphere_arome_austria` ist bewusst NICHT abgeschaltet: es ist das
-   * einzige 2,5-km-Modell über Österreich. Sein kurzer Horizont ist kein
-   * Grund mehr, es zu verstecken, seit die Zeitachse des klassischen
-   * Meteogramms dem Horizont des gewählten Modells folgt.
+   * Ebenfalls abgeschaltet seit 2026-11-23: `geosphere_arome_austria`. Der
+   * 2,5-km-Datensatz endete am 04.11.2026 (Nachfolger C-LAEF 1 km, nur über den
+   * GeoSphere Data Hub), Open-Meteo liefert seither 0 von 168 Werten.
    */
   selectable?: false
 }
@@ -346,6 +345,9 @@ export const MODELS: ModelInfo[] = [
     coverage: { latMin: 43.0, lonMin: 5.5, latMax: 51.8, lonMax: 22.1 },
     supportsBoundingBox: true,
     availableVariables: [...BASE_VARS, ...CONVECTION_VARS],
+    // Tot seit 04.11.2026 (Datensatz beendet, Open-Meteo nur null; gemessen
+    // 2026-11-23). Bleibt in der Registry, damit gespeicherte Presets auflösen.
+    selectable: false,
   },
   {
     id: 'ukmo_global_deterministic_10km',
