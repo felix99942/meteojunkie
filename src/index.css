@@ -5512,6 +5512,30 @@ button:focus-visible {
   margin-top: 6px;
 }
 
+/* Vollbild der Panel-Ansicht: eigener Hintergrund (sonst schwarz vom Browser)
+   und die ganze Fensterhöhe für das Raster */
+.gmp:fullscreen {
+  background: var(--bg-page);
+  padding: 6px 8px;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Platz für den Vollbild-Knopf: der Regler wächst weiter in den freien Raum,
+   beansprucht aber weniger Grundbreite — sonst brach die Leiste bei 1500 px um */
+.gmp .radar-bar > .radar-slider {
+  flex-basis: 180px;
+  min-width: 140px;
+}
+
+.gmp-full {
+  white-space: nowrap;
+  padding: 2px 8px;
+  font-size: 15px;
+  line-height: 1;
+}
+
 .gmp-header {
   flex-wrap: wrap;
   row-gap: 3px;

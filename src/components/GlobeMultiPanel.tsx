@@ -233,6 +233,33 @@ export function GlobeMultiPanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [stepShared])
 
+  // --- Vollbild (auf Wunsch, 2026-11-23) -----------------------------------------
+  // Die GANZE Panel-Ansicht samt Zeitleiste, nicht ein einzelnes Panel: im Vollbild
+  // will man weiter durch die Zeit blättern. Taste F (sonst nirgends belegt), Esc
+  // beendet ihn nativ. Ohne Modifikator — Strg+F ist die Browsersuche. Die Karten
+  // passen sich selbst an (MapLibre beobachtet die Größe seines Containers).
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [isFull, setIsFull] = useState(false)
+  const toggleFull = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void rootRef.current?.requestFullscreen?.()
+  }, [])
+  useEffect(() => {
+    const onChange = () => setIsFull(document.fullscreenElement === rootRef.current)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'f' && e.key !== 'F') return
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || !globalKeyAllowed(e)) return
+      e.preventDefault()
+      toggleFull()
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [toggleFull])
+
   // --- Ausschnitt koppeln ------------------------------------------------------
   const maps = useRef(new Map<number, maplibregl.Map>())
   const syncRef = useRef(visible)
@@ -396,7 +423,7 @@ export function GlobeMultiPanel({
   }
 
   return (
-    <div className="radar globe gmp">
+    <div className="radar globe gmp" ref={rootRef}>
       <div className="radar-bar">
         <span className="radar-title">Modellkarten</span>
         {modeSwitch}
@@ -478,6 +505,19 @@ export function GlobeMultiPanel({
         <label className="radar-opt" title="Zahlen im Farbfeld: beim Niederschlag die örtlichen Höchstwerte (mm), sonst die Werte in gleichmäßigem Raster">
           <input type="checkbox" checked={numbersOn} onChange={(e) => setNumbersOn(e.target.checked)} /> Zahlen
         </label>
+        <button
+          type="button"
+          className={isFull ? 'gmp-full is-active' : 'gmp-full'}
+          aria-pressed={isFull}
+          aria-label={isFull ? 'Vollbild beenden' : 'Vollbild'}
+          title={isFull ? 'Vollbild beenden (F oder Esc)' : 'Vollbild (Taste F)'}
+          onClick={(e) => {
+            toggleFull()
+            e.currentTarget.blur()
+          }}
+        >
+          {isFull ? '✕' : '⛶'}
+        </button>
       </div>
       <div className={`panel-grid layout-${count} gmp-grid`}>
         {visible.map((p, i) => (

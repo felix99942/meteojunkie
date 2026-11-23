@@ -815,3 +815,11 @@
   Basemap: Bündel `world.basemap.json` (Natural Earth 1:50m global, auf 0,01°
   gerundet, ~350 KB gzip, `build-basemap.mjs world`), in Europa/Alpen dazu die
   Bundesländer/Kantone aus `dach`.
+
+**VOLLBILD DER PANEL-ANSICHT** (seit 2026-11-23, auf Wunsch; `GlobeMultiPanel.tsx`): Taste
+**F** oder der Knopf ⛶ rechts in der Leiste schaltet die GANZE Panel-Ansicht samt Zeitleiste in
+den Browser-Vollbildmodus (Fullscreen API), F oder Esc beendet ihn. Bewusst nicht ein einzelnes
+Panel: im Vollbild will man weiter blättern. F ohne Modifikator (Strg+F bleibt die Browsersuche),
+gesperrt in Eingabefeldern und Auswahllisten über `globalKeyAllowed`. Der Zeitregler hat dort
+nur 180 px Grundbreite (statt 260), sonst brach die Leiste bei 1500 px um und der Knopf landete
+in einer eigenen Zeile.
