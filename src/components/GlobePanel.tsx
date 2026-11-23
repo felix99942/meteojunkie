@@ -1018,13 +1018,12 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
                 // IFS 0,25° lässt sich danach von Hand wählen. Umgekehrt deckt
                 // der Asien-Ausschnitt Europa nicht ab.
                 if (v.id === 'thailand') setModelId('ecmwf-hres-asia')
-                // „Alpen 3D": ICON-D2 (θe oder Regen/Schnee) oder AROME (nur Regen/Schnee)
+                // „Alpen 3D": ICON-D2 (θe oder Regen/Schnee) oder C-LAEF (nur Regen/Schnee)
                 if (v.id === 'alps3d') {
                   setModelId(WIND3D_MODEL)
                   setVarId(THETAE_VARIABLE.id)
                 } else if (relief) {
                   setVarId(DEFAULT_GLOBE_VARIABLE)
-                  // AROME gibt es nur dort — sonst stünde die neue Ansicht ohne Feld da
                   if (model.reliefOnly) setModelId(WIND3D_MODEL)
                 }
                 if ((v.id === 'europe' || v.id === 'alps') && modelId === 'ecmwf-hres-asia') setModelId('ecmwf-hres')
@@ -1039,7 +1038,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
           onChange={(e) => {
             const id = e.target.value as GlobeModelId
             setModelId(id)
-            // AROME führt in „Alpen 3D" nur die Regen/Schnee-Summe
+            // C-LAEF führt in „Alpen 3D" nur die Regen/Schnee-Summe (kein θe: es fehlt der Bodendruck)
             if (relief && id !== WIND3D_MODEL) setVarId(PRECIPPHASE_VARIABLE.id)
             // Fokus abgeben: sonst blättern die Pfeiltasten danach in der Liste statt in der Zeit
             e.currentTarget.blur()
@@ -1408,7 +1407,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
             <a href="https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km" target="_blank" rel="noreferrer">
               GeoSphere Austria
             </a>{' '}
-            (AROME 1 km,{' '}
+            (C-LAEF 1 km,{' '}
             <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
               CC BY 4.0
             </a>

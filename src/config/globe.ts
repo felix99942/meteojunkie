@@ -737,18 +737,19 @@ const ALL_GLOBE_MODELS: GlobeModel[] = [
       'MeteoSwiss Varda-single-1.0 — datengetriebenes Modell (KI, Anemoi), 1 km über Alpen, Schweiz und Österreich, bis +120 h, stündlich. Gerechnet auf eigener Hardware aus MeteoSwiss- und ECMWF-Startwerten.',
   },
   {
-    // GeoSphere Data Hub `nwp-v2-1h-1km` (scripts/arome-ingest.py), seit 2026-11-10 —
-    // NUR die Niederschlagsgrößen und nur über „Alpen 3D", dort neben ICON-D2 für die
-    // Regen/Schnee-Summe. Läufe alle 3 h; die Bereitstellung dauert länger als bei
-    // ICON-D2 (gemessen ~7 h nach Init), dazu der stündliche Deploy-Cron.
+    // GeoSphere Data Hub `nwp-v2-1h-1km` (scripts/arome-ingest.py): C-LAEF-AA, der
+    // Nachfolger von AROME Austria. Seit 2026-11-23 alle Bodengrößen über das ganze
+    // Gebiet und in allen Ansichten (vorher nur Niederschlag in „Alpen 3D"); die ID
+    // bleibt `arome-at` (Pfade in R2). Keine Druckflächen, Bewölkung nur gesamt.
+    // Läufe alle 3 h; Bereitstellung ~5–7 h nach Init, dazu der stündliche Deploy-Cron.
     id: 'arome-at',
-    label: 'AROME',
+    label: 'C-LAEF',
     resolution: '1 km',
     provider: 'GeoSphere',
     staleHours: 12,
     maxzoom: 9,
-    title: 'GeoSphere Austria AROME 1 km (C-LAEF-AA) — Alpen, bis +60 h, stündlich (Läufe alle 3 h). Hier nur Niederschlag, Summe und Regen/Schnee.',
-    reliefOnly: true,
+    title:
+      'GeoSphere Austria C-LAEF 1 km (C-LAEF-AA, Nachfolger von AROME Austria) — Alpenraum 43–51,5° N / 5–22,6° O, bis +60 h, stündlich (Läufe alle 3 h). Nur Bodengrößen, keine Druckflächen.',
   },
 ]
 
@@ -874,7 +875,7 @@ export const GLOBE_VIEWS: GlobeView[] = ALL_GLOBE_VIEWS
 /** „Alpen 3D" zeigt nur dieses Modell: es allein hat ein Windvolumen mit echtem Vertikalwind */
 export const WIND3D_MODEL: GlobeModelId = 'icon-d2'
 
-/** Modelle in „Alpen 3D": ICON-D2 mit allem, AROME nur mit der Regen/Schnee-Summe. */
+/** Modelle in „Alpen 3D": ICON-D2 mit allem, C-LAEF (`arome-at`) nur mit der Regen/Schnee-Summe. */
 export const RELIEF_MODELS: GlobeModelId[] = ['icon-d2', 'arome-at']
 
 /**

@@ -715,8 +715,19 @@
   (Steigung −0,04, Median −50…+80 m); anders als bei ICON überall gesetzt. Je Abfrage höchstens
   10 Mio. Punkte → 5 Stunden × 3 Größen über 622 × 937, 13 Abfragen je Lauf, ~2 min, Phasenfeld
   ~17 MB je Lauf. Bereitstellung langsamer als ICON-D2 (um 16 UTC war 09 UTC der neueste Lauf).
-  Deploy: eigener Schritt mit Cache je Lauf (`nwp-arome-at-v1-<lauf>`), `netCDF4` in
+  Deploy: eigener Schritt mit Cache je Lauf (`nwp-arome-at-v1-<lauf>`, seit 2026-11-23 `v2`), `netCDF4` in
   `requirements-nwp.txt`.
+  **SEIT 2026-11-23 ALS „C-LAEF" IN ALLEN ANSICHTEN UND PANELS** (auf Wunsch: GeoSphere
+  stellt von AROME Austria auf C-LAEF um, `nwp-v2-1h-1km` IST C-LAEF-AA). Kein
+  `reliefOnly` mehr; die ID bleibt `arome-at` (Pfade in R2, Cache). Gemessen: 16
+  Bodengrößen, KEINE Druckflächen, kein Taupunkt (aus `2r` gerechnet), Bewölkung nur
+  gesamt, keine Schneehöhe, kein Bodendruck (deshalb kein θe 2 m). Geholt werden T2m,
+  Taupunkt, MSL, Wind/Böen 10 m (+Partikel/Fiedern), Bewölkung, CAPE, Niederschlag,
+  Summe, Neuschnee, Regen/Schnee-Summe über das GANZE Gebiet (945 × 1300, 43–51,5° N /
+  5–22,6° O). Einheiten im NetCDF: `2t` °C (nicht K), `cape` m²/s², `tp`/`sf` je
+  Stunde; bei +0 fehlen `tp`/`sf`/`10fg` überall (Summe dort 0, sonst wäre der
+  Niederschlag bei +1 leer). Je Schritt zwei Abfragen (Grenze 10 Mio. Punkte), 122 je
+  Lauf, lokal ~5 min, ~2 MB Bilder je Schritt, ~12 Bilder je Schritt in R2.
   **3D-WINDPARTIKEL AUS DEM WINDVOLUMEN VON ICON-D2** (`render/wind3dLayer.ts`, `config/wind3d.ts`,
   `api/wind3d.ts`; im Querschnitt-Ingest mit erzeugt, Flächen bis 1,5 km über Grund in 2,2 km,
   stündlich bis +24 h, danach 3-stündlich): u, v und das echte `w`. **Gerechnet in der HÖHE über

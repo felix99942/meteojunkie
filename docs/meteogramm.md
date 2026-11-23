@@ -264,7 +264,7 @@
   nwp-v2-1h-1km`, CORS offen, kein Schlüssel): Open-Meteo liefert
   `geosphere_arome_austria` seit dem Ende des 2,5-km-Datensatzes (04.11.2026) nur
   noch null (gemessen 2026-11-10). Außerhalb des Gebiets antwortet der Hub HTTP 400
-  → leere Reihe. AROME hat hier kein Ensemble. **Schnee in cm wie Open-Meteo**
+  → leere Reihe. AROME hat hier kein Ensemble mit Membern: am Hub gibt es das C-LAEF-Ensemble (`ensemble-v2-1h-1km`, 1 km, Läufe alle 3 h, +60 h) NUR als Perzentile P10/P50/P90 je Stunde (gemessen 2026-11-23, CORS offen) — für eine Neuschnee-SUMME taugt das nicht, Perzentile von Stundenwerten lassen sich nicht aufsummieren. **Schnee in cm wie Open-Meteo**
   (1 mm Wasserwert = 0,7 cm); AROME `sf` (kg/m²) wird ebenso umgerechnet — die
   Modellkarten rechnen beim Neuschnee 10:1, die Zahlen dort liegen also höher.
   Die Werte gelten für die MODELLhöhe des Gitterpunkts, nicht für die Höhe des
