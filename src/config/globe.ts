@@ -148,6 +148,55 @@ const GLOBAL_TEMP: ColorScale = {
   stops: bands(-56, 1, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS, 109), TEMP_VIVID), TEMP_SHADE)),
 }
 
+/**
+ * T850 MIT GESTAUCHTEM KALTEN ENDE (auf Wunsch, 2026-11-23): in 850 hPa ist
+ * −10 °C für Mitteleuropa schon sehr kalt, −20 °C eine Ausnahmelage. Mit der
+ * Bodenrampe lag beides noch im Blau, Lila begann erst bei −24. Hier bleibt
+ * es bis −8 BLAU (−8 … −6 dunkelblau), ab −9 kippt es ins Lila, −10 ist
+ * Lila, −20 hellviolett, darunter verblasst es gegen Weiß. Die Anker stehen
+ * je GRAD (nicht im 4-K-Raster), damit der Farbwechsel genau dort liegt — die
+ * erste Fassung mit 4-K-Ankern mischte −7/−6 schon violett ein (gemeldet).
+ * Ab 0 °C identisch mit `GLOBAL_TEMP`.
+ */
+const T850_COLD_ANCHORS: [number, string][] = [
+  [-56, '#fdfbff'],
+  [-40, '#ece0f6'],
+  [-30, '#d9c4ec'],
+  [-20, '#b08cd3'], // hellviolett
+  [-14, '#9068c2'],
+  [-10, '#7448b2'], // Lila
+  [-9, '#5a3fa8'],
+  [-8, '#22339a'], // dunkelblau
+  [-7, '#3150c8'],
+  [-6, '#2c56c2'],
+  [-5, '#3576e8'],
+  [-4, '#2b84e4'],
+  [-2, '#2d9be6'],
+  [-1, '#35acdf'],
+]
+const T850_TEMP: ColorScale = {
+  ...GLOBAL_TEMP,
+  stops: bands(
+    -56,
+    1,
+    alternateShade(
+      saturate(
+        lerpRamp(TEMP_FINE_ANCHORS, 109).map((c, i) => {
+          const v = -56 + i
+          if (v >= 0) return c
+          const k = T850_COLD_ANCHORS.findIndex(([av]) => av > v)
+          if (k < 0) return T850_COLD_ANCHORS[T850_COLD_ANCHORS.length - 1][1]
+          const [v0, c0] = T850_COLD_ANCHORS[k - 1]
+          const [v1, c1] = T850_COLD_ANCHORS[k]
+          return lerpRamp([c0, c1], v1 - v0 + 1)[v - v0]
+        }),
+        TEMP_VIVID,
+      ),
+      TEMP_SHADE,
+    ),
+  ),
+}
+
 /** 500-hPa-Geopotential: 480 … 600 gpdm in 4-gpdm-Bändern, kalt (Trog) → warm (Rücken). */
 /**
  * Gesamtbewölkung in GRAUSTUFEN, wolkenlos HELL, bedeckt DUNKEL — dieselbe
@@ -377,7 +426,7 @@ const TEMP_LEVEL_VARS: GlobeVariable[] = PRESSURE_LEVELS.map((p) => ({
   title:
     `Temperatur auf ${p} hPa (${LEVEL_HEIGHT[p]}).${LEVEL_NOTE[p] ?? ''}` +
     (p <= 300 ? ' Eigene Farbskala −84 … −20 °C (die Bodenskala endet bei −56 °C).' : ''),
-  scale: p <= 300 ? UPPER_TEMP : GLOBAL_TEMP,
+  scale: p <= 300 ? UPPER_TEMP : p === 850 ? T850_TEMP : GLOBAL_TEMP,
   decimals: 0,
   legendEvery: 5,
   legendMultiple: 10,
