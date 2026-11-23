@@ -605,7 +605,7 @@ describe('Katalog', () => {
   // Alle Layer sind live geprüft; die Workspaces sind die beiden
   // geostationären Vollscheiben-Dienste. `msg_iodc` (Indischer Ozean),
   // `msg_rss` (Rapid Scan, nur Tagesprodukte) und die Polarumläufer
-  // (`eps`, `copernicus`) sind bewusst draußen — Begründung in CLAUDE.md.
+  // (`eps`, `copernicus`) sind bewusst draußen — Begründung in docs/satellit.md.
   it('holt nur von den beiden Vollscheiben-Diensten — und Himawari von GIBS', () => {
     for (const p of SATELLITE_PRODUCTS) {
       if (p.mission === 'HIM') expect(p.source, p.id).toBe('gibs')

@@ -22,7 +22,7 @@
 // Orientierung — Luv oder Lee, Talboden oder Kamm. Was das Profil aber
 // wirklich bestimmt, ist die MODELLtopografie, und die ist eine andere:
 // Open-Meteo rechnet am Sonnblick mit 2962 statt 3109 m (siehe den
-// Höhenbefund der Verifikation in CLAUDE.md). Das Relief ordnet also ein, es
+// Höhenbefund der Verifikation in docs/verifikation.md). Das Relief ordnet also ein, es
 // beweist nichts — deshalb qualitativ, und deshalb steht am gewählten Punkt
 // die Modellhöhe daneben.
 //

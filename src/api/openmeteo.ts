@@ -540,7 +540,7 @@ export interface Profile {
    * Nicht dasselbe wie die reale Höhe, und genau darin liegt der Wert: die
    * ganze Bodenschicht des Profils hängt daran. Open-Meteo rechnet jedes
    * Modell auf sein eigenes 90-m-DEM herunter — am Sonnblick sind das 2962
-   * statt 3109 m (siehe den Höhenbefund der Verifikation in CLAUDE.md). Wer
+   * statt 3109 m (siehe den Höhenbefund der Verifikation in docs/verifikation.md). Wer
    * einen Punkt auf der Karte wählt, sieht daran, ob das Modell dort den
    * Talboden oder einen geglätteten Hang annimmt.
    */

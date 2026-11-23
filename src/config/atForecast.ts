@@ -47,7 +47,7 @@ export const FORECAST_PARAMS: ForecastSpec[] = [
 /**
  * WIE ALT IST DIE VORHERSAGE?
  *
- * Die Vorhersage-JSONs liegen NICHT im Repo (siehe CLAUDE.md, MOS-Abschnitt),
+ * Die Vorhersage-JSONs liegen NICHT im Repo (siehe docs/mos.md),
  * sie entstehen beim Bauen — auf der ausgelieferten Seite alle drei Stunden
  * per Cron, lokal nur, wenn jemand `ingest:mos:forecast` laufen lässt.
  * Lokal stand deshalb wochenlang ein Lauf vom 18.08. im Bild, und **man sah

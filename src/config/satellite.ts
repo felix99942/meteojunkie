@@ -513,7 +513,7 @@ export function productCenter(p: SatelliteProduct): { lat: number; lon: number }
  * **Alles hier ist live durchgemessen** (2026-09-29, je Produkt ein Bild um
  * 12 UTC und eines um 20 UTC über die Standardfläche): ob es Tag und Nacht
  * trägt, wie groß es ist und ob überhaupt Inhalt kommt. Die Tabelle steht in
- * CLAUDE.md; hier steht je Produkt nur das Ergebnis.
+ * docs/satellit.md; hier steht je Produkt nur das Ergebnis.
  *
  * **Drei Produkte waren schon einmal draußen und sind auf Wunsch wieder da**
  * (Echtfarben, Schnee, Wolkentyp). Die frühere Begründung — „zeigen tagsüber
