@@ -57,3 +57,6 @@ public/tawes/
 # MTG HD (scripts/mtg-hd-cron.sh): Verweise auf den Vorrat in /var/tmp
 public/sat/mtghd
 public/sat-tiles/
+
+# Qwen Code (lokal, Sitzungsdaten)
+.qwen/
