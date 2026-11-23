@@ -43,11 +43,11 @@ export type Coupling = { kind: 'var' | 'model'; source: number } | null
  * Vorgaben: je Panel ein anderes Modell (für den Modellvergleich) UND eine
  * andere Größe (für die Synoptik) — welche davon gilt, entscheidet die
  * Kopplung. Beim Öffnen (auf Wunsch, 2026-11-02): ÖSTERREICH, Niederschlag,
- * die vier hochaufgelösten Modelle — IFS 9 km, ICON-EU, ICON-D2, Varda —
- * im 4er-Raster; im 6er kommen IFS 0,25° und (Wiederholung, es gibt nur
- * fünf) noch einmal IFS 9 km dazu.
+ * die vier hochaufgelösten Modelle — IFS 9 km, C-LAEF 1 km (seit 2026-11-23
+ * statt ICON-EU, auf Wunsch), ICON-D2, Varda — im 4er-Raster; im 6er kommen
+ * IFS 0,25° und (Wiederholung) noch einmal IFS 9 km dazu.
  */
-export const DEFAULT_PANEL_MODELS: GlobeModelId[] = ['ecmwf-hres', 'icon-eu', 'icon-d2', 'varda', 'ecmwf-ifs', 'ecmwf-hres']
+export const DEFAULT_PANEL_MODELS: GlobeModelId[] = ['ecmwf-hres', 'arome-at', 'icon-d2', 'varda', 'ecmwf-ifs', 'ecmwf-hres']
 export const DEFAULT_PANEL_VARS: GlobeVarId[] = ['precip', 't850', 'reltop', 'wind10', 'tcc', 'wind300']
 /** Vorgabe beim Öffnen: Modellvergleich mit der Größe aus Panel 1 */
 export const DEFAULT_COUPLING: Coupling = { kind: 'var', source: 0 }
@@ -62,9 +62,10 @@ export function defaultPanels(): MapPanelConfig[] {
  * Vorgabe JE PANELZAHL (auf Wunsch, 2026-11-02), auch ohne gespeichertes
  * Preset:
  *   4er  Modellvergleich über ÖSTERREICH — Niederschlag in IFS 9 km,
- *        ICON-EU, ICON-D2 und Varda (ParSync auf Panel 1)
+ *        C-LAEF, ICON-D2 und Varda (ParSync auf Panel 1)
  *   6er  Synoptik über EUROPA in IFS 9 km (ModSync auf Panel 1):
- *        oben T 850 · T 2 m · 500 hPa, unten Böen · Niederschlag · Neuschnee
+ *        oben T 850 · T 2 m · Böen, unten θe 850 · Niederschlag · Neuschnee
+ *        (seit 2026-11-23 auf Wunsch; vorher 500 hPa oben rechts, Böen unten links)
  */
 export interface PanelSetup {
   region: PanelRegionId
@@ -72,7 +73,7 @@ export interface PanelSetup {
   panels: MapPanelConfig[]
 }
 
-export const SIX_PANEL_VARS: GlobeVarId[] = ['t850', 't2m', 'gh500', 'gust', 'precip', 'newsnow']
+export const SIX_PANEL_VARS: GlobeVarId[] = ['t850', 't2m', 'gust', 'thetae850', 'precip', 'newsnow']
 
 export function defaultSetup(count: PanelCount): PanelSetup {
   if (count === 6)

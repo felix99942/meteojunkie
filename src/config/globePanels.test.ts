@@ -24,20 +24,20 @@ describe('Vorgabe beim Öffnen', () => {
   it('Österreich, Niederschlag, im 4er IFS 9 km · ICON-EU · ICON-D2 · Varda', () => {
     expect(DEFAULT_PANEL_REGION).toBe('austria')
     const p = defaultPanels()
-    expect(p.slice(0, 4).map((x) => x.model)).toEqual(['ecmwf-hres', 'icon-eu', 'icon-d2', 'varda'])
+    expect(p.slice(0, 4).map((x) => x.model)).toEqual(['ecmwf-hres', 'arome-at', 'icon-d2', 'varda'])
     const shown = Array.from({ length: 4 }, (_, i) => effectivePanel(p, i, DEFAULT_COUPLING))
     expect(shown.every((x) => x.varId === 'precip')).toBe(true)
   })
 })
 
 describe('Vorgabe je Panelzahl', () => {
-  it('6er: Europa, IFS 9 km für alle, oben T850 · T2m · 500 hPa, unten Böen · Niederschlag · Neuschnee', () => {
+  it('6er: Europa, IFS 9 km für alle, oben T850 · T2m · Böen, unten θe 850 · Niederschlag · Neuschnee', () => {
     const d = defaultSetup(6)
     expect(d.region).toBe('europe')
     expect(d.coupling).toEqual({ kind: 'model', source: 0 })
     const shown = d.panels.map((_, i) => effectivePanel(d.panels, i, d.coupling))
     expect(shown.every((p) => p.model === 'ecmwf-hres')).toBe(true)
-    expect(shown.map((p) => p.varId)).toEqual(['t850', 't2m', 'gh500', 'gust', 'precip', 'newsnow'])
+    expect(shown.map((p) => p.varId)).toEqual(['t850', 't2m', 'gust', 'thetae850', 'precip', 'newsnow'])
   })
   it('4er: Österreich, Niederschlag-Modellvergleich', () => {
     const d = defaultSetup(4)

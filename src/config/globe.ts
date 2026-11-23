@@ -432,14 +432,43 @@ const TEMP_LEVEL_VARS: GlobeVariable[] = PRESSURE_LEVELS.map((p) => ({
   legendMultiple: 10,
 }))
 
+/**
+ * θe 850 IN °C (auf Wunsch, 2026-11-23): dieselben Farben wie `THETAE`, nur
+ * auf der Celsius-Achse (270 K ≈ −3 °C → Bänder ab −4 °C, die Verschiebung um
+ * 0,85 K ist unsichtbar). Die Daten bleiben im Ingest und in R2 in K;
+ * umgerechnet wird beim Laden der Meta (`metaToDisplayUnits`).
+ */
+const THETAE850_C: ColorScale = {
+  kind: 'stepped',
+  belowMin: 'clamp',
+  stops: bands(-4, 2, alternateShade(saturate(lerpRamp(TEMP_FINE_ANCHORS.slice(6, 26), 40), TEMP_VIVID), TEMP_SHADE)),
+}
+
+/** Größen, die in K gespeichert und in °C angezeigt werden. */
+const SHOW_IN_CELSIUS: ReadonlySet<string> = new Set(['thetae850'])
+
+/**
+ * Meta auf die ANZEIGE-Einheit umstellen: bei K → °C nur den Basiswert `lo`
+ * verschieben — Kacheln, Isolinien und Werteanzeige rechnen alle mit
+ * `lo + code · step`, damit stimmen sie ohne weitere Stelle.
+ */
+export function metaToDisplayUnits(meta: GlobeMeta): GlobeMeta {
+  const variables = { ...meta.variables }
+  for (const id of SHOW_IN_CELSIUS) {
+    const vm = variables[id as GlobeVarId]
+    if (vm?.unit === 'K') variables[id as GlobeVarId] = { ...vm, lo: vm.lo - 273.15, unit: '°C' }
+  }
+  return { ...meta, variables }
+}
+
 /** θe 850 hPa — die klassische Höhenkarte der Luftmassen (seit 2026-11-15, alle Modelle). */
 const THETAE850_VAR: GlobeVariable = {
   id: 'thetae850',
   group: 'Temperatur & Luftmasse',
   label: 'θe 850 hPa',
   title:
-    'Äquivalentpotentielle Temperatur auf 850 hPa (~1500 m) in K, aus Temperatur und relativer Feuchte der Fläche (Bolton 1980): warm UND feucht ergibt hohe Werte. θe bleibt bei trockener wie feuchter Hebung erhalten und markiert deshalb Luftmassen — enge Abstände der Farbstufen sind Luftmassengrenzen (Fronten), Zungen hoher Werte feuchtwarme Zufuhr. Über Hochland liegt die Fläche unter dem Gelände und ist extrapoliert.',
-  scale: THETAE,
+    'Äquivalentpotentielle Temperatur auf 850 hPa (~1500 m) in °C, aus Temperatur und relativer Feuchte der Fläche (Bolton 1980): warm UND feucht ergibt hohe Werte. θe bleibt bei trockener wie feuchter Hebung erhalten und markiert deshalb Luftmassen — enge Abstände der Farbstufen sind Luftmassengrenzen (Fronten), Zungen hoher Werte feuchtwarme Zufuhr. Über Hochland liegt die Fläche unter dem Gelände und ist extrapoliert.',
+  scale: THETAE850_C,
   decimals: 0,
   legendEvery: 5,
 }

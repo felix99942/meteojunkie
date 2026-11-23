@@ -8,7 +8,7 @@
 // ARBEITSSPEICHER: ein dekodiertes Feld sind 1,8–2 MB Codes, ein Lauf über
 // alle Größen wären Hunderte MB. Deshalb ein kleiner LRU über die Felder.
 
-import { displayCodeStep, intervalHours, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
+import { displayCodeStep, intervalHours, metaToDisplayUnits, type GlobeField, type GlobeMeta, type GlobeModelId, type GlobeVarId } from '../config/globe'
 import { requestField, warmField, type FieldSource } from '../render/globePool'
 
 const BASE = `${import.meta.env.BASE_URL}nwp/`
@@ -27,7 +27,7 @@ export async function loadGlobeMeta(model: GlobeModelId): Promise<GlobeMeta> {
   // für frisch hält (der Worker schickt max-age=60, GitHub Pages schickte 600).
   const r = await fetch(`${BASE}${model}/meta.json`, { cache: 'no-cache' })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  return (await r.json()) as GlobeMeta
+  return metaToDisplayUnits((await r.json()) as GlobeMeta)
 }
 
 const metas = new Map<GlobeModelId, GlobeMeta>()

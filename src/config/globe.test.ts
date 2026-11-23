@@ -630,3 +630,20 @@ describe('Windskalen bei Windstille', () => {
     expect(colorForValue(getGlobeVariable('wind300').scale, 20)).toBeNull()
   })
 })
+
+describe('θe 850 in °C', () => {
+  it('verschiebt nur den Basiswert, K bleibt sonst unberührt', async () => {
+    const { metaToDisplayUnits } = await import('./globe')
+    const meta = {
+      variables: {
+        thetae850: { lo: 200, step: 0.5, unit: 'K', steps: [0] },
+        thetae: { lo: 200, step: 0.5, unit: 'K', steps: [0] },
+      },
+    } as unknown as Parameters<typeof metaToDisplayUnits>[0]
+    const out = metaToDisplayUnits(meta)
+    expect(out.variables.thetae850).toMatchObject({ lo: 200 - 273.15, step: 0.5, unit: '°C' })
+    expect(out.variables.thetae).toMatchObject({ lo: 200, unit: 'K' })
+    // zweimal anwenden ändert nichts mehr
+    expect(metaToDisplayUnits(out).variables.thetae850?.lo).toBeCloseTo(200 - 273.15)
+  })
+})
