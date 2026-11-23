@@ -33,6 +33,8 @@ import { createTileQueue, type TileQueue } from '../render/tileQueue'
 import { CLOUD_LAYER_RAMPS, globeTileSize, globeTileUrl, GLOBE_TILE_SIZE, toOcta } from '../render/globeTiles'
 import { globeIsoUrl, prefetchVisibleTiles, registerGlobeProtocol } from '../render/globeProtocol'
 import { addWorldLabels } from '../render/worldLabels'
+import { CAP_LAT, capFillRaster, capValueRaster, PolarCapLayer } from '../render/polarCap'
+import { CONTOUR_STYLES, smoothField } from '../render/globeContours'
 import { Wind3dLayer, WIND3D_LAYER } from '../render/wind3dLayer'
 import { nearestWind3dStep, sampleWind3dAtHeight, speedColor } from '../config/wind3d'
 import { loadWind3dField, loadWind3dMeta, type Wind3dMeta } from '../api/wind3d'
@@ -90,15 +92,23 @@ import { globalKeyAllowed } from '../lib/globalKeys'
 
 const FIELD_SOURCE = 'globe-field'
 const FIELD_LAYER = 'globe-field'
+const CAP_FILL_LAYER = 'globe-cap-fill'
+const CAP_LINE_LAYER = 'globe-cap-lines'
+/** Werte der Kappe für die Isolinien: 16° Durchmesser auf 512 Texel ≈ 3,5 km, das Gitter hat 28 km */
+const CAP_VALUE_SIZE = 512
 const isoId = (c: ContourId) => `globe-iso-${c}`
 
 /** Kachelstufe von Feld, Isolinien und Relief an den Blick anpassen (siehe `globeTileSize`); flach gilt die echte Größe. */
-function applyTileSize(map: maplibregl.Map) {
+/** Auch beim ANLEGEN einer Quelle nehmen: im Stillstand am Pol kamen die ersten Kacheln sonst
+ * in der Standardgröße (fette, unscharfe Linien), bis die nächste Bewegung sie korrigierte. */
+function currentTileSize(map: maplibregl.Map): number {
   const box = map.getContainer()
-  const size =
-    map.getProjection()?.type === 'globe'
-      ? globeTileSize(map.getCenter().lat, map.getZoom(), box.clientWidth, box.clientHeight)
-      : GLOBE_TILE_SIZE
+  return map.getProjection()?.type === 'globe'
+    ? globeTileSize(map.getCenter().lat, map.getZoom(), box.clientWidth, box.clientHeight)
+    : GLOBE_TILE_SIZE
+}
+function applyTileSize(map: maplibregl.Map) {
+  const size = currentTileSize(map)
   for (const id of [FIELD_SOURCE, GLOBE_TOPO_LAYER, ...CONTOURS.map((c) => isoId(c.id))]) {
     const src = map.getSource(id) as maplibregl.RasterTileSource | undefined
     if (src) src.tileSize = size
@@ -479,7 +489,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
     }
     if (map.getLayer(FIELD_LAYER)) map.removeLayer(FIELD_LAYER)
     if (src) map.removeSource(FIELD_SOURCE)
-    map.addSource(FIELD_SOURCE, { type: 'raster', tiles: [url], tileSize: GLOBE_TILE_SIZE, maxzoom: model.maxzoom })
+    map.addSource(FIELD_SOURCE, { type: 'raster', tiles: [url], tileSize: currentTileSize(map), maxzoom: model.maxzoom })
     map.addLayer(
       {
         id: FIELD_LAYER,
@@ -488,8 +498,8 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         // Voll deckend: mit 0,92 graute die dunkle Grundkarte jede Farbe ab
         paint: { 'raster-fade-duration': 0, 'raster-opacity': 1 },
       },
-      // Unter dem Relief bleiben, auch wenn das Feld beim Modellwechsel neu entsteht
-      map.getLayer(GLOBE_TOPO_LAYER) ? GLOBE_TOPO_LAYER : OVERLAY_INSERT_BEFORE,
+      // Unter Polkappe und Relief bleiben, auch wenn das Feld beim Modellwechsel neu entsteht
+      map.getLayer(CAP_FILL_LAYER) ? CAP_FILL_LAYER : map.getLayer(GLOBE_TOPO_LAYER) ? GLOBE_TOPO_LAYER : OVERLAY_INSERT_BEFORE,
     )
     applyTileSize(map)
     sourceModelRef.current = modelId
@@ -638,7 +648,7 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
       const existing = map.getSource(id) as maplibregl.RasterTileSource | undefined
       if (existing) queueTiles(id, url)
       else {
-        map.addSource(id, { type: 'raster', tiles: [url], tileSize: GLOBE_TILE_SIZE, maxzoom: model.maxzoom + ISO_EXTRA_ZOOM })
+        map.addSource(id, { type: 'raster', tiles: [url], tileSize: currentTileSize(map), maxzoom: model.maxzoom + ISO_EXTRA_ZOOM })
         map.addLayer({ id, type: 'raster', source: id, paint: { 'raster-fade-duration': 0 } })
         applyTileSize(map)
         tilesRef.current?.init(id, url)
@@ -879,6 +889,105 @@ export function GlobePanel({ modeSwitch }: { modeSwitch?: ReactNode } = {}) {
         : '',
     }))
   }, [variable, interval])
+
+  // --- Polkappe (render/polarCap.ts): Fläche und Linien nördlich von 82° als eigene Scheibe,
+  // statt der gestreckten, einfarbigen Kachelzeile. Zwei Ebenen: die Fläche direkt über dem
+  // Feld, die Linien über allem wie die Isolinien-Kacheln.
+  const capFillRef = useRef<PolarCapLayer | null>(null)
+  const isoMaxZoomRef = useRef(model.maxzoom + ISO_EXTRA_ZOOM)
+  isoMaxZoomRef.current = model.maxzoom + ISO_EXTRA_ZOOM
+  const capLineRef = useRef<PolarCapLayer | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const fill = new PolarCapLayer(CAP_FILL_LAYER, 'fill')
+    // Kachelstufe der Isolinien, wie MapLibre sie für eine Rasterquelle wählt (gerundet),
+    // in JEDEM Bild — daran hängen Abstandsverdopplung und Übergabegrenze
+    const line = new PolarCapLayer(CAP_LINE_LAYER, 'lines', () =>
+      Math.min(
+        isoMaxZoomRef.current,
+        Math.max(0, Math.round(map.getZoom() + Math.log2(512 / currentTileSize(map)))),
+      ),
+    )
+    map.addLayer(fill, map.getLayer(GLOBE_TOPO_LAYER) ? GLOBE_TOPO_LAYER : OVERLAY_INSERT_BEFORE)
+    map.addLayer(line)
+    capFillRef.current = fill
+    capLineRef.current = line
+    return () => {
+      capFillRef.current = capLineRef.current = null
+      if (mapRef.current !== map) return
+      if (map.getLayer(CAP_FILL_LAYER)) map.removeLayer(CAP_FILL_LAYER)
+      if (map.getLayer(CAP_LINE_LAYER)) map.removeLayer(CAP_LINE_LAYER)
+    }
+  }, [mapReady])
+
+  // Auflösung der FLÄCHEN-Textur folgt dem Kappendurchmesser auf dem Schirm — nachgerechnet
+  // nach einer Bewegung und nur, wenn sich die Stufe ändert. Die Linien brauchen das nicht,
+  // sie zeichnet der Shader je Bildschirmpixel.
+  const [capSize, setCapSize] = useState<number | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const update = () => {
+      if (map.getProjection()?.type !== 'globe') return setCapSize(null)
+      const a = map.project([0, CAP_LAT])
+      const b = map.project([180, CAP_LAT])
+      const diam = Math.hypot(a.x - b.x, a.y - b.y) * map.getPixelRatio()
+      setCapSize(Math.min(1024, Math.max(128, 2 ** Math.ceil(Math.log2(Math.max(1, diam))))))
+    }
+    update()
+    map.on('moveend', update)
+    return () => {
+      map.off('moveend', update)
+    }
+  }, [mapReady, view])
+
+  const capOn = capSize != null && (meta?.grid.global ?? false) && !relief
+  useEffect(() => {
+    const fillLayer = capFillRef.current
+    if (!fillLayer) return
+    // Fläche: nur einfache Wertefelder — Wolkenschichten und Regen/Schnee färben eigen,
+    // dort bleibt es beim Ringmittel der Kacheln
+    if (capOn && capSize && field && !variable.kind && field.grid.global)
+      fillLayer.setImage(capFillRaster(field, displayScale(variable, interval), capSize), capSize)
+    else fillLayer.setImage(null, 1)
+  }, [capOn, capSize, field, variable, interval])
+
+  useEffect(() => {
+    const lineLayer = capLineRef.current
+    if (!lineLayer) return
+    // Linien: je eingeschalteter Linienart das Feld zur selben Gültigkeitszeit
+    const on = capOn && meta && step != null ? shownContours.filter((c) => contours[c.id] && meta.variables[c.id]?.steps.length) : []
+    if (!on.length || !meta || step == null) {
+      lineLayer.setContours([])
+      return
+    }
+    let cancelled = false
+    Promise.all(
+      on.map((c) => {
+        const cs = meta.variables[c.id]!.steps
+        return loadGlobeField(modelId, meta.runId, c.id, cs[nearestStepIndex(cs, run, validMs(meta, step))]).then((f) => ({ c, f }))
+      }),
+    )
+      .then((list) => {
+        if (cancelled) return
+        lineLayer.setContours(
+          list.map(({ c, f }) => ({
+            values: capValueRaster(f, smoothField(f, c.smooth[modelId] ?? 0), CAP_VALUE_SIZE),
+            size: CAP_VALUE_SIZE,
+            interval: c.interval,
+            shift: f.step / 2,
+            min: c.min,
+            style: CONTOUR_STYLES[c.id],
+          })),
+        )
+      })
+      .catch(() => !cancelled && lineLayer.setContours([]))
+    return () => {
+      cancelled = true
+    }
+  }, [capOn, meta, step, run, modelId, contours, shownContours])
+
 
   // Nur die letzte Stunde von mehreren: Spitzen dazwischen sind nicht in den Daten
   const gapHours = step != null ? sampledGapHours(vm, step) : undefined

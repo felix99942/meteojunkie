@@ -4000,8 +4000,26 @@ npm run preview   # gebautes dist/ servieren
   Mittel des GANZEN Rings, nicht der Kachel (sonst stünden Sektoren da). 16 statt
   einer Zeile wegen der Mipmaps, die zum Pol hin über mehrere Zeilen mitteln.
   Preis: gut 550 km um den Pol keine Feldstruktur und am Ring ein sichtbarer
-  Rand, die Werteanzeige liest dort weiter das echte Feld. Echte Daten bis 90°
-  bräuchten eine eigene WebGL-Ebene.
+  Rand, die Werteanzeige liest dort weiter das echte Feld.
+  **SEIT 2026-11-21 ÜBERDECKT EINE EIGENE WEBGL-EBENE DIE KAPPE** (`render/polarCap.ts`
+  mit Tests, auf Wunsch): eine Scheibe ab 82° (südlich der
+  gestreckten Zeilen auf jeder Stufe), auf die Kugel gelegt über MapLibres
+  `interpolateProjection` mit der Kugelposition aus Länge/Breite statt aus Mercator, eingefärbt
+  mit einer Textur in polarer Abbildung. Die CPU rechnet sie aus DEMSELBEN Feld mit derselben
+  Farbtabelle und Isolinienregel wie die Kacheln, die Kante ist deshalb unsichtbar. Zwei
+  Ebenen: Fläche direkt über dem Feld (das Feld wird beim Modellwechsel davor eingehängt),
+  Linien über allem, aber nur nördlich der Zeile, ab der die Kacheln selbst keine mehr haben
+  (`bandLat` der aktuellen Kachelstufe, je Bild nachgeführt) — keine Lücke, kein doppelter
+  Strich. **Die Linien zeichnet der SHADER**, nicht die CPU: die Kappe bekommt die WERTE
+  (R32F, 512², `capValueRaster`), die Linie entsteht je Bildschirmpixel aus Wert und Gefälle
+  (dFdx/dFdy) mit derselben Breitenregel wie `contourTile`. Die erste Fassung schickte ein
+  fertiges Linienbild, das beim Zoomen mitvergrößert wurde — die Linien wurden FETT (gemeldet).
+  Die Fläche bleibt ein Bild, Größe nach dem Kappendurchmesser (128–1024, nach `moveend`). Nur
+  auf der Kugel und nur für einfache Wertefelder: Wolkenschichten und Regen/Schnee behalten
+  das Ringmittel. Die Ringmittel-Regel der Kacheln bleibt als Unterlage (Südpol, flache
+  Karte, Übergang). Keine Beschriftung der Linien in der Kappe.
+  Dabei behoben: Quellen wurden mit der Standard-Kachelgröße ANGELEGT (`currentTileSize`),
+  am Pol eingeschaltete Linien standen bis zur nächsten Bewegung fett und unscharf da.
   **TOPOGRAFIE** (seit 2026-11-05, auf Wunsch; `render/globeTopo.ts` mit Tests,
   Protokoll `globedem://`): MapLibre-`hillshade` über dem Farbfeld, unter Gradnetz
   und Grenzen. In der Globusansicht von Anfang an AN, per Häkchen abschaltbar, in
