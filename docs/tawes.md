@@ -17,7 +17,9 @@
   kein DWD-Kriterium, 70/100 sind fortgeschrieben). Der Speicher trägt 120 h, die Zeitleiste
   72 h: eine Summe gibt es nur, wenn ihr GANZES Fenster im Speicher liegt (`stationValue`,
   `from < 0` → kein Wert, keine zu trockene Teilsumme) — 96 h also nur für die letzten 24 h der
-  Zeitleiste, 72 h für die letzten 48 h. Davor sagt die Kopfzeile „96 h-Summe erst ab …". Alle übrigen Größen haben ihr festes Fenster im Namen („Spitzenböe 24 h").
+  Zeitleiste, 72 h für die letzten 48 h. Davor sagt die Kopfzeile „96 h-Summe erst ab …". **Die Fenster stehen als eigene Einträge in der Größen-Liste** („Niederschlag 3 h" … „96 h", Wert
+  `key:steps`), nicht mehr in einem zweiten Feld „Summe über": das erschien erst nach der Wahl von
+  „Niederschlag" und wurde übersehen (gemeldet 2026-11-24). Alle übrigen Größen haben ihr festes Fenster im Namen („Spitzenböe 24 h").
   **Höchst- und Tiefstwerte gelten für den SYNOPTISCHEN Zeitraum** (auf Wunsch,
   `synopticWindow`/`synopticPeriods`): Maximum 06–18 UTC, Minimum 18–06 UTC (2 m und 5 cm).
   Liegt der Termin im Zeitraum, ist es der Wert bisher („● läuft noch"), sonst der zuletzt

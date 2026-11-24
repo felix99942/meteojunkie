@@ -233,45 +233,42 @@ export function TawesPanel() {
         <span className="atclima-title">TAWES · Messnetz Österreich</span>
         <label className="atclima-ctrl">
           <span className="label-muted">Größe</span>
+          {/* Die Summenfenster des Niederschlags stehen DIREKT in dieser Liste
+              („Niederschlag 3 h", „… 96 h"), nicht in einem zweiten Feld daneben:
+              das erschien erst nach der Wahl von „Niederschlag" und wurde
+              übersehen (gemeldet) — und die Projektkonvention wählt Ansichten
+              ohnehin über das Parameter-Dropdown. Wert `key:steps`. */}
           <select
-            value={paramKey}
+            value={param.windowed ? `${paramKey}:${precipSteps}` : paramKey}
             onChange={(e) => {
+              const [key, win] = e.target.value.split(':')
               // Wechsel zwischen Termin, Tag und Nacht: ein Termin der einen Art ist in der
               // anderen ein anderer Zeitraum (06 UTC wäre als Höchstwert der Vortag)
-              if (getTawesParam(e.target.value).synoptic !== param.synoptic) setAtMs(null)
-              setParamKey(e.target.value)
+              if (getTawesParam(key).synoptic !== param.synoptic) setAtMs(null)
+              setParamKey(key)
+              if (win) setPrecipSteps(Number(win))
               e.currentTarget.blur()
             }}
           >
             {TAWES_GROUPS.map((g) => (
               <optgroup key={g} label={g}>
-                {TAWES_PARAMS.filter((p) => p.group === g).map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                  </option>
-                ))}
+                {TAWES_PARAMS.filter((p) => p.group === g).flatMap((p) =>
+                  p.windowed
+                    ? PRECIP_WINDOWS.map((w) => (
+                        <option key={`${p.key}:${w.steps}`} value={`${p.key}:${w.steps}`}>
+                          {p.label} {w.label}
+                        </option>
+                      ))
+                    : [
+                        <option key={p.key} value={p.key}>
+                          {p.label}
+                        </option>,
+                      ],
+                )}
               </optgroup>
             ))}
           </select>
         </label>
-        {param.windowed && (
-          <label className="atclima-ctrl">
-            <span className="label-muted">Summe über</span>
-            <select
-              value={precipSteps}
-              onChange={(e) => {
-                setPrecipSteps(Number(e.target.value))
-                e.currentTarget.blur()
-              }}
-            >
-              {PRECIP_WINDOWS.map((w) => (
-                <option key={w.steps} value={w.steps}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {param.dir && (
           <label className="atclima-ctrl" title="Richtung und Stärke als Windfiedern statt als Zahl">
             <input type="checkbox" checked={barbs} onChange={(e) => setBarbs(e.target.checked)} /> Windfiedern
