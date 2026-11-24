@@ -10,10 +10,14 @@
   Statistik). Eigene Registry statt `atParameters.ts`, weil Normal, Abweichung und Monatsaggregat
   hier keinen Sinn haben und Druck, Boden, Strahlung dort keinen Gegenpart. Daten aus denselben
   R2-Dateien wie die Klimakarte, je Größe erst beim Auswählen geladen, alle 5 min erneuert.
-  **Zeitfenster wählbar NUR beim Niederschlag** (auf Wunsch): 10 min · 1 h · 3 h · 12 h · 24 h ·
-  48 h, Summe und Regendauer. Je Fenster eigene Farbstufen (`precipScale` in `colorscales.ts`):
-  Rot auf DWD „markant", Lila auf „Unwetter" des Zeitraums (1 h 15/25, 12 h 25/40, 24 h 30/50,
-  48 h 40/60 mm). Alle übrigen Größen haben ihr festes Fenster im Namen („Spitzenböe 24 h").
+  **Zeitfenster wählbar NUR beim Niederschlag** (auf Wunsch): 10 min · 1 h · 3 h · 6 h · 12 h ·
+  24 h · 48 h · 72 h · 96 h (6/72/96 h seit 2026-11-24), Summe und Regendauer. Je Fenster eigene
+  Farbstufen (`precipScale` in `colorscales.ts`): Rot auf DWD „markant", Lila auf „Unwetter" des
+  Zeitraums (1 h 15/25, 6 h 20/35, 12 h 25/40, 24 h 30/50, 48 h 40/60, 72 h 60/90 mm; 96 h hat
+  kein DWD-Kriterium, 70/100 sind fortgeschrieben). Der Speicher trägt 120 h, die Zeitleiste
+  72 h: eine Summe gibt es nur, wenn ihr GANZES Fenster im Speicher liegt (`stationValue`,
+  `from < 0` → kein Wert, keine zu trockene Teilsumme) — 96 h also nur für die letzten 24 h der
+  Zeitleiste, 72 h für die letzten 48 h. Davor sagt die Kopfzeile „96 h-Summe erst ab …". Alle übrigen Größen haben ihr festes Fenster im Namen („Spitzenböe 24 h").
   **Höchst- und Tiefstwerte gelten für den SYNOPTISCHEN Zeitraum** (auf Wunsch,
   `synopticWindow`/`synopticPeriods`): Maximum 06–18 UTC, Minimum 18–06 UTC (2 m und 5 cm).
   Liegt der Termin im Zeitraum, ist es der Wert bisher („● läuft noch"), sonst der zuletzt

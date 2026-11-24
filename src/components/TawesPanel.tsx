@@ -22,6 +22,7 @@ import {
   TAWES_GROUPS,
   TAWES_PARAMS,
   tawesTitle,
+  windowLabel,
 } from '../config/tawesParameters'
 import {
   mergeTawesStores,
@@ -286,6 +287,14 @@ export function TawesPanel() {
           ) : (
             <>
               {covered} Stationen · Werte in {disp.unit}
+              {param.windowed && store && result && result.at - steps + 1 < 0 && (
+                // 72/96 h reichen am Anfang der Zeitleiste über den Speicher (120 h) hinaus —
+                // dann gibt es bewusst KEINEN Wert (eine Teilsumme sähe zu trocken aus)
+                <span className="atclima-stale" title="Der Speicher reicht 120 Stunden zurück; eine Summe wird nur gezeigt, wenn ihr ganzes Fenster darin liegt.">
+                  {' '}
+                  ⚠ {windowLabel(steps)}-Summe erst ab {fmtClockDay.format(new Date(tawesStepMs(store, steps - 1)))} — Zeitschieber weiter nach rechts
+                </span>
+              )}
               {stale && store && (
                 <span className="atclima-stale" title="Der Speicher wird alle 10 Minuten erneuert. Älter als zwei Stunden heißt: der Cron steht.">
                   {' '}

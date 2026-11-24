@@ -58,6 +58,15 @@ describe('Registry', () => {
     expect([at(72, 14), at(72, 16)]).toEqual([25, 40])
     expect([at(144, 14), at(144, 16)]).toEqual([30, 50])
     expect([at(288, 14), at(288, 16)]).toEqual([40, 60])
+    expect([at(36, 14), at(36, 16)]).toEqual([20, 35])
+    expect([at(432, 14), at(432, 16)]).toEqual([60, 90])
+    // 96 h: kein DWD-Kriterium, fortgeschrieben
+    expect([at(576, 14), at(576, 16)]).toEqual([70, 100])
+    // Jede Skala steigt streng
+    for (const w of PRECIP_WINDOWS) {
+      const v = precipScaleFor(w.steps).stops.map((x) => x.value)
+      expect(v.every((x, i) => i === 0 || x > v[i - 1]), w.label).toBe(true)
+    }
   })
 
   it('nur der Niederschlag hat ein wählbares Fenster', () => {

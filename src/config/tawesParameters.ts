@@ -6,7 +6,7 @@
 // nicht gibt, und die meisten Größen hier (Druck, Bodentemperatur, Strahlung) haben dort
 // keinen Gegenpart.
 //
-// ZEITFENSTER WÄHLBAR NUR BEIM NIEDERSCHLAG (auf Wunsch): 10 min bis 48 h, je Fenster eine
+// ZEITFENSTER WÄHLBAR NUR BEIM NIEDERSCHLAG (auf Wunsch): 10 min bis 96 h, je Fenster eine
 // eigene Farbskala an den DWD-Warnschwellen (`precipScale`). Alle übrigen Größen haben ihre
 // natürliche Bedeutung: Messwert zum Termin, ein festes Fenster im Namen („Spitzenböe 24 h"),
 // oder bei Höchst- und Tiefstwerten der synoptische Zeitraum (auf Wunsch): Maximum 06–18 UTC,
@@ -83,9 +83,14 @@ export const PRECIP_WINDOWS: { steps: number; label: string }[] = [
   { steps: 1, label: '10 min' },
   { steps: 6, label: '1 h' },
   { steps: 18, label: '3 h' },
+  { steps: 36, label: '6 h' },
   { steps: 72, label: '12 h' },
   { steps: 144, label: '24 h' },
   { steps: 288, label: '48 h' },
+  { steps: 432, label: '72 h' },
+  // Der Speicher trägt 120 h (`TAWES_STORE_HOURS`) — 96 h sind das längste Fenster, das am
+  // Anfang der Zeitleiste noch nicht überall an der Lückenregel scheitert
+  { steps: 576, label: '96 h' },
 ]
 export const DEFAULT_PRECIP_STEPS = 6
 
@@ -96,18 +101,22 @@ export const windowLabel = (steps: number): string =>
 
 /**
  * Niederschlag je Fenster: dieselben 20 Farben, Rot (Index 14) auf „markant", Lila (16) auf
- * „Unwetter" der DWD-Warnkriterien des Zeitraums — Starkregen 1 h 15/25 mm, Dauerregen
- * 12 h 25/40, 24 h 30/50, 48 h 40/60 mm. Für 10 min gibt es kein Kriterium; dort liegen die
- * Stufen beim Sechstel der Stundenwerte (4 mm in 10 min ≈ 24 mm/h). 3 h nimmt die
- * Grundskala der Seite.
+ * „Unwetter" der DWD-Warnkriterien des Zeitraums — Starkregen 1 h 15/25 mm, 6 h 20/35 mm,
+ * Dauerregen 12 h 25/40, 24 h 30/50, 48 h 40/60, 72 h 60/90 mm. Für 10 min gibt es kein
+ * Kriterium; dort liegen die Stufen beim Sechstel der Stundenwerte (4 mm in 10 min ≈ 24 mm/h).
+ * 3 h nimmt die Grundskala der Seite. 96 h hat beim DWD KEIN Kriterium — 70/100 mm sind aus
+ * der Reihe 48/72 h fortgeschrieben, nicht amtlich.
  */
 const PRECIP_BY_STEPS: Record<number, ColorScale> = {
   1: precipScale([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 7, 10, 15, 20]),
   6: precipScale([0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 25, 30, 40, 60]),
   18: COLOR_SCALES.precipitation,
+  36: precipScale([0.1, 0.2, 0.4, 0.7, 1, 1.5, 2, 3, 4, 5, 7, 9, 11, 15, 20, 25, 35, 45, 60, 80]),
   72: precipScale([0.1, 0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 13, 16, 20, 25, 30, 40, 50, 70, 100]),
   144: precipScale([0.1, 0.3, 0.5, 1, 2, 3, 4, 5, 7, 10, 13, 16, 20, 25, 30, 40, 50, 60, 80, 120]),
   288: precipScale([0.1, 0.3, 0.5, 1, 2, 3, 5, 7, 10, 13, 16, 20, 25, 30, 40, 50, 60, 75, 90, 150]),
+  432: precipScale([0.1, 0.5, 1, 2, 3, 5, 7, 10, 13, 16, 20, 25, 30, 40, 60, 75, 90, 110, 140, 200]),
+  576: precipScale([0.1, 0.5, 1, 2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 70, 85, 100, 125, 160, 250]),
 }
 export const precipScaleFor = (steps: number): ColorScale => PRECIP_BY_STEPS[steps] ?? COLOR_SCALES.precipitation
 
