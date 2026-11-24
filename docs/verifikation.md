@@ -357,3 +357,34 @@
   Messplatz — genau deshalb ist er stationsweise interessant. Ein Request je
   Modell (alle Vorlaufzeiten in einem), Messung ein GeoSphere-Bulk-Request, für
   immer gecacht.
+  **DIAGRAMME UNTER DER RANGLISTE** (seit 2026-11-24, auf Wunsch „intuitiver";
+  `VerifyCharts.tsx`, CSS `.verify-charts`/`.vchart-*`) — dieselben Zahlen als
+  drei Bilder, ausgewählt vom Nutzer aus vier Vorschlägen (Streudiagramm
+  Vorhersage/Messung wurde NICHT genommen): **Skill-Balken** „wie viel besser
+  als nichts tun" (Skill gegen „wie gestern" und gegen „das Mittel" als
+  Prozent, gemeinsame Achse, unter −100 % gekappt); **Fehler nach Vorlauf**
+  (MAE je Modell über +1 … +7 d, eingestellter Vorlauf gestrichelt, unter 30
+  Tagen sagt die Unterzeile „weitgehend Zufall" — siehe den 14-Tage-Befund
+  oben); **Fehlerursachen** (Murphy-Zerlegung gestapelt, Balkenlänge = ganzer
+  quadratischer Fehler, am Ende der RMSE in der Einheit, Anteile im Tooltip;
+  drei Graustufen statt Serienfarben, die tragen hier das Modell). Kein
+  zusätzliches API-Budget: eine Abfrage je Modell trägt alle Vorlaufzeiten.
+  Schlichtes SVG statt uPlot (keine Zeitachse, sieben Stützpunkte), Werte am
+  Zeiger über `<title>` mit Zeilenstreifen als Ziel. **Farbe je Modell über
+  einen festen Slot** (kleinster freier beim Hinzufügen, `slotsRef`) wie in
+  den Meteogrammen — mit dem Index in der Auswahlliste wechselten die Farben
+  beim Abwählen. Deshalb sind höchstens 8 Modelle wählbar
+  (`MAX_MODELS_PER_PANEL`, so viele geprüfte Serienfarben gibt es). Das
+  frühere Abweichungsdiagramm bleibt draußen — die Tagesverläufe stehen
+  weiter nur in der Tabelle.
+  **Überschriften nennen die KENNZAHL, nicht eine Frage** (auf Wunsch,
+  zuerst stand „Wie viel besser als nichts tun?" usw.): „Skill Score (SS = 1 −
+  MSE Modell / MSE Referenz)", „Mittlerer absoluter Fehler (MAE) nach
+  Vorlauf", „Zerlegung des MSE nach Murphy (1988)" samt Formel; die Legende der
+  Zerlegung führt Term UND Lesart („Bias² (Versatz)").
+  **RANGLISTEN-TABELLE ENTFERNT, DIAGRAMME GRÖSSER** (2026-11-24, auf Wunsch:
+  „die Tabelle mit dem SS etc. kann man sich sparen"). `RankingBlock` ist nur
+  noch die Kopfzeile „Bestes Modell bei … : X" samt der Aussage, die in keinem
+  Diagramm steht — ob die Führung belastbar ist (gepaarter Vergleich, Tooltip),
+  mit den Modellen, von denen das beste nicht unterscheidbar ist. σf/σo und r
+  stecken in der Murphy-Zerlegung, Skill in den Balken, MAE im Vorlaufdiagramm.

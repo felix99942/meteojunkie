@@ -41,6 +41,8 @@ import {
   type ModelInfo,
 } from '../config/models'
 import { OpenMeteoAttribution } from './Attribution'
+import { DecompChart, LeadChart, SkillChart, type ChartRow } from './VerifyCharts'
+import { MAX_MODELS_PER_PANEL, SERIES_COLORS } from '../config/colors'
 import {
   climatologyForecast,
   contingency,
@@ -53,7 +55,6 @@ import {
   distinguishable,
   frequencyBias,
   leadsFor,
-  PAIRED_Z,
   pairedMae,
   persistenceForecast,
   pod,
@@ -434,145 +435,27 @@ function RankingBlock({
   return (
     <div className="verify-rank">
       <div className="verify-rank-head">
-        <strong>Rangliste bei {leadLabel(lead)}</strong>
+        <strong>Bestes Modell bei {leadLabel(lead)}: {rows[0].model.label}</strong>
         <span className="label-muted">
-          {rows[0].scores.n} Tage · gereiht nach mittlerem Fehler
+          {rows[0].scores.n} Tage · nach mittlerem absolutem Fehler (MAE {fmt1(rows[0].scores.mae)} {unit})
         </span>
         {/* Ob die Führung belastbar ist, gehört in die Kopfzeile — nicht in
             eine Fußnote, die niemand liest. */}
-        <span className={leadIsClear ? 'verify-rank-clear' : 'verify-rank-tie'}>
+        {rows.length > 1 && (
+        <span
+          className={leadIsClear ? 'verify-rank-clear' : 'verify-rank-tie'}
+          title={
+            'GEPAARTER Vergleich: alle Modelle an denselben Tagen, Differenz der Tagesfehler ± zwei ' +
+            'Standardfehler, korrigiert für Autokorrelation (Wetter hält an). Innerhalb davon heißt ' +
+            'der Unterschied „nicht unterscheidbar".'
+          }
+        >
           {leadIsClear
-            ? `${rows[0].model.label} führt mit belastbarem Abstand`
-            : 'Spitze nicht unterscheidbar — die Reihenfolge oben ist Zufall'}
+            ? 'führt mit belastbarem Abstand'
+            : `nicht unterscheidbar von ${rows.filter((r) => r.paired && !r.distinct).map((r) => r.model.label).join(', ')} — die Reihenfolge ist Zufall`}
         </span>
+        )}
       </div>
-      <table className="verify-table verify-rank-table">
-        <thead>
-          <tr>
-            <th>Modell</th>
-            <th title="Mittlerer absoluter Fehler über den ganzen Zeitraum.">MAE</th>
-            <th
-              title={
-                'Mittlerer Fehler MIT Vorzeichen. Derselbe MAE bedeutet bei großem Bias etwas ' +
-                'anderes (systematisch, nachträglich korrigierbar) als bei Bias nahe null ' +
-                '(streut nur). Darin steckt auch der Unterschied zwischen Modellgitterzelle und ' +
-                'Messplatz.'
-              }
-            >
-              Bias
-            </th>
-            <th
-              title={
-                'Amplitude: σ(Vorhersage) / σ(Messung). Unter 1 heißt, das Modell schwankt ' +
-                'weniger als die Wirklichkeit — es dämpft den Tagesgang. Genau das ist der ' +
-                'AIFS-Befund dieser Seite (Tagesgang auf zwei Drittel gestaucht); hier fällt es ' +
-                'bei jedem Modell und jeder Station von selbst auf. Über 1 = übertriebene ' +
-                'Schwankung.'
-              }
-            >
-              σf/σo
-            </th>
-            <th
-              title={
-                'Korrelation Vorhersage ↔ Messung. Trennt „richtiger Verlauf, falsches Niveau" ' +
-                '(hohe Korrelation bei großem Bias — korrigierbar) von „falscher Verlauf" ' +
-                '(niedrige Korrelation — das eigentliche Modellversagen).'
-              }
-            >
-              r
-            </th>
-            <th
-              title={
-                'Skill gegen PERSISTENZ („morgen wie heute"): 1 = perfekt, 0 = wie Persistenz, ' +
-                'negativ = schlechter als nichts tun. Sagt, wie schwer die Aufgabe war. GRENZE: ' +
-                'bei langem Vorlauf ist Persistenz trivial zu schlagen, ein hoher Wert heißt ' +
-                'dort nur „besser als raten".'
-              }
-            >
-              SS Pers.
-            </th>
-            <th
-              title={
-                'Skill gegen KLIMATOLOGIE („jeden Tag der Durchschnitt", leave-one-out aus dem ' +
-                'gezeigten Zeitraum): die härtere und bei langem Vorlauf die aussagekräftigere ' +
-                'Referenz — dort, wo der Persistenz-Score sättigt. Unter 0 heißt: das Modell ' +
-                'trägt weniger bei als der Mittelwert der Periode.'
-              }
-            >
-              SS Klim.
-            </th>
-            <th
-              title={
-                'GEPAARTER Unterschied zum besten Modell: Mittel der täglichen ' +
-                'Fehlerdifferenzen ± Standardfehler. Alle Modelle werden an denselben Tagen ' +
-                'geprüft, also kürzt sich heraus, was allen gemeinsam schwerfiel — das macht ' +
-                'den Vergleich trennscharf. Der Standardfehler ist für Autokorrelation ' +
-                'korrigiert (Wetter hält an, aufeinander folgende Tagesfehler sind nicht ' +
-                'unabhängig). „~" = innerhalb von zwei Standardfehlern, also nicht ' +
-                'unterscheidbar.'
-              }
-            >
-              Δ zum Besten
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.model.id} className={i === 0 ? 'is-best' : undefined}>
-              <td className="verify-rank-model" title={r.model.label}>
-                {r.model.label}
-                <span className="label-muted"> {resolutionLabel(r.model)}</span>
-              </td>
-              <td>
-                {fmt1(r.scores.mae)} {unit}
-              </td>
-              <td>
-                {fmtSigned(r.scores.bias)} {unit}
-              </td>
-              {/* Auffällig markieren, wo die Amplitude deutlich daneben liegt —
-                  das ist der Befund, nicht die Zahl. */}
-              <td
-                className={
-                  Number.isFinite(r.scores.sdRatio) &&
-                  (r.scores.sdRatio < 0.85 || r.scores.sdRatio > 1.15)
-                    ? 'verify-flag'
-                    : undefined
-                }
-              >
-                {fmt2(r.scores.sdRatio)}
-              </td>
-              <td>{fmt2(r.scores.corr)}</td>
-              <td>{fmtScore(r.skill.ss)}</td>
-              <td>{fmtScore(r.climSkill.ss)}</td>
-              <td>
-                {r.paired == null ? (
-                  <span className="label-muted">Referenz</span>
-                ) : r.distinct ? (
-                  // Vorzeichen zeigen statt „+" anzunehmen: die Reihung nutzt
-                  // den MAE über ALLE Tage, der gepaarte Vergleich nur die
-                  // GEMEINSAMEN — bei ungleicher Abdeckung kann die Differenz
-                  // der Reihenfolge widersprechen, und dann ist das die
-                  // interessante Information, nicht ein Darstellungsfehler.
-                  <>
-                    {fmtSigned(r.paired.diff)} ± {fmt1(PAIRED_Z * r.paired.se)} {unit}
-                  </>
-                ) : (
-                  <span
-                    className="label-muted"
-                    title={`Unterschied ${fmt1(Math.abs(r.paired.diff))} ${unit} bei ± ${fmt1(
-                      PAIRED_Z * r.paired.se,
-                    )} ${unit} Unsicherheit (${Math.round(r.paired.nEff)} von ${
-                      r.paired.n
-                    } Tagen effektiv unabhängig)`}
-                  >
-                    ~ nicht unterscheidbar
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
@@ -999,6 +882,34 @@ export function VerifyPanel() {
     })
   }, [table, lead, obsShown])
 
+  /**
+   * Für die Diagramme: je Modell alle Vorlaufzeiten. Farbe = Slot in der
+   * AUSWAHLreihenfolge (`modelIds`), damit ein Modell seine Farbe behält, wenn
+   * ein anderes ab- oder zugewählt wird oder die Station es ausschließt.
+   */
+  // Slot je Modell: beim Hinzufügen der kleinste freie, danach fest — wie in
+  // den Meteogrammen (Farbe folgt dem Modell, nicht dem Rang). Ein Ref, weil
+  // die Vergabe vom vorigen Stand abhängt und keinen Render auslösen soll.
+  const slotsRef = useRef(new Map<string, number>())
+  const chartRows = useMemo<ChartRow[]>(() => {
+    const slots = slotsRef.current
+    for (const id of [...slots.keys()]) if (!modelIds.includes(id)) slots.delete(id)
+    for (const id of modelIds) {
+      if (slots.has(id)) continue
+      const used = new Set(slots.values())
+      let k = 0
+      while (used.has(k)) k++
+      slots.set(id, k)
+    }
+    return table
+      .filter((r) => r.cells.size > 0)
+      .map((r) => ({
+        model: r.model,
+        color: SERIES_COLORS[slots.get(r.model.id) ?? 0] ?? SERIES_COLORS[0],
+        byLead: r.cells,
+      }))
+  }, [table, modelIds])
+
   /** Führt das beste Modell mit belastbarem Abstand zum Zweiten? */
   const leadIsClear = ranking.length > 1 && ranking[1].distinct
 
@@ -1228,6 +1139,8 @@ export function VerifyPanel() {
                 <input
                   type="checkbox"
                   checked={modelIds.includes(m.id)}
+                  // Höchstens so viele Modelle, wie es geprüfte Serienfarben gibt
+                  disabled={!modelIds.includes(m.id) && modelIds.length >= MAX_MODELS_PER_PANEL}
                   onChange={(e) =>
                     setModelIds((prev) =>
                       e.target.checked ? [...prev, m.id] : prev.filter((x) => x !== m.id),
@@ -1296,6 +1209,15 @@ export function VerifyPanel() {
                 ehrliche Detailansicht — hier steht die Antwort auf „welches
                 Modell taugt hier", dort die auf „wie lief es diese Woche". */}
             <RankingBlock rows={ranking} spec={spec} lead={lead} leadIsClear={leadIsClear} />
+            {/* Dieselben Zahlen als Bilder: wie viel besser als nichts tun,
+                wie schnell es mit dem Vorlauf schlechter wird, woran es liegt */}
+            {chartRows.length > 0 && (
+              <div className="verify-charts">
+                <SkillChart rows={chartRows} lead={lead} />
+                <LeadChart rows={chartRows} lead={lead} unit={spec.unit} days={obsCount} />
+                <DecompChart rows={chartRows} lead={lead} unit={spec.unit} />
+              </div>
+            )}
             <ErrColorKey spec={spec} />
             <div className="verify-main">
             {/* TAG FÜR TAG: gemessen, vorhergesagt, Differenz. Das ist die

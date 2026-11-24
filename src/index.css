@@ -6292,3 +6292,87 @@ button:focus-visible {
   height: 9px;
   opacity: 0.7;
 }
+
+/* Verifikation: Diagramme unter der Kopfzeile des besten Modells (VerifyCharts.tsx) */
+.verify-charts {
+  align-self: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px 40px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.vchart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vchart figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 620px;
+  font-size: 14px;
+}
+
+.vchart svg {
+  overflow: visible;
+}
+
+.vchart-label,
+.vchart-value {
+  fill: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.vchart-value {
+  fill: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.vchart-axis {
+  fill: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vchart-grid {
+  stroke: var(--gridline);
+  stroke-width: 1;
+}
+
+.vchart-zero {
+  stroke: var(--ink-muted);
+  stroke-width: 1;
+}
+
+.vchart-cursor {
+  stroke: var(--ink-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.vchart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.vchart-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.vchart figcaption .label-muted {
+  font-size: 12.5px;
+}
