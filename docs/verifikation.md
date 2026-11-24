@@ -429,3 +429,16 @@
   Vite-Dev-Server antwortet dann mit HTML statt 404 — der Lader prüft den
   Inhaltstyp). Lokal: Ingest laufen lassen, dann `npm run ingest:verify-archive`.
 
+- **„ⓘ Info" dokumentiert die RECHNUNG** (seit 2026-11-24 auf Wunsch,
+  `VerifyInfo.tsx`, Muster wie beim Sounding; der Knopf steht auf Wunsch rechts
+  oben unter der Modellauswahl, grösser und kräftiger als im Skew-T
+  (`.verify-info-btn`), per `React.lazy` samt
+  KaTeX erst beim Klick geladen): Tagesfenster, gleitender Vorlauf,
+  Höhenumrechnung, Bias/MAE/RMSE, Murphy-Zerlegung, Skill Score gegen
+  Persistenz und Leave-one-out-Klimatologie, gepaarter Vergleich mit
+  AR(1)-Korrektur, Vierfeldertafel/POD/FAR/FBI/ETS und das Archiv von C-LAEF
+  und Varda. Jede Formel steht so in `verify.ts` bzw. `ownVerify.ts` —
+  **ändert sich dort ein Verfahren, muss der Text mit** (Handarbeit, kein
+  Generat). Das Fenster liegt `position: fixed` und deckend über dem ganzen
+  Bereich (`.skewt-info.verify-info`): anders als im Skew-T gibt es kein
+  Diagramm, an dem es hängen könnte.

@@ -25,7 +25,7 @@
 // 00–24 UTC auf der Vorhersageseite stand nach jedem heißen Tag mit
 // Frontdurchgang ein „Fehler" in der Tabelle, den kein Modell gemacht hat.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { fetchPastRuns, MAX_LEAD_DAYS, type PastRunSeries } from '../api/openmeteo'
 import { activeStations, DATASET_DAILY, fetchStationSeries, loadStations, type AtStation } from '../api/geosphere'
 import { clean } from '../api/atValues'
@@ -70,6 +70,9 @@ import {
   type Skill,
   errTone,
 } from './verify'
+
+// KaTeX samt Schriften erst mit dem ersten Klick auf „Info“ laden
+const VerifyInfo = lazy(() => import('./VerifyInfo'))
 
 /**
  * Voreingestellte Modelle: je ein Vertreter der interessanten Klassen, dazu
@@ -605,6 +608,8 @@ export function VerifyPanel() {
   const [lead, setLead] = useState(1)
   /** Schwelle der kategorischen Bewertung (nur bei Schwellen-Zielgrößen). */
   const [threshold, setThreshold] = useState(1)
+  const [showInfo, setShowInfo] = useState(false)
+  const closeInfo = useCallback(() => setShowInfo(false), [])
 
   /*
    * MESSUNG UND LÄUFE TRAGEN MIT SICH, WOZU SIE GEHÖREN — sonst deutet die
@@ -1181,45 +1186,63 @@ export function VerifyPanel() {
           <>
             {/* Was hier verglichen wird, in einem Satz. Eine Zahlenmatrix ohne
                 Größe, Ort, Zeitfenster und Zeitraum ist nicht lesbar. */}
-            <div className="verify-what">
-              <strong>{spec.label}</strong> an der Station <strong>{station.name}</strong>
-              {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als{' '}
-              {spec.mode === 'sum' ? 'Tagessumme' : 'Tagesextrem'} über den{' '}
-              {spec.mode === 'sum' ? 'Niederschlagstag' : 'Klimatag'}{' '}
-              <strong>{spec.windowLabel}</strong> ({spec.mode === 'sum' ? '07–07' : '19–19'} MEZ).
-              Verglichen mit der{' '}
-              <span
-                title={
-                  'Rohe Modellausgabe, auf den Punkt und auf die Stationshöhe gerechnet — KEIN ' +
-                  'MOS. Statistisch korrigierte Punktvorhersagen führt die Seite als DWD MOSMIX ' +
-                  'unter „Österreich-Klima → Vorhersage"; die lassen sich hier nicht verifizieren, ' +
-                  'weil MOSMIX kein öffentliches Archiv vergangener Läufe hat.'
-                }
+            {/* Info rechts oben unter der Modellauswahl (auf Wunsch), neben dem
+                Satz, was verglichen wird. Gross und in Akzentfarbe wie beim
+                Sounding — wer eine Kennzahl gegen eine andere Verifikation
+                hält, braucht die Rechnung. */}
+            <div className="verify-head">
+              <div className="verify-what">
+                <strong>{spec.label}</strong> an der Station <strong>{station.name}</strong>
+                {station.altitude != null && <> ({Math.round(station.altitude)} m)</>}, gemessen als{' '}
+                {spec.mode === 'sum' ? 'Tagessumme' : 'Tagesextrem'} über den{' '}
+                {spec.mode === 'sum' ? 'Niederschlagstag' : 'Klimatag'}{' '}
+                <strong>{spec.windowLabel}</strong> ({spec.mode === 'sum' ? '07–07' : '19–19'} MEZ).
+                Verglichen mit der{' '}
+                <span
+                  title={
+                    'Rohe Modellausgabe, auf den Punkt und auf die Stationshöhe gerechnet — KEIN ' +
+                    'MOS. Statistisch korrigierte Punktvorhersagen führt die Seite als DWD MOSMIX ' +
+                    'unter „Österreich-Klima → Vorhersage"; die lassen sich hier nicht verifizieren, ' +
+                    'weil MOSMIX kein öffentliches Archiv vergangener Läufe hat.'
+                  }
+                >
+                  deterministischen Punktprognose
+                </span>{' '}
+                bei <strong>{leadLabel(lead)}</strong>{' '}
+                <span
+                  title={
+                    'GLEITENDER Vorlauf als Referenz: für jede Stunde des Tages der Stand, den die ' +
+                    'Vorhersage ' + lead * 24 + ' Stunden davor hatte. Das ist NICHT ein fester ' +
+                    'Modelllauf — je nach Zeitpunkt und Modell stammt der Stand aus einem anderen ' +
+                    'Lauf, und die Modelle laufen unterschiedlich oft: ICON-D2 ' +
+                    'alle 3 Stunden, IFS alle 6, andere alle 12. Ein fester Lauf wäre über die API ' +
+                    'ohnehin nicht zu bekommen (geprüft) — und er hätte einen Nachteil: er mischt ' +
+                    'über den Tag hinweg ' + lead * 24 + ' bis ' + (lead * 24 + 23) + ' Stunden ' +
+                    'Vorlauf, während der gleitende jeden Tag beim GLEICHEN Vorhersagealter ' +
+                    'vergleicht. Gemessen: die Reihe springt an der Tagesgrenze nicht und der ' +
+                    'Fehler wächst über den Tag nicht an — beides wäre bei einem festen Lauf anders.'
+                  }
+                >
+                  (gleitend, kein fester Lauf)
+                </span>
+                . Zeitraum{' '}
+                <strong>
+                  {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}
+                </strong>{' '}
+                ({obsCount} Messtage).
+              </div>
+              <button
+                type="button"
+                className="skewt-info-btn verify-info-btn"
+                onClick={() => setShowInfo((v) => !v)}
+                aria-expanded={showInfo}
+                title="Wie Tagesfenster, Vorlauf, MAE, Skill Score, MSE-Zerlegung, Unterscheidbarkeit und ETS gerechnet werden"
               >
-                deterministischen Punktprognose
-              </span>{' '}
-              bei <strong>{leadLabel(lead)}</strong>{' '}
-              <span
-                title={
-                  'GLEITENDER Vorlauf als Referenz: für jede Stunde des Tages der Stand, den die ' +
-                  'Vorhersage ' + lead * 24 + ' Stunden davor hatte. Das ist NICHT ein fester ' +
-                  'Modelllauf — je nach Zeitpunkt und Modell stammt der Stand aus einem anderen ' +
-                  'Lauf, und die Modelle laufen unterschiedlich oft: ICON-D2 ' +
-                  'alle 3 Stunden, IFS alle 6, andere alle 12. Ein fester Lauf wäre über die API ' +
-                  'ohnehin nicht zu bekommen (geprüft) — und er hätte einen Nachteil: er mischt ' +
-                  'über den Tag hinweg ' + lead * 24 + ' bis ' + (lead * 24 + 23) + ' Stunden ' +
-                  'Vorlauf, während der gleitende jeden Tag beim GLEICHEN Vorhersagealter ' +
-                  'vergleicht. Gemessen: die Reihe springt an der Tagesgrenze nicht und der ' +
-                  'Fehler wächst über den Tag nicht an — beides wäre bei einem festen Lauf anders.'
-                }
-              >
-                (gleitend, kein fester Lauf)
-              </span>
-              . Zeitraum{' '}
-              <strong>
-                {fmtShort.format(new Date(`${start}T12:00:00Z`))}–{fmtDay(end)}
-              </strong>{' '}
-              ({obsCount} Messtage).
+                <span className="skewt-info-icon" aria-hidden="true">
+                  i
+                </span>
+                Info
+              </button>
             </div>
             {/* ÜBER der Tag-für-Tag-Tabelle: die Reihung über den ganzen
                 Zeitraum samt Unsicherheit. Die Tabelle darunter bleibt die
@@ -1425,6 +1448,11 @@ export function VerifyPanel() {
           </>
         )}
       </div>
+      {showInfo && (
+        <Suspense fallback={<div className="skewt-info verify-info skewt-info-loading">Lade Dokumentation …</div>}>
+          <VerifyInfo onClose={closeInfo} />
+        </Suspense>
+      )}
       <div className="app-attribution">
         <OpenMeteoAttribution />
         {/* Eigene Modelle kommen nicht über Open-Meteo — eigene Nennung, nur wenn gewählt */}

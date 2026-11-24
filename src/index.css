@@ -1219,6 +1219,17 @@ button:focus-visible {
   line-height: 1.55;
 }
 
+/* Verifikation: kein Diagramm darunter, an dem es hängen könnte — das
+   Fenster liegt über dem ganzen Bereich. */
+.skewt-info.verify-info {
+  position: fixed;
+  top: 64px;
+  bottom: 24px;
+  z-index: 50;
+  /* deckend: darunter liegen Diagrammtexte, die sonst durchscheinen */
+  background: rgb(20, 21, 23);
+}
+
 .skewt-info-loading {
   align-items: center;
   justify-content: center;
@@ -3673,6 +3684,46 @@ button:focus-visible {
 .verify-table thead .verify-res {
   display: block;
   font-weight: 400;
+}
+
+.verify-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.verify-head .verify-what {
+  flex: 1 1 auto;
+}
+
+.verify-head .skewt-info-btn {
+  flex: 0 0 auto;
+  /* ganz nach rechts — der Satz daneben hat eine eigene Satzbreite */
+  margin-left: auto;
+}
+
+/* Grösser und dominanter als im Skew-T (auf Wunsch): hier steht der Knopf
+   frei im Inhalt und soll auf den ersten Blick auffallen. */
+.skewt-info-btn.verify-info-btn {
+  gap: 9px;
+  padding: 7px 18px 7px 8px;
+  font-size: 16px;
+  font-weight: 700;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 28%, rgb(24, 25, 27));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.skewt-info-btn.verify-info-btn:hover,
+.skewt-info-btn.verify-info-btn[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--accent) 45%, rgb(24, 25, 27));
+}
+
+.verify-info-btn .skewt-info-icon {
+  width: 26px;
+  height: 26px;
+  font-size: 18px;
 }
 
 .verify-body {

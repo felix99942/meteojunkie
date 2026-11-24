@@ -13,23 +13,8 @@
 // geladen: KaTeX samt Schriften kommt erst mit dem ersten Klick auf „Info",
 // nicht mit der Seite.
 
-import katex from 'katex'
-import 'katex/dist/katex.min.css'
-import { useEffect, useMemo } from 'react'
-
-/** Eine Formel; `block` = abgesetzt und zentriert, sonst im Fliesstext. */
-function M({ t, block = false }: { t: string; block?: boolean }) {
-  // Statische, eigene Zeichenketten — kein Nutzertext, daher unbedenklich.
-  const html = useMemo(
-    () => katex.renderToString(t, { displayMode: block, throwOnError: false }),
-    [t, block],
-  )
-  return block ? (
-    <div className="skewt-info-formula" dangerouslySetInnerHTML={{ __html: html }} />
-  ) : (
-    <span dangerouslySetInnerHTML={{ __html: html }} />
-  )
-}
+import { useEffect } from 'react'
+import { M } from './Tex'
 
 const TOC: [string, string][] = [
   ['si-grund', 'Grundlagen'],
