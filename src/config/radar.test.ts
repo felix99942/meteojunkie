@@ -39,7 +39,8 @@ import {
 import { classifyRadarPixel, radarPixelAt } from './radar'
 import { mercBox } from './wmsTime'
 
-const P = DEFAULT_RADAR_PRODUCT
+/** Das DWD-WN — die WMS-Mechanik wird an ihm geprüft (die Vorgabe ist OPERA). */
+const P = RADAR_PRODUCTS.find((p) => p.id === 'wn')!
 
 /** Ausschnitt einer echten Antwort (maps.dwd.de, 2026-09-16). */
 const CAPS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -219,14 +220,14 @@ describe('Bildgeometrie', () => {
 describe('Produkt-Registry', () => {
   // Die Vorgabe ist die MESSGRÖSSE des Radars, nicht die daraus abgeleitete
   // Rate: mm/h setzt eine Z-R-Beziehung voraus, dBZ nicht.
-  it('zeigt Reflektivität in dBZ als Vorgabe', () => {
-    expect(DEFAULT_RADAR_PRODUCT.id).toBe('wn')
+  it('zeigt Reflektivität in dBZ als Vorgabe — das OPERA-Komposit (ganz Österreich)', () => {
+    expect(DEFAULT_RADAR_PRODUCT.id).toBe('opera')
     expect(DEFAULT_RADAR_PRODUCT.unit).toBe('dBZ')
     expect(DEFAULT_RADAR_PRODUCT.legend).toBe(WN_LEGEND)
   })
 
-  it('führt die neun Produkte in Registry-Reihenfolge', () => {
-    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'dmax', 'vil', 'cappi', 'rw', 'ry', 'w4', 'sy'])
+  it('führt die zehn Produkte in Registry-Reihenfolge', () => {
+    expect(RADAR_PRODUCTS.map((p) => p.id)).toEqual(['wn', 'rv', 'opera', 'dmax', 'vil', 'cappi', 'rw', 'ry', 'w4', 'sy'])
     for (const p of RADAR_PRODUCTS) {
       expect(p.stepMs, p.id).toBeGreaterThan(0)
       expect(p.legend.length, p.id).toBeGreaterThan(8)
@@ -246,7 +247,7 @@ describe('Produkt-Registry', () => {
   // Nachbearbeitung färbt auf genau diese Deckkraft um.
   it('kennt die Maskendeckkraft je Produkt — und wo es keine gibt', () => {
     const mask = Object.fromEntries(RADAR_PRODUCTS.map((p) => [p.id, p.maskOpacity]))
-    expect(mask).toEqual({ wn: 0.5, rv: 0.3, dmax: 0.5, vil: 0.5, cappi: 0.5, rw: 0.3, ry: 0.3, w4: null, sy: null })
+    expect(mask).toEqual({ wn: 0.5, rv: 0.3, opera: 0.5, dmax: 0.5, vil: 0.5, cappi: 0.5, rw: 0.3, ry: 0.3, w4: null, sy: null })
   })
 
   /**
@@ -331,7 +332,7 @@ describe('Overlays', () => {
     // Kreuze je 10-km-Zelle, ein feineres Bild trägt keine Information.
     const blitze = RADAR_OVERLAYS.find((o) => o.id === 'blitze')!
     expect(sourceImageWidth(blitze)).toBeLessThan(RADAR_IMAGE_WIDTH / 2)
-    expect(sourceImageWidth(DEFAULT_RADAR_PRODUCT)).toBe(RADAR_IMAGE_WIDTH)
+    expect(sourceImageWidth(P)).toBe(RADAR_IMAGE_WIDTH)
   })
 
   // Die Farbe IST die Information: vier Stufen à 5 Minuten, jüngste zuerst.
@@ -348,9 +349,9 @@ describe('Overlays', () => {
   // was es nicht zeigt. Die Symbol-Overlays bleiben zuschaltbar — und der
   // frühere Eintrag `zellen` ist bewusst weg (dieselben Symbole wie die
   // Cluster, nur je Einzelzelle).
-  it('schaltet nur die Blitze von vornherein ein', () => {
+  it('schaltet nur die beiden Blitzquellen von vornherein ein', () => {
     const on = RADAR_OVERLAYS.filter((o) => o.defaultOn).map((o) => o.id)
-    expect(on).toEqual(['blitze'])
+    expect(on).toEqual(['blitze', 'mtgli'])
     expect(RADAR_OVERLAYS.map((o) => o.layer)).not.toContain('dwd:Gewitterzellen')
   })
 })
@@ -408,8 +409,8 @@ describe('MTG-Blitz-Overlay', () => {
     expect(FLASH_AREA_COLORS[6]).toBe('#8B0026')
   })
 
-  it('bleibt voreingestellt AUS — der DWD deckt den Kern schon ab', () => {
-    expect(mtg.defaultOn).toBe(false)
+  it('ist voreingestellt AN — die Vorgabe ist OPERA über Österreich, der DWD endet vor Kärnten', () => {
+    expect(mtg.defaultOn).toBe(true)
   })
 
   // Beide Blitzquellen zeichnen selbst; alles andere geht als Bild auf die
@@ -432,7 +433,8 @@ describe('Eigene Radarprodukte (R2)', () => {
   it('hat zu jedem eigenen Produkt eine DWD-Quelle und umgekehrt', () => {
     // das 3D-Radar rechnet der Worker selbst aus den Volumenscans
     // (worker/radar3d.ts), es hat KEINE Kompositdatei in OWN_RADAR
-    const own = RADAR_PRODUCTS.filter((p) => p.own && !p.levels).map((p) => p.capsLayer)
+    // OPERA ebenfalls nicht: es kommt nicht vom DWD (worker/opera.ts)
+    const own = RADAR_PRODUCTS.filter((p) => p.own && !p.levels && !p.opera).map((p) => p.capsLayer)
     expect(own.sort()).toEqual(OWN_RADAR.map((s) => s.id).sort())
     expect(RADAR_PRODUCTS.filter((p) => p.levels).map((p) => p.capsLayer)).toEqual(['r3d'])
     // Eigene Bilder haben keinen Vorhersageteil und keine Randlinie

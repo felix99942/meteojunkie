@@ -383,6 +383,12 @@ export interface RadarProduct extends WmsImageSource {
    * Bereich bietet den Querschnitt an.
    */
   levels?: true
+  /**
+   * Nicht vom DWD: das europäische OPERA-Komposit (EUMETNET, CC BY 4.0).
+   * Die Quellenzeile nennt dann EUMETNET statt DWD/GeoNutzV, und beim Wählen
+   * springt die Karte auf `bounds` — die Bilder decken nur den Alpenraum ab.
+   */
+  opera?: { bounds: [[number, number], [number, number]] }
 }
 
 /**
@@ -401,6 +407,32 @@ export interface RadarProduct extends WmsImageSource {
  * (WN ohne Vorhersageteil — dessen Zeitdimension endet genau 120 min früher
  * und war die Gegenprobe für `analysisTime`).
  */
+/**
+ * OPERA, das europäische Radarkomposit von EUMETNET (über MeteoGate, CC BY
+ * 4.0) — die Quelle für ÖSTERREICH, das der DWD nur bis 13–14 °O abdeckt.
+ * Geholt vom Worker (`worker/opera.ts`): der Objektspeicher hat kein CORS.
+ * Gemessen 2026-11-24 in `docs/radar.md`.
+ */
+export const OPERA_ID = 'opera'
+/** Ausschnitt der Bilder: Österreich samt Nachbarschaft (Alpen bis Prag/Budapest-West). */
+export const OPERA_AREA: GeoBox = { west: 8.4, east: 18.4, south: 45.3, north: 50.3 }
+/**
+ * Radare, die Österreich abdecken — eigene österreichische Radare liefert
+ * GeoSphere NICHT an OPERA (kein einziger `at*`-Knoten). Ein Termin, in dem
+ * mehr als drei davon fehlen, wird nicht gezeigt: einzelne Termine kommen
+ * gemessen unvollständig an (12:55 UTC nur die 23 französischen Radare) und
+ * werden NICHT nachgeliefert — über Österreich sähe das wie „kein Regen" aus.
+ */
+export const OPERA_AT_RADARS = [
+  'deisn', 'demem', 'detur', 'deeis', // Isen, Memmingen, Türkheim, Eisberg
+  'czska', 'czbrd', // Skalky, Brdy
+  'skjav', 'skkub', // Javorník, Kubická hora
+  'hupog', 'husze', // Pogányvár, Szentes
+  'silis', // Lisca
+  'chwei', 'chalb', // Weissfluhgipfel, Albis
+]
+export const OPERA_MIN_AT_RADARS = OPERA_AT_RADARS.length - 3
+
 /**
  * Fensterlängen der TAGESprodukte (SY, W4). Der Vorgabewert steht vorn und
  * ist bewusst kurz: ein W4-Bild wiegt gemessen 311 KB bei 1.200 px, 30 Tage
@@ -439,6 +471,30 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
     edgeLine: true,
     legend: RV_LEGEND,
     note: 'Dasselbe Komposit als Niederschlagsrate (Produkt RV) — aus der Reflektivität über eine Z-R-Beziehung abgeleitet',
+  },
+  // --- OPERA: ganz Österreich (eigene Bilder, worker/opera.ts) -------------
+  //
+  // Das DWD-Komposit endet bei 13–14 °O. OPERA (EUMETNET) setzt die
+  // nationalen Netze zusammen und deckt Österreich LÜCKENLOS ab — gemessen
+  // ohne einen einzigen „keine Daten"-Punkt —, und das, obwohl GeoSphere
+  // seine eigenen Radare dort nicht einspeist: die Fläche kommt von den
+  // Nachbarn (DE, CH, CZ, SK, HU, SI). Über dem Alpenhauptkamm sieht deshalb
+  // jedes Radar aus großer Entfernung von oben hinein; schwacher Niederschlag
+  // in tiefen Tälern kann fehlen. Lage gegen das DWD-WN geprüft (Versatz
+  // unter einem Gitterpunkt).
+  {
+    id: 'opera',
+    label: 'Europa-Komposit OPERA (dBZ) — ganz Österreich',
+    layer: '',
+    capsLayer: OPERA_ID,
+    own: true,
+    opera: { bounds: [[OPERA_AREA.west, OPERA_AREA.south], [OPERA_AREA.east, OPERA_AREA.north]] },
+    stepMs: 5 * 60_000,
+    forecastMs: 0,
+    unit: 'dBZ',
+    maskOpacity: 0.5,
+    legend: WN_LEGEND,
+    note: 'OPERA (EUMETNET): europäisches Radarkomposit, höchste Reflektivität aller beteiligten Radare im 10-Minuten-Fenster bis zum Termin. 1 km, alle 5 Minuten, ~5 Minuten Verzug. Österreich wird von den Radaren der Nachbarländer abgedeckt (österreichische Radare sind nicht eingespeist); Ausschnitt Alpenraum. Termine, in denen Radare um Österreich fehlen, werden ausgelassen',
   },
   // --- 3D-Ableitungen (eigene Bilder, worker/radar.ts) ---------------------
   //
@@ -565,7 +621,12 @@ export const RADAR_PRODUCTS: RadarProduct[] = [
   },
 ]
 
-export const DEFAULT_RADAR_PRODUCT = RADAR_PRODUCTS[0]
+/**
+ * Vorgabe ist das OPERA-Komposit (seit 2026-11-24, auf Wunsch): es deckt
+ * ganz Österreich ab, das DWD-WN nur bis 13–14 °O. Beides ist Reflektivität
+ * in dBZ (die Messgröße, keine Z-R-Annahme) in derselben Skala.
+ */
+export const DEFAULT_RADAR_PRODUCT = RADAR_PRODUCTS.find((p) => p.id === 'opera')!
 
 /**
  * Passen die Overlays zu diesem Produkt?
@@ -893,7 +954,12 @@ export const RADAR_OVERLAYS: RadarOverlay[] = [
     // gilt am Subsatellitenpunkt, hier steht er schräg).
     imageWidth: 400,
     opacity: 1,
-    defaultOn: false,
+    // Seit 2026-11-24 voreingestellt AN (auf Wunsch): die Vorgabe des
+    // Bereichs ist jetzt OPERA über Österreich, und die DWD-Blitze enden im
+    // Süden bei 46,95 °N — Kärnten fehlt. Die DWD-Kreuze bleiben ebenfalls an;
+    // die Ringe sind genau für diese Überlappung gemacht (Ring um Kreuz =
+    // beide Quellen einig).
+    defaultOn: true,
     cells: {
       palette: FLASH_AREA_COLORS,
       blockPx: LIGHTNING_BLOCK_PX,

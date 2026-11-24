@@ -88,9 +88,9 @@ export const NAV_TABS: NavTab[] = [
   {
     id: 'radar',
     label: 'Radar',
-    title: 'Niederschlagsradar: DWD-Komposit im 5-Minuten-Takt — Deutschland, Schweiz und Westösterreich',
+    title: 'Niederschlagsradar im 5-Minuten-Takt: DWD-Komposit (Deutschland, Schweiz, Westösterreich) und europäisches OPERA-Komposit (ganz Österreich)',
     group: 'imagery',
-    blurb: 'Radarkomposit des DWD alle 5 Minuten, Blitze, Säulenmaximum und VIL.',
+    blurb: 'Radarkomposit des DWD und für ganz Österreich das europäische OPERA-Komposit, alle 5 Minuten, Blitze, Säulenmaximum und VIL.',
   },
   {
     id: 'satellite',

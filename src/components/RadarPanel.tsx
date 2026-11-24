@@ -50,6 +50,7 @@ import {
   analysisTime,
   classifyRadarPixel,
   DEFAULT_RADAR_PRODUCT,
+  OPERA_AREA,
   LIGHTNING_AGES,
   MASK_COLOR,
   nearestFrame,
@@ -84,6 +85,7 @@ const RADAR_OPACITY = 0.82
 
 /** Ansichten, auf die man beim Radar wirklich springt. */
 const VIEWS: { id: string; label: string; bounds: [[number, number], [number, number]] }[] = [
+  { id: 'at', label: 'Österreich', bounds: [[OPERA_AREA.west, OPERA_AREA.south], [OPERA_AREA.east, OPERA_AREA.north]] },
   { id: 'dach', label: 'D-A-CH', bounds: [[5.4, 45.8], [17.4, 55.3]] },
   { id: 'de', label: 'Deutschland', bounds: [[5.6, 47.1], [15.3, 55.2]] },
   { id: 'alpen', label: 'Alpen', bounds: [[8.8, 45.8], [17.2, 49.3]] },
@@ -573,7 +575,8 @@ export function RadarPanel() {
     const map = new maplibregl.Map({
       container: el,
       style: BASE_STYLE,
-      bounds: VIEWS[0].bounds,
+      // Start auf dem Ausschnitt der Vorgabe (OPERA: Österreich)
+      bounds: DEFAULT_RADAR_PRODUCT.opera?.bounds ?? VIEWS[0].bounds,
       fitBoundsOptions: { padding: 8 },
       attributionControl: false,
       // Über ~1,1 km je Pixel hinaus zeigt das Bild keine Details mehr —
@@ -881,6 +884,13 @@ export function RadarPanel() {
     mapRef.current?.fitBounds(bounds, { padding: 8, duration: 400 })
   }, [])
 
+  // OPERA-Bilder decken nur den Alpenraum ab: beim Wählen dorthin springen
+  // (zurück zu einem DWD-Produkt bleibt die Karte, wo sie ist)
+  const operaBounds = product.opera?.bounds
+  useEffect(() => {
+    if (operaBounds && mapReady) jumpToView(operaBounds)
+  }, [operaBounds, mapReady, jumpToView])
+
   const status = error
     ? `⚠ ${error}`
     : !meta
@@ -1126,13 +1136,17 @@ export function RadarPanel() {
             <span
               className="radar-legend-nodata"
               title={
-                product.id === 'rw' || product.id === 'ry'
+                product.opera
+                  ? 'Reichweite der OPERA-Radare. Österreich ist gemessen lückenlos abgedeckt — von den Radaren der Nachbarländer, österreichische Radare sind nicht eingespeist. Grau erscheint nur, wo im gezeigten Termin kein beteiligtes Radar hinreicht.'
+                  : product.id === 'rw' || product.id === 'ry'
                   ? 'Reichweite der deutschen Radare. RADOLAN liefert Daten NUR über Deutschland (Angabe des DWD) — von Österreich liegt hier nichts Brauchbares.'
                   : 'Reichweite der deutschen Radare. Gemessen 2026-09-16: die Maske beginnt je nach Breite zwischen 13,2 °O (47 °N) und 14,4 °O (49 °N) — Vorarlberg, Tirol und das Land Salzburg sind erfasst, Linz, Wien, Graz und Klagenfurt nicht.'
               }
             >
               <i style={{ background: MASK_COLOR, opacity: product.maskOpacity }} />
-              {product.id === 'rw' || product.id === 'ry'
+              {product.opera
+                ? 'keine Radardaten'
+                : product.id === 'rw' || product.id === 'ry'
                 ? 'keine Radardaten — RADOLAN deckt nur Deutschland ab'
                 : 'keine Radardaten — die Abdeckung endet im Osten Österreichs'}
             </span>
@@ -1153,6 +1167,27 @@ export function RadarPanel() {
         />
       )}
       <span className="attribution radar-attribution">
+        {product.opera && (
+          // OPERA ist KEIN DWD-Produkt: eigene Nennung samt Lizenz (CC BY 4.0
+          // verlangt sie), die GeoNutzV-Zeile dahinter gilt nur noch für die
+          // DWD-Overlays
+          <>
+            Datenquelle:{' '}
+            <a href="https://www.eumetnet.eu/observations/weather-radar-network/" target="_blank" rel="noreferrer" title={product.note}>
+              EUMETNET OPERA
+            </a>{' '}
+            — europäisches Radarkomposit (Radare der nationalen Wetterdienste) über{' '}
+            <a href="https://devportal.meteogate.eu/" target="_blank" rel="noreferrer">
+              MeteoGate
+            </a>
+            , Lizenz{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+              CC BY 4.0
+            </a>
+            , eigene Darstellung.{' '}
+          </>
+        )}
+        {!product.opera && (<>
         Datenquelle:{' '}
         <a
           href="https://www.dwd.de/DE/leistungen/opendata/opendata.html"
@@ -1178,9 +1213,13 @@ export function RadarPanel() {
             maps.dwd.de
           </a>
         )}
+        </>)}
         {/* NUR die DWD-Overlays hier — die GeoNutzV gilt für den DWD, nicht
             für einen fremden Dienst. */}
-        {dwdOverlays.length > 0 && (
+        {(!product.opera || dwdOverlays.length > 0) && (<>
+        {product.opera ? (
+          <>Overlays: Deutscher Wetterdienst ({dwdOverlays.map((o) => o.note.split(':')[0]).join(', ')})</>
+        ) : dwdOverlays.length > 0 && (
           <> · Overlays: {dwdOverlays.map((o) => o.note.split(':')[0]).join(', ')}</>
         )}
         , Nutzung nach{' '}
@@ -1192,6 +1231,7 @@ export function RadarPanel() {
           GeoNutzV
         </a>
         .
+        </>)}
         {/* Fremde Quellen bekommen ihren EIGENEN Satz samt Nennung — ein
             pauschales „Nutzung nach GeoNutzV" darüber wäre falsch. */}
         {activeOverlays

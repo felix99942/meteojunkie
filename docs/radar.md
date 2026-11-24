@@ -40,8 +40,8 @@
   über ganz Österreich sind 188.574 Punkte = **36 MB in 115 Sekunden**
   (gemessen 2026-09-16), und NetCDF-4 ist HDF5, bräuchte also zusätzlich einen
   Binärparser. Nicht erneut als „vielleicht doch"-Weg prüfen. Eine echte
-  Vollabdeckung Österreichs bräuchte eine andere Quelle (OPERA/Austro Control
-  sind nicht offen).
+  Vollabdeckung Österreichs bräuchte eine andere Quelle — **die gibt es seit
+  2026-11-24: das OPERA-Komposit** (Produkt `opera`, Abschnitt unten).
   **Ein Bild je Zeitschritt über die GANZE Produktfläche, in EPSG:3857** — und
   beides mit Grund. Mercator, weil MapLibre eine image-Source LINEAR im
   Mercator-Raum aufspannt: so stimmt die Zuordnung exakt, ohne die
@@ -476,3 +476,87 @@
   `WN_ANALYSIS` in dBZ bzw. `RV_ANALYSIS` in mm/h plus `REFERENCE_TIME` —
   kostet aber einen Abruf je Abfrage; **−999 = keine Daten, −64 dBZ = kein
   Echo**, gemessen).
+- **OPERA — GANZ ÖSTERREICH** (seit 2026-11-24, auf Wunsch; Produkt `opera`
+  „Europa-Komposit OPERA (dBZ) — ganz Österreich", Worker `worker/opera.ts`
+  mit Tests, Registry `OPERA_*` in `config/radar.ts`, lokal
+  `npm run ingest:opera` → `public/radar/opera`). Das europäische
+  Radarkomposit von EUMETNET, offen über MeteoGate (RODEO), **CC BY 4.0** —
+  die Quellenzeile nennt EUMETNET/MeteoGate/Lizenz statt DWD/GeoNutzV.
+  Läuft im 5-Minuten-Cron neben DMax/VIL, Bild + Index wie dort
+  (`radar/opera/`), Ausschnitt `OPERA_AREA` lon 8,4–18,4 / lat 45,3–50,3
+  (Bild 1200 px), beim Wählen springt die Karte dorthin. Alles gemessen
+  2026-11-24:
+  **Österreichische Radare sind NICHT dabei** — in keinem der drei Komposite
+  (DBZH, RATE, ACRR) ein `at*`-Knoten, im Speicher kein `AT/`-Ordner mit
+  Einzelstandorten (Länder: BE CH CZ DE DK EE ES FI HR HU IE IS LT MT NL NO
+  PL RO SE SK). Die Fläche über Österreich ist trotzdem LÜCKENLOS (im
+  Ausschnitt 0 Punkte „keine Daten") — von den Nachbarn: Isen, Memmingen,
+  Türkheim, Eisberg, Skalky, Brdy, Javorník, Kubická hora, Pogányvár,
+  Szentes, Lisca, Weissfluhgipfel, Albis (`OPERA_AT_RADARS`). Über dem
+  Alpenhauptkamm schauen sie aus großer Entfernung hinein; schwacher Regen
+  in tiefen Tälern kann fehlen. Das ist vermutlich auch die Quelle von
+  Seiten wie tauernwetter.at (vom Nutzer genannt, dort nicht nachgeprüft).
+  **Dateien**: Name BILDBAR, der Katalog (EDR `locations/0-20010-0-OPERA?
+  parameter-name=DBZH:comp&datetime=…`, Limit 200/h ohne Schlüssel) wird
+  nicht gefragt — `object-store.os-api.cci1.ecmwf.int/openradar-24h-backup/
+  YYYY/MM/DD/OPERA/COMP/OPERA@YYYYMMDDTHHMM@0@DBZH.h5` (daneben `.tiff` als
+  COG, RATE, ACRR). Der in der MeteoGate-Messung vom 18.10. notierte Host
+  `s3.waw3-1.cloudferro.com/openradar-24h` antwortet inzwischen mit 404.
+  ODIM-HDF5, CIRRUS-`MAX`-Komposit (Météo-France), 3800×4400 à 1 km, LAEA
+  lat_0 55 / lon_0 10 / x_0 1950000 / y_0 −2100000, **float64 in dBZ**,
+  nodata −9999000, undetect −8888000, deflate in Blöcken 760×880, ~2,6 MB.
+  Name = ENDE eines 10-Minuten-Fensters (`starttime` 12:35:01 für 12:45),
+  Takt 5 min, Datei ~4 min nach dem Termin. Das RATE-/ACRR-Komposit
+  (NIMBUS) erzeugt übrigens GeoSphere Austria — auch dort ohne at-Radare.
+  **Entpackt wird NUR der Ausschnitt** (6 von 30 Blöcken, Zeilen davor ohne
+  Dekodieren übersprungen): roh wären es 134 MB, mehr als ein Worker darf;
+  gemessen 30–40 ms Dekodieren + ~30 ms Bild/PNG, Heap ~30 MB, Bild ~8 KB.
+  Gegen die volle jsfive-Dekodierung: 0 Abweichungen. LAEA ellipsoidisch
+  (Snyder), trifft die Ecken UL/LR auf Bruchteile eines Millimeters. LAGE
+  gegen das DWD-WN desselben Termins über Deutschland geprüft: bester
+  Versatz (1, 1) px bei 1000 px über 10° = unter einem Gitterpunkt, wie bei
+  DMax. OPERA zeigt dabei MEHR Echofläche als WN (Maximum über alle Radare
+  und das 10-Minuten-Fenster) und einzelne Störstreifen/Speckle (v. a.
+  SK/HU) — Eigenschaft der Daten, nicht gefiltert.
+  **UNVOLLSTÄNDIGE TERMINE werden ausgelassen, und das ist der wichtige
+  Teil**: einzelne Dateien kommen mit nur einem Teil der Radare an (12:50
+  UTC 102, 12:55 UTC nur die 23 französischen, sonst 160–165) und werden
+  NICHT nachgeliefert (um 13:16 UTC noch unverändert, `last-modified` 12:53 bzw. 12:57). Über
+  Österreich sähe so ein Termin wie „kein Regen" aus. Regel: fehlen mehr
+  als drei der 13 `OPERA_AT_RADARS` (`how/nodes`), wird der Termin nicht
+  gezeigt; nach 20 min (`RETRY_MS`) gilt er als aufgegeben und steht unter
+  `incomplete` im Index, damit nicht jeder Lauf ihn erneut holt. Lücken in
+  der Schleife zeigt der Zeitschieber wie bei den anderen eigenen Produkten.
+  Höchstens 4 neue Termine je Lauf (nach einem Ausfall füllt sich die
+  Schleife über mehrere Läufe).
+  **VORGABE DES BEREICHS ist seit 2026-11-24 OPERA** (auf Wunsch,
+  `DEFAULT_RADAR_PRODUCT`), die Karte startet auf dem Ausschnitt; dazu der
+  Ansichtsknopf „Österreich". Die DWD-Produkte bleiben wählbar.
+  **STÖRECHOFILTER** (seit 2026-11-24, auf Wunsch; `filterEchoes`,
+  `updatePersistence` in `worker/opera.ts`, Tests in `opera.test.ts`).
+  Gemessen über 35 Termine (10:00–12:45 UTC) im Ausschnitt, drei Sorten:
+  (1) flüchtige SPRENKEL aus wenigen Punkten, vor allem über SK/HU, jeder
+  Termin anders; (2) ORTSFESTE kleine Flecken/Striche — östlich von Wien in
+  > 80 % der Termine am selben Ort, teils 37–46 dBZ (Windparks,
+  Bodenechos); (3) ein großer ortsfester Störkeil (Funk/RLAN) über Franken.
+  **Der Qualitätsindex der Datei taugt NICHT** (`quality1`, qi_total: auch
+  bei echtem Niederschlag meist 0). **Ein reiner Ortsfestigkeitsfilter
+  auch nicht**: echter, stundenlang stehender Niederschlag (Adria,
+  Nordost-Slowakei in dieser Messung — in Österreich jede Staulage) ist
+  genauso ortsfest. Deshalb je zusammenhängendem Fleck (8er-Nachbarschaft):
+  weg, wenn < 16 km² und kein Punkt ≥ 37 dBZ (Sprenkel; ein kleiner
+  kräftiger Kern ist eher eine junge Zelle), ODER wenn ≤ 60 km² und seine
+  Punkte im gleitenden Mittel ≥ 50 % Echo hatten (ortsfest UND klein).
+  Gleitender Mittelwert je Punkt mit Gewicht 1/12 (~1 h Gedächtnis), aus
+  dem ROHEN Termin vor dem Filtern, als `radar/opera/persistence.bin`
+  (Bytes je Gitterpunkt des Ausschnitts, 470 KB, 1 Schreibvorgang je
+  Lauf); nach einem Neustart greift der Ortsfest-Teil erst nach ~40 min.
+  Ergebnis: ~1.500–2.000 von 7.000–12.000 Echopunkten je Termin entfernt,
+  ~1 ms; Sprenkel und der Strich bei Wien weg, Niederschlagsgebiete
+  unverändert. Der Störkeil (3) bleibt — kein Filter hier unterscheidet ihn
+  von einem stehenden Regenband.
+  **MTG-BLITZE sind seit 2026-11-24 voreingestellt AN** (auf Wunsch, mit
+  OPERA als Vorgabe): die DWD-Blitzdichte endet im Süden bei 46,95 °N,
+  Kärnten fehlt. Die DWD-Kreuze bleiben ebenfalls an (Ring um Kreuz = beide
+  Quellen einig, siehe oben).
+

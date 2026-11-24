@@ -21,6 +21,7 @@
     "ingest:mos:forecast": "node scripts/mos-ingest-forecast.mjs",
     "ingest:tawes": "npx vite-node scripts/tawes-local.ts",
     "ingest:flashes": "npx vite-node scripts/flashes-local.ts",
+    "ingest:opera": "npx vite-node scripts/opera-local.ts",
     "ingest:sondes": "python3 scripts/sonde-ingest.py",
     "ingest:de:climate": "node scripts/de-ingest-climate.mjs",
     "ingest:ecmwf": "python3 scripts/ecmwf-ingest.py",

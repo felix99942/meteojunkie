@@ -98,7 +98,7 @@ function dwdStamp(time: number): string {
   return `${s.slice(0, 8)}_${s.slice(9, 13)}`
 }
 
-function stampTime(key: string): number | null {
+export function stampTime(key: string): number | null {
   const m = /\/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})Z\.png$/.exec(key)
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null
 }
@@ -197,7 +197,7 @@ export async function decodeOdim(buf: ArrayBuffer, stride: number): Promise<Odim
  * mit 8 Byte — so schreibt es jede gängige HDF5-Bibliothek, und das DWD-
  * Komposit ist genau ein Block.
  */
-function readChunkBTree(buf: ArrayBuffer, address: number, rank: number) {
+export function readChunkBTree(buf: ArrayBuffer, address: number, rank: number) {
   const view = new DataView(buf)
   const out: { address: number; size: number; offsets: number[] }[] = []
   const visit = (addr: number) => {

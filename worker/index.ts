@@ -16,6 +16,7 @@
 
 import { authGate, type AuthEnv } from './auth'
 import { updateFlashes, type EumetsatCreds } from './flashes'
+import { updateOpera } from './opera'
 import { updateRadar } from './radar'
 import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
@@ -141,7 +142,9 @@ export default {
       return
     }
     const minute = new Date(event.scheduledTime).getUTCMinutes()
-    const jobs: Promise<string>[] = [updateRadar(env.DATA)]
+    // OPERA (ganz Österreich) neben den DWD-Kompositen: ~2,6 MB Abruf und
+    // ~70 ms CPU je Termin, entpackt wird nur der Alpenausschnitt
+    const jobs: Promise<string>[] = [updateRadar(env.DATA), updateOpera(env.DATA)]
     if (minute % 10 < 5) jobs.push(mirrorSatellite(env.DATA))
     // MTG-Einzelblitze: jedes Mal nachsehen — die Datei kommt ~2¾ min nach
     // ihrem 10-Minuten-Fenster, ein fester Takt verlöre sonst bis zu 5 Minuten
