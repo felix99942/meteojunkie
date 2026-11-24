@@ -67,4 +67,8 @@ if [[ -z "${R2_ACCESS_KEY_ID:-}" ]]; then
   echo "keine R2-Zugangsdaten in $ENV_FILE — nur lokal abgelegt"
   exit 0
 fi
-scripts/upload-data.sh nwp/varda
+# Punktwerte für die Verifikation nur KOPIEREN (Worker übernimmt und löscht)
+scripts/upload-data.sh nwp/varda --copy verify/points/varda
+# hochgeladen = erledigt: sonst lüde jeder Lauf alle früheren Punktdateien
+# wieder hoch, und der Worker übernähme längst gelöschte noch einmal
+rm -f public/verify/points/varda/*.json

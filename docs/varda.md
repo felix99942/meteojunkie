@@ -55,3 +55,8 @@
   Lauf. `nwp_common.ingest` kennt dafür `only`/`optional` (ein Modell mit nur
   einem Teil der Größen). Quellenzeile sagt „gerechnet auf eigener Hardware —
   keine offizielle MeteoSwiss-Vorhersage". Laufalter-Warnung ab 18 h.
+  **Punktwerte für die Verifikation** (seit 2026-11-24): `ingest(points=True)`
+  schreibt je Lauf T2m und Niederschlag an den Klimastationen nach
+  `public/verify/points/varda/`, `varda-cron.sh` lädt sie mit `--copy` hoch und
+  löscht sie danach lokal. Details in `docs/verifikation.md`.
+

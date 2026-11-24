@@ -17,6 +17,7 @@
 import { authGate, type AuthEnv } from './auth'
 import { updateFlashes, type EumetsatCreds } from './flashes'
 import { updateOpera } from './opera'
+import { updateVerifyArchive } from './verifyArchive'
 import { updateRadar } from './radar'
 import { updateRadar3d } from './radar3d'
 import { mirrorSatellite } from './satellite'
@@ -42,7 +43,7 @@ const R3D_CRON = '2-59/5 * * * *'
 const TAWES_CRON = '7-59/10 * * * *'
 
 /** Pfade, die aus R2 kommen — alles andere ist die App selbst. */
-const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/', 'topo/', 'tawes/']
+const DATA_PREFIXES = ['nwp/', 'de/', 'mos/forecast/', 'sondes/', 'sat/', 'radar/', 'topo/', 'tawes/', 'verify/']
 
 // Ein Modelllauf liegt unter seiner Kennung und ändert sich nie mehr
 // (nwp/<modell>/<lauf>/<größe>/<schritt>.webp, Lauf = 10 Ziffern).
@@ -139,6 +140,10 @@ export default {
       const { stations } = (await res.json()) as { stations: { id: number; has10min?: boolean }[] }
       const ids = stations.filter((s) => s.has10min).map((s) => s.id)
       console.log(await updateTawes(env.DATA, ids).catch((err) => `TAWES: Fehler ${err}`))
+      // Einmal je Stunde (der erste TAWES-Lauf der Stunde, :07): Punktwerte der
+      // eigenen Modelle ins Verifikationsarchiv (worker/verifyArchive.ts)
+      if (new Date(event.scheduledTime).getUTCMinutes() < 10)
+        console.log(await updateVerifyArchive(env.DATA).catch((err) => `Verifikationsarchiv: Fehler ${err}`))
       return
     }
     const minute = new Date(event.scheduledTime).getUTCMinutes()

@@ -388,3 +388,44 @@
   Diagramm steht — ob die Führung belastbar ist (gepaarter Vergleich, Tooltip),
   mit den Modellen, von denen das beste nicht unterscheidbar ist. σf/σo und r
   stecken in der Murphy-Zerlegung, Skill in den Balken, MAE im Vorlaufdiagramm.
+  **VARDA UND C-LAEF IN DER VERIFIKATION** (seit 2026-11-24, auf Wunsch;
+  `config/ownVerify.ts` mit Tests, `api/ownRuns.ts`, `worker/verifyArchive.ts`,
+  `nwp_common.ingest(points=True)`). Beide stehen NICHT bei Open-Meteo, also
+  kein `previous_dayN`; GeoSphere hält von C-LAEF nur die letzten SECHS Läufe
+  (gemessen: `available_forecast_reftimes` der Metadaten, 15 h), Varda rechnen
+  wir selbst. Deshalb ein EIGENES ARCHIV, das ab dem ersten Lauf wächst — es
+  gibt KEINE Vergangenheit, Ergebnisse erst, wenn die vorhergesagten Tage
+  gemessen sind, belastbar nach Wochen. Datenfluss: der Ingest schreibt je
+  Lauf T2m und Niederschlagssumme an den 290 aktiven Klimastationen (bilinear,
+  0,1 °C/0,1 mm) nach `verify/points/<modell>/<lauf>.json`; hochgeladen mit
+  `upload-data.sh --copy` (NICHT synchronisieren — in R2 sammeln sich die
+  Läufe; Varda löscht die lokalen Dateien nach dem Upload, sonst lüde jeder
+  Lauf alle früheren wieder hoch). Der Worker übernimmt sie stündlich (erster
+  TAWES-Lauf der Stunde) in `verify/<modell>/<station>.json` und löscht sie:
+  je Vorlauf n stündlich der Wert des JÜNGSTEN Laufs mit Init ≤ t − n·24 h —
+  dieselbe Regel wie `previous_dayN`. Ein zu spät gekommener ÄLTERER Lauf wird
+  verworfen (er überschriebe einen jüngeren). Stundenniederschlag aus der
+  Summe, Lücken gleichmäßig verteilt. 185 Tage, Station für Station verarbeitet
+  (alle Archive im Speicher wären ~80 MB). Vorlaufzeiten: C-LAEF +1/+2 (60 h,
+  alle 3 h), Varda +1…+4 (120 h, alle 6 h). Gemessen lokal: 290 Stationen
+  im Gitter, Übernahme 54 ms; Lauf 09 UTC +6 h an der Hohen Warte 2,4 °C,
+  gemessen 2,5 °C. **HÖHENUMRECHNUNG mit GENÄHERTER Modellhöhe**
+  (`heightCorrection`, `ownVerifyHeights.json` aus
+  `scripts/build-verify-heights.py`): Open-Meteo rechnet die Vergleichsmodelle
+  auf die Stationshöhe um, der Data Hub liefert für C-LAEF aber KEINE
+  Orografie (16 Größen, kein z/hsurf; die Punkt-API nennt nur die Koordinaten
+  des Gitterpunkts). Genähert als ~30-m-Geländemodell (AWS Terrain Tiles,
+  z12) über die 1-km-Zellen der vier umliegenden Gitterpunkte, bilinear
+  gewichtet. Gemessen an den 290 Stationen: |Station − Zelle| im Median 19 m
+  (~0,1 K, egal), aber 41 Stationen über 100 m, 8 über 200 m — Valluga +359,
+  Sonnblick +351, Patscherkofel +322 m über der Zelle (~2 K zu warm), St.
+  Leonhard im Pitztal −234 m darunter. Umgerechnet mit 0,65 K/100 m wie bei
+  Open-Meteo, NUR die Temperatur, erst im Browser (das Archiv bleibt roh). Die
+  echte Modellorografie ist eher glatter — an Gipfeln ist die Korrektur eher zu
+  klein. Die Stationsliste ändert sich selten; bei neuen Stationen das Skript
+  neu laufen lassen (ohne Eintrag: keine Umrechnung).
+  C-LAEF kommt nur mit dem Deploy (~alle 3 h, nicht jeder Lauf), Varda nur,
+  wenn der Laptop rechnet. Fehlt ein Archiv, bleibt die Spalte „—" (der
+  Vite-Dev-Server antwortet dann mit HTML statt 404 — der Lader prüft den
+  Inhaltstyp). Lokal: Ingest laufen lassen, dann `npm run ingest:verify-archive`.
+

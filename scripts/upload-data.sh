@@ -39,13 +39,25 @@ export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 BUCKET="${R2_TARGET:-r2:meteojunkie-daten}"
 OPTS=(--checksum --fast-list --transfers 32 --checkers 32 --stats-one-line --stats 30s)
 
+# `--copy` vor einem Verzeichnis: nur hochladen, in R2 NICHTS löschen. Für die
+# Punktwerte der Verifikation (verify/points/<modell>): lokal liegt nur der
+# eben gerechnete Lauf, in R2 sammeln sich die Läufe, bis der Worker sie ins
+# Archiv übernimmt und selbst löscht (worker/verifyArchive.ts).
+copy_only=0
 for dir in "$@"; do
+  if [[ "$dir" == --copy ]]; then copy_only=1; continue; fi
   src="public/$dir"
   if [[ ! -d "$src" ]] || [[ -z "$(ls -A "$src")" ]]; then
     echo "· $dir: lokal leer — übersprungen, R2 behält den letzten Stand"
+    copy_only=0
     continue
   fi
   echo "· $dir"
+  if (( copy_only )); then
+    rclone copy "$src" "$BUCKET/$dir" "${OPTS[@]}"
+    copy_only=0
+    continue
+  fi
   # Erst alles AUSSER den Einstiegsdateien, dann der Rest samt Löschen: die
   # meta.json eines Modells verweist auf den neuen Lauf, und sie darf erst
   # dastehen, wenn dessen Bilder schon oben sind — umgekehrt holte ein

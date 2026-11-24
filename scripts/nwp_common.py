@@ -536,6 +536,47 @@ def already_done(model: str, rid: str, step_count: int, required: list[str] | No
     return complete and old.get('runId') == rid and old.get('stepCount') == step_count and (OUT_ROOT / model / rid).is_dir()
 
 
+# --- Punktwerte für die Verifikation --------------------------------------------
+#
+# Varda und C-LAEF stehen NICHT bei Open-Meteo, ihre vergangenen Läufe gibt es
+# also nicht über `previous_dayN`; GeoSphere hält von C-LAEF nur die letzten
+# sechs Läufe vor (gemessen 2026-11-24), Varda rechnen wir selbst. Damit die
+# Verifikation sie trotzdem bewerten kann, schreibt der Ingest je Lauf die
+# Werte an den aktiven GeoSphere-Klimastationen heraus
+# (`public/verify/points/<modell>/<lauf>.json`); der Worker sammelt sie
+# stündlich zu einem Archiv je Station (worker/verifyArchive.ts).
+
+POINTS_ROOT = Path(__file__).resolve().parent.parent / 'public' / 'verify' / 'points'
+STATIONS_FILE = Path(__file__).resolve().parent.parent / 'public' / 'at' / 'stations.json'
+
+
+def verify_stations() -> list[dict]:
+    """Die aktiven Klimastationen — dieselbe Liste, aus der die Verifikation wählt."""
+    data = json.loads(STATIONS_FILE.read_text())
+    return [s for s in data['stations'] if s.get('isActive')]
+
+
+def sample_points(values, grid: dict, stations: list[dict]) -> list:
+    """Bilinear an den Stationen; außerhalb des Gitters oder NaN → None."""
+    import numpy as np
+
+    out = []
+    nj, ni = values.shape
+    for st in stations:
+        x = (st['lon'] - grid['lon0']) / grid['dlon']
+        y = (st['lat'] - grid['lat0']) / grid['dlat']
+        i0, j0 = int(np.floor(x)), int(np.floor(y))
+        if i0 < 0 or j0 < 0 or i0 + 1 >= ni or j0 + 1 >= nj:
+            out.append(None)
+            continue
+        fx, fy = x - i0, y - j0
+        q = values[j0:j0 + 2, i0:i0 + 2]
+        v = (q[0, 0] * (1 - fx) * (1 - fy) + q[0, 1] * fx * (1 - fy)
+             + q[1, 0] * (1 - fx) * fy + q[1, 1] * fx * fy)
+        out.append(None if not np.isfinite(v) else float(v))
+    return out
+
+
 def ingest(
     model: str,
     label: str,
@@ -549,6 +590,7 @@ def ingest(
     encode_workers: int = 4,
     only: set[str] | None = None,
     optional: set[str] | None = None,
+    points: bool = False,
 ) -> None:
     """Einen Lauf holen, kodieren und atomar unter public/nwp/<model>/ ablegen.
 
@@ -557,6 +599,11 @@ def ingest(
     GRIB lässt sich nicht räumlich zuschneiden, jedes Feld kommt ohnehin
     global; ein zweiter Ausschnitt kostet nur Kodieren und Speicher, keinen
     Download. Ohne `crops` eine Ausgabe `model` mit dem ganzen Raster.
+
+    `points`: zusätzlich T2m und Niederschlagssumme an den Klimastationen
+    herausschreiben (`public/verify/points/<model>/<lauf>.json`) — nur für
+    Modelle, die die Verifikation nicht über Open-Meteo bekommt (Varda,
+    C-LAEF). Nicht zusammen mit `crops`.
 
     `only`/`optional`: für ein Modell, das nur einen Teil der Größen führt
     (Varda: keine Bewölkung, kein CAPE …) — `only` grenzt die Größen ein,
@@ -586,6 +633,10 @@ def ingest(
             'sizes': {v: 0 for v in VARIABLES},
         }
 
+    if points and crops:
+        raise ValueError('points und crops schließen sich aus')
+    pts = {'st': verify_stations(), 'steps': [], 't2m': [], 'tp': []} if points else None
+
     def write(m: str, var: str, step: int, values) -> None:
         spec = VARIABLES[var]
         enc = spec.get('encoding')
@@ -613,6 +664,18 @@ def ingest(
                 pending.append(spool.submit(fetch_step, steps[i + step_window], fpool))
             pending[i] = None  # Speicher freigeben
             g_full = full.pop('_grid')
+            if pts is not None:
+                t = full.get('t2m')
+                tp = full.get('tp')
+                pts['steps'].append(step)
+                pts['t2m'].append(
+                    [None if v is None else round((v - 273.15) * 10) for v in sample_points(t, g_full, pts['st'])]
+                    if t is not None else [None] * len(pts['st'])
+                )
+                pts['tp'].append(
+                    [None if v is None else round(v * 10) for v in sample_points(tp, g_full, pts['st'])]
+                    if tp is not None else [None] * len(pts['st'])
+                )
             for m, box in todo.items():
                 st = state[m]
                 if box is None:
@@ -689,3 +752,22 @@ def ingest(
             n = max(1, len(have[v]))
             print(f'  {v:7s} {len(have[v]):3d} Schritte, {sizes[v] / 1e6:6.1f} MB ({sizes[v] / n / 1024:.0f} KB je Bild)')
         print(f'  gesamt {total / 1e6:.1f} MB in {time.time() - t0:.0f} s', flush=True)
+
+    if pts is not None and pts['steps']:
+        # Zeilen = Stationen, Spalten = Schritte: so liest es der Worker
+        n = len(pts['st'])
+        doc = {
+            'model': model,
+            'runId': rid,
+            'initMs': int(run.timestamp() * 1000),
+            'steps': pts['steps'],
+            'stations': [s['id'] for s in pts['st']],
+            # T2m in 0,1 °C, Niederschlag als SUMME seit Lauf in 0,1 mm
+            't2m': [[row[k] for row in pts['t2m']] for k in range(n)],
+            'tp': [[row[k] for row in pts['tp']] for k in range(n)],
+        }
+        dest = POINTS_ROOT / model
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / f'{rid}.json').write_text(json.dumps(doc, separators=(',', ':')))
+        have = sum(1 for row in doc['t2m'] if any(v is not None for v in row))
+        print(f'  Punktwerte: {have}/{n} Stationen im Gitter → verify/points/{model}/{rid}.json', flush=True)

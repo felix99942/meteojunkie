@@ -477,6 +477,9 @@ jobs:
           # holt aber einen früher gescheiterten Upload nach
           [[ "${{ steps.mos.outcome }}" == success || "${{ steps.moscache.outputs.cache-hit }}" == true ]] && dirs+=(mos/forecast)
           [[ "${{ steps.sondes.outcome }}" == success ]] && dirs+=(sondes)
+          # Punktwerte für die Verifikation (C-LAEF): nur KOPIEREN — in R2
+          # sammeln sich die Läufe, bis der Worker sie ins Archiv übernimmt
+          [[ -d public/verify/points/arome-at ]] && dirs+=(--copy verify/points/arome-at)
           scripts/upload-data.sh "${dirs[@]}"
 
       # Die App OHNE die Daten: die liegen jetzt in R2, und ein Worker-Deploy
@@ -486,5 +489,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          rm -rf dist/nwp dist/de dist/mos/forecast dist/sondes
+          rm -rf dist/nwp dist/de dist/mos/forecast dist/sondes dist/verify
           npx --yes wrangler@4.148.0 deploy

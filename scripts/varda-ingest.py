@@ -429,7 +429,7 @@ def main() -> None:
 
     steps = list(range(0, args.lead + 1))
     ingest(MODEL, 'Varda', run, steps, fetch_step, step_window=3, encode_workers=6,
-           only=VARIABLES, optional=OPTIONAL)
+           only=VARIABLES, optional=OPTIONAL, points=True)
     # Caches der Startwerte: der nächste Lauf braucht andere Termine
     for d in ('cache', 'outputs'):
         shutil.rmtree(WORK / d, ignore_errors=True)

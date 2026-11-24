@@ -217,6 +217,7 @@ def main() -> None:
         step_window=6, field_workers=8, encode_workers=6,
         only=VARIABLES,
         optional={'precip', 'precipsum', 'newsnow', 'precipphase', 'gust'},
+        points=True,
     )
 
 

@@ -42,6 +42,8 @@ import {
 } from '../config/models'
 import { OpenMeteoAttribution } from './Attribution'
 import { DecompChart, LeadChart, SkillChart, type ChartRow } from './VerifyCharts'
+import { OWN_VERIFY_MODELS, ownVerifyModel } from '../config/ownVerify'
+import { fetchOwnPastRuns } from '../api/ownRuns'
 import { MAX_MODELS_PER_PANEL, SERIES_COLORS } from '../config/colors'
 import {
   climatologyForecast,
@@ -704,7 +706,7 @@ export function VerifyPanel() {
   const models = useMemo(
     () =>
       modelIds
-        .map((id) => MODELS.find((m) => m.id === id))
+        .map((id) => MODELS.find((m) => m.id === id) ?? ownVerifyModel(id))
         .filter((m): m is ModelInfo => m != null && (!station || isInCoverage(m, station.lat, station.lon))),
     [modelIds, station],
   )
@@ -742,6 +744,20 @@ export function VerifyPanel() {
     setError(null)
     Promise.all(
       models.map(async (m) => {
+        // Eigene Modelle (Varda, C-LAEF): aus dem eigenen Archiv, nicht von
+        // Open-Meteo (config/ownVerify.ts)
+        const own = ownVerifyModel(m.id)
+        if (own) {
+          const r = await fetchOwnPastRuns(
+            own.id,
+            station.id,
+            FORECAST_VAR[target] as 'temperature_2m' | 'precipitation',
+            fcStart,
+            fcEnd,
+            station.altitude,
+          )
+          return [m.id, r] as const
+        }
         const leads = leadsFor(m.forecastHours, MAX_LEAD_DAYS)
         if (leads.length === 0) return [m.id, null] as const
         // Stationshöhe mitgeben: sonst rechnet die API auf die Höhe ihres
@@ -1113,10 +1129,11 @@ export function VerifyPanel() {
           Fehlschluss. */}
       <div className="verify-models">
         {groupModelsByScale(
-          SELECTABLE_MODELS.filter(
+          [...SELECTABLE_MODELS, ...OWN_VERIFY_MODELS].filter(
             (m) =>
               (!station || isInCoverage(m, station.lat, station.lon)) &&
-              m.forecastHours >= lead * 24 + 24,
+              // Eigene Modelle: die Vorlaufzeiten ihres Archivs
+              (ownVerifyModel(m.id)?.leads.includes(lead) ?? m.forecastHours >= lead * 24 + 24),
           ),
         ).map((group) => (
           <div key={group.scale} className="verify-modelgroup">
@@ -1410,6 +1427,22 @@ export function VerifyPanel() {
       </div>
       <div className="app-attribution">
         <OpenMeteoAttribution />
+        {/* Eigene Modelle kommen nicht über Open-Meteo — eigene Nennung, nur wenn gewählt */}
+        {models.some((m) => m.id === 'arome-at') && (
+          <span className="attribution">
+            {' '}C-LAEF: GeoSphere Austria (
+            <a href="https://data.hub.geosphere.at/dataset/nwp-v2-1h-1km" target="_blank" rel="noreferrer">
+              Data Hub
+            </a>
+            , CC BY 4.0), Stationswerte aus eigenem Archiv.
+          </span>
+        )}
+        {models.some((m) => m.id === 'varda') && (
+          <span className="attribution">
+            {' '}Varda: Modell von MeteoSwiss (CC BY 4.0), auf eigener Hardware gerechnet — keine offizielle
+            MeteoSwiss-Vorhersage.
+          </span>
+        )}
       </div>
     </div>
   )
